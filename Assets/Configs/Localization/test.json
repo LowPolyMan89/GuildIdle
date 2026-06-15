@@ -1,0 +1,18 @@
+﻿{
+    "Texts": [
+        {
+            "Id": "test",
+            "Lang": [
+                {
+                    "Value": "Тестовая запись"
+                },
+                {
+                    "Value": "Test recording"
+                },
+                {
+                    "Value": "Test kaydı"
+                }
+            ]
+        }
+    ]
+}

@@ -214,6 +214,123 @@ public sealed class GuildIdleSystemsTests
     }
 
     [Test]
+    public void LocalisationEditorAssetIo_LoadsSourceTablesOnly()
+    {
+        var tables = LocalisationEditorAssetIo.LoadTables();
+
+        Assert.GreaterOrEqual(tables.Count, 2);
+        foreach (var table in tables)
+        {
+            Assert.IsFalse(table.Path.Contains("/Resources/"), table.Path);
+            Assert.AreNotEqual(LocalisationBuilder.OutputPath, table.Path);
+        }
+    }
+
+    [Test]
+    public void LocalisationEditorAssetIo_DefaultEntryHasValidKey()
+    {
+        var entry = LocalisationEditorAssetIo.CreateDefaultEntry("new_text_1");
+
+        Assert.IsFalse(string.IsNullOrWhiteSpace(entry.Id));
+        Assert.IsTrue(LocalisationEditorAssetIo.IsValidKeyFormat(entry.Id));
+        Assert.AreEqual(LocalisationModel.Languages.Length, entry.Lang.Length);
+    }
+
+    [Test]
+    public void LocalisationEditorAssetIo_DefaultTableHasValidIdAndPath()
+    {
+        var table = LocalisationEditorAssetIo.CreateDefaultTable("new_table_1");
+
+        Assert.IsFalse(string.IsNullOrWhiteSpace(table.Id));
+        Assert.IsTrue(LocalisationEditorAssetIo.IsValidTableIdFormat(table.Id));
+        Assert.AreEqual("Assets/Configs/Localization/new_table_1.json", table.Path);
+        Assert.IsNotNull(table.Config.Texts);
+        Assert.AreEqual(0, table.Config.Texts.Length);
+    }
+
+    [Test]
+    public void LocalisationEditorAssetIo_ValidatorCatchesInvalidEntries()
+    {
+        var table = new LocalisationTableRecord
+        {
+            Id = "test",
+            Path = "Assets/Configs/Localization/test.json",
+            Config = new LocalisationConfig
+            {
+                Texts = new[]
+                {
+                    LocalisationEditorAssetIo.CreateDefaultEntry(string.Empty),
+                    LocalisationEditorAssetIo.CreateDefaultEntry("Bad-Key"),
+                    LocalisationEditorAssetIo.CreateDefaultEntry("duplicate_key"),
+                    LocalisationEditorAssetIo.CreateDefaultEntry("duplicate_key"),
+                    new LocalisationText
+                    {
+                        Id = "wrong_lang_count",
+                        Lang = new[] { new LocalisationValue { Value = "ru" } }
+                    }
+                }
+            }
+        };
+
+        var duplicateTable = LocalisationEditorAssetIo.CreateDefaultTable("test");
+        duplicateTable.Path = "Assets/Configs/Localization/test_duplicate.json";
+
+        var report = LocalisationEditorAssetIo.ValidateTables(new[] { table, duplicateTable });
+
+        Assert.IsFalse(report.IsValid);
+        Assert.GreaterOrEqual(report.Errors.Count, 5);
+    }
+
+    [Test]
+    public void LocalisationEditorAssetIo_SaveLoadRenameAndBuildRoundTrip()
+    {
+        var path = "Assets/Configs/Localization/test_editor_localisation.json";
+        var id = "test_localisation_roundtrip";
+        var renamedId = "test_localisation_roundtrip_renamed";
+
+        try
+        {
+            DeleteAssetIfExists(path);
+
+            var table = new LocalisationTableRecord
+            {
+                Id = "test_editor_localisation",
+                Path = path,
+                Config = new LocalisationConfig { Texts = Array.Empty<LocalisationText>() }
+            };
+
+            var entry = LocalisationEditorAssetIo.CreateDefaultEntry(id);
+            LocalisationEditorAssetIo.SetValue(entry, 0, "Тестовая строка");
+            LocalisationEditorAssetIo.SetValue(entry, 1, "Test string");
+            LocalisationEditorAssetIo.SetValue(entry, 2, "Test metni");
+            LocalisationEditorAssetIo.AddEntry(table, entry);
+
+            Assert.IsTrue(LocalisationEditorAssetIo.ValidateTables(new[] { table }).IsValid);
+            LocalisationEditorAssetIo.SaveTable(table);
+
+            Assert.IsTrue(File.Exists(path));
+            Assert.IsTrue(LocalisationEditorAssetIo.TryReadConfig(path, out var loadedConfig, out var readError), readError);
+            Assert.AreEqual(id, loadedConfig.Texts[0].Id);
+            Assert.AreEqual("Тестовая строка", LocalisationEditorAssetIo.GetValue(loadedConfig.Texts[0], 0));
+
+            loadedConfig.Texts[0].Id = renamedId;
+            table.Config = loadedConfig;
+            Assert.IsTrue(LocalisationEditorAssetIo.ValidateTables(new[] { table }).IsValid);
+            LocalisationEditorAssetIo.SaveTable(table);
+
+            Assert.IsTrue(LocalisationEditorAssetIo.TryReadConfig(path, out loadedConfig, out readError), readError);
+            Assert.AreEqual(renamedId, loadedConfig.Texts[0].Id);
+            Assert.IsTrue(File.ReadAllText(LocalisationBuilder.OutputPath).Contains(renamedId));
+        }
+        finally
+        {
+            DeleteAssetIfExists(path);
+            LocalisationBuilder.BuildLocalisation();
+            LocalisationModel.Reload();
+        }
+    }
+
+    [Test]
     public void LocalisationModel_ReturnsTextsForSupportedLanguages()
     {
         var previousLanguage = LocalisationModel.CurrentLanguage;
