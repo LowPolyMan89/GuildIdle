@@ -1,6 +1,8 @@
 {
   "Id": "ore",
   "DisplayName": "Ore",
+  "LocalisationNameId": "ore_name",
+  "LocalisationDescriptionId": "ore_description",
   "Icon": "Icons/Resources/ore_icon",
   "MaxAmount": 999999,
   "IsPremium": false

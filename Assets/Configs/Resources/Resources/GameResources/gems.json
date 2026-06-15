@@ -1,6 +1,8 @@
 {
   "Id": "gems",
   "DisplayName": "Gems",
+  "LocalisationNameId": "gems_name",
+  "LocalisationDescriptionId": "gems_description",
   "Icon": "Icons/Resources/gems_icon",
   "MaxAmount": 999999,
   "IsPremium": true

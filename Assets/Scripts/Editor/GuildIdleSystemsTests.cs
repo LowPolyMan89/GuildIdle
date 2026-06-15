@@ -1,6 +1,10 @@
 using GuildIdle;
+using GuildIdle.Editor;
+using System;
 using System.Collections.Generic;
+using System.IO;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.TestTools;
 
@@ -71,6 +75,8 @@ public sealed class GuildIdleSystemsTests
         Assert.AreEqual(1, ConfigDatabase.Tasks.Count);
 
         Assert.AreEqual("Wood", ConfigDatabase.GetResource("wood").DisplayName);
+        Assert.AreEqual("wood_name", ConfigDatabase.GetResource("wood").LocalisationNameId);
+        Assert.AreEqual("wood_description", ConfigDatabase.GetResource("wood").LocalisationDescriptionId);
         Assert.AreEqual("Leo", ConfigDatabase.GetHero("hero_leo").DisplayName);
         Assert.AreEqual("Woodcutting", ConfigDatabase.GetSkill("woodcutting").DisplayName);
         Assert.AreEqual("Forest Edge", ConfigDatabase.GetTask("task_wood_gathering_01").DisplayName);
@@ -116,6 +122,98 @@ public sealed class GuildIdleSystemsTests
     }
 
     [Test]
+    public void ConfigEditorRegistry_ContainsAllConfigTypes()
+    {
+        var expectedTypes = new HashSet<Type>
+        {
+            typeof(StatConfig),
+            typeof(ResourceConfig),
+            typeof(HeroConfig),
+            typeof(HeroGrowthConfig),
+            typeof(SkillConfig),
+            typeof(SkillLevelConfig),
+            typeof(TaskConfig),
+            typeof(ItemConfig),
+            typeof(CraftRecipeConfig),
+            typeof(EnemyConfig),
+            typeof(CombatLocationConfig),
+            typeof(BuildingConfig),
+            typeof(QuestConfig)
+        };
+
+        foreach (var descriptor in ConfigEditorRegistry.Descriptors)
+        {
+            Assert.IsTrue(expectedTypes.Remove(descriptor.ConfigType), descriptor.ConfigType.Name);
+            Assert.IsNotNull(descriptor.IdField);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(descriptor.FolderPath));
+            Assert.IsFalse(string.IsNullOrWhiteSpace(descriptor.ResourcePath));
+        }
+
+        Assert.AreEqual(0, expectedTypes.Count, "Some config types are missing from the editor registry.");
+    }
+
+    [Test]
+    public void ConfigEditorRegistry_DefaultFactoriesCreateIds()
+    {
+        foreach (var descriptor in ConfigEditorRegistry.Descriptors)
+        {
+            var config = descriptor.CreateDefault($"test_{descriptor.IdPrefix}");
+            Assert.IsNotNull(config);
+            Assert.AreEqual($"test_{descriptor.IdPrefix}", descriptor.GetId(config));
+        }
+    }
+
+    [Test]
+    public void ConfigEditorAssetIo_SaveLoadAndRenameRoundTrip()
+    {
+        var descriptor = ConfigEditorRegistry.GetByType(typeof(ResourceConfig));
+        var id = "test_resource_roundtrip";
+        var renamedId = "test_resource_roundtrip_renamed";
+        var path = $"{descriptor.FolderPath}/{id}.json";
+        var renamedPath = $"{descriptor.FolderPath}/{renamedId}.json";
+
+        try
+        {
+            DeleteAssetIfExists(path);
+            DeleteAssetIfExists(renamedPath);
+
+            var resource = (ResourceConfig)descriptor.CreateDefault(id);
+            resource.DisplayName = "Roundtrip Resource";
+
+            var savedPath = ConfigEditorAssetIo.SaveConfig(descriptor, resource);
+            Assert.AreEqual(path, savedPath);
+            Assert.IsTrue(File.Exists(path));
+
+            var loaded = (ResourceConfig)ConfigEditorAssetIo.LoadConfig(descriptor, savedPath);
+            Assert.AreEqual(id, loaded.Id);
+            Assert.AreEqual("Roundtrip Resource", loaded.DisplayName);
+
+            loaded.Id = renamedId;
+            var nextPath = ConfigEditorAssetIo.SaveConfig(descriptor, loaded, savedPath);
+            Assert.AreEqual(renamedPath, nextPath);
+            Assert.IsFalse(File.Exists(path));
+            Assert.IsTrue(File.Exists(renamedPath));
+        }
+        finally
+        {
+            DeleteAssetIfExists(path);
+            DeleteAssetIfExists(renamedPath);
+            ConfigDatabase.Reload();
+        }
+    }
+
+    [Test]
+    public void ConfigManagerValidationReport_CanBeDisplayed()
+    {
+        ConfigDatabase.Reload();
+
+        var report = ConfigDatabase.Validate();
+
+        Assert.IsNotNull(report.Errors);
+        Assert.IsNotNull(report.Warnings);
+    }
+
+    [Test]
     public void LocalisationModel_ReturnsTextsForSupportedLanguages()
     {
         var previousLanguage = LocalisationModel.CurrentLanguage;
@@ -126,12 +224,18 @@ public sealed class GuildIdleSystemsTests
 
             LocalisationModel.SetLanguage("ru");
             Assert.AreEqual("Сила", LocalisationModel.GetText("strength_name"));
+            Assert.AreEqual("Дерево", LocalisationModel.GetText("wood_name"));
+            Assert.AreEqual("Базовый строительный и ремесленный материал из лесозаготовки.", LocalisationModel.GetText("wood_description"));
 
             LocalisationModel.SetLanguage("en");
             Assert.AreEqual("Strength", LocalisationModel.GetText("strength_name"));
+            Assert.AreEqual("Wood", LocalisationModel.GetText("wood_name"));
+            Assert.AreEqual("A basic building and crafting material gathered through woodcutting.", LocalisationModel.GetText("wood_description"));
 
             LocalisationModel.SetLanguage("tr");
             Assert.AreEqual("Güç", LocalisationModel.GetText("strength_name"));
+            Assert.AreEqual("Odun", LocalisationModel.GetText("wood_name"));
+            Assert.AreEqual("Odunculukla toplanan temel inşaat ve zanaat malzemesi.", LocalisationModel.GetText("wood_description"));
         }
         finally
         {
@@ -156,5 +260,11 @@ public sealed class GuildIdleSystemsTests
         Assert.AreEqual($"{id}_name", config.LocalisationNameId);
         Assert.AreEqual($"{id}_description", config.LocalisationDescriptionId);
         Assert.AreEqual($"Icons/Stats/{id}_icon", config.IconId);
+    }
+
+    private static void DeleteAssetIfExists(string path)
+    {
+        if (File.Exists(path))
+            AssetDatabase.DeleteAsset(path);
     }
 }

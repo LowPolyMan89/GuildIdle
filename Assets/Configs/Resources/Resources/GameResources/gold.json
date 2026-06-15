@@ -1,6 +1,8 @@
 {
   "Id": "gold",
   "DisplayName": "Gold",
+  "LocalisationNameId": "gold_name",
+  "LocalisationDescriptionId": "gold_description",
   "Icon": "Icons/Resources/gold_icon",
   "MaxAmount": 999999,
   "IsPremium": false

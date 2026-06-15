@@ -19,6 +19,8 @@ namespace GuildIdle
     {
         public string Id;
         public string DisplayName;
+        public string LocalisationNameId;
+        public string LocalisationDescriptionId;
         public string Icon;
         public int MaxAmount;
         public bool IsPremium;
@@ -290,19 +292,19 @@ namespace GuildIdle
 
     public static class ConfigDatabase
     {
-        private const string StatsResourcePath = "Stats";
-        private const string ResourcesResourcePath = "GameResources";
-        private const string HeroesResourcePath = "Heroes";
-        private const string HeroGrowthResourcePath = "HeroGrowth";
-        private const string SkillsResourcePath = "Skills";
-        private const string SkillLevelsResourcePath = "SkillLevels";
-        private const string TasksResourcePath = "Tasks";
-        private const string ItemsResourcePath = "Items";
-        private const string CraftRecipesResourcePath = "CraftRecipes";
-        private const string EnemiesResourcePath = "Enemies";
-        private const string CombatLocationsResourcePath = "CombatLocations";
-        private const string BuildingsResourcePath = "Buildings";
-        private const string QuestsResourcePath = "Quests";
+        public const string StatsResourcePath = "Stats";
+        public const string ResourcesResourcePath = "GameResources";
+        public const string HeroesResourcePath = "Heroes";
+        public const string HeroGrowthResourcePath = "HeroGrowth";
+        public const string SkillsResourcePath = "Skills";
+        public const string SkillLevelsResourcePath = "SkillLevels";
+        public const string TasksResourcePath = "Tasks";
+        public const string ItemsResourcePath = "Items";
+        public const string CraftRecipesResourcePath = "CraftRecipes";
+        public const string EnemiesResourcePath = "Enemies";
+        public const string CombatLocationsResourcePath = "CombatLocations";
+        public const string BuildingsResourcePath = "Buildings";
+        public const string QuestsResourcePath = "Quests";
 
         private static readonly Dictionary<string, StatConfig> _stats = new Dictionary<string, StatConfig>();
         private static readonly Dictionary<string, ResourceConfig> _resources = new Dictionary<string, ResourceConfig>();
@@ -544,6 +546,8 @@ namespace GuildIdle
             foreach (var config in _resources.Values)
             {
                 RequireText(report, "resource", config.Id, config.DisplayName, nameof(config.DisplayName));
+                RequireText(report, "resource", config.Id, config.LocalisationNameId, nameof(config.LocalisationNameId));
+                RequireText(report, "resource", config.Id, config.LocalisationDescriptionId, nameof(config.LocalisationDescriptionId));
                 RequireNonNegative(report, "resource", config.Id, config.MaxAmount, nameof(config.MaxAmount));
             }
         }
