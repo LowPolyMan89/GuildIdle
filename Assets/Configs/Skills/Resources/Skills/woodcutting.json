@@ -1,0 +1,7 @@
+{
+  "Id": "woodcutting",
+  "DisplayName": "Woodcutting",
+  "Description": "Chop trees and gather rare timber more efficiently.",
+  "Icon": "Icons/Stats/woodcutting_icon",
+  "MaxLevel": 100
+}

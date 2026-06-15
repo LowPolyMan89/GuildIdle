@@ -1,0 +1,7 @@
+{
+  "Id": "stone",
+  "DisplayName": "Stone",
+  "Icon": "Icons/Resources/stone_icon",
+  "MaxAmount": 999999,
+  "IsPremium": false
+}

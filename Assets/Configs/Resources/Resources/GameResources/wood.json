@@ -1,0 +1,7 @@
+{
+  "Id": "wood",
+  "DisplayName": "Wood",
+  "Icon": "Icons/Resources/wood_icon",
+  "MaxAmount": 999999,
+  "IsPremium": false
+}

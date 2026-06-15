@@ -1,0 +1,7 @@
+{
+  "Id": "gems",
+  "DisplayName": "Gems",
+  "Icon": "Icons/Resources/gems_icon",
+  "MaxAmount": 999999,
+  "IsPremium": true
+}

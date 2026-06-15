@@ -1,0 +1,7 @@
+{
+  "Id": "exploration",
+  "DisplayName": "Exploration",
+  "Description": "Scout ruins, caches, and new zones.",
+  "Icon": "Icons/Stats/exploration_icon",
+  "MaxLevel": 100
+}

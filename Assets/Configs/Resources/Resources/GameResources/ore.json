@@ -1,0 +1,7 @@
+{
+  "Id": "ore",
+  "DisplayName": "Ore",
+  "Icon": "Icons/Resources/ore_icon",
+  "MaxAmount": 999999,
+  "IsPremium": false
+}

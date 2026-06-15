@@ -1,0 +1,7 @@
+{
+  "Id": "food",
+  "DisplayName": "Food",
+  "Icon": "Icons/Resources/food_icon",
+  "MaxAmount": 999999,
+  "IsPremium": false
+}

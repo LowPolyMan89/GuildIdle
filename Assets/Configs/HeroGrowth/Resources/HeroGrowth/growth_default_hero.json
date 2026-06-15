@@ -1,0 +1,50 @@
+{
+  "Id": "growth_default_hero",
+  "Levels": [
+    {
+      "Level": 1,
+      "ExperienceToNextLevel": 100,
+      "Strength": 5,
+      "Agility": 5,
+      "Intelligence": 5,
+      "Endurance": 6,
+      "Luck": 3
+    },
+    {
+      "Level": 2,
+      "ExperienceToNextLevel": 150,
+      "Strength": 6,
+      "Agility": 6,
+      "Intelligence": 6,
+      "Endurance": 7,
+      "Luck": 4
+    },
+    {
+      "Level": 3,
+      "ExperienceToNextLevel": 225,
+      "Strength": 7,
+      "Agility": 7,
+      "Intelligence": 7,
+      "Endurance": 8,
+      "Luck": 5
+    },
+    {
+      "Level": 4,
+      "ExperienceToNextLevel": 325,
+      "Strength": 8,
+      "Agility": 8,
+      "Intelligence": 8,
+      "Endurance": 10,
+      "Luck": 6
+    },
+    {
+      "Level": 5,
+      "ExperienceToNextLevel": 0,
+      "Strength": 10,
+      "Agility": 9,
+      "Intelligence": 9,
+      "Endurance": 12,
+      "Luck": 7
+    }
+  ]
+}

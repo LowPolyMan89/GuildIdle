@@ -1,0 +1,7 @@
+{
+  "Id": "gold",
+  "DisplayName": "Gold",
+  "Icon": "Icons/Resources/gold_icon",
+  "MaxAmount": 999999,
+  "IsPremium": false
+}

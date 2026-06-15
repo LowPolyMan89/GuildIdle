@@ -1,0 +1,31 @@
+{
+  "Id": "skill_levels_woodcutting",
+  "SkillId": "woodcutting",
+  "Levels": [
+    {
+      "Level": 1,
+      "ExperienceToNextLevel": 50,
+      "BonusValue": 0
+    },
+    {
+      "Level": 2,
+      "ExperienceToNextLevel": 100,
+      "BonusValue": 3
+    },
+    {
+      "Level": 3,
+      "ExperienceToNextLevel": 175,
+      "BonusValue": 6
+    },
+    {
+      "Level": 4,
+      "ExperienceToNextLevel": 275,
+      "BonusValue": 8
+    },
+    {
+      "Level": 5,
+      "ExperienceToNextLevel": 0,
+      "BonusValue": 10
+    }
+  ]
+}

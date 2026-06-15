@@ -1,4 +1,5 @@
 using GuildIdle;
+using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -46,15 +47,72 @@ public sealed class GuildIdleSystemsTests
     }
 
     [Test]
-    public void ConfigProvider_LoadsGuildIdleStatConfigs()
+    public void ConfigDatabase_LoadsGuildIdleStatConfigs()
     {
-        ConfigProvider.Reload();
+        ConfigDatabase.Reload();
 
-        Assert.AreEqual(18, ConfigProvider.Stats.Count);
+        Assert.AreEqual(18, ConfigDatabase.Stats.Count);
         AssertLoadedStat("strength", "attribute");
         AssertLoadedStat("mining", "skill");
         AssertLoadedStat("damage", "combat");
         AssertLoadedStat("fatigue", "state");
+    }
+
+    [Test]
+    public void ConfigDatabase_LoadsMvpConfigs()
+    {
+        ConfigDatabase.Reload();
+
+        Assert.AreEqual(6, ConfigDatabase.Resources.Count);
+        Assert.AreEqual(1, ConfigDatabase.Heroes.Count);
+        Assert.AreEqual(1, ConfigDatabase.HeroGrowth.Count);
+        Assert.AreEqual(6, ConfigDatabase.Skills.Count);
+        Assert.AreEqual(1, ConfigDatabase.SkillLevels.Count);
+        Assert.AreEqual(1, ConfigDatabase.Tasks.Count);
+
+        Assert.AreEqual("Wood", ConfigDatabase.GetResource("wood").DisplayName);
+        Assert.AreEqual("Leo", ConfigDatabase.GetHero("hero_leo").DisplayName);
+        Assert.AreEqual("Woodcutting", ConfigDatabase.GetSkill("woodcutting").DisplayName);
+        Assert.AreEqual("Forest Edge", ConfigDatabase.GetTask("task_wood_gathering_01").DisplayName);
+    }
+
+    [Test]
+    public void ConfigDatabase_TaskUsesJsonValues()
+    {
+        ConfigDatabase.Reload();
+
+        var task = ConfigDatabase.GetTask("task_wood_gathering_01");
+
+        Assert.AreEqual(30f, task.CycleDurationSeconds);
+        Assert.AreEqual(1f, task.FatiguePerCycle);
+        Assert.AreEqual(2, task.HeroExpPerCycle);
+        Assert.AreEqual(4, task.SkillExpPerCycle);
+        Assert.AreEqual("woodcutting", task.TargetSkillId);
+        Assert.AreEqual(1, task.Rewards.Length);
+        Assert.AreEqual("resource", task.Rewards[0].Type);
+        Assert.AreEqual("wood", task.Rewards[0].Id);
+        Assert.AreEqual(8, task.Rewards[0].Amount);
+    }
+
+    [Test]
+    public void ConfigDatabase_ValidatePassesForSampleData()
+    {
+        ConfigDatabase.Reload();
+
+        var report = ConfigDatabase.Validate();
+
+        Assert.IsTrue(report.IsValid, string.Join("\n", report.Errors));
+        Assert.AreEqual(0, report.Errors.Count);
+    }
+
+    [Test]
+    public void ConfigDatabase_MissingIdsUseTryGetAndThrowingGetters()
+    {
+        ConfigDatabase.Reload();
+
+        Assert.IsFalse(ConfigDatabase.TryGetResource("missing_resource", out _));
+        Assert.IsFalse(ConfigDatabase.HasTask("missing_task"));
+        Assert.Throws<KeyNotFoundException>(() => ConfigDatabase.GetHero("missing_hero"));
     }
 
     [Test]
@@ -93,7 +151,7 @@ public sealed class GuildIdleSystemsTests
 
     private static void AssertLoadedStat(string id, string category)
     {
-        Assert.IsTrue(ConfigProvider.TryGetStat(id, out var config), $"Stat '{id}' should be loaded.");
+        Assert.IsTrue(ConfigDatabase.TryGetStat(id, out var config), $"Stat '{id}' should be loaded.");
         Assert.AreEqual(category, config.Category);
         Assert.AreEqual($"{id}_name", config.LocalisationNameId);
         Assert.AreEqual($"{id}_description", config.LocalisationDescriptionId);

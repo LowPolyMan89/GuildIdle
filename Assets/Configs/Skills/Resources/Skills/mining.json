@@ -1,0 +1,7 @@
+{
+  "Id": "mining",
+  "DisplayName": "Mining",
+  "Description": "Gather stone, ore, and gems more efficiently.",
+  "Icon": "Icons/Stats/mining_icon",
+  "MaxLevel": 100
+}

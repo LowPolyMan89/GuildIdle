@@ -1,0 +1,7 @@
+{
+  "Id": "hunting",
+  "DisplayName": "Hunting",
+  "Description": "Track beasts and gather food, leather, and trophies.",
+  "Icon": "Icons/Stats/hunting_icon",
+  "MaxLevel": 100
+}

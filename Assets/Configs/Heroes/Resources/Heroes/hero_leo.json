@@ -1,0 +1,24 @@
+{
+  "Id": "hero_leo",
+  "DisplayName": "Leo",
+  "ClassName": "Warrior",
+  "Portrait": "Portraits/Heroes/hero_leo",
+  "Description": "A reliable guild recruit suited for hard work and frontline duty.",
+  "GrowthTableId": "growth_default_hero",
+  "StartLevel": 1,
+  "StartSkills": [
+    {
+      "SkillId": "woodcutting",
+      "Level": 1,
+      "Experience": 0
+    },
+    {
+      "SkillId": "combat",
+      "Level": 1,
+      "Experience": 0
+    }
+  ],
+  "PassiveAbilityId": "",
+  "AutoAbilityId": "",
+  "DefaultEquipment": []
+}
