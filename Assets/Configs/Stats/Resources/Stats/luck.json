@@ -1,0 +1,7 @@
+{
+  "Id": "luck",
+  "Category": "attribute",
+  "LocalisationNameId": "luck_name",
+  "LocalisationDescriptionId": "luck_description",
+  "IconId": "Icons/Stats/luck_icon"
+}

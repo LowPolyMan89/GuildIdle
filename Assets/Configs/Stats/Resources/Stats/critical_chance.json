@@ -1,0 +1,7 @@
+{
+  "Id": "critical_chance",
+  "Category": "combat",
+  "LocalisationNameId": "critical_chance_name",
+  "LocalisationDescriptionId": "critical_chance_description",
+  "IconId": "Icons/Stats/critical_chance_icon"
+}

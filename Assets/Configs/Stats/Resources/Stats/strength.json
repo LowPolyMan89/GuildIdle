@@ -1,0 +1,7 @@
+{
+  "Id": "strength",
+  "Category": "attribute",
+  "LocalisationNameId": "strength_name",
+  "LocalisationDescriptionId": "strength_description",
+  "IconId": "Icons/Stats/strength_icon"
+}

@@ -1,0 +1,7 @@
+{
+  "Id": "defense",
+  "Category": "combat",
+  "LocalisationNameId": "defense_name",
+  "LocalisationDescriptionId": "defense_description",
+  "IconId": "Icons/Stats/defense_icon"
+}

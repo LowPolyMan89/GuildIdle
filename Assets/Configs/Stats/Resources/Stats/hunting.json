@@ -1,0 +1,7 @@
+{
+  "Id": "hunting",
+  "Category": "skill",
+  "LocalisationNameId": "hunting_name",
+  "LocalisationDescriptionId": "hunting_description",
+  "IconId": "Icons/Stats/hunting_icon"
+}

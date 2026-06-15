@@ -1,0 +1,7 @@
+{
+  "Id": "mining",
+  "Category": "skill",
+  "LocalisationNameId": "mining_name",
+  "LocalisationDescriptionId": "mining_description",
+  "IconId": "Icons/Stats/mining_icon"
+}

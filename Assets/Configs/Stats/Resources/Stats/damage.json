@@ -1,0 +1,7 @@
+{
+  "Id": "damage",
+  "Category": "combat",
+  "LocalisationNameId": "damage_name",
+  "LocalisationDescriptionId": "damage_description",
+  "IconId": "Icons/Stats/damage_icon"
+}

@@ -1,0 +1,7 @@
+{
+  "Id": "crafting",
+  "Category": "skill",
+  "LocalisationNameId": "crafting_name",
+  "LocalisationDescriptionId": "crafting_description",
+  "IconId": "Icons/Stats/crafting_icon"
+}

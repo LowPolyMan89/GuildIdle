@@ -1,0 +1,7 @@
+{
+  "Id": "attack_speed",
+  "Category": "combat",
+  "LocalisationNameId": "attack_speed_name",
+  "LocalisationDescriptionId": "attack_speed_description",
+  "IconId": "Icons/Stats/attack_speed_icon"
+}

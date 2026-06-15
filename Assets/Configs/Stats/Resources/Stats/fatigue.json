@@ -1,0 +1,7 @@
+{
+  "Id": "fatigue",
+  "Category": "state",
+  "LocalisationNameId": "fatigue_name",
+  "LocalisationDescriptionId": "fatigue_description",
+  "IconId": "Icons/Stats/fatigue_icon"
+}
