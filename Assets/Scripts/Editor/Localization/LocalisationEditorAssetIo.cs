@@ -171,6 +171,97 @@ namespace GuildIdle.Editor
             return IsValidKeyFormat(id);
         }
 
+        public static bool TryFindText(string key, out LocalisationTableRecord table, out LocalisationTextRecord record)
+        {
+            return TryFindText(LoadTables(), key, out table, out record);
+        }
+
+        public static bool TryFindText(
+            IEnumerable<LocalisationTableRecord> tables,
+            string key,
+            out LocalisationTableRecord table,
+            out LocalisationTextRecord record)
+        {
+            table = null;
+            record = null;
+
+            if (string.IsNullOrWhiteSpace(key))
+                return false;
+
+            foreach (var candidateTable in tables)
+            {
+                foreach (var candidateRecord in GetTextRecords(candidateTable))
+                {
+                    if (candidateRecord.Id != key)
+                        continue;
+
+                    table = candidateTable;
+                    record = candidateRecord;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static LocalisationTableRecord FindOrCreateTable(List<LocalisationTableRecord> tables, string tableId)
+        {
+            if (tables == null)
+                throw new ArgumentNullException(nameof(tables));
+
+            if (string.IsNullOrWhiteSpace(tableId))
+                throw new ArgumentException("Localisation table id cannot be empty.", nameof(tableId));
+
+            foreach (var table in tables)
+            {
+                if (table.Id == tableId)
+                    return table;
+            }
+
+            var created = CreateDefaultTable(tableId);
+            tables.Add(created);
+            return created;
+        }
+
+        public static bool EnsureTextExists(string tableId, string key, out LocalisationTableRecord table, out LocalisationTextRecord record)
+        {
+            if (!IsValidTableIdFormat(tableId))
+                throw new InvalidOperationException($"Localisation table id '{tableId}' must match {KeyPattern}.");
+
+            if (!IsValidKeyFormat(key))
+                throw new InvalidOperationException($"Localisation key '{key}' must match {KeyPattern}.");
+
+            var tables = LoadTables();
+            if (TryFindText(tables, key, out table, out record))
+                return false;
+
+            table = FindOrCreateTable(tables, tableId);
+            var entry = CreateDefaultEntry(key);
+            AddEntry(table, entry);
+
+            var report = ValidateTables(tables);
+            if (!report.IsValid)
+                throw new InvalidOperationException(string.Join("\n", report.Errors));
+
+            SaveTable(table);
+            record = FindTextRecord(table, key);
+            return true;
+        }
+
+        public static string CreateLocalisationKey(string configId, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(configId))
+                return string.Empty;
+
+            if (fieldName == "LocalisationNameId")
+                return $"{configId}_name";
+
+            if (fieldName == "LocalisationDescriptionId")
+                return $"{configId}_description";
+
+            return configId;
+        }
+
         public static string GetValue(LocalisationText text, int languageIndex)
         {
             EnsureLanguageValues(text);
@@ -299,6 +390,17 @@ namespace GuildIdle.Editor
             copy.Id = id;
             EnsureLanguageValues(copy);
             return copy;
+        }
+
+        private static LocalisationTextRecord FindTextRecord(LocalisationTableRecord table, string key)
+        {
+            foreach (var record in GetTextRecords(table))
+            {
+                if (record.Id == key)
+                    return record;
+            }
+
+            return null;
         }
 
         public static bool TryReadConfig(string unityPath, out LocalisationConfig config, out string error)

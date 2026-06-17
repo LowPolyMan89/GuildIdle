@@ -33,10 +33,28 @@ namespace GuildIdle.Editor
         [MenuItem("Tools/Configs/Localization Manager")]
         public static void Open()
         {
+            OpenWindow();
+        }
+
+        public static void OpenForKey(string key)
+        {
+            var window = OpenWindow();
+            window.FocusKey(key);
+        }
+
+        public static void OpenForCreatedKey(string tableId, string key)
+        {
+            var window = OpenWindow();
+            window.FocusKey(key, tableId);
+        }
+
+        private static LocalizationManagerWindow OpenWindow()
+        {
             var window = GetWindow<LocalizationManagerWindow>();
             window.titleContent = new GUIContent("Localization Manager");
             window.minSize = new Vector2(960f, 560f);
             window.Show();
+            return window;
         }
 
         public void CreateGUI()
@@ -151,6 +169,37 @@ namespace GuildIdle.Editor
             RefreshTextList();
             RefreshInspector();
             RefreshValidationPanel(null);
+        }
+
+        private void FocusKey(string key, string preferredTableId = null)
+        {
+            _tables = LocalisationEditorAssetIo.LoadTables();
+            _search = key ?? string.Empty;
+            if (_searchField != null)
+                _searchField.SetValueWithoutNotify(_search);
+
+            _selectedTable = null;
+            _selectedText = null;
+
+            if (!string.IsNullOrWhiteSpace(key) &&
+                LocalisationEditorAssetIo.TryFindText(_tables, key, out var table, out var record))
+            {
+                _selectedTable = table;
+                _selectedText = record;
+            }
+            else if (!string.IsNullOrWhiteSpace(preferredTableId))
+            {
+                _selectedTable = FindTable(preferredTableId);
+            }
+
+            _selectedTable = _selectedTable ?? (_tables.Count > 0 ? _tables[0] : null);
+            _dirty = false;
+            RefreshTableList();
+            RefreshTextList();
+            RefreshInspector();
+            RefreshValidationPanel(_selectedText != null || string.IsNullOrWhiteSpace(key)
+                ? null
+                : CreateSingleErrorReport($"Localisation key '{key}' was not found."));
         }
 
         private void SelectTable(LocalisationTableRecord table)

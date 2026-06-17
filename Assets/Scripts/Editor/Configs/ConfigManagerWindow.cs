@@ -294,8 +294,10 @@ namespace GuildIdle.Editor
                     field.SetValue(target, evt.newValue);
                     MarkDirty();
                     RefreshReferenceStatus(container, field.Name, evt.newValue);
+                    RefreshLocalisationShortcut(container, evt.newValue);
                 });
                 container.Add(control);
+                AddLocalisationShortcut(container, target, field, control);
                 AddIndented(parent, container, depth);
                 AddReferenceStatus(container, field.Name, control.value);
                 return;
@@ -676,6 +678,61 @@ namespace GuildIdle.Editor
                 parent.Add(status);
         }
 
+        private void AddLocalisationShortcut(VisualElement parent, object target, FieldInfo field, TextField control)
+        {
+            if (!IsLocalisationField(field.Name))
+                return;
+
+            var button = new Button(() => OpenOrCreateLocalisation(parent, target, field, control))
+            {
+                name = "localisation-shortcut",
+                text = string.IsNullOrWhiteSpace(control.value) ? "Create" : "Edit"
+            };
+            button.style.marginLeft = 150f;
+            button.style.marginTop = 2f;
+            parent.Add(button);
+        }
+
+        private static void RefreshLocalisationShortcut(VisualElement parent, string value)
+        {
+            var button = parent.Q<Button>("localisation-shortcut");
+            if (button != null)
+                button.text = string.IsNullOrWhiteSpace(value) ? "Create" : "Edit";
+        }
+
+        private void OpenOrCreateLocalisation(VisualElement parent, object target, FieldInfo field, TextField control)
+        {
+            var key = control.value;
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                LocalizationManagerWindow.OpenForKey(key);
+                return;
+            }
+
+            var configId = _selectedDescriptor.GetId(target);
+            key = LocalisationEditorAssetIo.CreateLocalisationKey(configId, field.Name);
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                EditorUtility.DisplayDialog("Create localisation failed", "Config Id is empty.", "OK");
+                return;
+            }
+
+            try
+            {
+                LocalisationEditorAssetIo.EnsureTextExists(_selectedDescriptor.LocalisationTableId, key, out _, out _);
+                field.SetValue(target, key);
+                control.SetValueWithoutNotify(key);
+                MarkDirty();
+                RefreshReferenceStatus(parent, field.Name, key);
+                RefreshInspector();
+                LocalizationManagerWindow.OpenForCreatedKey(_selectedDescriptor.LocalisationTableId, key);
+            }
+            catch (Exception exception)
+            {
+                EditorUtility.DisplayDialog("Create localisation failed", exception.Message, "OK");
+            }
+        }
+
         private void RefreshReferenceStatus(VisualElement parent, string fieldName, string value)
         {
             if (parent == null)
@@ -738,6 +795,11 @@ namespace GuildIdle.Editor
             label.style.fontSize = 10f;
             label.style.color = exists ? new Color(0.42f, 0.8f, 0.44f) : new Color(1f, 0.38f, 0.32f);
             return label;
+        }
+
+        private static bool IsLocalisationField(string fieldName)
+        {
+            return fieldName == "LocalisationNameId" || fieldName == "LocalisationDescriptionId";
         }
 
         private static bool MatchesSearch(ConfigAssetRecord record, string filter)

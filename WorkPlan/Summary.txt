@@ -1,0 +1,297 @@
+Итоги работ за сегодня
+
+Дата: 2026-06-15
+Проект: GuildIdle
+
+1. Система статов
+
+В проект добавлена базовая runtime-система статов для GuildIdle.
+
+Основные классы:
+- Stat
+- StatCollection
+- StatModifier
+- TimedStatEffect
+- StatModifierType
+- StatTarget
+
+Как работает Stat:
+- У стата есть Id.
+- Есть текущее значение CurrentValue.
+- Есть базовый максимум BaseMaxValue.
+- Итоговый максимум MaxValue считается с учетом модификаторов.
+- CurrentValue всегда ограничивается диапазоном от 0 до MaxValue.
+- Если MaxValue меняется, CurrentValue тоже корректно зажимается в новый диапазон.
+- Есть регенерация через Tick(deltaTime), если для стата задан RegenPerSecond.
+
+Модификаторы:
+- Flat модификатор добавляет фиксированное значение.
+- Percent модификатор добавляет процент от базового значения.
+- Модификатор может применяться к Current или Max через StatTarget.
+- Несколько модификаторов суммируются.
+
+TimedStatEffect:
+- Временный эффект применяется во времени через Tick(deltaTime).
+- Эффект может менять Current или Max.
+- После окончания Duration эффект удаляется.
+- Пример: усталость может постепенно расти во время задачи и перестать расти после завершения эффекта.
+
+StatCollection:
+- Хранит набор Stat по id.
+- Позволяет добавлять, получать и проверять наличие статов.
+- Используется как контейнер для статов героя или другой игровой сущности.
+
+2. Базовые статы GuildIdle
+
+Заведены определения статов для idle guild RPG.
+
+Атрибуты:
+- strength
+- agility
+- intelligence
+- endurance
+- luck
+
+Навыки:
+- mining
+- woodcutting
+- hunting
+- crafting
+- exploration
+- combat
+
+Боевые параметры:
+- damage
+- health
+- attack_speed
+- defense
+- critical_chance
+- critical_damage
+
+Состояния:
+- fatigue
+
+Для каждого стата создан JSON-конфиг:
+- Id
+- Category
+- LocalisationNameId
+- LocalisationDescriptionId
+- IconId
+
+3. Система конфигов
+
+Узкий ConfigProvider заменен на общий ConfigDatabase.
+
+ConfigDatabase загружает JSON-конфиги через Resources.LoadAll<TextAsset>().
+
+Поддержанные типы конфигов:
+- StatConfig
+- ResourceConfig
+- HeroConfig
+- HeroGrowthConfig
+- SkillConfig
+- SkillLevelConfig
+- TaskConfig
+- ItemConfig
+- CraftRecipeConfig
+- EnemyConfig
+- CombatLocationConfig
+- BuildingConfig
+- QuestConfig
+
+Добавлены общие DTO:
+- RewardConfig
+- CostConfig
+- RequirementConfig
+- StatBonusConfig
+- EquipmentEntryConfig
+- BuildingLevelConfig
+- ConfigReferenceWeight
+
+Публичный API ConfigDatabase:
+- Reload()
+- Validate()
+- IReadOnlyDictionary для всех основных типов
+- Get... методы
+- TryGet... методы
+- Has... методы
+
+Валидация конфигов проверяет:
+- пустые id;
+- дубли id;
+- ссылки между конфигами;
+- отрицательные значения там, где они запрещены;
+- непрерывность уровней в таблицах роста, навыков и зданий;
+- обязательные поля sample MVP.
+
+Также добавлено меню:
+- Tools/Build/Validate Configs
+
+4. Sample-конфиги
+
+Добавлены стартовые данные для MVP:
+- ресурсы: gold, wood, stone, ore, food, gems;
+- герой: hero_leo;
+- таблица роста героя: growth_default_hero;
+- навыки: mining, woodcutting, hunting, crafting, exploration, combat;
+- уровни навыка woodcutting 1..5;
+- задача task_wood_gathering_01.
+
+Задача task_wood_gathering_01 берет из JSON:
+- длительность цикла;
+- усталость за цикл;
+- опыт героя;
+- опыт навыка;
+- награду wood x8;
+- targetSkillId = woodcutting.
+
+5. Система локализации
+
+Добавлена локализация ru/en/tr.
+
+Основные классы:
+- LocalisationModel
+- LocalisedText
+- LocalisationBuilder
+
+LocalisationModel:
+- язык по умолчанию ru;
+- поддерживаемые языки: ru, en, tr;
+- выбранный язык сохраняется в PlayerPrefs;
+- строки загружаются из Resources/Localisation.json;
+- если ключ не найден, возвращается сам id.
+
+LocalisedText:
+- компонент для TMP_Text;
+- берет ключ локализации и обновляет текст при смене языка.
+
+LocalisationBuilder:
+- собирает source-файлы из Assets/Configs/Localization/*.json;
+- исключает runtime-файл Assets/Configs/Localization/Resources/Localisation.json;
+- проверяет дубли и количество языков;
+- собирает runtime-файл Resources/Localisation.json.
+
+Локализация заведена для:
+- всех базовых статов;
+- ресурсов.
+
+6. Редактор конфигов
+
+Добавлено окно:
+- Tools/Configs/Config Manager
+
+Возможности:
+- просмотр типов конфигов;
+- просмотр списка конфигов;
+- поиск по Id и DisplayName;
+- создание конфига;
+- дублирование;
+- удаление;
+- редактирование public fields через UI Toolkit;
+- редактирование вложенных DTO;
+- редактирование массивов;
+- сохранение JSON;
+- переименование файла при изменении Id;
+- запуск Validate из окна.
+
+Для ссылочных полей показывается статус:
+- OK, если ссылка найдена;
+- missing, если ссылка отсутствует.
+
+Для LocalisationNameId и LocalisationDescriptionId добавлены кнопки:
+- Create, если поле пустое;
+- Edit, если ключ заполнен.
+
+Create:
+- генерирует ключ {configId}_name или {configId}_description;
+- создает пустую запись локализации в подходящей таблице;
+- подставляет ключ в поле;
+- помечает конфиг dirty;
+- открывает Localization Manager на созданном ключе.
+
+Edit:
+- открывает Localization Manager;
+- ставит фильтр по ключу;
+- выбирает найденную запись.
+
+Таблицы локализации для Config Manager:
+- StatConfig -> stats
+- ResourceConfig -> resources
+- остальные типы используют fallback по IdPrefix.
+
+7. Редактор локализации
+
+Добавлено окно:
+- Tools/Configs/Localization Manager
+
+Возможности:
+- просмотр source-таблиц локализации;
+- создание новых таблиц;
+- поиск ключей;
+- создание ключа;
+- дублирование ключа;
+- удаление ключа;
+- редактирование Id;
+- редактирование ru/en/tr;
+- сохранение source JSON;
+- пересборка runtime Localisation.json;
+- валидация;
+- Auto Translate.
+
+Правила ключей:
+- ключ не должен быть пустым;
+- формат: snake_case;
+- разрешены латинские буквы, цифры и подчеркивания;
+- ключ должен начинаться с буквы;
+- ключ должен быть уникальным среди всех source-таблиц.
+
+Auto Translate:
+- берет русский текст из ru;
+- переводит в en и tr;
+- если en/tr уже заполнены, спрашивает подтверждение перед перезаписью;
+- при ошибке сети или парсинга не сохраняет частичный результат.
+
+8. Организация Editor-кода
+
+Editor-инструменты разнесены по папкам:
+- Assets/Scripts/Editor/Configs
+- Assets/Scripts/Editor/Localization
+
+Meta-файлы сохранены, чтобы Unity GUID не потерялись.
+
+9. Тесты
+
+Добавлены и обновлены EditMode-тесты для:
+- clamp CurrentValue в Stat;
+- flat/percent модификаторов;
+- TimedStatEffect;
+- загрузки 18 stat configs;
+- загрузки MVP-конфигов;
+- валидации ConfigDatabase;
+- отсутствующих id;
+- Config Editor Registry;
+- save/load/rename roundtrip для config JSON;
+- LocalisationModel ru/en/tr;
+- fallback на id для отсутствующей строки;
+- загрузки source localization tables;
+- создания default localization entry;
+- создания default localization table;
+- валидации localization entries;
+- save/load roundtrip для localization JSON;
+- создания localization key из config id;
+- поиска существующего ключа;
+- создания missing localization key без дублей.
+
+10. Коммиты
+
+Создан коммит:
+- 8248fbc Add localization manager editor
+
+11. Проверки
+
+Выполнялись проверки:
+- dotnet build для Assembly-CSharp-Editor проходил успешно после последних изменений.
+- git diff --check проходил без ошибок.
+
+Unity EditMode tests не удалось запустить через batchmode, потому что проект был открыт в другой Unity-сессии:
+- Multiple Unity instances cannot open the same project.

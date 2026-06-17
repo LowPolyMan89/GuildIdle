@@ -164,6 +164,14 @@ public sealed class GuildIdleSystemsTests
     }
 
     [Test]
+    public void ConfigEditorRegistry_ProvidesLocalisationTableIds()
+    {
+        Assert.AreEqual("stats", ConfigEditorRegistry.GetByType(typeof(StatConfig)).LocalisationTableId);
+        Assert.AreEqual("resources", ConfigEditorRegistry.GetByType(typeof(ResourceConfig)).LocalisationTableId);
+        Assert.AreEqual("hero", ConfigEditorRegistry.GetByType(typeof(HeroConfig)).LocalisationTableId);
+    }
+
+    [Test]
     public void ConfigEditorAssetIo_SaveLoadAndRenameRoundTrip()
     {
         var descriptor = ConfigEditorRegistry.GetByType(typeof(ResourceConfig));
@@ -246,6 +254,52 @@ public sealed class GuildIdleSystemsTests
         Assert.AreEqual("Assets/Configs/Localization/new_table_1.json", table.Path);
         Assert.IsNotNull(table.Config.Texts);
         Assert.AreEqual(0, table.Config.Texts.Length);
+    }
+
+    [Test]
+    public void LocalisationEditorAssetIo_CreatesLocalisationKeysFromConfigFields()
+    {
+        Assert.AreEqual("wood_name", LocalisationEditorAssetIo.CreateLocalisationKey("wood", "LocalisationNameId"));
+        Assert.AreEqual("wood_description", LocalisationEditorAssetIo.CreateLocalisationKey("wood", "LocalisationDescriptionId"));
+    }
+
+    [Test]
+    public void LocalisationEditorAssetIo_FindsExistingText()
+    {
+        Assert.IsTrue(LocalisationEditorAssetIo.TryFindText("wood_name", out var table, out var record));
+        Assert.AreEqual("resources", table.Id);
+        Assert.AreEqual("wood_name", record.Id);
+    }
+
+    [Test]
+    public void LocalisationEditorAssetIo_EnsureTextExistsCreatesMissingKeyWithoutDuplicates()
+    {
+        var tablePath = "Assets/Configs/Localization/test_shortcuts.json";
+        var key = "test_shortcuts_name";
+
+        try
+        {
+            DeleteAssetIfExists(tablePath);
+
+            var created = LocalisationEditorAssetIo.EnsureTextExists("test_shortcuts", key, out var table, out var record);
+            Assert.IsTrue(created);
+            Assert.AreEqual("test_shortcuts", table.Id);
+            Assert.AreEqual(key, record.Id);
+            Assert.AreEqual(LocalisationModel.Languages.Length, record.Text.Lang.Length);
+            Assert.IsTrue(File.Exists(tablePath));
+
+            var createdAgain = LocalisationEditorAssetIo.EnsureTextExists("test_shortcuts", key, out table, out record);
+            Assert.IsFalse(createdAgain);
+            Assert.IsTrue(LocalisationEditorAssetIo.TryReadConfig(tablePath, out var config, out var readError), readError);
+            Assert.AreEqual(1, config.Texts.Length);
+            Assert.AreEqual(key, config.Texts[0].Id);
+        }
+        finally
+        {
+            DeleteAssetIfExists(tablePath);
+            LocalisationBuilder.BuildLocalisation();
+            LocalisationModel.Reload();
+        }
     }
 
     [Test]

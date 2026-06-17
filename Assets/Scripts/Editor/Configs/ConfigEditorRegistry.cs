@@ -19,13 +19,15 @@ namespace GuildIdle.Editor
             string folderPath,
             string resourcePath,
             string idPrefix,
-            Func<string, object> createDefault)
+            Func<string, object> createDefault,
+            string localisationTableId = null)
         {
             DisplayName = displayName;
             ConfigType = configType;
             FolderPath = folderPath;
             ResourcePath = resourcePath;
             IdPrefix = idPrefix;
+            LocalisationTableId = string.IsNullOrWhiteSpace(localisationTableId) ? idPrefix : localisationTableId;
             _createDefault = createDefault;
             IdField = configType.GetField("Id", BindingFlags.Instance | BindingFlags.Public);
         }
@@ -35,6 +37,7 @@ namespace GuildIdle.Editor
         public string FolderPath { get; }
         public string ResourcePath { get; }
         public string IdPrefix { get; }
+        public string LocalisationTableId { get; }
         public FieldInfo IdField { get; }
 
         public object CreateDefault(string id)
@@ -73,8 +76,8 @@ namespace GuildIdle.Editor
     {
         private static readonly ConfigTypeDescriptor[] _descriptors =
         {
-            new ConfigTypeDescriptor("Stats", typeof(StatConfig), "Assets/Configs/Stats/Resources/Stats", ConfigDatabase.StatsResourcePath, "stat", CreateStat),
-            new ConfigTypeDescriptor("Resources", typeof(ResourceConfig), "Assets/Configs/Resources/Resources/GameResources", ConfigDatabase.ResourcesResourcePath, "resource", CreateResource),
+            new ConfigTypeDescriptor("Stats", typeof(StatConfig), "Assets/Configs/Stats/Resources/Stats", ConfigDatabase.StatsResourcePath, "stat", CreateStat, "stats"),
+            new ConfigTypeDescriptor("Resources", typeof(ResourceConfig), "Assets/Configs/Resources/Resources/GameResources", ConfigDatabase.ResourcesResourcePath, "resource", CreateResource, "resources"),
             new ConfigTypeDescriptor("Heroes", typeof(HeroConfig), "Assets/Configs/Heroes/Resources/Heroes", ConfigDatabase.HeroesResourcePath, "hero", CreateHero),
             new ConfigTypeDescriptor("Hero Growth", typeof(HeroGrowthConfig), "Assets/Configs/HeroGrowth/Resources/HeroGrowth", ConfigDatabase.HeroGrowthResourcePath, "growth", CreateHeroGrowth),
             new ConfigTypeDescriptor("Skills", typeof(SkillConfig), "Assets/Configs/Skills/Resources/Skills", ConfigDatabase.SkillsResourcePath, "skill", CreateSkill),
