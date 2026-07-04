@@ -1,0 +1,103 @@
+{
+    "sources": [
+        {
+            "config_id": "activity_configs",
+            "display_name": "GuildIdle - Activity Configs",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/10MOjF_GtcZcji0yv-dk69LtW3kfg6HqC2dyrdy9oa3w",
+            "source_type": "GoogleSheet",
+            "enabled": true,
+            "output_json_path": "Assets/Editor/ConfigSources/Downloaded/activity_configs.json",
+            "last_download_status": "not_downloaded",
+            "last_download_time": "",
+            "error_message": ""
+        },
+        {
+            "config_id": "enemies_configs",
+            "display_name": "GuildIdle - Enemies Configs",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/1hjKKBn81MF6rn6dUECc6MQZoJ-q6TquicYd6CED8gQ4",
+            "source_type": "GoogleSheet",
+            "enabled": true,
+            "output_json_path": "Assets/Editor/ConfigSources/Downloaded/enemies_configs.json",
+            "last_download_status": "not_downloaded",
+            "last_download_time": "",
+            "error_message": ""
+        },
+        {
+            "config_id": "storage_configs",
+            "display_name": "GuildIdle - Storage Configs",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/1hSoVEQGuNQOpzQEtIWC95OthajpCXUjjbJe4AxA08-U",
+            "source_type": "GoogleSheet",
+            "enabled": true,
+            "output_json_path": "Assets/Editor/ConfigSources/Downloaded/storage_configs.json",
+            "last_download_status": "not_downloaded",
+            "last_download_time": "",
+            "error_message": ""
+        },
+        {
+            "config_id": "map_configs",
+            "display_name": "GuildIdle - Map Configs",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/1dc3A4rq8rTh8wgMYk8Jze-MyJY986F76K35X5qqX1mo",
+            "source_type": "GoogleSheet",
+            "enabled": true,
+            "output_json_path": "Assets/Editor/ConfigSources/Downloaded/map_configs.json",
+            "last_download_status": "not_downloaded",
+            "last_download_time": "",
+            "error_message": ""
+        },
+        {
+            "config_id": "localisation",
+            "display_name": "GuildIdle - Localisation",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/1j1cPqDSoFHRlxAyeL6T9ma15D29IY9rmubP1y09uVEk",
+            "source_type": "GoogleSheet",
+            "enabled": true,
+            "output_json_path": "Assets/Editor/ConfigSources/Downloaded/localisation.json",
+            "last_download_status": "not_downloaded",
+            "last_download_time": "",
+            "error_message": ""
+        },
+        {
+            "config_id": "items_configs",
+            "display_name": "GuildIdle - Items Configs",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/1URJdSKzwWwhAZgviDkdYNgdHR8IqCVfCoq77GvYY4iw",
+            "source_type": "GoogleSheet",
+            "enabled": true,
+            "output_json_path": "Assets/Editor/ConfigSources/Downloaded/items_configs.json",
+            "last_download_status": "not_downloaded",
+            "last_download_time": "",
+            "error_message": ""
+        },
+        {
+            "config_id": "formula_configs",
+            "display_name": "GuildIdle - Formula Configs",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/1WwMrY9HtVyqWiKI_wBIh4M7zikh4ocMVbj2LA4bKCT0",
+            "source_type": "GoogleSheet",
+            "enabled": true,
+            "output_json_path": "Assets/Editor/ConfigSources/Downloaded/formula_configs.json",
+            "last_download_status": "not_downloaded",
+            "last_download_time": "",
+            "error_message": ""
+        },
+        {
+            "config_id": "loot_configs",
+            "display_name": "GuildIdle - Loot Configs",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/1Y1YePRz3EXU_Vs5ibbAe81v9n0Ef4_k1Hgja57rSGV8",
+            "source_type": "GoogleSheet",
+            "enabled": true,
+            "output_json_path": "Assets/Editor/ConfigSources/Downloaded/loot_configs.json",
+            "last_download_status": "not_downloaded",
+            "last_download_time": "",
+            "error_message": ""
+        },
+        {
+            "config_id": "buildings_configs",
+            "display_name": "GuildIdle - Buildings Configs",
+            "sheet_url": "https://docs.google.com/spreadsheets/d/1oHtDe-dr3-qDds4ZiUYjYBwpafwyr7X11FGJ5Qp1A7k",
+            "source_type": "GoogleSheet",
+            "enabled": true,
+            "output_json_path": "Assets/Editor/ConfigSources/Downloaded/buildings_configs.json",
+            "last_download_status": "not_downloaded",
+            "last_download_time": "",
+            "error_message": ""
+        }
+    ]
+}
