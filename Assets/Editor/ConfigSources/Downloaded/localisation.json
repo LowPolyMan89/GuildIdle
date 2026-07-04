@@ -1,0 +1,1297 @@
+﻿{
+    "config_id": "localisation",
+    "display_name": "GuildIdle - Localisation",
+    "source_type": "GoogleSheet",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1j1cPqDSoFHRlxAyeL6T9ma15D29IY9rmubP1y09uVEk",
+    "downloaded_at_utc": "2026-07-04T16:28:17.5345166Z",
+    "rows": [
+        {
+            "cells": [
+                "id",
+                "Ru",
+                "En",
+                "Tr"
+            ]
+        },
+        {
+            "cells": [
+                "hero.aska.name",
+                "Аська",
+                "Aska",
+                "Aska"
+            ]
+        },
+        {
+            "cells": [
+                "hero.aska.description",
+                "Ловкая охотница и травница. Хорошо подходит для охоты, сбора и дальнего боя.",
+                "A nimble hunter and herbalist. Good at hunting, gathering, and ranged combat.",
+                "Çevik bir avcı ve bitki uzmanı. Avcılık, toplama ve menzilli savaşta iyidir."
+            ]
+        },
+        {
+            "cells": [
+                "hero.ren.name",
+                "Рен",
+                "Ren",
+                "Ren"
+            ]
+        },
+        {
+            "cells": [
+                "hero.ren.description",
+                "Стартовый герой гильдии. Надёжный авантюрист, который помогает восстановить Холл.",
+                "The guild's starting hero. A reliable adventurer who helps restore the Hall.",
+                "Loncanın başlangıç kahramanı. Holü onarmaya yardım eden güvenilir bir maceracı."
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_pine_wood.name",
+                "Сосновая древесина",
+                "Pine Wood",
+                "Çam Odunu"
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_pine_wood.description",
+                "Базовая древесина из Подлеска. Используется для ремонта и производства.",
+                "Basic wood from the Underwood. Used for repairs and production.",
+                "Alt Orman'dan elde edilen temel odun. Onarım ve üretimde kullanılır."
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_pine_plank.name",
+                "Сосновая доска",
+                "Pine Plank",
+                "Çam Tahtası"
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_pine_plank.description",
+                "Обработанная древесина из Плотницкой. Нужна для зданий и простого снаряжения.",
+                "Processed wood from the Carpentry. Needed for buildings and simple equipment.",
+                "Marangozhanede işlenmiş odun. Binalar ve basit ekipman için gerekir."
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_copper_ore.name",
+                "Медная руда",
+                "Copper Ore",
+                "Bakır Cevheri"
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_copper_ore.description",
+                "Сырая руда из Заброшенной шахты. Переплавляется в слитки.",
+                "Raw ore from the Abandoned Mine. Smelt it into ingots.",
+                "Terk Edilmiş Maden'den çıkan ham cevher. Külçeye eritilir."
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_copper_ingot.name",
+                "Медный слиток",
+                "Copper Ingot",
+                "Bakır Külçesi"
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_copper_ingot.description",
+                "Переплавленная медь. Используется в Кузнице и Литейной.",
+                "Smelted copper. Used in the Forge and Foundry.",
+                "Eritilmiş bakır. Demirhane ve Dökümhanede kullanılır."
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_copper_nails.name",
+                "Медные гвозди",
+                "Copper Nails",
+                "Bakır Çiviler"
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_copper_nails.description",
+                "Простой строительный компонент для ремонта зданий и крафта.",
+                "A simple construction component for repairs and crafting.",
+                "Onarım ve üretim için basit bir yapı bileşeni."
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_flax.name",
+                "Лён",
+                "Flax",
+                "Keten"
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_flax.description",
+                "Растительное волокно с полей. Используется для нитей и лёгкого снаряжения.",
+                "Plant fiber from the fields. Used for thread and light equipment.",
+                "Tarlalardan elde edilen bitki lifi. İplik ve hafif ekipmanda kullanılır."
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_linen_thread.name",
+                "Льняная нить",
+                "Linen Thread",
+                "Keten İpliği"
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_linen_thread.description",
+                "Нить из льна. Нужна для лёгкого кожаного доспеха.",
+                "Thread made from flax. Needed for light leather armor.",
+                "Ketenden yapılan iplik. Hafif deri zırh için gerekir."
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_thin_hide.name",
+                "Тонкая шкура",
+                "Thin Hide",
+                "İnce Deri"
+            ]
+        },
+        {
+            "cells": [
+                "item.resource_thin_hide.description",
+                "Лёгкая шкура, добываемая на охоте. Материал для простой брони.",
+                "Light hide gained from hunting. A material for simple armor.",
+                "Avcılıktan elde edilen hafif deri. Basit zırh malzemesi."
+            ]
+        },
+        {
+            "cells": [
+                "item.item_wooden_club.name",
+                "Деревянная дубинка",
+                "Wooden Club",
+                "Tahta Sopa"
+            ]
+        },
+        {
+            "cells": [
+                "item.item_wooden_club.description",
+                "Грубое стартовое оружие Рена. Лучше, чем голые руки.",
+                "Ren's crude starting weapon. Better than bare hands.",
+                "Ren'in kaba başlangıç silahı. Çıplak ellerden iyidir."
+            ]
+        },
+        {
+            "cells": [
+                "item.item_copper_sword.name",
+                "Медный меч",
+                "Copper Sword",
+                "Bakır Kılıç"
+            ]
+        },
+        {
+            "cells": [
+                "item.item_copper_sword.description",
+                "Простое оружие ближнего боя из меди.",
+                "A simple melee weapon made of copper.",
+                "Bakırdan yapılmış basit bir yakın dövüş silahı."
+            ]
+        },
+        {
+            "cells": [
+                "item.item_aska_bow.name",
+                "Лук Аськи",
+                "Aska's Bow",
+                "Aska'nın Yayı"
+            ]
+        },
+        {
+            "cells": [
+                "item.item_aska_bow.description",
+                "Лёгкий лук, созданный по рецепту Аськи.",
+                "A light bow crafted from Aska's recipe.",
+                "Aska'nın tarifinden yapılan hafif bir yay."
+            ]
+        },
+        {
+            "cells": [
+                "item.item_simple_shield.name",
+                "Простой щит",
+                "Simple Shield",
+                "Basit Kalkan"
+            ]
+        },
+        {
+            "cells": [
+                "item.item_simple_shield.description",
+                "Базовый щит для offhand-слота. Повышает выживаемость.",
+                "A basic shield for the offhand slot. Improves survivability.",
+                "Yan el yuvası için temel bir kalkan. Hayatta kalmayı artırır."
+            ]
+        },
+        {
+            "cells": [
+                "item.item_light_leather_armor.name",
+                "Лёгкий кожаный доспех",
+                "Light Leather Armor",
+                "Hafif Deri Zırh"
+            ]
+        },
+        {
+            "cells": [
+                "item.item_light_leather_armor.description",
+                "Лёгкая броня из тонкой шкуры и льняной нити.",
+                "Light armor made from thin hide and linen thread.",
+                "İnce deri ve keten ipliğinden yapılan hafif zırh."
+            ]
+        },
+        {
+            "cells": [
+                "item.recipe_aska_bow.name",
+                "Рецепт: Лук Аськи",
+                "Recipe: Aska's Bow",
+                "Tarif: Aska'nın Yayı"
+            ]
+        },
+        {
+            "cells": [
+                "item.recipe_aska_bow.description",
+                "Расходуемый рецепт для создания Лука Аськи.",
+                "A consumable recipe for crafting Aska's Bow.",
+                "Aska'nın Yayını üretmek için tüketilen tarif."
+            ]
+        },
+        {
+            "cells": [
+                "item.consumable_hunting_potion.name",
+                "Зелье охоты",
+                "Hunting Potion",
+                "Avcılık İksiri"
+            ]
+        },
+        {
+            "cells": [
+                "item.consumable_hunting_potion.description",
+                "Снижает риск боя во время охоты и помогает принести больше шкуры.",
+                "Reduces combat risk during hunting and helps bring back more hide.",
+                "Av sırasında savaş riskini azaltır ve daha fazla deri getirmeye yardım eder."
+            ]
+        },
+        {
+            "cells": [
+                "gold_name_id",
+                "Золото",
+                "Gold",
+                "Altın"
+            ]
+        },
+        {
+            "cells": [
+                "gold_description_id",
+                "Основная валюта гильдии. Не является предметом и не хранится на складе.",
+                "The guild's main currency. It is not an item and is not stored in the warehouse.",
+                "Loncanın ana para birimi. Eşya değildir ve depoda saklanmaz."
+            ]
+        },
+        {
+            "cells": [
+                "starter_hero_available_name_id",
+                "Стартовый Рен доступен",
+                "Starting Ren Available",
+                "Başlangıç Reni Hazır"
+            ]
+        },
+        {
+            "cells": [
+                "starter_hero_available_description_id",
+                "Первый герой Рен доступен сразу, без призыва.",
+                "The first hero, Ren, is available immediately without summoning.",
+                "İlk kahraman Ren, çağırma gerekmeden hemen hazırdır."
+            ]
+        },
+        {
+            "cells": [
+                "combat_clear_hall_forest_name_id",
+                "Очистить лес у Холла",
+                "Clear the Forest by the Hall",
+                "Holün Yanındaki Ormanı Temizle"
+            ]
+        },
+        {
+            "cells": [
+                "combat_clear_hall_forest_description_id",
+                "Победите волков у разрушенного Холла и откройте рубку сосны.",
+                "Defeat the wolves near the ruined Hall and unlock pine woodcutting.",
+                "Yıkık Hol yakınındaki kurtları yen ve çam kesimini aç."
+            ]
+        },
+        {
+            "cells": [
+                "work_pine_wood_name_id",
+                "Рубка сосны",
+                "Pine Woodcutting",
+                "Çam Kesimi"
+            ]
+        },
+        {
+            "cells": [
+                "work_pine_wood_description_id",
+                "Повторяемая добыча Сосновой древесины в Подлеске.",
+                "Repeatable gathering of Pine Wood in the Underwood.",
+                "Alt Orman'da tekrar edilebilir Çam Odunu toplama işi."
+            ]
+        },
+        {
+            "cells": [
+                "build_hall_name_id",
+                "Ремонт Холла",
+                "Repair the Hall",
+                "Holü Onar"
+            ]
+        },
+        {
+            "cells": [
+                "build_hall_description_id",
+                "Отремонтируйте Холл, чтобы открыть здания первого часа MVP.",
+                "Repair the Hall to unlock the MVP first-hour buildings.",
+                "MVP'nin ilk saat binalarını açmak için Holü onar."
+            ]
+        },
+        {
+            "cells": [
+                "inspect_carpentry_name_id",
+                "Исследовать Плотницкую",
+                "Inspect the Carpentry",
+                "Marangozhaneyi İncele"
+            ]
+        },
+        {
+            "cells": [
+                "inspect_carpentry_description_id",
+                "Осмотрите руины Плотницкой и узнайте её назначение.",
+                "Inspect the ruined Carpentry and learn what it does.",
+                "Yıkık Marangozhaneyi incele ve işlevini öğren."
+            ]
+        },
+        {
+            "cells": [
+                "inspect_warehouse_name_id",
+                "Исследовать Склад",
+                "Inspect the Warehouse",
+                "Depoyu İncele"
+            ]
+        },
+        {
+            "cells": [
+                "inspect_warehouse_description_id",
+                "Осмотрите Склад и откройте дальнейший ремонт.",
+                "Inspect the Warehouse and unlock further repairs.",
+                "Depoyu incele ve sonraki onarımları aç."
+            ]
+        },
+        {
+            "cells": [
+                "inspect_abandoned_mine_name_id",
+                "Исследовать Заброшенную шахту",
+                "Inspect the Abandoned Mine",
+                "Terk Edilmiş Madeni İncele"
+            ]
+        },
+        {
+            "cells": [
+                "inspect_abandoned_mine_description_id",
+                "Осмотрите вход в шахту, чтобы открыть добычу меди.",
+                "Inspect the mine entrance to unlock copper mining.",
+                "Bakır madenciliğini açmak için maden girişini incele."
+            ]
+        },
+        {
+            "cells": [
+                "inspect_forge_name_id",
+                "Исследовать Кузницу",
+                "Inspect the Forge",
+                "Demirhaneyi İncele"
+            ]
+        },
+        {
+            "cells": [
+                "inspect_forge_description_id",
+                "Осмотрите руины Кузницы и подготовьте её к ремонту.",
+                "Inspect the ruined Forge and prepare it for repair.",
+                "Yıkık Demirhaneyi incele ve onarıma hazırla."
+            ]
+        },
+        {
+            "cells": [
+                "inspect_watchtower_name_id",
+                "Исследовать Дозорную башню",
+                "Inspect the Watchtower",
+                "Gözcü Kulesini İncele"
+            ]
+        },
+        {
+            "cells": [
+                "inspect_watchtower_description_id",
+                "Осмотрите Дозорную башню перед зачисткой крыс.",
+                "Inspect the Watchtower before clearing out the rats.",
+                "Sıçanları temizlemeden önce Gözcü Kulesini incele."
+            ]
+        },
+        {
+            "cells": [
+                "build_warehouse_name_id",
+                "Ремонт Склада",
+                "Repair the Warehouse",
+                "Depoyu Onar"
+            ]
+        },
+        {
+            "cells": [
+                "build_warehouse_description_id",
+                "Отремонтируйте Склад, чтобы хранить ресурсы и предметы.",
+                "Repair the Warehouse to store resources and items.",
+                "Kaynakları ve eşyaları saklamak için Depoyu onar."
+            ]
+        },
+        {
+            "cells": [
+                "build_carpentry_name_id",
+                "Ремонт Плотницкой",
+                "Repair the Carpentry",
+                "Marangozhaneyi Onar"
+            ]
+        },
+        {
+            "cells": [
+                "build_carpentry_description_id",
+                "Отремонтируйте Плотницкую, чтобы перерабатывать древесину.",
+                "Repair the Carpentry to process wood.",
+                "Odunu işlemek için Marangozhaneyi onar."
+            ]
+        },
+        {
+            "cells": [
+                "work_copper_ore_name_id",
+                "Добыча меди",
+                "Copper Mining",
+                "Bakır Madenciliği"
+            ]
+        },
+        {
+            "cells": [
+                "work_copper_ore_description_id",
+                "Повторяемая добыча Медной руды в Заброшенной шахте.",
+                "Repeatable gathering of Copper Ore in the Abandoned Mine.",
+                "Terk Edilmiş Maden'de tekrar edilebilir Bakır Cevheri toplama işi."
+            ]
+        },
+        {
+            "cells": [
+                "process_pine_plank_name_id",
+                "Сосновая доска",
+                "Pine Plank",
+                "Çam Tahtası"
+            ]
+        },
+        {
+            "cells": [
+                "process_pine_plank_description_id",
+                "Производство Сосновой доски из Сосновой древесины.",
+                "Produce Pine Planks from Pine Wood.",
+                "Çam Odunundan Çam Tahtası üret."
+            ]
+        },
+        {
+            "cells": [
+                "build_foundry_name_id",
+                "Ремонт Литейной",
+                "Repair the Foundry",
+                "Dökümhaneyi Onar"
+            ]
+        },
+        {
+            "cells": [
+                "build_foundry_description_id",
+                "Отремонтируйте Литейную, чтобы плавить медь и делать гвозди.",
+                "Repair the Foundry to smelt copper and make nails.",
+                "Bakırı eritmek ve çivi yapmak için Dökümhaneyi onar."
+            ]
+        },
+        {
+            "cells": [
+                "process_copper_ingot_name_id",
+                "Медный слиток",
+                "Copper Ingot",
+                "Bakır Külçesi"
+            ]
+        },
+        {
+            "cells": [
+                "process_copper_ingot_description_id",
+                "Переплавьте Медную руду в Медный слиток.",
+                "Smelt Copper Ore into a Copper Ingot.",
+                "Bakır Cevherini Bakır Külçesine erit."
+            ]
+        },
+        {
+            "cells": [
+                "process_copper_nails_name_id",
+                "Медные гвозди",
+                "Copper Nails",
+                "Bakır Çiviler"
+            ]
+        },
+        {
+            "cells": [
+                "process_copper_nails_description_id",
+                "Изготовьте Медные гвозди из Медного слитка.",
+                "Make Copper Nails from a Copper Ingot.",
+                "Bakır Külçesinden Bakır Çiviler yap."
+            ]
+        },
+        {
+            "cells": [
+                "build_forge_name_id",
+                "Ремонт Кузницы",
+                "Repair the Forge",
+                "Demirhaneyi Onar"
+            ]
+        },
+        {
+            "cells": [
+                "build_forge_description_id",
+                "Отремонтируйте Кузницу, чтобы создавать оружие и щиты.",
+                "Repair the Forge to craft weapons and shields.",
+                "Silah ve kalkan üretmek için Demirhaneyi onar."
+            ]
+        },
+        {
+            "cells": [
+                "craft_copper_sword_name_id",
+                "Медный меч",
+                "Copper Sword",
+                "Bakır Kılıç"
+            ]
+        },
+        {
+            "cells": [
+                "craft_copper_sword_description_id",
+                "Создайте Медный меч в Кузнице.",
+                "Craft a Copper Sword at the Forge.",
+                "Demirhanede Bakır Kılıç üret."
+            ]
+        },
+        {
+            "cells": [
+                "craft_simple_shield_name_id",
+                "Простой щит",
+                "Simple Shield",
+                "Basit Kalkan"
+            ]
+        },
+        {
+            "cells": [
+                "craft_simple_shield_description_id",
+                "Создайте Простой щит в Кузнице.",
+                "Craft a Simple Shield at the Forge.",
+                "Demirhanede Basit Kalkan üret."
+            ]
+        },
+        {
+            "cells": [
+                "combat_watchtower_rats_name_id",
+                "Зачистить Дозорную башню",
+                "Clear the Watchtower",
+                "Gözcü Kulesini Temizle"
+            ]
+        },
+        {
+            "cells": [
+                "combat_watchtower_rats_description_id",
+                "Победите 6 крыс в Дозорной башне и откройте карту.",
+                "Defeat 6 rats in the Watchtower and unlock the map.",
+                "Gözcü Kulesindeki 6 sıçanı yen ve haritayı aç."
+            ]
+        },
+        {
+            "cells": [
+                "explore_fields_1_name_id",
+                "Исследовать Поля",
+                "Explore the Fields",
+                "Tarlaları Keşfet"
+            ]
+        },
+        {
+            "cells": [
+                "explore_fields_1_description_id",
+                "Исследуйте первую ноду карты, чтобы открыть добычу льна.",
+                "Explore the first map node to unlock flax gathering.",
+                "Keten toplamayı açmak için ilk harita noktasını keşfet."
+            ]
+        },
+        {
+            "cells": [
+                "work_flax_name_id",
+                "Добыча льна",
+                "Flax Gathering",
+                "Keten Toplama"
+            ]
+        },
+        {
+            "cells": [
+                "work_flax_description_id",
+                "Повторяемая добыча Льна на Полях.",
+                "Repeatable gathering of Flax in the Fields.",
+                "Tarlalarda tekrar edilebilir Keten toplama işi."
+            ]
+        },
+        {
+            "cells": [
+                "combat_first_map_node_name_id",
+                "Бой на ближайшей ноде",
+                "Fight at the Nearest Node",
+                "En Yakın Noktada Savaş"
+            ]
+        },
+        {
+            "cells": [
+                "combat_first_map_node_description_id",
+                "Сложный бой на первой внешней ноде карты.",
+                "A difficult fight at the first outer map node.",
+                "İlk dış harita noktasında zorlu savaş."
+            ]
+        },
+        {
+            "cells": [
+                "grant_aska_and_recipe_name_id",
+                "Получить Аську и рецепт",
+                "Recruit Aska and Get the Recipe",
+                "Aska'yı Al ve Tarifi Edin"
+            ]
+        },
+        {
+            "cells": [
+                "grant_aska_and_recipe_description_id",
+                "Получите героя Аську и рецепт Лука Аськи.",
+                "Receive the hero Aska and the recipe for Aska's Bow.",
+                "Kahraman Aska'yı ve Aska'nın Yayı tarifini al."
+            ]
+        },
+        {
+            "cells": [
+                "craft_aska_bow_name_id",
+                "Лук Аськи",
+                "Aska's Bow",
+                "Aska'nın Yayı"
+            ]
+        },
+        {
+            "cells": [
+                "craft_aska_bow_description_id",
+                "Создайте Лук Аськи по расходуемому рецепту.",
+                "Craft Aska's Bow using a consumable recipe.",
+                "Tüketilen bir tarif kullanarak Aska'nın Yayını üret."
+            ]
+        },
+        {
+            "cells": [
+                "build_workshop_name_id",
+                "Ремонт Мастерской",
+                "Repair the Workshop",
+                "Atölyeyi Onar"
+            ]
+        },
+        {
+            "cells": [
+                "build_workshop_description_id",
+                "Отремонтируйте Мастерскую, чтобы открыть нить и лёгкую броню.",
+                "Repair the Workshop to unlock thread and light armor.",
+                "İplik ve hafif zırhı açmak için Atölyeyi onar."
+            ]
+        },
+        {
+            "cells": [
+                "hunt_rabbits_name_id",
+                "Охота на кроликов",
+                "Rabbit Hunting",
+                "Tavşan Avı"
+            ]
+        },
+        {
+            "cells": [
+                "hunt_rabbits_description_id",
+                "Опасная охота с шансом боя и добычей Тонкой шкуры.",
+                "Dangerous hunting with a chance of combat and Thin Hide rewards.",
+                "Savaş riski olan ve İnce Deri kazandıran tehlikeli av."
+            ]
+        },
+        {
+            "cells": [
+                "process_linen_thread_name_id",
+                "Льняная нить",
+                "Linen Thread",
+                "Keten İpliği"
+            ]
+        },
+        {
+            "cells": [
+                "process_linen_thread_description_id",
+                "Производство Льняной нити из Льна.",
+                "Produce Linen Thread from Flax.",
+                "Ketenden Keten İpliği üret."
+            ]
+        },
+        {
+            "cells": [
+                "craft_light_leather_armor_name_id",
+                "Лёгкий кожаный доспех",
+                "Light Leather Armor",
+                "Hafif Deri Zırh"
+            ]
+        },
+        {
+            "cells": [
+                "craft_light_leather_armor_description_id",
+                "Создайте Лёгкий кожаный доспех в Мастерской.",
+                "Craft Light Leather Armor at the Workshop.",
+                "Atölyede Hafif Deri Zırh üret."
+            ]
+        },
+        {
+            "cells": [
+                "order_warehouse_rats_name_id",
+                "Снова крысы",
+                "Rats Again",
+                "Yine Sıçanlar"
+            ]
+        },
+        {
+            "cells": [
+                "order_warehouse_rats_description_id",
+                "Первое задание на Доске в Холле: победить 15 крыс на Складе.",
+                "The first Hall Board task: defeat 15 rats in the Warehouse.",
+                "Hol Panosundaki ilk görev: Depoda 15 sıçanı yen."
+            ]
+        },
+        {
+            "cells": [
+                "trader_arrival_event_name_id",
+                "Странствующий торговец",
+                "Traveling Trader",
+                "Gezgin Tüccar"
+            ]
+        },
+        {
+            "cells": [
+                "trader_arrival_event_description_id",
+                "Временное событие торговца во время первого часа MVP.",
+                "A temporary trader event during the first MVP hour.",
+                "MVP'nin ilk saatinde geçici bir tüccar etkinliği."
+            ]
+        },
+        {
+            "cells": [
+                "skill_gathering_name_id",
+                "Сбор",
+                "Gathering",
+                "Toplama"
+            ]
+        },
+        {
+            "cells": [
+                "skill_gathering_description_id",
+                "Навык добычи базовых ресурсов.",
+                "Skill for gathering basic resources.",
+                "Temel kaynakları toplama yeteneği."
+            ]
+        },
+        {
+            "cells": [
+                "skill_processing_name_id",
+                "Обработка",
+                "Processing",
+                "İşleme"
+            ]
+        },
+        {
+            "cells": [
+                "skill_processing_description_id",
+                "Навык переработки сырья в материалы.",
+                "Skill for processing raw resources into materials.",
+                "Ham kaynakları malzemeye dönüştürme yeteneği."
+            ]
+        },
+        {
+            "cells": [
+                "skill_crafting_name_id",
+                "Ремесло",
+                "Crafting",
+                "Zanaat"
+            ]
+        },
+        {
+            "cells": [
+                "skill_crafting_description_id",
+                "Навык создания предметов по рецептам.",
+                "Skill for crafting items from recipes.",
+                "Tariflerden eşya üretme yeteneği."
+            ]
+        },
+        {
+            "cells": [
+                "skill_hunting_name_id",
+                "Охота",
+                "Hunting",
+                "Avcılık"
+            ]
+        },
+        {
+            "cells": [
+                "skill_hunting_description_id",
+                "Навык опасной охоты; снижает риск боя.",
+                "Skill for dangerous hunting; reduces combat risk.",
+                "Tehlikeli av yeteneği; savaş riskini azaltır."
+            ]
+        },
+        {
+            "cells": [
+                "skill_production_name_id",
+                "Производство",
+                "Production",
+                "Üretim"
+            ]
+        },
+        {
+            "cells": [
+                "skill_production_description_id",
+                "Навык создания снаряжения и готовых предметов.",
+                "Skill for producing equipment and finished items.",
+                "Ekipman ve tamamlanmış eşyalar üretme yeteneği."
+            ]
+        },
+        {
+            "cells": [
+                "skill_exploration_name_id",
+                "Исследование",
+                "Exploration",
+                "Keşif"
+            ]
+        },
+        {
+            "cells": [
+                "skill_exploration_description_id",
+                "Навык осмотра зданий и исследования карты.",
+                "Skill for inspecting buildings and exploring the map.",
+                "Binaları inceleme ve haritayı keşfetme yeteneği."
+            ]
+        },
+        {
+            "cells": [
+                "skill_construction_name_id",
+                "Строительство",
+                "Construction",
+                "İnşaat"
+            ]
+        },
+        {
+            "cells": [
+                "skill_construction_description_id",
+                "Навык ремонта и восстановления зданий.",
+                "Skill for repairing and restoring buildings.",
+                "Binaları onarma ve yenileme yeteneği."
+            ]
+        },
+        {
+            "cells": [
+                "skill_combat_name_id",
+                "Бой",
+                "Combat",
+                "Savaş"
+            ]
+        },
+        {
+            "cells": [
+                "skill_combat_description_id",
+                "Обычный навык боя, зависящий от Силы и Ловкости.",
+                "A regular combat skill based on Strength and Agility.",
+                "Güç ve Çevikliğe bağlı normal savaş yeteneği."
+            ]
+        },
+        {
+            "cells": [
+                "rarity.common.name",
+                "Обычная",
+                "Common",
+                "Sıradan"
+            ]
+        },
+        {
+            "cells": [
+                "rarity.common.description",
+                "Базовая редкость.",
+                "Base rarity.",
+                "Temel nadirlik."
+            ]
+        },
+        {
+            "cells": [
+                "rarity.uncommon.name",
+                "Необычная",
+                "Uncommon",
+                "Sıra Dışı"
+            ]
+        },
+        {
+            "cells": [
+                "rarity.uncommon.description",
+                "Чуть выше награда, встречается реже.",
+                "Slightly better rewards, less common.",
+                "Biraz daha iyi ödüller, daha nadir."
+            ]
+        },
+        {
+            "cells": [
+                "rarity.rare.name",
+                "Редкая",
+                "Rare",
+                "Nadir"
+            ]
+        },
+        {
+            "cells": [
+                "rarity.rare.description",
+                "Заметно более ценная редкость.",
+                "A noticeably more valuable rarity.",
+                "Belirgin şekilde daha değerli nadirlik."
+            ]
+        },
+        {
+            "cells": [
+                "rarity.epic.name",
+                "Эпическая",
+                "Epic",
+                "Epik"
+            ]
+        },
+        {
+            "cells": [
+                "rarity.epic.description",
+                "Высокая редкость для будущего контента.",
+                "High rarity for future content.",
+                "Gelecek içerik için yüksek nadirlik."
+            ]
+        },
+        {
+            "cells": [
+                "rarity.legendary.name",
+                "Легендарная",
+                "Legendary",
+                "Efsanevi"
+            ]
+        },
+        {
+            "cells": [
+                "rarity.legendary.description",
+                "Очень высокая редкость для особых наград.",
+                "Very high rarity for special rewards.",
+                "Özel ödüller için çok yüksek nadirlik."
+            ]
+        },
+        {
+            "cells": [
+                "building_hall_name_id",
+                "Холл",
+                "Hall",
+                "Hol"
+            ]
+        },
+        {
+            "cells": [
+                "building_hall_description_id",
+                "Центральное здание гильдии. В MVP открывает нужные здания первого часа.",
+                "The guild's central building. In the MVP, it unlocks the first-hour buildings.",
+                "Loncanın merkez binası. MVP'de ilk saat binalarını açar."
+            ]
+        },
+        {
+            "cells": [
+                "building_tavern_name_id",
+                "Таверна",
+                "Tavern",
+                "Taverna"
+            ]
+        },
+        {
+            "cells": [
+                "building_tavern_description_id",
+                "Стартовое место героя. Рен доступен сразу.",
+                "The starting hero location. Ren is available immediately.",
+                "Başlangıç kahraman noktası. Ren hemen hazırdır."
+            ]
+        },
+        {
+            "cells": [
+                "building_warehouse_name_id",
+                "Склад",
+                "Warehouse",
+                "Depo"
+            ]
+        },
+        {
+            "cells": [
+                "building_warehouse_description_id",
+                "Хранит ресурсы, предметы, рецепты и расходники.",
+                "Stores resources, items, recipes, and consumables.",
+                "Kaynakları, eşyaları, tarifleri ve tüketilebilirleri saklar."
+            ]
+        },
+        {
+            "cells": [
+                "building_underwood_name_id",
+                "Подлесок",
+                "Underwood",
+                "Alt Orman"
+            ]
+        },
+        {
+            "cells": [
+                "building_underwood_description_id",
+                "Ресурсная точка для добычи Сосновой древесины.",
+                "A resource point for gathering Pine Wood.",
+                "Çam Odunu toplamak için kaynak noktası."
+            ]
+        },
+        {
+            "cells": [
+                "building_abandoned_mine_name_id",
+                "Заброшенная шахта",
+                "Abandoned Mine",
+                "Terk Edilmiş Maden"
+            ]
+        },
+        {
+            "cells": [
+                "building_abandoned_mine_description_id",
+                "Ресурсная точка для добычи Медной руды.",
+                "A resource point for gathering Copper Ore.",
+                "Bakır Cevheri toplamak için kaynak noktası."
+            ]
+        },
+        {
+            "cells": [
+                "building_carpentry_name_id",
+                "Плотницкая",
+                "Carpentry",
+                "Marangozhane"
+            ]
+        },
+        {
+            "cells": [
+                "building_carpentry_description_id",
+                "Производственное здание для обработки древесины.",
+                "A production building for processing wood.",
+                "Odun işlemek için üretim binası."
+            ]
+        },
+        {
+            "cells": [
+                "building_foundry_name_id",
+                "Литейная",
+                "Foundry",
+                "Dökümhane"
+            ]
+        },
+        {
+            "cells": [
+                "building_foundry_description_id",
+                "Производственное здание для переплавки меди.",
+                "A production building for smelting copper.",
+                "Bakır eritmek için üretim binası."
+            ]
+        },
+        {
+            "cells": [
+                "building_forge_name_id",
+                "Кузница",
+                "Forge",
+                "Demirhane"
+            ]
+        },
+        {
+            "cells": [
+                "building_forge_description_id",
+                "Здание для создания оружия, щитов и снаряжения.",
+                "A building for crafting weapons, shields, and equipment.",
+                "Silah, kalkan ve ekipman üretme binası."
+            ]
+        },
+        {
+            "cells": [
+                "building_workshop_name_id",
+                "Мастерская",
+                "Workshop",
+                "Atölye"
+            ]
+        },
+        {
+            "cells": [
+                "building_workshop_description_id",
+                "Здание для материалов и лёгкого снаряжения.",
+                "A building for materials and light equipment.",
+                "Malzemeler ve hafif ekipman için bina."
+            ]
+        },
+        {
+            "cells": [
+                "building_watchtower_name_id",
+                "Дозорная башня",
+                "Watchtower",
+                "Gözcü Kulesi"
+            ]
+        },
+        {
+            "cells": [
+                "building_watchtower_description_id",
+                "Открывает карту и ближайшие ноды после зачистки.",
+                "Unlocks the map and nearby nodes after clearing it.",
+                "Temizlendikten sonra haritayı ve yakındaki noktaları açar."
+            ]
+        },
+        {
+            "cells": [
+                "building_trader_post_name_id",
+                "Пост торговца",
+                "Trader Post",
+                "Tüccar Noktası"
+            ]
+        },
+        {
+            "cells": [
+                "building_trader_post_description_id",
+                "Место временного события Странствующего торговца.",
+                "Location for the temporary Traveling Trader event.",
+                "Geçici Gezgin Tüccar etkinliğinin yeri."
+            ]
+        },
+        {
+            "cells": [
+                "enemy_rat_name",
+                "Крыса",
+                "Rat",
+                "Sıçan"
+            ]
+        },
+        {
+            "cells": [
+                "enemy_rat_description",
+                "Мелкий враг из руин и складов.",
+                "A small enemy found in ruins and warehouses.",
+                "Harabelerde ve depolarda bulunan küçük düşman."
+            ]
+        },
+        {
+            "cells": [
+                "enemy_lean_wolf_name",
+                "Тощий волк",
+                "Lean Wolf",
+                "Zayıf Kurt"
+            ]
+        },
+        {
+            "cells": [
+                "enemy_lean_wolf_description",
+                "Голодный волк у разрушенного Холла.",
+                "A hungry wolf near the ruined Hall.",
+                "Yıkık Hol yakınındaki aç kurt."
+            ]
+        },
+        {
+            "cells": [
+                "enemy_old_wolf_name",
+                "Старый волк",
+                "Old Wolf",
+                "Yaşlı Kurt"
+            ]
+        },
+        {
+            "cells": [
+                "enemy_old_wolf_description",
+                "Опасный волк с ближайшей внешней ноды карты.",
+                "A dangerous wolf from the nearest outer map node.",
+                "En yakın dış harita noktasındaki tehlikeli kurt."
+            ]
+        },
+        {
+            "cells": [
+                "enemy_rabbit_name",
+                "Кролик",
+                "Rabbit",
+                "Tavşan"
+            ]
+        },
+        {
+            "cells": [
+                "enemy_rabbit_description",
+                "Быстрый зверёк, который может напасть во время охоты.",
+                "A quick creature that may attack during hunting.",
+                "Av sırasında saldırabilen hızlı bir yaratık."
+            ]
+        },
+        {
+            "cells": [
+                "enemy_ability_dirty_bite_name",
+                "Грязный укус",
+                "Dirty Bite",
+                "Kirli Isırık"
+            ]
+        },
+        {
+            "cells": [
+                "enemy_ability_bleeding_claws_name",
+                "Кровавые когти",
+                "Bleeding Claws",
+                "Kanatan Pençeler"
+            ]
+        },
+        {
+            "cells": [
+                "enemy_ability_intimidating_howl_name",
+                "Пугающий вой",
+                "Intimidating Howl",
+                "Korkutucu Uluma"
+            ]
+        },
+        {
+            "cells": [
+                "enemy_ability_quick_jump_name",
+                "Резкий прыжок",
+                "Quick Jump",
+                "Hızlı Sıçrayış"
+            ]
+        },
+        {
+            "cells": [
+                "status_poison_weak_name",
+                "Слабый яд",
+                "Weak Poison",
+                "Zayıf Zehir"
+            ]
+        },
+        {
+            "cells": [
+                "status_bleed_weak_name",
+                "Слабое кровотечение",
+                "Weak Bleed",
+                "Zayıf Kanama"
+            ]
+        }
+    ]
+}

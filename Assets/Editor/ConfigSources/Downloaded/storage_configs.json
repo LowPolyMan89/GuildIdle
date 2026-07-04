@@ -1,0 +1,69 @@
+﻿{
+    "config_id": "storage_configs",
+    "display_name": "GuildIdle - Storage Configs",
+    "source_type": "GoogleSheet",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1hSoVEQGuNQOpzQEtIWC95OthajpCXUjjbJe4AxA08-U",
+    "downloaded_at_utc": "2026-07-04T16:28:13.8164749Z",
+    "rows": [
+        {
+            "cells": [
+                "storage_rule_id",
+                "item_kind",
+                "mode",
+                "max_stack",
+                "occupies_slot",
+                "allow_quality",
+                "allow_instance_id",
+                "notes"
+            ]
+        },
+        {
+            "cells": [
+                "storage_resource",
+                "resource",
+                "stack",
+                "100",
+                "TRUE",
+                "FALSE",
+                "FALSE",
+                "Ресурсы хранятся стаками."
+            ]
+        },
+        {
+            "cells": [
+                "storage_consumable",
+                "consumable",
+                "stack",
+                "20",
+                "TRUE",
+                "FALSE",
+                "FALSE",
+                "Расходники хранятся стаками."
+            ]
+        },
+        {
+            "cells": [
+                "storage_recipe",
+                "recipe",
+                "stack",
+                "20",
+                "TRUE",
+                "FALSE",
+                "FALSE",
+                "Рецепты хранятся стаками; рецепт может расходоваться при крафте."
+            ]
+        },
+        {
+            "cells": [
+                "storage_equipment",
+                "equipment",
+                "single",
+                "1",
+                "TRUE",
+                "TRUE",
+                "TRUE",
+                "Экипировка не стакается, каждый экземпляр занимает отдельную ячейку и может иметь качество."
+            ]
+        }
+    ]
+}

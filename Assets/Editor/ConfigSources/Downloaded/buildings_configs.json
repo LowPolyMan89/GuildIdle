@@ -1,0 +1,165 @@
+﻿{
+    "config_id": "buildings_configs",
+    "display_name": "GuildIdle - Buildings Configs",
+    "source_type": "GoogleSheet",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1oHtDe-dr3-qDds4ZiUYjYBwpafwyr7X11FGJ5Qp1A7k",
+    "downloaded_at_utc": "2026-07-04T16:28:25.0822409Z",
+    "rows": [
+        {
+            "cells": [
+                "building_id",
+                "name_ru",
+                "name_id",
+                "description_id",
+                "small_icon_id",
+                "levels",
+                "unlocked_by_hall_level",
+                "mvp_required",
+                "notes"
+            ]
+        },
+        {
+            "cells": [
+                "building_hall",
+                "Холл",
+                "building_hall_name_id",
+                "building_hall_description_id",
+                "building_hall_small_icon_id",
+                "1",
+                "0",
+                "TRUE",
+                "Первый этап MVP: очистить лес, добыть древесину, отремонтировать Холл. Холл ур.1 открывает все нужные MVP-здания."
+            ]
+        },
+        {
+            "cells": [
+                "building_tavern",
+                "Таверна",
+                "building_tavern_name_id",
+                "building_tavern_description_id",
+                "building_tavern_small_icon_id",
+                "1",
+                "0",
+                "TRUE",
+                "Стартовое здание. Рен доступен сразу, без призыва."
+            ]
+        },
+        {
+            "cells": [
+                "building_warehouse",
+                "Склад",
+                "building_warehouse_name_id",
+                "building_warehouse_description_id",
+                "building_warehouse_small_icon_id",
+                "1",
+                "1",
+                "TRUE",
+                "Хранение ресурсов, предметов, экипировки и расходников."
+            ]
+        },
+        {
+            "cells": [
+                "building_underwood",
+                "Подлесок",
+                "building_underwood_name_id",
+                "building_underwood_description_id",
+                "building_underwood_small_icon_id",
+                "1",
+                "1",
+                "TRUE",
+                "MVP-ресурсная точка поселения, максимум 1 уровень."
+            ]
+        },
+        {
+            "cells": [
+                "building_abandoned_mine",
+                "Заброшенная шахта",
+                "building_abandoned_mine_name_id",
+                "building_abandoned_mine_description_id",
+                "building_abandoned_mine_small_icon_id",
+                "1",
+                "1",
+                "TRUE",
+                "MVP-ресурсная точка поселения, максимум 1 уровень."
+            ]
+        },
+        {
+            "cells": [
+                "building_carpentry",
+                "Плотницкая",
+                "building_carpentry_name_id",
+                "building_carpentry_description_id",
+                "building_carpentry_small_icon_id",
+                "1",
+                "1",
+                "TRUE",
+                "Открывается Холлом ур.1, ремонтируется в первом часу."
+            ]
+        },
+        {
+            "cells": [
+                "building_foundry",
+                "Литейная",
+                "building_foundry_name_id",
+                "building_foundry_description_id",
+                "building_foundry_small_icon_id",
+                "1",
+                "1",
+                "TRUE",
+                "Открывается Холлом ур.1, ремонтируется в первом часу."
+            ]
+        },
+        {
+            "cells": [
+                "building_forge",
+                "Кузница",
+                "building_forge_name_id",
+                "building_forge_description_id",
+                "building_forge_small_icon_id",
+                "1",
+                "1",
+                "TRUE",
+                "Открывается Холлом ур.1, ремонтируется в первом часу."
+            ]
+        },
+        {
+            "cells": [
+                "building_workshop",
+                "Мастерская",
+                "building_workshop_name_id",
+                "building_workshop_description_id",
+                "building_workshop_small_icon_id",
+                "1",
+                "1",
+                "TRUE",
+                "Открывается Холлом ур.1, ремонтируется в первом часу."
+            ]
+        },
+        {
+            "cells": [
+                "building_watchtower",
+                "Дозорная башня",
+                "building_watchtower_name_id",
+                "building_watchtower_description_id",
+                "building_watchtower_small_icon_id",
+                "1",
+                "1",
+                "TRUE",
+                "Открывает карту и ближайшую ноду после зачистки крыс."
+            ]
+        },
+        {
+            "cells": [
+                "building_trader_post",
+                "Пост торговца",
+                "building_trader_post_name_id",
+                "building_trader_post_description_id",
+                "building_trader_post_small_icon_id",
+                "1",
+                "1",
+                "TRUE",
+                "В MVP — место события Странствующего торговца; торговля пока зашивается кодом."
+            ]
+        }
+    ]
+}

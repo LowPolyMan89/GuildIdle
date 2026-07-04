@@ -1,4 +1,4 @@
-{
+﻿{
     "sources": [
         {
             "config_id": "activity_configs",
@@ -7,8 +7,8 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "Assets/Editor/ConfigSources/Downloaded/activity_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T16:28:10.2052168Z",
             "error_message": ""
         },
         {
@@ -18,8 +18,8 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "Assets/Editor/ConfigSources/Downloaded/enemies_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T16:28:12.1590782Z",
             "error_message": ""
         },
         {
@@ -29,8 +29,8 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "Assets/Editor/ConfigSources/Downloaded/storage_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T16:28:13.8164749Z",
             "error_message": ""
         },
         {
@@ -40,8 +40,8 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "Assets/Editor/ConfigSources/Downloaded/map_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T16:28:15.7496562Z",
             "error_message": ""
         },
         {
@@ -51,8 +51,8 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "Assets/Editor/ConfigSources/Downloaded/localisation.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T16:28:17.5345166Z",
             "error_message": ""
         },
         {
@@ -62,8 +62,8 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "Assets/Editor/ConfigSources/Downloaded/items_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T16:28:19.4376177Z",
             "error_message": ""
         },
         {
@@ -73,8 +73,8 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "Assets/Editor/ConfigSources/Downloaded/formula_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T16:28:21.9234066Z",
             "error_message": ""
         },
         {
@@ -84,8 +84,8 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "Assets/Editor/ConfigSources/Downloaded/loot_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T16:28:23.9073373Z",
             "error_message": ""
         },
         {
@@ -95,8 +95,8 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "Assets/Editor/ConfigSources/Downloaded/buildings_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T16:28:25.0822409Z",
             "error_message": ""
         }
     ]

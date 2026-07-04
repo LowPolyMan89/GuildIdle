@@ -1,0 +1,39 @@
+﻿{
+    "config_id": "loot_configs",
+    "display_name": "GuildIdle - Loot Configs",
+    "source_type": "GoogleSheet",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1Y1YePRz3EXU_Vs5ibbAe81v9n0Ef4_k1Hgja57rSGV8",
+    "downloaded_at_utc": "2026-07-04T16:28:23.9073373Z",
+    "rows": [
+        {
+            "cells": [
+                "Название",
+                "loot_table_id",
+                "name_id",
+                "description_id",
+                "icon_id",
+                "table_type",
+                "roll_mode",
+                "roll_count_min",
+                "roll_count_max",
+                "enabled",
+                "notes"
+            ]
+        },
+        {
+            "cells": [
+                "Охота на кроликов",
+                "hunting_rabbits_resources",
+                "loot_table.hunting_rabbits_resources.name",
+                "loot_table.hunting_rabbits_resources.description",
+                "icon_loot_hunting_rabbits",
+                "ResourceDrop",
+                "WeightedMany",
+                "1",
+                "2",
+                "TRUE",
+                "MVP: таблица ресурсов для охоты на кроликов."
+            ]
+        }
+    ]
+}

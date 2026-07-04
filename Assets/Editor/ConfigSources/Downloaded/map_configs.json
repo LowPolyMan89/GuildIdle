@@ -1,0 +1,65 @@
+﻿{
+    "config_id": "map_configs",
+    "display_name": "GuildIdle - Map Configs",
+    "source_type": "GoogleSheet",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1dc3A4rq8rTh8wgMYk8Jze-MyJY986F76K35X5qqX1mo",
+    "downloaded_at_utc": "2026-07-04T16:28:15.7496562Z",
+    "rows": [
+        {
+            "cells": [
+                "Раздел",
+                "Поле / лист",
+                "Описание",
+                "Правило / пример"
+            ]
+        },
+        {
+            "cells": [
+                "Назначение",
+                "GuildIdle — Map Configs",
+                "Каноничный конфиг карты MVP: гексы, локации, уровни исследования, открытие активностей и опасные энкаунтеры.",
+                "Дизайн-описание лежит в документе Карта."
+            ]
+        },
+        {
+            "cells": [
+                "Доступность клеток",
+                "Нет поля required_tower_level",
+                "Доступность клетки считается в коде радиусом от стартовой клетки 0,0.",
+                "Уровень Дозорной башни задаёт радиус; конкретные клетки не хранят required_tower_level."
+            ]
+        },
+        {
+            "cells": [
+                "MapCells",
+                "cell_id",
+                "Уникальный id гекса карты.",
+                "Например: cell_fields_1."
+            ]
+        },
+        {
+            "cells": [
+                "MapCellActivities",
+                "activity_id",
+                "Ссылка на активность из Activity Configs.",
+                "Все MVP-ссылки должны существовать в Activity Configs."
+            ]
+        },
+        {
+            "cells": [
+                "DangerEncounters",
+                "Охота",
+                "Охота на кроликов всегда опасная и имеет риск боя.",
+                "Базовый risk_percent снижается skill_hunting и расходниками."
+            ]
+        },
+        {
+            "cells": [
+                "Очистка",
+                "Тестовые не-MVP ноды",
+                "Дуб, железо, электрум, чёрный лес и work_black_wood убраны из MVP-конфига.",
+                ""
+            ]
+        }
+    ]
+}
