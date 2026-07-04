@@ -393,13 +393,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                 return false;
             }
 
-            if (HtmlLooksLikeAccessDenied(html))
-            {
-                status = ConfigDownloadStatus.AccessError;
-                error = "Google Sheets returned a sign-in or access denied page.";
-                return false;
-            }
-
             foreach (Match match in _sheetCaptionRegex.Matches(html))
             {
                 if (!match.Success || match.Groups.Count < 2)
@@ -412,6 +405,13 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             if (sheetNames.Count > 0)
                 return true;
+
+            if (HtmlLooksLikeAccessDenied(html))
+            {
+                status = ConfigDownloadStatus.AccessError;
+                error = "Google Sheets returned a sign-in or access denied page.";
+                return false;
+            }
 
             status = LooksLikeHtml(html) ? ConfigDownloadStatus.FormatError : ConfigDownloadStatus.EmptyResponse;
             error = "Could not discover Google Sheets tabs.";
@@ -575,7 +575,6 @@ namespace GuildIdle.Editor.ConfigDownloader
         private static bool HtmlLooksLikeAccessDenied(string text)
         {
             return text.IndexOf("accounts.google.com", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   text.IndexOf("Sign in", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    text.IndexOf("You need access", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    text.IndexOf("Access denied", StringComparison.OrdinalIgnoreCase) >= 0;
         }
