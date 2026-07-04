@@ -58,7 +58,8 @@ namespace GuildIdle.Editor.ConfigDownloader
     public static class ConfigSourceSettingsStore
     {
         public const string SettingsPath = "Assets/Editor/ConfigSources/config_sources.json";
-        private const string DefaultOutputFolder = "Assets/Editor/ConfigSources/Downloaded";
+        private const string DefaultOutputFolder = "ConfigDownloads";
+        private const string LegacyDefaultOutputFolder = "Assets/Editor/ConfigSources/Downloaded";
 
         public static ConfigSourceSettingsCollection LoadOrCreate()
         {
@@ -96,6 +97,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             var sources = new List<ConfigSourceSettings>();
             var existingById = new Dictionary<string, ConfigSourceSettings>(StringComparer.OrdinalIgnoreCase);
+            var defaultIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             if (existing?.sources != null)
             {
@@ -114,10 +116,28 @@ namespace GuildIdle.Editor.ConfigDownloader
                 {
                     ApplyMissingDefaults(source, defaultSource);
                     sources.Add(source);
+                    defaultIds.Add(defaultSource.config_id);
                 }
                 else
                 {
                     sources.Add(defaultSource);
+                    defaultIds.Add(defaultSource.config_id);
+                }
+            }
+
+            if (existing?.sources != null)
+            {
+                foreach (var source in existing.sources)
+                {
+                    if (source == null ||
+                        string.IsNullOrWhiteSpace(source.config_id) ||
+                        defaultIds.Contains(source.config_id))
+                    {
+                        continue;
+                    }
+
+                    ApplyCustomMissingDefaults(source);
+                    sources.Add(source);
                 }
             }
 
@@ -136,10 +156,43 @@ namespace GuildIdle.Editor.ConfigDownloader
                 source.source_type = defaultSource.source_type;
 
             if (string.IsNullOrWhiteSpace(source.output_json_path))
+            {
                 source.output_json_path = defaultSource.output_json_path;
+            }
+            else if (IsLegacyDefaultOutputPath(source.config_id, source.output_json_path))
+            {
+                source.output_json_path = defaultSource.output_json_path;
+                source.last_download_status = ConfigDownloadStatus.NotDownloaded;
+                source.last_download_time = string.Empty;
+                source.error_message = string.Empty;
+            }
 
             if (string.IsNullOrWhiteSpace(source.last_download_status))
                 source.last_download_status = ConfigDownloadStatus.NotDownloaded;
+        }
+
+        private static void ApplyCustomMissingDefaults(ConfigSourceSettings source)
+        {
+            if (string.IsNullOrWhiteSpace(source.display_name))
+                source.display_name = source.config_id;
+
+            if (string.IsNullOrWhiteSpace(source.source_type))
+                source.source_type = "GoogleSheet";
+
+            if (string.IsNullOrWhiteSpace(source.output_json_path))
+                source.output_json_path = $"{DefaultOutputFolder}/{source.config_id}.json";
+
+            if (string.IsNullOrWhiteSpace(source.last_download_status))
+                source.last_download_status = ConfigDownloadStatus.NotDownloaded;
+        }
+
+        private static bool IsLegacyDefaultOutputPath(string configId, string outputPath)
+        {
+            if (string.IsNullOrWhiteSpace(configId) || string.IsNullOrWhiteSpace(outputPath))
+                return false;
+
+            var expected = $"{LegacyDefaultOutputFolder}/{configId}.json";
+            return string.Equals(outputPath.Replace('\\', '/'), expected, StringComparison.OrdinalIgnoreCase);
         }
 
         private static ConfigSourceSettings[] CreateDefaultSources()
@@ -182,10 +235,29 @@ namespace GuildIdle.Editor.ConfigDownloader
             if (collection?.sources == null)
                 return;
 
+            var enabledSources = new List<ConfigSourceSettings>();
             foreach (var source in collection.sources)
             {
                 if (source != null && source.enabled)
-                    Download(source);
+                    enabledSources.Add(source);
+            }
+
+            try
+            {
+                for (var index = 0; index < enabledSources.Count; index++)
+                {
+                    var source = enabledSources[index];
+                    var progress = enabledSources.Count == 0 ? 1f : (float)index / enabledSources.Count;
+                    EditorUtility.DisplayProgressBar(
+                        "Downloading configs",
+                        $"Downloading {source.display_name} ({index + 1}/{enabledSources.Count})",
+                        progress);
+                    Download(source, false);
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
             }
 
             ConfigSourceSettingsStore.Save(collection);
@@ -193,77 +265,96 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         public static void Download(ConfigSourceSettings source)
         {
+            Download(source, true);
+        }
+
+        private static void Download(ConfigSourceSettings source, bool showProgress)
+        {
             if (source == null)
                 return;
 
-            source.error_message = string.Empty;
-
-            if (!IsSupportedSourceType(source.source_type))
+            try
             {
-                Fail(source, ConfigDownloadStatus.FormatError, $"Unsupported source_type '{source.source_type}'.");
-                return;
+                if (showProgress)
+                    EditorUtility.DisplayProgressBar("Downloading config", $"Downloading {source.display_name}", 0.25f);
+
+                source.error_message = string.Empty;
+
+                if (!IsSupportedSourceType(source.source_type))
+                {
+                    Fail(source, ConfigDownloadStatus.FormatError, $"Unsupported source_type '{source.source_type}'.");
+                    return;
+                }
+
+                if (!TryCreateCsvExportUrl(source.sheet_url, out var exportUrl, out var linkError))
+                {
+                    Fail(source, ConfigDownloadStatus.LinkError, linkError);
+                    return;
+                }
+
+                if (!TryValidateOutputPath(source.output_json_path, out var outputError))
+                {
+                    Fail(source, ConfigDownloadStatus.FormatError, outputError);
+                    return;
+                }
+
+                using (var request = UnityWebRequest.Get(exportUrl))
+                {
+                    request.timeout = 30;
+                    request.SendWebRequest();
+
+                    while (!request.isDone)
+                    {
+                    }
+
+                    if (showProgress)
+                        EditorUtility.DisplayProgressBar("Downloading config", $"Processing {source.display_name}", 0.75f);
+
+                    if (request.result != UnityWebRequest.Result.Success)
+                    {
+                        var status = request.responseCode == 404 ? ConfigDownloadStatus.LinkError : ConfigDownloadStatus.AccessError;
+                        Fail(source, status, $"Request failed ({request.responseCode}): {request.error}");
+                        return;
+                    }
+
+                    var responseText = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                    if (string.IsNullOrWhiteSpace(responseText))
+                    {
+                        Fail(source, ConfigDownloadStatus.EmptyResponse, "Google Sheets returned an empty response.");
+                        return;
+                    }
+
+                    if (LooksLikeHtml(responseText))
+                    {
+                        var status = HtmlLooksLikeAccessDenied(responseText)
+                            ? ConfigDownloadStatus.AccessError
+                            : ConfigDownloadStatus.FormatError;
+                        var message = status == ConfigDownloadStatus.AccessError
+                            ? "Google Sheets returned a sign-in or access denied page."
+                            : "Google Sheets returned HTML instead of CSV data.";
+                        Fail(source, status, message);
+                        return;
+                    }
+
+                    if (!CsvParser.TryParse(responseText, out var rows, out var parseError))
+                    {
+                        Fail(source, ConfigDownloadStatus.FormatError, parseError);
+                        return;
+                    }
+
+                    if (rows.Count == 0)
+                    {
+                        Fail(source, ConfigDownloadStatus.EmptyResponse, "Google Sheets returned no rows.");
+                        return;
+                    }
+
+                    SaveDownload(source, rows);
+                }
             }
-
-            if (!TryCreateCsvExportUrl(source.sheet_url, out var exportUrl, out var linkError))
+            finally
             {
-                Fail(source, ConfigDownloadStatus.LinkError, linkError);
-                return;
-            }
-
-            if (!TryValidateOutputPath(source.output_json_path, out var outputError))
-            {
-                Fail(source, ConfigDownloadStatus.FormatError, outputError);
-                return;
-            }
-
-            using (var request = UnityWebRequest.Get(exportUrl))
-            {
-                request.timeout = 30;
-                request.SendWebRequest();
-
-                while (!request.isDone)
-                {
-                }
-
-                if (request.result != UnityWebRequest.Result.Success)
-                {
-                    var status = request.responseCode == 404 ? ConfigDownloadStatus.LinkError : ConfigDownloadStatus.AccessError;
-                    Fail(source, status, $"Request failed ({request.responseCode}): {request.error}");
-                    return;
-                }
-
-                var responseText = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
-                if (string.IsNullOrWhiteSpace(responseText))
-                {
-                    Fail(source, ConfigDownloadStatus.EmptyResponse, "Google Sheets returned an empty response.");
-                    return;
-                }
-
-                if (LooksLikeAccessDenied(responseText))
-                {
-                    Fail(source, ConfigDownloadStatus.AccessError, "Google Sheets returned a sign-in or access denied page.");
-                    return;
-                }
-
-                if (LooksLikeHtml(responseText))
-                {
-                    Fail(source, ConfigDownloadStatus.FormatError, "Google Sheets returned HTML instead of CSV data.");
-                    return;
-                }
-
-                if (!CsvParser.TryParse(responseText, out var rows, out var parseError))
-                {
-                    Fail(source, ConfigDownloadStatus.FormatError, parseError);
-                    return;
-                }
-
-                if (rows.Count == 0)
-                {
-                    Fail(source, ConfigDownloadStatus.EmptyResponse, "Google Sheets returned no rows.");
-                    return;
-                }
-
-                SaveDownload(source, rows);
+                if (showProgress)
+                    EditorUtility.ClearProgressBar();
             }
         }
 
@@ -305,11 +396,54 @@ namespace GuildIdle.Editor.ConfigDownloader
                         break;
 
                     exportUrl = $"https://docs.google.com/spreadsheets/d/{spreadsheetId}/export?format=csv";
+                    if (TryGetSheetGid(uri, out var gid))
+                        exportUrl += $"&gid={Uri.EscapeDataString(gid)}";
+
                     return true;
                 }
             }
 
             error = $"sheet_url is not a Google Sheets document URL: {sheetUrl}";
+            return false;
+        }
+
+        private static bool TryGetSheetGid(Uri uri, out string gid)
+        {
+            gid = null;
+
+            if (TryGetQueryValue(uri.Query, "gid", out gid))
+                return true;
+
+            var fragment = uri.Fragment;
+            if (!string.IsNullOrWhiteSpace(fragment) && fragment.StartsWith("#", StringComparison.Ordinal))
+                fragment = fragment.Substring(1);
+
+            return TryGetQueryValue(fragment, "gid", out gid);
+        }
+
+        private static bool TryGetQueryValue(string query, string key, out string value)
+        {
+            value = null;
+
+            if (string.IsNullOrWhiteSpace(query))
+                return false;
+
+            var trimmed = query.TrimStart('?');
+            var parts = trimmed.Split('&');
+            foreach (var part in parts)
+            {
+                var separator = part.IndexOf('=');
+                if (separator <= 0)
+                    continue;
+
+                var name = Uri.UnescapeDataString(part.Substring(0, separator));
+                if (!string.Equals(name, key, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                value = Uri.UnescapeDataString(part.Substring(separator + 1));
+                return !string.IsNullOrWhiteSpace(value);
+            }
+
             return false;
         }
 
@@ -324,9 +458,9 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
 
             var normalized = outputPath.Replace('\\', '/');
-            if (!normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            if (Path.IsPathRooted(normalized))
             {
-                error = "output_json_path must be under Assets/ and project-relative.";
+                error = "output_json_path must be project-relative, not absolute.";
                 return false;
             }
 
@@ -336,10 +470,20 @@ namespace GuildIdle.Editor.ConfigDownloader
                 return false;
             }
 
+            if (normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "Assets", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "output_json_path must be outside Assets/ so downloaded configs are not imported as Unity assets.";
+                return false;
+            }
+
+            if (!TryGetProjectRelativeFullPath(normalized, out _, out error))
+                return false;
+
             return true;
         }
 
-        private static bool LooksLikeAccessDenied(string text)
+        private static bool HtmlLooksLikeAccessDenied(string text)
         {
             return text.IndexOf("accounts.google.com", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    text.IndexOf("Sign in", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -368,14 +512,43 @@ namespace GuildIdle.Editor.ConfigDownloader
             };
 
             var outputPath = source.output_json_path.Replace('\\', '/');
-            Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
-            File.WriteAllText(outputPath, JsonUtility.ToJson(download, true), Encoding.UTF8);
-            AssetDatabase.ImportAsset(outputPath);
-            AssetDatabase.Refresh();
+            if (!TryGetProjectRelativeFullPath(outputPath, out var fullPath, out var error))
+            {
+                Fail(source, ConfigDownloadStatus.FormatError, error);
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+            File.WriteAllText(fullPath, JsonUtility.ToJson(download, true), Encoding.UTF8);
 
             source.last_download_status = ConfigDownloadStatus.Success;
             source.last_download_time = now;
             source.error_message = string.Empty;
+        }
+
+        private static bool TryGetProjectRelativeFullPath(string outputPath, out string fullPath, out string error)
+        {
+            fullPath = null;
+            error = null;
+
+            var projectRoot = Directory.GetParent(Application.dataPath)?.FullName;
+            if (string.IsNullOrWhiteSpace(projectRoot))
+            {
+                error = "Could not resolve Unity project root.";
+                return false;
+            }
+
+            var candidate = Path.GetFullPath(Path.Combine(projectRoot, outputPath));
+            var normalizedRoot = Path.GetFullPath(projectRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
+            if (!candidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                error = "output_json_path must stay inside the Unity project folder.";
+                return false;
+            }
+
+            fullPath = candidate;
+            return true;
         }
 
         private static void Fail(ConfigSourceSettings source, string status, string message)
