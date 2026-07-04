@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -36,6 +38,13 @@ namespace GuildIdle.Editor.ConfigDownloader
         public string source_type;
         public string sheet_url;
         public string downloaded_at_utc;
+        public ConfigDownloadedSheet[] sheets = Array.Empty<ConfigDownloadedSheet>();
+    }
+
+    [Serializable]
+    public sealed class ConfigDownloadedSheet
+    {
+        public string sheet_name;
         public ConfigSheetRow[] rows = Array.Empty<ConfigSheetRow>();
     }
 
@@ -230,6 +239,10 @@ namespace GuildIdle.Editor.ConfigDownloader
 
     public static class GoogleSheetConfigDownloader
     {
+        private static readonly Regex _sheetCaptionRegex = new Regex(
+            "docs-sheet-tab-caption\">([^<]+)",
+            RegexOptions.Compiled);
+
         public static void DownloadEnabled(ConfigSourceSettingsCollection collection)
         {
             if (collection?.sources == null)
@@ -286,7 +299,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     return;
                 }
 
-                if (!TryCreateCsvExportUrl(source.sheet_url, out var exportUrl, out var linkError))
+                if (!TryGetSpreadsheetId(source.sheet_url, out var spreadsheetId, out var linkError))
                 {
                     Fail(source, ConfigDownloadStatus.LinkError, linkError);
                     return;
@@ -298,58 +311,50 @@ namespace GuildIdle.Editor.ConfigDownloader
                     return;
                 }
 
-                using (var request = UnityWebRequest.Get(exportUrl))
+                if (!TryDownloadSheetNames(spreadsheetId, out var sheetNames, out var status, out var sheetError))
                 {
-                    request.timeout = 30;
-                    request.SendWebRequest();
-
-                    while (!request.isDone)
-                    {
-                    }
-
-                    if (showProgress)
-                        EditorUtility.DisplayProgressBar("Downloading config", $"Processing {source.display_name}", 0.75f);
-
-                    if (request.result != UnityWebRequest.Result.Success)
-                    {
-                        var status = request.responseCode == 404 ? ConfigDownloadStatus.LinkError : ConfigDownloadStatus.AccessError;
-                        Fail(source, status, $"Request failed ({request.responseCode}): {request.error}");
-                        return;
-                    }
-
-                    var responseText = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
-                    if (string.IsNullOrWhiteSpace(responseText))
-                    {
-                        Fail(source, ConfigDownloadStatus.EmptyResponse, "Google Sheets returned an empty response.");
-                        return;
-                    }
-
-                    if (LooksLikeHtml(responseText))
-                    {
-                        var status = HtmlLooksLikeAccessDenied(responseText)
-                            ? ConfigDownloadStatus.AccessError
-                            : ConfigDownloadStatus.FormatError;
-                        var message = status == ConfigDownloadStatus.AccessError
-                            ? "Google Sheets returned a sign-in or access denied page."
-                            : "Google Sheets returned HTML instead of CSV data.";
-                        Fail(source, status, message);
-                        return;
-                    }
-
-                    if (!CsvParser.TryParse(responseText, out var rows, out var parseError))
-                    {
-                        Fail(source, ConfigDownloadStatus.FormatError, parseError);
-                        return;
-                    }
-
-                    if (rows.Count == 0)
-                    {
-                        Fail(source, ConfigDownloadStatus.EmptyResponse, "Google Sheets returned no rows.");
-                        return;
-                    }
-
-                    SaveDownload(source, rows);
+                    Fail(source, status, sheetError);
+                    return;
                 }
+
+                var sheets = new List<ConfigDownloadedSheet>();
+                var totalRowCount = 0;
+                for (var index = 0; index < sheetNames.Count; index++)
+                {
+                    var sheetName = sheetNames[index];
+                    if (showProgress)
+                    {
+                        var progress = 0.25f + (0.7f * index / Math.Max(1, sheetNames.Count));
+                        EditorUtility.DisplayProgressBar("Downloading config", $"Downloading {source.display_name}: {sheetName}", progress);
+                    }
+
+                    if (!TryDownloadSheetRows(spreadsheetId, sheetName, out var rows, out status, out sheetError))
+                    {
+                        Fail(source, status, $"{sheetName}: {sheetError}");
+                        return;
+                    }
+
+                    sheets.Add(new ConfigDownloadedSheet
+                    {
+                        sheet_name = sheetName,
+                        rows = rows.ToArray()
+                    });
+                    totalRowCount += rows.Count;
+                }
+
+                if (sheets.Count == 0)
+                {
+                    Fail(source, ConfigDownloadStatus.EmptyResponse, "Google Sheets returned no sheets.");
+                    return;
+                }
+
+                if (totalRowCount == 0)
+                {
+                    Fail(source, ConfigDownloadStatus.EmptyResponse, "Google Sheets returned no data rows in any sheet.");
+                    return;
+                }
+
+                SaveDownload(source, sheets);
             }
             finally
             {
@@ -363,9 +368,137 @@ namespace GuildIdle.Editor.ConfigDownloader
             return string.Equals(sourceType, "GoogleSheet", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool TryCreateCsvExportUrl(string sheetUrl, out string exportUrl, out string error)
+        private static bool TryDownloadSheetNames(
+            string spreadsheetId,
+            out List<string> sheetNames,
+            out string status,
+            out string error)
         {
-            exportUrl = null;
+            sheetNames = new List<string>();
+            status = null;
+            error = null;
+
+            var url = $"https://docs.google.com/spreadsheets/d/{spreadsheetId}/edit";
+            if (!TryDownloadText(url, out var html, out var responseCode, out var requestError))
+            {
+                status = responseCode == 404 ? ConfigDownloadStatus.LinkError : ConfigDownloadStatus.AccessError;
+                error = $"Could not read spreadsheet metadata ({responseCode}): {requestError}";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                status = ConfigDownloadStatus.EmptyResponse;
+                error = "Google Sheets returned an empty metadata response.";
+                return false;
+            }
+
+            if (HtmlLooksLikeAccessDenied(html))
+            {
+                status = ConfigDownloadStatus.AccessError;
+                error = "Google Sheets returned a sign-in or access denied page.";
+                return false;
+            }
+
+            foreach (Match match in _sheetCaptionRegex.Matches(html))
+            {
+                if (!match.Success || match.Groups.Count < 2)
+                    continue;
+
+                var sheetName = WebUtility.HtmlDecode(match.Groups[1].Value).Trim();
+                if (!string.IsNullOrWhiteSpace(sheetName) && !sheetNames.Contains(sheetName))
+                    sheetNames.Add(sheetName);
+            }
+
+            if (sheetNames.Count > 0)
+                return true;
+
+            status = LooksLikeHtml(html) ? ConfigDownloadStatus.FormatError : ConfigDownloadStatus.EmptyResponse;
+            error = "Could not discover Google Sheets tabs.";
+            return false;
+        }
+
+        private static bool TryDownloadSheetRows(
+            string spreadsheetId,
+            string sheetName,
+            out List<ConfigSheetRow> rows,
+            out string status,
+            out string error)
+        {
+            rows = null;
+            status = null;
+            error = null;
+
+            var url = CreateCsvExportUrl(spreadsheetId, sheetName);
+            if (!TryDownloadText(url, out var responseText, out var responseCode, out var requestError))
+            {
+                status = responseCode == 404 ? ConfigDownloadStatus.LinkError : ConfigDownloadStatus.AccessError;
+                error = $"Request failed ({responseCode}): {requestError}";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(responseText))
+            {
+                rows = new List<ConfigSheetRow>();
+                return true;
+            }
+
+            if (LooksLikeHtml(responseText))
+            {
+                status = HtmlLooksLikeAccessDenied(responseText)
+                    ? ConfigDownloadStatus.AccessError
+                    : ConfigDownloadStatus.FormatError;
+                error = status == ConfigDownloadStatus.AccessError
+                    ? "Google Sheets returned a sign-in or access denied page."
+                    : "Google Sheets returned HTML instead of CSV data.";
+                return false;
+            }
+
+            if (!CsvParser.TryParse(responseText, out rows, out var parseError))
+            {
+                status = ConfigDownloadStatus.FormatError;
+                error = parseError;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryDownloadText(string url, out string text, out long responseCode, out string error)
+        {
+            text = null;
+            responseCode = 0;
+            error = null;
+
+            using (var request = UnityWebRequest.Get(url))
+            {
+                request.timeout = 30;
+                request.SendWebRequest();
+
+                while (!request.isDone)
+                {
+                }
+
+                responseCode = request.responseCode;
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    error = request.error;
+                    return false;
+                }
+
+                text = request.downloadHandler != null ? request.downloadHandler.text : string.Empty;
+                return true;
+            }
+        }
+
+        private static string CreateCsvExportUrl(string spreadsheetId, string sheetName)
+        {
+            return $"https://docs.google.com/spreadsheets/d/{spreadsheetId}/gviz/tq?tqx=out:csv&sheet={Uri.EscapeDataString(sheetName)}";
+        }
+
+        private static bool TryGetSpreadsheetId(string sheetUrl, out string spreadsheetId, out string error)
+        {
+            spreadsheetId = null;
             error = null;
 
             if (string.IsNullOrWhiteSpace(sheetUrl))
@@ -391,59 +524,15 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 if (segments[i] == "spreadsheets" && segments[i + 1] == "d")
                 {
-                    var spreadsheetId = segments[i + 2];
+                    spreadsheetId = segments[i + 2];
                     if (string.IsNullOrWhiteSpace(spreadsheetId))
                         break;
-
-                    exportUrl = $"https://docs.google.com/spreadsheets/d/{spreadsheetId}/export?format=csv";
-                    if (TryGetSheetGid(uri, out var gid))
-                        exportUrl += $"&gid={Uri.EscapeDataString(gid)}";
 
                     return true;
                 }
             }
 
             error = $"sheet_url is not a Google Sheets document URL: {sheetUrl}";
-            return false;
-        }
-
-        private static bool TryGetSheetGid(Uri uri, out string gid)
-        {
-            gid = null;
-
-            if (TryGetQueryValue(uri.Query, "gid", out gid))
-                return true;
-
-            var fragment = uri.Fragment;
-            if (!string.IsNullOrWhiteSpace(fragment) && fragment.StartsWith("#", StringComparison.Ordinal))
-                fragment = fragment.Substring(1);
-
-            return TryGetQueryValue(fragment, "gid", out gid);
-        }
-
-        private static bool TryGetQueryValue(string query, string key, out string value)
-        {
-            value = null;
-
-            if (string.IsNullOrWhiteSpace(query))
-                return false;
-
-            var trimmed = query.TrimStart('?');
-            var parts = trimmed.Split('&');
-            foreach (var part in parts)
-            {
-                var separator = part.IndexOf('=');
-                if (separator <= 0)
-                    continue;
-
-                var name = Uri.UnescapeDataString(part.Substring(0, separator));
-                if (!string.Equals(name, key, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                value = Uri.UnescapeDataString(part.Substring(separator + 1));
-                return !string.IsNullOrWhiteSpace(value);
-            }
-
             return false;
         }
 
@@ -498,7 +587,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                    trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static void SaveDownload(ConfigSourceSettings source, List<ConfigSheetRow> rows)
+        private static void SaveDownload(ConfigSourceSettings source, List<ConfigDownloadedSheet> sheets)
         {
             var now = DateTime.UtcNow.ToString("o");
             var download = new ConfigSheetDownload
@@ -508,7 +597,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 source_type = source.source_type,
                 sheet_url = source.sheet_url,
                 downloaded_at_utc = now,
-                rows = rows.ToArray()
+                sheets = sheets.ToArray()
             };
 
             var outputPath = source.output_json_path.Replace('\\', '/');
