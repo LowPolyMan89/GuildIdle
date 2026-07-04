@@ -85,6 +85,7 @@ playground.xcworkspace
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 /[Mm]emory[Cc]aptures/
+/ConfigDownloads/
 
 # Asset meta data should only be ignored when the corresponding asset is also ignored
 !/[Aa]ssets/**/*.meta

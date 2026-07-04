@@ -7,8 +7,13 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/activity_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/activity_configs.runtime.json",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T18:42:51.0521844Z",
+            "last_parse_status": "success",
+            "last_parse_time": "2026-07-04T18:48:45.5102466Z",
+            "last_validation_status": "success",
+            "last_validation_time": "2026-07-04T18:48:45.5102466Z",
             "error_message": ""
         },
         {
@@ -18,8 +23,13 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/enemies_configs.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/enemies_configs.runtime.json",
+            "last_download_status": "success",
+            "last_download_time": "2026-07-04T18:12:33.5876595Z",
+            "last_parse_status": "not_run",
+            "last_parse_time": "",
+            "last_validation_status": "not_run",
+            "last_validation_time": "",
             "error_message": ""
         },
         {
@@ -29,8 +39,13 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/storage_configs.json",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/storage_configs.runtime.json",
             "last_download_status": "not_downloaded",
             "last_download_time": "",
+            "last_parse_status": "not_run",
+            "last_parse_time": "",
+            "last_validation_status": "not_run",
+            "last_validation_time": "",
             "error_message": ""
         },
         {
@@ -40,8 +55,13 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/map_configs.json",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/map_configs.runtime.json",
             "last_download_status": "not_downloaded",
             "last_download_time": "",
+            "last_parse_status": "not_run",
+            "last_parse_time": "",
+            "last_validation_status": "not_run",
+            "last_validation_time": "",
             "error_message": ""
         },
         {
@@ -51,8 +71,13 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/localisation.json",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/localisation.runtime.json",
             "last_download_status": "not_downloaded",
             "last_download_time": "",
+            "last_parse_status": "not_run",
+            "last_parse_time": "",
+            "last_validation_status": "not_run",
+            "last_validation_time": "",
             "error_message": ""
         },
         {
@@ -62,8 +87,13 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/items_configs.json",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/items_configs.runtime.json",
             "last_download_status": "not_downloaded",
             "last_download_time": "",
+            "last_parse_status": "not_run",
+            "last_parse_time": "",
+            "last_validation_status": "not_run",
+            "last_validation_time": "",
             "error_message": ""
         },
         {
@@ -73,8 +103,13 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/formula_configs.json",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/formula_configs.runtime.json",
             "last_download_status": "not_downloaded",
             "last_download_time": "",
+            "last_parse_status": "not_run",
+            "last_parse_time": "",
+            "last_validation_status": "not_run",
+            "last_validation_time": "",
             "error_message": ""
         },
         {
@@ -84,8 +119,13 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/loot_configs.json",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/loot_configs.runtime.json",
             "last_download_status": "not_downloaded",
             "last_download_time": "",
+            "last_parse_status": "not_run",
+            "last_parse_time": "",
+            "last_validation_status": "not_run",
+            "last_validation_time": "",
             "error_message": ""
         },
         {
@@ -95,8 +135,13 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/buildings_configs.json",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/buildings_configs.runtime.json",
             "last_download_status": "not_downloaded",
             "last_download_time": "",
+            "last_parse_status": "not_run",
+            "last_parse_time": "",
+            "last_validation_status": "not_run",
+            "last_validation_time": "",
             "error_message": ""
         }
     ]

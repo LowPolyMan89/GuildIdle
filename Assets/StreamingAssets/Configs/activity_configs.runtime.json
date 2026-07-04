@@ -1,0 +1,1254 @@
+﻿{
+  "activities": [
+    {
+      "id": "starter_hero_available",
+      "nameId": "starter_hero_available_name_id",
+      "descriptionId": "starter_hero_available_description_id",
+      "iconId": "icon_tavern",
+      "type": "Event",
+      "category": "Tutorial",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Trigger",
+      "durationSec": 0,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "isRepeatable": false,
+      "offlineEnabled": false
+    },
+    {
+      "id": "combat_clear_hall_forest",
+      "nameId": "combat_clear_hall_forest_name_id",
+      "descriptionId": "combat_clear_hall_forest_description_id",
+      "iconId": "icon_combat_wolf",
+      "type": "CombatTask",
+      "category": "Combat",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Trigger",
+      "durationSec": 0,
+      "cycleSec": 0,
+      "fatigueCost": 5,
+      "mainSkillId": "skill_combat",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_combat"
+    },
+    {
+      "id": "work_pine_wood",
+      "nameId": "work_pine_wood_name_id",
+      "descriptionId": "work_pine_wood_description_id",
+      "iconId": "work_pine_wood_icon_id",
+      "type": "Work",
+      "category": "Gathering",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Cycle",
+      "durationSec": 0,
+      "cycleSec": 30,
+      "fatigueCost": 1,
+      "mainSkillId": "skill_gathering",
+      "isRepeatable": true,
+      "offlineEnabled": true,
+      "statProfileId": "profile_gathering"
+    },
+    {
+      "id": "inspect_carpentry",
+      "nameId": "inspect_carpentry_name_id",
+      "descriptionId": "inspect_carpentry_description_id",
+      "iconId": "icon_building_carpentry",
+      "type": "Explore",
+      "category": "Inspection",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Timer",
+      "durationSec": 5,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "mainSkillId": "skill_exploration",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_exploration"
+    },
+    {
+      "id": "inspect_warehouse",
+      "nameId": "inspect_warehouse_name_id",
+      "descriptionId": "inspect_warehouse_description_id",
+      "iconId": "icon_building_warehouse",
+      "type": "Explore",
+      "category": "Inspection",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Timer",
+      "durationSec": 5,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "mainSkillId": "skill_exploration",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_exploration"
+    },
+    {
+      "id": "inspect_abandoned_mine",
+      "nameId": "inspect_abandoned_mine_name_id",
+      "descriptionId": "inspect_abandoned_mine_description_id",
+      "iconId": "icon_mine",
+      "type": "Explore",
+      "category": "Inspection",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Timer",
+      "durationSec": 5,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "mainSkillId": "skill_exploration",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_exploration"
+    },
+    {
+      "id": "inspect_forge",
+      "nameId": "inspect_forge_name_id",
+      "descriptionId": "inspect_forge_description_id",
+      "iconId": "icon_building_forge",
+      "type": "Explore",
+      "category": "Inspection",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Timer",
+      "durationSec": 5,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "mainSkillId": "skill_exploration",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_exploration"
+    },
+    {
+      "id": "inspect_watchtower",
+      "nameId": "inspect_watchtower_name_id",
+      "descriptionId": "inspect_watchtower_description_id",
+      "iconId": "icon_watchtower",
+      "type": "Explore",
+      "category": "Inspection",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Timer",
+      "durationSec": 5,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "mainSkillId": "skill_exploration",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_exploration"
+    },
+    {
+      "id": "work_copper_ore",
+      "nameId": "work_copper_ore_name_id",
+      "descriptionId": "work_copper_ore_description_id",
+      "iconId": "work_copper_ore_icon_id",
+      "type": "Work",
+      "category": "Gathering",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Cycle",
+      "durationSec": 0,
+      "cycleSec": 30,
+      "fatigueCost": 1,
+      "mainSkillId": "skill_gathering",
+      "isRepeatable": true,
+      "offlineEnabled": true,
+      "statProfileId": "profile_gathering"
+    },
+    {
+      "id": "combat_watchtower_rats",
+      "nameId": "combat_watchtower_rats_name_id",
+      "descriptionId": "combat_watchtower_rats_description_id",
+      "iconId": "icon_combat_rat",
+      "type": "CombatTask",
+      "category": "Combat",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Trigger",
+      "durationSec": 0,
+      "cycleSec": 0,
+      "fatigueCost": 5,
+      "mainSkillId": "skill_combat",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_combat"
+    },
+    {
+      "id": "explore_fields_1",
+      "nameId": "explore_fields_1_name_id",
+      "descriptionId": "explore_fields_1_description_id",
+      "iconId": "icon_fields",
+      "type": "Explore",
+      "category": "MapExploration",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "fields_1",
+      "progressMode": "ProgressBar",
+      "durationSec": 0,
+      "cycleSec": 30,
+      "fatigueCost": 1,
+      "mainSkillId": "skill_exploration",
+      "isRepeatable": false,
+      "offlineEnabled": true,
+      "statProfileId": "profile_exploration"
+    },
+    {
+      "id": "work_flax",
+      "nameId": "work_flax_name_id",
+      "descriptionId": "work_flax_description_id",
+      "iconId": "work_flax_icon_id",
+      "type": "Work",
+      "category": "Gathering",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "fields_1",
+      "progressMode": "Cycle",
+      "durationSec": 0,
+      "cycleSec": 30,
+      "fatigueCost": 1,
+      "mainSkillId": "skill_gathering",
+      "isRepeatable": true,
+      "offlineEnabled": true,
+      "statProfileId": "profile_gathering"
+    },
+    {
+      "id": "combat_first_map_node",
+      "nameId": "combat_first_map_node_name_id",
+      "descriptionId": "combat_first_map_node_description_id",
+      "iconId": "icon_combat_old_wolf",
+      "type": "CombatTask",
+      "category": "Combat",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "fields_1",
+      "progressMode": "Trigger",
+      "durationSec": 0,
+      "cycleSec": 0,
+      "fatigueCost": 5,
+      "mainSkillId": "skill_combat",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_combat"
+    },
+    {
+      "id": "grant_aska_and_recipe",
+      "nameId": "grant_aska_and_recipe_name_id",
+      "descriptionId": "grant_aska_and_recipe_description_id",
+      "iconId": "icon_aska",
+      "type": "Event",
+      "category": "Tutorial",
+      "rarityId": "Uncommon",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Trigger",
+      "durationSec": 0,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "isRepeatable": false,
+      "offlineEnabled": false
+    },
+    {
+      "id": "hunt_rabbits",
+      "nameId": "hunt_rabbits_name_id",
+      "descriptionId": "hunt_rabbits_description_id",
+      "iconId": "icon_hunt_rabbits",
+      "type": "Work",
+      "category": "Hunting",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Cycle",
+      "durationSec": 0,
+      "cycleSec": 30,
+      "fatigueCost": 2,
+      "mainSkillId": "skill_hunting",
+      "isRepeatable": true,
+      "offlineEnabled": true,
+      "statProfileId": "profile_hunting"
+    },
+    {
+      "id": "order_warehouse_rats",
+      "nameId": "order_warehouse_rats_name_id",
+      "descriptionId": "order_warehouse_rats_description_id",
+      "iconId": "icon_order_rats",
+      "type": "Order",
+      "category": "CombatOrder",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Trigger",
+      "durationSec": 0,
+      "cycleSec": 0,
+      "fatigueCost": 5,
+      "mainSkillId": "skill_combat",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_combat"
+    },
+    {
+      "id": "trader_arrival_event",
+      "nameId": "trader_arrival_event_name_id",
+      "descriptionId": "trader_arrival_event_description_id",
+      "iconId": "icon_trader",
+      "type": "Event",
+      "category": "Trader",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Trigger",
+      "durationSec": 0,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "isRepeatable": false,
+      "offlineEnabled": false
+    }
+  ],
+  "workDetails": [
+    {
+      "activityId": "work_pine_wood",
+      "successChance": 100,
+      "autoRepeat": true
+    },
+    {
+      "activityId": "work_copper_ore",
+      "successChance": 100,
+      "autoRepeat": true
+    },
+    {
+      "activityId": "work_flax",
+      "successChance": 100,
+      "autoRepeat": true
+    },
+    {
+      "activityId": "hunt_rabbits",
+      "successChance": 100,
+      "autoRepeat": true,
+      "failMode": "DangerEncounter"
+    }
+  ],
+  "orderDetails": [
+    {
+      "activityId": "order_warehouse_rats",
+      "orderSource": "HallBoard",
+      "reputationId": "guild_reputation",
+      "canRepeat": false,
+      "repeatCooldownSec": 0,
+      "consumeRequirementsOnStart": false
+    }
+  ],
+  "eventDetails": [
+    {
+      "activityId": "starter_hero_available",
+      "eventKind": "GrantHero",
+      "discoverConditionId": "new_game",
+      "startsCombat": false,
+      "oneTime": true,
+      "hiddenUntilDiscovered": false
+    },
+    {
+      "activityId": "grant_aska_and_recipe",
+      "eventKind": "GrantHeroAndRecipe",
+      "discoverConditionId": "combat_first_map_node_victory",
+      "startsCombat": false,
+      "oneTime": true,
+      "hiddenUntilDiscovered": true
+    },
+    {
+      "activityId": "trader_arrival_event",
+      "eventKind": "TraderArrival",
+      "discoverConditionId": "mvp_foundry_step",
+      "startsCombat": false,
+      "oneTime": true,
+      "hiddenUntilDiscovered": true
+    }
+  ],
+  "exploreDetails": [
+    {
+      "activityId": "inspect_carpentry",
+      "discoveryPointsRequired": 5,
+      "dangerLevel": 0
+    },
+    {
+      "activityId": "inspect_warehouse",
+      "discoveryPointsRequired": 5,
+      "dangerLevel": 0
+    },
+    {
+      "activityId": "inspect_abandoned_mine",
+      "discoveryPointsRequired": 5,
+      "dangerLevel": 0
+    },
+    {
+      "activityId": "inspect_forge",
+      "discoveryPointsRequired": 5,
+      "dangerLevel": 0
+    },
+    {
+      "activityId": "inspect_watchtower",
+      "discoveryPointsRequired": 5,
+      "dangerLevel": 0
+    },
+    {
+      "activityId": "explore_fields_1",
+      "unlockLocationId": "fields_1",
+      "discoveryPointsRequired": 50,
+      "dangerLevel": 0
+    }
+  ],
+  "combatDetails": [
+    {
+      "activityId": "combat_clear_hall_forest",
+      "enemyGroupId": "enemy_group_underwood_first_wolves",
+      "combatMode": "Queue_1v1",
+      "intendedFirstResult": "VictoryExpected",
+      "completionRewardRule": "ActivityRewards"
+    },
+    {
+      "activityId": "combat_watchtower_rats",
+      "enemyGroupId": "enemy_group_watchtower_rats",
+      "combatMode": "Queue_1v1",
+      "intendedFirstResult": "VictoryExpected",
+      "completionRewardRule": "ActivityRewards"
+    },
+    {
+      "activityId": "combat_first_map_node",
+      "enemyGroupId": "enemy_group_first_map_node",
+      "combatMode": "Queue_1v1",
+      "intendedFirstResult": "FirstDefeatThenVictory",
+      "completionRewardRule": "ActivityRewards"
+    },
+    {
+      "activityId": "order_warehouse_rats",
+      "enemyGroupId": "enemy_group_warehouse_rats",
+      "combatMode": "Queue_1v1",
+      "intendedFirstResult": "VictoryExpected",
+      "completionRewardRule": "ActivityRewards"
+    }
+  ],
+  "requirements": [
+    {
+      "activityId": "work_pine_wood",
+      "reqType": "BuildingLevel",
+      "targetId": "building_underwood",
+      "value": 1,
+      "consume": false,
+      "hidden": false,
+      "checkMoment": "OnStart"
+    },
+    {
+      "activityId": "work_copper_ore",
+      "reqType": "BuildingLevel",
+      "targetId": "building_abandoned_mine",
+      "value": 1,
+      "checkMoment": "OnStart",
+      "consume": false,
+      "hidden": false
+    },
+    {
+      "activityId": "hunt_rabbits",
+      "reqType": "HeroAvailable",
+      "targetId": "aska",
+      "value": 1,
+      "checkMoment": "OnStart",
+      "consume": false,
+      "hidden": false
+    },
+    {
+      "activityId": "combat_watchtower_rats",
+      "reqType": "BuildingLevel",
+      "targetId": "building_watchtower",
+      "value": 1,
+      "consume": false,
+      "hidden": false,
+      "checkMoment": "OnStart"
+    },
+    {
+      "activityId": "work_flax",
+      "reqType": "LocationUnlocked",
+      "targetId": "fields_1",
+      "value": 1,
+      "consume": false,
+      "hidden": false,
+      "checkMoment": "OnStart"
+    },
+    {
+      "activityId": "order_warehouse_rats",
+      "reqType": "BuildingLevel",
+      "targetId": "building_hall",
+      "value": 1,
+      "consume": false,
+      "hidden": false,
+      "checkMoment": "OnStart"
+    }
+  ],
+  "rewards": [
+    {
+      "activityId": "starter_hero_available",
+      "rewardType": "Hero",
+      "targetId": "ren",
+      "min": 1,
+      "max": 1,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "starter_hero_available",
+      "rewardType": "Equipment",
+      "targetId": "item_wooden_club",
+      "min": 1,
+      "max": 1,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "combat_clear_hall_forest",
+      "rewardType": "BuildingUnlock",
+      "targetId": "building_underwood",
+      "min": 1,
+      "max": 1,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "combat_clear_hall_forest",
+      "rewardType": "SkillExp",
+      "targetId": "skill_combat",
+      "min": 15,
+      "max": 15,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "work_pine_wood",
+      "rewardType": "Resource",
+      "targetId": "resource_pine_wood",
+      "min": 1,
+      "max": 3,
+      "chance": 100,
+      "grantMoment": "OnCycle"
+    },
+    {
+      "activityId": "work_pine_wood",
+      "rewardType": "SkillExp",
+      "targetId": "skill_gathering",
+      "min": 10,
+      "max": 10,
+      "chance": 100,
+      "grantMoment": "OnCycle"
+    },
+    {
+      "activityId": "inspect_abandoned_mine",
+      "rewardType": "BuildingUnlock",
+      "targetId": "building_abandoned_mine",
+      "min": 1,
+      "max": 1,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "work_copper_ore",
+      "rewardType": "Resource",
+      "targetId": "resource_copper_ore",
+      "min": 1,
+      "max": 3,
+      "chance": 100,
+      "grantMoment": "OnCycle"
+    },
+    {
+      "activityId": "work_copper_ore",
+      "rewardType": "SkillExp",
+      "targetId": "skill_gathering",
+      "min": 10,
+      "max": 10,
+      "chance": 100,
+      "grantMoment": "OnCycle"
+    },
+    {
+      "activityId": "combat_watchtower_rats",
+      "rewardType": "BuildingUnlock",
+      "targetId": "building_watchtower",
+      "min": 1,
+      "max": 1,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "combat_watchtower_rats",
+      "rewardType": "MapAccess",
+      "targetId": "fields_1",
+      "min": 1,
+      "max": 1,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "work_flax",
+      "rewardType": "Resource",
+      "targetId": "resource_flax",
+      "min": 1,
+      "max": 3,
+      "chance": 100,
+      "grantMoment": "OnCycle"
+    },
+    {
+      "activityId": "work_flax",
+      "rewardType": "SkillExp",
+      "targetId": "skill_gathering",
+      "min": 10,
+      "max": 10,
+      "chance": 100,
+      "grantMoment": "OnCycle"
+    },
+    {
+      "activityId": "combat_first_map_node",
+      "rewardType": "Consumable",
+      "targetId": "consumable_hunting_potion",
+      "min": 1,
+      "max": 1,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "grant_aska_and_recipe",
+      "rewardType": "Hero",
+      "targetId": "aska",
+      "min": 1,
+      "max": 1,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "grant_aska_and_recipe",
+      "rewardType": "Recipe",
+      "targetId": "recipe_aska_bow",
+      "min": 1,
+      "max": 1,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "hunt_rabbits",
+      "rewardType": "Resource",
+      "targetId": "resource_thin_hide",
+      "min": 1,
+      "max": 2,
+      "chance": 100,
+      "grantMoment": "OnCycle"
+    },
+    {
+      "activityId": "hunt_rabbits",
+      "rewardType": "SkillExp",
+      "targetId": "skill_hunting",
+      "min": 10,
+      "max": 10,
+      "chance": 100,
+      "grantMoment": "OnCycle"
+    }
+  ],
+  "triggers": [],
+  "rarities": [
+    {
+      "id": "Common",
+      "nameId": "rarity.common.name",
+      "descriptionId": "rarity.common.description",
+      "iconId": "icon_rarity_common",
+      "colorHex": "#B8B8B8",
+      "weight": 100
+    },
+    {
+      "id": "Uncommon",
+      "nameId": "rarity.uncommon.name",
+      "descriptionId": "rarity.uncommon.description",
+      "iconId": "icon_rarity_uncommon",
+      "colorHex": "#35C759",
+      "rewardMult": 1.2,
+      "durationMult": 1.05,
+      "fatigueMult": 1.1,
+      "weight": 45
+    },
+    {
+      "id": "Rare",
+      "nameId": "rarity.rare.name",
+      "descriptionId": "rarity.rare.description",
+      "iconId": "icon_rarity_rare",
+      "colorHex": "#3B82F6",
+      "rewardMult": 1.6,
+      "weight": 18
+    },
+    {
+      "id": "Epic",
+      "nameId": "rarity.epic.name",
+      "descriptionId": "rarity.epic.description",
+      "iconId": "icon_rarity_epic",
+      "colorHex": "#9B5CFF",
+      "durationMult": 1.3,
+      "fatigueMult": 1.4,
+      "weight": 7
+    },
+    {
+      "id": "Legendary",
+      "nameId": "rarity.legendary.name",
+      "descriptionId": "rarity.legendary.description",
+      "iconId": "icon_rarity_legendary",
+      "colorHex": "#F5B642",
+      "rewardMult": 2.8,
+      "durationMult": 1.5,
+      "fatigueMult": 1.6,
+      "weight": 2
+    }
+  ],
+  "skills": [
+    {
+      "skillId": "skill_gathering",
+      "skillNameId": "skill_gathering_name_id",
+      "skillDescriptionId": "skill_gathering_description_id",
+      "skillIconId": "skill_gathering_icon_id"
+    },
+    {
+      "skillId": "skill_processing",
+      "skillNameId": "skill_processing_name_id",
+      "skillDescriptionId": "skill_processing_description_id",
+      "skillIconId": "skill_processing_icon_id"
+    },
+    {
+      "skillId": "skill_crafting",
+      "skillNameId": "skill_crafting_name_id",
+      "skillDescriptionId": "skill_crafting_description_id",
+      "skillIconId": "skill_crafting_icon_id"
+    },
+    {
+      "skillId": "skill_hunting",
+      "skillNameId": "skill_hunting_name_id",
+      "skillDescriptionId": "skill_hunting_description_id",
+      "skillIconId": "skill_hunting_icon_id"
+    },
+    {
+      "skillId": "skill_production",
+      "skillNameId": "skill_production_name_id",
+      "skillDescriptionId": "skill_production_description_id",
+      "skillIconId": "skill_production_icon_id"
+    },
+    {
+      "skillId": "skill_exploration",
+      "skillNameId": "skill_exploration_name_id",
+      "skillDescriptionId": "skill_exploration_description_id",
+      "skillIconId": "skill_exploration_icon_id"
+    },
+    {
+      "skillId": "skill_construction",
+      "skillNameId": "skill_construction_name_id",
+      "skillDescriptionId": "skill_construction_description_id",
+      "skillIconId": "skill_construction_icon_id"
+    },
+    {
+      "skillId": "skill_combat",
+      "skillNameId": "skill_combat_name_id",
+      "skillDescriptionId": "skill_combat_description_id",
+      "skillIconId": "skill_combat_icon_id"
+    }
+  ],
+  "skillsProgression": [
+    {
+      "level": 1,
+      "expToNextLevel": 100,
+      "totalExpRequired": 0
+    },
+    {
+      "level": 2,
+      "expToNextLevel": 160,
+      "totalExpRequired": 100
+    },
+    {
+      "level": 3,
+      "expToNextLevel": 250,
+      "totalExpRequired": 260
+    },
+    {
+      "level": 4,
+      "expToNextLevel": 380,
+      "totalExpRequired": 510
+    },
+    {
+      "level": 5,
+      "expToNextLevel": 560,
+      "totalExpRequired": 890
+    },
+    {
+      "level": 6,
+      "expToNextLevel": 800,
+      "totalExpRequired": 1450
+    },
+    {
+      "level": 7,
+      "expToNextLevel": 1120,
+      "totalExpRequired": 2250
+    },
+    {
+      "level": 8,
+      "expToNextLevel": 1540,
+      "totalExpRequired": 3370
+    },
+    {
+      "level": 9,
+      "expToNextLevel": 2080,
+      "totalExpRequired": 4910
+    },
+    {
+      "level": 10,
+      "expToNextLevel": 2760,
+      "totalExpRequired": 6990
+    },
+    {
+      "level": 11,
+      "expToNextLevel": 3600,
+      "totalExpRequired": 9750
+    },
+    {
+      "level": 12,
+      "expToNextLevel": 4620,
+      "totalExpRequired": 13350
+    },
+    {
+      "level": 13,
+      "expToNextLevel": 5840,
+      "totalExpRequired": 17970
+    },
+    {
+      "level": 14,
+      "expToNextLevel": 7280,
+      "totalExpRequired": 23810
+    },
+    {
+      "level": 15,
+      "expToNextLevel": 8960,
+      "totalExpRequired": 31090
+    },
+    {
+      "level": 16,
+      "expToNextLevel": 10900,
+      "totalExpRequired": 40050
+    },
+    {
+      "level": 17,
+      "expToNextLevel": 13120,
+      "totalExpRequired": 50950
+    },
+    {
+      "level": 18,
+      "expToNextLevel": 15640,
+      "totalExpRequired": 64070
+    },
+    {
+      "level": 19,
+      "expToNextLevel": 18480,
+      "totalExpRequired": 79710
+    },
+    {
+      "level": 20,
+      "expToNextLevel": 0,
+      "totalExpRequired": 98190
+    }
+  ],
+  "enumValues": [
+    {
+      "enumGroup": "ActivityType",
+      "value": "Work",
+      "description": "Повторяемая работа / фарм."
+    },
+    {
+      "enumGroup": "ActivityType",
+      "value": "Order",
+      "description": "Заказ с конкретной целью и наградой."
+    },
+    {
+      "enumGroup": "ActivityType",
+      "value": "Event",
+      "description": "Особая активность со скрытыми условиями или триггерами."
+    },
+    {
+      "enumGroup": "ActivityType",
+      "value": "Explore",
+      "description": "Разведка/открытие локации."
+    },
+    {
+      "enumGroup": "ActivityType",
+      "value": "CombatTask",
+      "description": "Отправка героя в бой/зачистку."
+    },
+    {
+      "enumGroup": "ProgressMode",
+      "value": "Cycle",
+      "description": "Повторяемые циклы. Награды обычно OnCycle."
+    },
+    {
+      "enumGroup": "ProgressMode",
+      "value": "Timer",
+      "description": "Один таймер до завершения. Награды обычно OnComplete."
+    },
+    {
+      "enumGroup": "ProgressMode",
+      "value": "ProgressBar",
+      "description": "Общая шкала прогресса, например строительство/разведка."
+    },
+    {
+      "enumGroup": "ProgressMode",
+      "value": "Trigger",
+      "description": "Активность в основном запускает внешний эффект."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "HeroLevel",
+      "description": "Минимальный уровень героя."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "SkillLevel",
+      "description": "Минимальный уровень навыка."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "Resource",
+      "description": "Нужный ресурс."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "Building",
+      "description": "Нужное здание."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "LocationUnlocked",
+      "description": "Открытая локация."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "HeroClass",
+      "description": "Класс/профессия героя."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "ItemEquipped",
+      "description": "Нужный экипированный предмет."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "QuestCompleted",
+      "description": "Завершённый квест/задание."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "ActivityCompleted",
+      "description": "Требуется завершённая активность."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "Item",
+      "description": "Требуется наличие предмета или ресурса по item_id."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "BuildingLevel",
+      "description": "Требуется здание указанного уровня или выше."
+    },
+    {
+      "enumGroup": "RequirementType",
+      "value": "HeroAvailable",
+      "description": "Требуется доступный герой."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "Resource",
+      "description": "Выдать ресурс."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "Gold",
+      "description": "Выдать золото."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "Item",
+      "description": "Выдать предмет."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "SkillExp",
+      "description": "Выдать опыт навыка."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "HeroExp",
+      "description": "Выдать опыт героя."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "LootTable",
+      "description": "Ссылка на внешний loot_table_id из GuildIdle — Loot Configs."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "Reputation",
+      "description": "Выдать репутацию."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "UnlockLocation",
+      "description": "Открыть локацию."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "UnlockBuilding",
+      "description": "Открыть здание."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "Hero",
+      "description": "Выдать или открыть героя."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "Equipment",
+      "description": "Выдать предмет экипировки."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "BuildingUnlock",
+      "description": "Открыть здание или уровень здания."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "MapAccess",
+      "description": "Открыть доступ к ноде или участку карты."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "Consumable",
+      "description": "Выдать расходуемый предмет."
+    },
+    {
+      "enumGroup": "RewardType",
+      "value": "Recipe",
+      "description": "Выдать рецепт."
+    },
+    {
+      "enumGroup": "Moment",
+      "value": "OnUnlock",
+      "description": "Проверка/эффект при открытии активности."
+    },
+    {
+      "enumGroup": "Moment",
+      "value": "OnStart",
+      "description": "При запуске активности."
+    },
+    {
+      "enumGroup": "Moment",
+      "value": "OnCycle",
+      "description": "На каждом цикле активности."
+    },
+    {
+      "enumGroup": "Moment",
+      "value": "OnComplete",
+      "description": "При завершении активности."
+    },
+    {
+      "enumGroup": "Moment",
+      "value": "OnFail",
+      "description": "При неудаче."
+    },
+    {
+      "enumGroup": "Moment",
+      "value": "OnCancel",
+      "description": "При отмене."
+    },
+    {
+      "enumGroup": "Moment",
+      "value": "OnFirstComplete",
+      "description": "Только при первом завершении."
+    },
+    {
+      "enumGroup": "TriggerType",
+      "value": "StartCombat",
+      "description": "Запустить бой/encounter."
+    },
+    {
+      "enumGroup": "TriggerType",
+      "value": "UnlockLocation",
+      "description": "Открыть локацию."
+    },
+    {
+      "enumGroup": "TriggerType",
+      "value": "UnlockBuilding",
+      "description": "Открыть здание."
+    },
+    {
+      "enumGroup": "TriggerType",
+      "value": "AddReputation",
+      "description": "Добавить репутацию."
+    },
+    {
+      "enumGroup": "TriggerType",
+      "value": "StartActivity",
+      "description": "Запустить другую активность."
+    },
+    {
+      "enumGroup": "TriggerType",
+      "value": "CompleteQuest",
+      "description": "Завершить квест."
+    },
+    {
+      "enumGroup": "TriggerType",
+      "value": "GiveItem",
+      "description": "Выдать предмет."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Common",
+      "description": "Обычная редкость."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Uncommon",
+      "description": "Необычная редкость."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Rare",
+      "description": "Редкая редкость."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Epic",
+      "description": "Эпическая редкость."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Legendary",
+      "description": "Легендарная редкость."
+    },
+    {
+      "enumGroup": "FailMode",
+      "value": "None",
+      "description": "Неудачи нет или не обрабатывается отдельно."
+    },
+    {
+      "enumGroup": "FailMode",
+      "value": "PartialReward",
+      "description": "При неудаче выдаётся частичная награда."
+    },
+    {
+      "enumGroup": "FailMode",
+      "value": "NoReward",
+      "description": "При неудаче награда не выдаётся."
+    },
+    {
+      "enumGroup": "FailMode",
+      "value": "RefundCost",
+      "description": "При неудаче возвращаются затраты."
+    },
+    {
+      "enumGroup": "FailMode",
+      "value": "DangerEncounter",
+      "description": "При неудаче или во время работы может запускаться опасная встреча."
+    },
+    {
+      "enumGroup": "ActivityCategory",
+      "value": "Gathering",
+      "description": "Сбор сырья: древесина, руда, травы и другие базовые ресурсы."
+    },
+    {
+      "enumGroup": "ActivityCategory",
+      "value": "Hunting",
+      "description": "Охота и добыча животного происхождения."
+    },
+    {
+      "enumGroup": "ActivityCategory",
+      "value": "Exploration",
+      "description": "Исследование и разведка локаций."
+    },
+    {
+      "enumGroup": "ActivityCategory",
+      "value": "Tutorial",
+      "description": "Обучающие и стартовые события."
+    },
+    {
+      "enumGroup": "ActivityCategory",
+      "value": "Combat",
+      "description": "Боевые активности и зачистки."
+    },
+    {
+      "enumGroup": "ActivityCategory",
+      "value": "Inspection",
+      "description": "Осмотр объектов поселения и точек интереса."
+    },
+    {
+      "enumGroup": "ActivityCategory",
+      "value": "MapExploration",
+      "description": "Исследование нод и участков карты."
+    },
+    {
+      "enumGroup": "ActivityCategory",
+      "value": "CombatOrder",
+      "description": "Боевые заказы с доски или других источников заказов."
+    },
+    {
+      "enumGroup": "ActivityCategory",
+      "value": "Trader",
+      "description": "Торговые события и появление торговцев."
+    },
+    {
+      "enumGroup": "SkillId",
+      "value": "skill_gathering",
+      "description": "Сбор: общая добыча базовых ресурсов, включая древесину и руду."
+    },
+    {
+      "enumGroup": "SkillId",
+      "value": "skill_processing",
+      "description": "Обработка: переработка сырья в материалы."
+    },
+    {
+      "enumGroup": "SkillId",
+      "value": "skill_crafting",
+      "description": "Ремесло: создание расходников, инструментов и простых предметов."
+    },
+    {
+      "enumGroup": "SkillId",
+      "value": "skill_hunting",
+      "description": "Охота."
+    },
+    {
+      "enumGroup": "SkillId",
+      "value": "skill_production",
+      "description": "Производство: броня, оружие."
+    },
+    {
+      "enumGroup": "SkillId",
+      "value": "skill_exploration",
+      "description": "Исследование."
+    },
+    {
+      "enumGroup": "SkillId",
+      "value": "skill_construction",
+      "description": "Строительство или улучшение здания."
+    },
+    {
+      "enumGroup": "SkillId",
+      "value": "skill_combat",
+      "description": "Бой: боевой навык, прокачивается через боевые активности."
+    }
+  ]
+}
