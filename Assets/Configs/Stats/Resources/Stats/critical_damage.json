@@ -1,7 +1,0 @@
-{
-  "Id": "critical_damage",
-  "Category": "combat",
-  "LocalisationNameId": "critical_damage_name",
-  "LocalisationDescriptionId": "critical_damage_description",
-  "IconId": "Icons/Stats/critical_damage_icon"
-}

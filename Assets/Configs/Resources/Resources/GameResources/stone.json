@@ -1,9 +1,0 @@
-{
-  "Id": "stone",
-  "DisplayName": "Stone",
-  "LocalisationNameId": "stone_name",
-  "LocalisationDescriptionId": "stone_description",
-  "Icon": "Icons/Resources/stone_icon",
-  "MaxAmount": 999999,
-  "IsPremium": false
-}

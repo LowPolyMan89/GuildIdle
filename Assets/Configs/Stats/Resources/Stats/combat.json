@@ -1,7 +1,0 @@
-{
-  "Id": "combat",
-  "Category": "skill",
-  "LocalisationNameId": "combat_name",
-  "LocalisationDescriptionId": "combat_description",
-  "IconId": "Icons/Stats/combat_icon"
-}

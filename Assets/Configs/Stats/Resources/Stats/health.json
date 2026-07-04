@@ -1,7 +1,0 @@
-{
-  "Id": "health",
-  "Category": "combat",
-  "LocalisationNameId": "health_name",
-  "LocalisationDescriptionId": "health_description",
-  "IconId": "Icons/Stats/health_icon"
-}

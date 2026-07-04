@@ -1,7 +1,0 @@
-{
-  "Id": "combat",
-  "DisplayName": "Combat",
-  "Description": "Fight enemies, bosses, and dungeon threats.",
-  "Icon": "Icons/Stats/combat_icon",
-  "MaxLevel": 100
-}

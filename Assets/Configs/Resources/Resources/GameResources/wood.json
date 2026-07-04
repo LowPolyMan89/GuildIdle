@@ -1,9 +1,0 @@
-{
-  "Id": "wood",
-  "DisplayName": "Wood",
-  "LocalisationNameId": "wood_name",
-  "LocalisationDescriptionId": "wood_description",
-  "Icon": "Icons/Resources/wood_icon",
-  "MaxAmount": 999999,
-  "IsPremium": false
-}

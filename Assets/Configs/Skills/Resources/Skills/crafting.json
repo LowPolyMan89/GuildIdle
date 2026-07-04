@@ -1,7 +1,0 @@
-{
-  "Id": "crafting",
-  "DisplayName": "Crafting",
-  "Description": "Create, repair, and improve equipment.",
-  "Icon": "Icons/Stats/crafting_icon",
-  "MaxLevel": 100
-}

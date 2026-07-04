@@ -1,9 +1,0 @@
-﻿{
-    "Id": "food",
-    "DisplayName": "Food",
-    "LocalisationNameId": "food_name",
-    "LocalisationDescriptionId": "food_description",
-    "Icon": "Icons/Resources/food_icon",
-    "MaxAmount": 999999,
-    "IsPremium": false
-}
