@@ -19,7 +19,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             new EnemiesConfigsParser(),
             new StorageConfigsParser(),
             new MapConfigsParser(),
-            new ItemsConfigsParser()
+            new ItemsConfigsParser(),
+            new FormulaConfigsParser()
         };
 
         public static void ParseEnabled(ConfigSourceSettingsCollection collection)
