@@ -1,0 +1,113 @@
+{
+  "lootTables": [
+    {
+      "lootTableId": "hunting_rabbits_resources",
+      "tableType": "ResourceDrop",
+      "rollMode": "WeightedMany",
+      "rollCountMin": 1,
+      "rollCountMax": 2,
+      "enabled": true
+    }
+  ],
+  "lootTableEntries": [
+    {
+      "lootTableId": "hunting_rabbits_resources",
+      "entryId": "hunting_rabbit_thin_hide",
+      "dropType": "Resource",
+      "targetId": "resource_thin_hide",
+      "weight": 100,
+      "min": 1,
+      "max": 2,
+      "chance": 100,
+      "rarityHint": "Common",
+      "requiredRollGroup": "default"
+    }
+  ],
+  "lootGroups": [
+    {
+      "lootTableId": "hunting_rabbits_resources",
+      "rollGroup": "default",
+      "rollMode": "WeightedMany",
+      "rollCountMin": 1,
+      "rollCountMax": 2,
+      "chance": 100
+    }
+  ],
+  "enumValues": [
+    {
+      "enumGroup": "LootTableType",
+      "value": "ItemDrop",
+      "description": "Таблица предметов."
+    },
+    {
+      "enumGroup": "LootTableType",
+      "value": "ResourceDrop",
+      "description": "Таблица ресурсов."
+    },
+    {
+      "enumGroup": "LootTableType",
+      "value": "GoldDrop",
+      "description": "Таблица золота."
+    },
+    {
+      "enumGroup": "LootTableType",
+      "value": "Mixed",
+      "description": "Смешанная таблица."
+    },
+    {
+      "enumGroup": "RollMode",
+      "value": "WeightedOne",
+      "description": "Один результат по весам."
+    },
+    {
+      "enumGroup": "RollMode",
+      "value": "WeightedMany",
+      "description": "Несколько результатов по весам."
+    },
+    {
+      "enumGroup": "RollMode",
+      "value": "GuaranteedAll",
+      "description": "Выдать все записи группы."
+    },
+    {
+      "enumGroup": "DropType",
+      "value": "Item",
+      "description": "Предмет."
+    },
+    {
+      "enumGroup": "DropType",
+      "value": "Resource",
+      "description": "Ресурс."
+    },
+    {
+      "enumGroup": "DropType",
+      "value": "Gold",
+      "description": "Золото."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Common",
+      "description": "Обычная редкость."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Uncommon",
+      "description": "Необычная редкость."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Rare",
+      "description": "Редкая редкость."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Epic",
+      "description": "Эпическая редкость."
+    },
+    {
+      "enumGroup": "RarityId",
+      "value": "Legendary",
+      "description": "Легендарная редкость."
+    }
+  ]
+}
