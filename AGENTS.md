@@ -134,6 +134,9 @@ When answering or implementing:
 ## Build And Verification
 
 - **DO NOT** run code builds after completing code tasks unless the user explicitly asks for a build.
+- **DO NOT** try to run Unity EditMode tests.
+- **DO NOT** search for Unity in PATH, Program Files, registry, or typical local install paths.
+- For verification, use `git diff --check`.
 
 ## Unity Assets
 
