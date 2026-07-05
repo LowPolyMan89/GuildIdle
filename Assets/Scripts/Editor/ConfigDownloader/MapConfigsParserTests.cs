@@ -313,7 +313,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             var fullPath = FullProjectPath(projectPath);
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
-            File.WriteAllText(fullPath, text, Encoding.UTF8);
+            File.WriteAllText(fullPath, text, ConfigPipelineUtilities.Utf8NoBom);
         }
 
         private static string ReadProjectFile(string projectPath)

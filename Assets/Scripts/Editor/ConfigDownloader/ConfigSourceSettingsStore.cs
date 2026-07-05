@@ -40,7 +40,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 collection = MergeWithDefaults(null);
 
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
-            File.WriteAllText(SettingsPath, JsonUtility.ToJson(MergeWithDefaults(collection), true), Encoding.UTF8);
+            File.WriteAllText(SettingsPath, JsonUtility.ToJson(MergeWithDefaults(collection), true), ConfigPipelineUtilities.Utf8NoBom);
             AssetDatabase.ImportAsset(SettingsPath);
             AssetDatabase.Refresh();
         }

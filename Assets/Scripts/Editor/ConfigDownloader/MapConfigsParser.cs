@@ -160,7 +160,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
                 var tempPath = fullPath + ".tmp";
-                File.WriteAllText(tempPath, runtimeJson, Encoding.UTF8);
+                File.WriteAllText(tempPath, runtimeJson, ConfigPipelineUtilities.Utf8NoBom);
 
                 if (File.Exists(fullPath))
                     File.Replace(tempPath, fullPath, null);

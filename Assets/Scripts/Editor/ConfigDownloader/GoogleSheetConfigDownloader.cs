@@ -361,7 +361,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
-            File.WriteAllText(fullPath, JsonUtility.ToJson(download, true), Encoding.UTF8);
+            File.WriteAllText(fullPath, JsonUtility.ToJson(download, true), ConfigPipelineUtilities.Utf8NoBom);
 
             source.last_download_status = ConfigDownloadStatus.Success;
             source.last_download_time = now;

@@ -9,6 +9,8 @@ namespace GuildIdle.Editor.ConfigDownloader
 {
     internal static class ConfigPipelineUtilities
     {
+        public static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
+
         public static bool TryLoadDownload(
             ConfigSourceSettings source,
             ConfigPipelineReport report,
@@ -296,10 +298,36 @@ namespace GuildIdle.Editor.ConfigDownloader
                 case List<string> stringList:
                     WriteStringArray(builder, stringList);
                     break;
+                case List<Dictionary<string, object>> objectList:
+                    WriteObjectArray(builder, objectList);
+                    break;
+                case Dictionary<string, object> objectValue:
+                    WriteObject(builder, objectValue, "  ");
+                    break;
                 default:
                     builder.Append('"').Append(Escape(Convert.ToString(value, CultureInfo.InvariantCulture))).Append('"');
                     break;
             }
+        }
+
+        private static void WriteObjectArray(StringBuilder builder, List<Dictionary<string, object>> values)
+        {
+            builder.Append('[');
+            if (values.Count > 0)
+                builder.Append('\n');
+
+            for (var index = 0; index < values.Count; index++)
+            {
+                if (index > 0)
+                    builder.Append(",\n");
+
+                WriteObject(builder, values[index], "      ");
+            }
+
+            if (values.Count > 0)
+                builder.Append('\n').Append("    ");
+
+            builder.Append(']');
         }
 
         private static void WriteStringArray(StringBuilder builder, List<string> values)
