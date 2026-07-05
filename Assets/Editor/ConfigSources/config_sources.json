@@ -40,13 +40,13 @@
             "enabled": true,
             "output_json_path": "ConfigDownloads/storage_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/storage_configs.runtime.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
-            "last_parse_status": "not_run",
-            "last_parse_time": "",
-            "last_validation_status": "not_run",
-            "last_validation_time": "",
-            "error_message": ""
+            "last_download_status": "success",
+            "last_download_time": "2026-07-05T06:55:20.3268327Z",
+            "last_parse_status": "success",
+            "last_parse_time": "2026-07-05T06:55:22.7756316Z",
+            "last_validation_status": "success",
+            "last_validation_time": "2026-07-05T06:55:22.7756316Z",
+            "error_message": "Warning: Cross-config validation skipped: Items Configs registry is not available yet.\nWarning: Cross-config validation skipped: Buildings Configs registry is not available yet.\nWarning: Cross-config validation skipped: Localisation registry is not available yet."
         },
         {
             "config_id": "map_configs",

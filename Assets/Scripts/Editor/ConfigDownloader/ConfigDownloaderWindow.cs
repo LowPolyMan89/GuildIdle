@@ -143,7 +143,9 @@ namespace GuildIdle.Editor.ConfigDownloader
             if (!string.IsNullOrWhiteSpace(source.error_message))
             {
                 var previousColor = GUI.color;
-                GUI.color = new Color(1f, 0.55f, 0.45f);
+                GUI.color = IsSuccessfulWithMessage(source)
+                    ? new Color(1f, 0.82f, 0.35f)
+                    : new Color(1f, 0.55f, 0.45f);
                 EditorGUILayout.TextArea(source.error_message, GUILayout.MinHeight(34f));
                 GUI.color = previousColor;
             }
@@ -204,6 +206,15 @@ namespace GuildIdle.Editor.ConfigDownloader
                 return new Color(0.75f, 0.75f, 0.75f);
 
             return new Color(1f, 0.55f, 0.45f);
+        }
+
+        private static bool IsSuccessfulWithMessage(ConfigSourceSettings source)
+        {
+            return source != null &&
+                   (source.last_parse_status == ConfigPipelineStatus.Success ||
+                    source.last_validation_status == ConfigPipelineStatus.Success) &&
+                   !string.IsNullOrWhiteSpace(source.error_message) &&
+                   source.error_message.Contains("Warning:");
         }
 
         private void LoadSettings()

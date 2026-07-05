@@ -15,7 +15,8 @@ namespace GuildIdle.Editor.ConfigDownloader
         private static readonly IConfigPipelineParser[] _parsers =
         {
             new ActivityConfigsParser(),
-            new EnemiesConfigsParser()
+            new EnemiesConfigsParser(),
+            new StorageConfigsParser()
         };
 
         public static void ParseEnabled(ConfigSourceSettingsCollection collection)
@@ -59,7 +60,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 source.last_parse_time = DateTime.UtcNow.ToString("o");
                 source.last_validation_status = ConfigPipelineStatus.Success;
                 source.last_validation_time = source.last_parse_time;
-                source.error_message = string.Empty;
+                source.error_message = report.ToDisplayMessage();
             }
             else
             {
@@ -81,7 +82,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 source.last_validation_status = ConfigPipelineStatus.Success;
                 source.last_validation_time = DateTime.UtcNow.ToString("o");
-                source.error_message = string.Empty;
+                source.error_message = report.ToDisplayMessage();
             }
             else
             {

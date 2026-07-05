@@ -1,0 +1,156 @@
+﻿{
+  "storageRules": [
+    {
+      "storageRuleId": "storage_resource",
+      "itemKind": "resource",
+      "mode": "stack",
+      "maxStack": 100,
+      "occupiesSlot": true,
+      "allowQuality": false,
+      "allowInstanceId": false
+    },
+    {
+      "storageRuleId": "storage_consumable",
+      "itemKind": "consumable",
+      "mode": "stack",
+      "maxStack": 20,
+      "occupiesSlot": true,
+      "allowQuality": false,
+      "allowInstanceId": false
+    },
+    {
+      "storageRuleId": "storage_recipe",
+      "itemKind": "recipe",
+      "mode": "stack",
+      "maxStack": 20,
+      "occupiesSlot": true,
+      "allowQuality": false,
+      "allowInstanceId": false
+    },
+    {
+      "storageRuleId": "storage_equipment",
+      "itemKind": "equipment",
+      "mode": "single",
+      "maxStack": 1,
+      "occupiesSlot": true,
+      "allowQuality": true,
+      "allowInstanceId": true
+    }
+  ],
+  "storageBuildings": [
+    {
+      "buildingId": "building_warehouse",
+      "level": 1,
+      "slotCount": 40,
+      "resourceStackBonus": 0,
+      "autoSortEnabled": false,
+      "filtersEnabled": false
+    },
+    {
+      "buildingId": "building_warehouse",
+      "level": 2,
+      "slotCount": 60,
+      "resourceStackBonus": 20,
+      "autoSortEnabled": true,
+      "filtersEnabled": false
+    },
+    {
+      "buildingId": "building_warehouse",
+      "level": 3,
+      "slotCount": 90,
+      "resourceStackBonus": 50,
+      "autoSortEnabled": true,
+      "filtersEnabled": true
+    }
+  ],
+  "itemStates": [
+    {
+      "stateId": "on_storage",
+      "storageItemStateNameId": "storage_item_state_on_storage_name_id",
+      "availableForCraft": true,
+      "availableForSale": true,
+      "availableForOrder": true,
+      "availableForEquip": true
+    },
+    {
+      "stateId": "equipped",
+      "storageItemStateNameId": "storage_item_state_equipped_name_id",
+      "availableForCraft": false,
+      "availableForSale": false,
+      "availableForOrder": false,
+      "availableForEquip": false
+    },
+    {
+      "stateId": "reserved_for_task",
+      "storageItemStateNameId": "storage_item_state_reserved_for_task_name_id",
+      "availableForCraft": false,
+      "availableForSale": false,
+      "availableForOrder": false,
+      "availableForEquip": false
+    },
+    {
+      "stateId": "in_task",
+      "storageItemStateNameId": "storage_item_state_in_task_name_id",
+      "availableForCraft": false,
+      "availableForSale": false,
+      "availableForOrder": false,
+      "availableForEquip": false
+    },
+    {
+      "stateId": "handed_to_order",
+      "storageItemStateNameId": "storage_item_state_handed_to_order_name_id",
+      "availableForCraft": false,
+      "availableForSale": false,
+      "availableForOrder": false,
+      "availableForEquip": false
+    },
+    {
+      "stateId": "sold",
+      "storageItemStateNameId": "storage_item_state_sold_name_id",
+      "availableForCraft": false,
+      "availableForSale": false,
+      "availableForOrder": false,
+      "availableForEquip": false
+    },
+    {
+      "stateId": "deleted",
+      "storageItemStateNameId": "storage_item_state_deleted_name_id",
+      "availableForCraft": false,
+      "availableForSale": false,
+      "availableForOrder": false,
+      "availableForEquip": false
+    }
+  ],
+  "enumValues": [
+    {
+      "enumGroup": "StorageMode",
+      "value": "stack",
+      "description": "Предметы одного id могут лежать в одном слоте с количеством."
+    },
+    {
+      "enumGroup": "StorageMode",
+      "value": "single",
+      "description": "Каждый экземпляр занимает отдельный слот."
+    },
+    {
+      "enumGroup": "ItemKind",
+      "value": "resource",
+      "description": "Ресурс из Items Configs."
+    },
+    {
+      "enumGroup": "ItemKind",
+      "value": "consumable",
+      "description": "Расходник из Items Configs."
+    },
+    {
+      "enumGroup": "ItemKind",
+      "value": "recipe",
+      "description": "Рецепт из Items Configs."
+    },
+    {
+      "enumGroup": "ItemKind",
+      "value": "equipment",
+      "description": "Экипировка из Items Configs."
+    }
+  ]
+}

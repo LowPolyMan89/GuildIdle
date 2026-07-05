@@ -83,22 +83,27 @@ namespace GuildIdle.Editor.ConfigDownloader
         public bool Success => Issues.Count == 0 && string.IsNullOrWhiteSpace(ErrorMessage);
         public string ErrorMessage { get; set; }
         public List<ConfigValidationIssue> Issues { get; } = new List<ConfigValidationIssue>();
+        public List<string> Warnings { get; } = new List<string>();
 
         public string ToDisplayMessage()
         {
+            var lines = new List<string>();
             if (!string.IsNullOrWhiteSpace(ErrorMessage))
-                return ErrorMessage;
-
-            if (Issues.Count == 0)
-                return string.Empty;
+                lines.Add(ErrorMessage);
 
             const int maxDisplayedIssues = 12;
-            var lines = new List<string>();
             for (var index = 0; index < Issues.Count && index < maxDisplayedIssues; index++)
                 lines.Add(Issues[index].ToString());
 
             if (Issues.Count > maxDisplayedIssues)
                 lines.Add($"...and {Issues.Count - maxDisplayedIssues} more issues.");
+
+            const int maxDisplayedWarnings = 12;
+            for (var index = 0; index < Warnings.Count && index < maxDisplayedWarnings; index++)
+                lines.Add($"Warning: {Warnings[index]}");
+
+            if (Warnings.Count > maxDisplayedWarnings)
+                lines.Add($"...and {Warnings.Count - maxDisplayedWarnings} more warnings.");
 
             return string.Join("\n", lines);
         }
