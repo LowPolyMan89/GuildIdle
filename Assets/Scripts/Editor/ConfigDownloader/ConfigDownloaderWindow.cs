@@ -110,7 +110,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             if (GUILayout.Button("Parse", GUILayout.Width(80f)))
             {
-                ConfigPipelineOperations.Parse(source);
+                ConfigPipelineOperations.Parse(source, _settings);
                 ConfigSourceSettingsStore.Save(_settings);
                 _dirty = false;
                 Repaint();
@@ -118,7 +118,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             if (GUILayout.Button("Validate", GUILayout.Width(85f)))
             {
-                ConfigPipelineOperations.Validate(source);
+                ConfigPipelineOperations.Validate(source, _settings);
                 ConfigSourceSettingsStore.Save(_settings);
                 _dirty = false;
                 Repaint();

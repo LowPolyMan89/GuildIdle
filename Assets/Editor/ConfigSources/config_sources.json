@@ -25,11 +25,11 @@
             "output_json_path": "ConfigDownloads/enemies_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/enemies_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-07-04T18:12:33.5876595Z",
-            "last_parse_status": "not_run",
-            "last_parse_time": "",
-            "last_validation_status": "not_run",
-            "last_validation_time": "",
+            "last_download_time": "2026-07-05T06:15:18.8014442Z",
+            "last_parse_status": "success",
+            "last_parse_time": "2026-07-05T06:21:05.9621242Z",
+            "last_validation_status": "success",
+            "last_validation_time": "2026-07-05T06:21:05.9621242Z",
             "error_message": ""
         },
         {

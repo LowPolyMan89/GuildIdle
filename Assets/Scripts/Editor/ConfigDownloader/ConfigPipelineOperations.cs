@@ -14,17 +14,34 @@ namespace GuildIdle.Editor.ConfigDownloader
     {
         private static readonly IConfigPipelineParser[] _parsers =
         {
-            new ActivityConfigsParser()
+            new ActivityConfigsParser(),
+            new EnemiesConfigsParser()
         };
 
         public static void ParseEnabled(ConfigSourceSettingsCollection collection)
         {
             RunEnabled(collection, "Parsing configs", Parse);
+            ApplyCrossConfigValidation(collection);
+            ConfigSourceSettingsStore.Save(collection);
         }
 
         public static void ValidateEnabled(ConfigSourceSettingsCollection collection)
         {
             RunEnabled(collection, "Validating configs", Validate);
+            ApplyCrossConfigValidation(collection);
+            ConfigSourceSettingsStore.Save(collection);
+        }
+
+        public static void Parse(ConfigSourceSettings source, ConfigSourceSettingsCollection collection)
+        {
+            Parse(source);
+            ApplyCrossConfigValidation(collection);
+        }
+
+        public static void Validate(ConfigSourceSettings source, ConfigSourceSettingsCollection collection)
+        {
+            Validate(source);
+            ApplyCrossConfigValidation(collection);
         }
 
         public static void Parse(ConfigSourceSettings source)
@@ -171,6 +188,11 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             source.last_validation_status = status;
             source.error_message = message ?? string.Empty;
+        }
+
+        private static void ApplyCrossConfigValidation(ConfigSourceSettingsCollection collection)
+        {
+            ConfigCrossConfigValidator.ApplyToSources(collection);
         }
     }
 }
