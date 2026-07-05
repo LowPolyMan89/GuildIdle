@@ -71,7 +71,7 @@
             "source_type": "GoogleSheet",
             "enabled": true,
             "output_json_path": "ConfigDownloads/localisation.json",
-            "runtime_json_path": "Assets/StreamingAssets/Configs/localisation.runtime.json",
+            "runtime_json_path": "Assets/StreamingAssets/Configs/localisation_configs.runtime.json",
             "last_download_status": "not_downloaded",
             "last_download_time": "",
             "last_parse_status": "not_run",
