@@ -1,5 +1,6 @@
 using System;
 using UnityEditor;
+using UnityEngine;
 
 namespace GuildIdle.Editor.ConfigDownloader
 {
@@ -52,10 +53,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             if (!TryGetParser(source, out var parser))
             {
                 SetParseStatus(source, ConfigPipelineStatus.Unsupported, $"No parser registered for '{source?.config_id}'.");
+                Debug.LogError($"Config parse failed for '{GetSourceName(source)}': {source?.error_message}");
                 return;
             }
 
             var report = parser.ParseAndWrite(source);
+            LogReport("parse", source, report);
             if (report.Success)
             {
                 source.last_parse_status = ConfigPipelineStatus.Success;
@@ -76,10 +79,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             if (!TryGetParser(source, out var parser))
             {
                 SetValidationStatus(source, ConfigPipelineStatus.Unsupported, $"No validator registered for '{source?.config_id}'.");
+                Debug.LogError($"Config validation failed for '{GetSourceName(source)}': {source?.error_message}");
                 return;
             }
 
             var report = parser.Validate(source);
+            LogReport("validation", source, report);
             if (report.Success)
             {
                 source.last_validation_status = ConfigPipelineStatus.Success;
@@ -173,6 +178,43 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
 
             return ConfigPipelineStatus.ParseError;
+        }
+
+        private static void LogReport(string operation, ConfigSourceSettings source, ConfigPipelineReport report)
+        {
+            if (report == null)
+            {
+                Debug.LogError($"Config {operation} failed for '{GetSourceName(source)}': parser returned no report.");
+                return;
+            }
+
+            var sourceName = GetSourceName(source);
+            var message = report.ToDisplayMessage();
+            if (!report.Success)
+            {
+                Debug.LogError(string.IsNullOrWhiteSpace(message)
+                    ? $"Config {operation} failed for '{sourceName}'."
+                    : $"Config {operation} failed for '{sourceName}':\n{message}");
+                return;
+            }
+
+            if (report.Warnings.Count > 0)
+            {
+                Debug.LogWarning($"Config {operation} completed with warnings for '{sourceName}':\n{message}");
+                return;
+            }
+
+            Debug.Log($"Config {operation} succeeded for '{sourceName}'.");
+        }
+
+        private static string GetSourceName(ConfigSourceSettings source)
+        {
+            if (source == null)
+                return "<null>";
+
+            return !string.IsNullOrWhiteSpace(source.display_name)
+                ? source.display_name
+                : source.config_id;
         }
 
         private static void SetParseStatus(ConfigSourceSettings source, string status, string message)

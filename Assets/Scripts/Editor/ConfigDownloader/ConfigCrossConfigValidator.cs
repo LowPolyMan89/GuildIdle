@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace GuildIdle.Editor.ConfigDownloader
 {
@@ -68,6 +69,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 return;
 
             var message = report.ToDisplayMessage();
+            Debug.LogError($"Cross-config validation failed:\n{message}");
             ApplyValidationError(collection, ActivityConfigId, message);
             ApplyValidationError(collection, EnemiesConfigId, message);
         }
