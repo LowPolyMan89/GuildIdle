@@ -21,6 +21,7 @@ namespace GuildIdle.Configs
         private LootRuntimeConfigDto _loot;
         private MapRuntimeConfigDto _map;
         private StorageRuntimeConfigDto _storage;
+        private LocalisationRuntimeConfigDto _localisation;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Bootstrap()
@@ -74,10 +75,13 @@ namespace GuildIdle.Configs
             yield return LoadJson("storage_configs.runtime.json", json => _storage = Parse<StorageRuntimeConfigDto>("storage_configs.runtime.json", json));
             if (Configs.HasErrors) yield break;
 
+            yield return LoadJson("localisation_configs.runtime.json", json => _localisation = Parse<LocalisationRuntimeConfigDto>("localisation_configs.runtime.json", json));
+            if (Configs.HasErrors) yield break;
+
             ConfigDatabase database;
             try
             {
-                database = new ConfigDatabase(_items, _heroes, _activities, _buildings, _enemies, _formulas, _loot, _map, _storage);
+                database = new ConfigDatabase(_items, _heroes, _activities, _buildings, _enemies, _formulas, _loot, _map, _storage, _localisation);
             }
             catch (Exception exception)
             {
@@ -96,7 +100,8 @@ namespace GuildIdle.Configs
                 $"formulas={database.Formulas.Count}, " +
                 $"loot={database.Loot.Count}, " +
                 $"map={database.Map.Count}, " +
-                $"storage={database.Storage.Count}.");
+                $"storage={database.Storage.Count}, " +
+                $"localisation={database.Localisation.Count}.");
         }
 
         private IEnumerator LoadJson(string fileName, Action<string> onLoaded)

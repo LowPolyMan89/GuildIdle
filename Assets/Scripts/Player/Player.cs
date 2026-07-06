@@ -1,0 +1,192 @@
+using UnityEngine;
+using RuntimeConfigs = GuildIdle.Configs.Configs;
+
+namespace GuildIdle.Player
+{
+    public static class Player
+    {
+        private static PlayerState _state;
+
+        public static bool IsLoaded => _state != null && RuntimeConfigs.IsLoaded;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void Bootstrap()
+        {
+            RuntimeConfigs.OnLoaded -= LoadAfterConfigs;
+            RuntimeConfigs.OnLoaded += LoadAfterConfigs;
+            RuntimeConfigs.OnLoadFailed -= HandleConfigLoadFailed;
+            RuntimeConfigs.OnLoadFailed += HandleConfigLoadFailed;
+
+            if (RuntimeConfigs.IsLoaded)
+                Load();
+            else if (!RuntimeConfigs.HasErrors)
+                RuntimeConfigs.WaitUntilLoaded(LoadAfterConfigs);
+        }
+
+        public static bool Load()
+        {
+            if (!RuntimeConfigs.IsLoaded)
+            {
+                Debug.LogError("[Player] Cannot load player state before runtime configs are loaded.");
+                return false;
+            }
+
+            _state = SaveService.Load();
+            return true;
+        }
+
+        public static bool Save()
+        {
+            return EnsureLoaded("save player state") && SaveService.Save(_state);
+        }
+
+        public static bool ResetSave()
+        {
+            if (!RuntimeConfigs.IsLoaded)
+            {
+                Debug.LogError("[Player] Cannot reset player state before runtime configs are loaded.");
+                return false;
+            }
+
+            _state = SaveService.ResetSave();
+            return true;
+        }
+
+        public static SaveData Snapshot()
+        {
+            return EnsureLoaded("snapshot player state") ? _state.ToSaveData() : new SaveData();
+        }
+
+        public static bool HasHero(string heroId)
+        {
+            return EnsureLoaded("check hero") && _state.HasHero(heroId);
+        }
+
+        public static bool AddHero(string heroId)
+        {
+            return EnsureLoaded("add hero") && _state.AddHero(heroId);
+        }
+
+        public static string GetHeroInSlot(int slotIndex)
+        {
+            return EnsureLoaded("get hero slot") ? _state.GetHeroInSlot(slotIndex) : null;
+        }
+
+        public static bool SetHeroSlot(int slotIndex, string heroId)
+        {
+            return EnsureLoaded("set hero slot") && _state.SetHeroSlot(slotIndex, heroId);
+        }
+
+        public static bool HasItem(string itemId, int amount)
+        {
+            return EnsureLoaded("check item") && _state.HasItem(itemId, amount);
+        }
+
+        public static int GetItem(string itemId)
+        {
+            return EnsureLoaded("get item") ? _state.GetItem(itemId) : 0;
+        }
+
+        public static bool AddItem(string itemId, int amount)
+        {
+            return EnsureLoaded("add item") && _state.AddItem(itemId, amount);
+        }
+
+        public static bool SpendItem(string itemId, int amount)
+        {
+            return EnsureLoaded("spend item") && _state.SpendItem(itemId, amount);
+        }
+
+        public static long GetCurrency(string currencyId)
+        {
+            return EnsureLoaded("get currency") ? _state.GetCurrency(currencyId) : 0L;
+        }
+
+        public static bool AddCurrency(string currencyId, long amount)
+        {
+            return EnsureLoaded("add currency") && _state.AddCurrency(currencyId, amount);
+        }
+
+        public static bool SpendCurrency(string currencyId, long amount)
+        {
+            return EnsureLoaded("spend currency") && _state.SpendCurrency(currencyId, amount);
+        }
+
+        public static bool IsBuildingUnlocked(string buildingId)
+        {
+            return EnsureLoaded("check building") && _state.IsBuildingUnlocked(buildingId);
+        }
+
+        public static bool UnlockBuilding(string buildingId)
+        {
+            return EnsureLoaded("unlock building") && _state.UnlockBuilding(buildingId);
+        }
+
+        public static int GetBuildingLevel(string buildingId)
+        {
+            return EnsureLoaded("get building level") ? _state.GetBuildingLevel(buildingId) : 0;
+        }
+
+        public static bool SetBuildingLevel(string buildingId, int level)
+        {
+            return EnsureLoaded("set building level") && _state.SetBuildingLevel(buildingId, level);
+        }
+
+        public static bool IsLocationUnlocked(string locationId)
+        {
+            return EnsureLoaded("check location") && _state.IsLocationUnlocked(locationId);
+        }
+
+        public static bool UnlockLocation(string locationId)
+        {
+            return EnsureLoaded("unlock location") && _state.UnlockLocation(locationId);
+        }
+
+        public static bool IsActivityCompleted(string activityId)
+        {
+            return EnsureLoaded("check activity completion") && _state.IsActivityCompleted(activityId);
+        }
+
+        public static bool CompleteActivity(string activityId)
+        {
+            return EnsureLoaded("complete activity") && _state.CompleteActivity(activityId);
+        }
+
+        public static bool IsActivityAvailable(string activityId)
+        {
+            return EnsureLoaded("check activity availability") && _state.IsActivityAvailable(activityId);
+        }
+
+        public static bool SetActivityAvailable(string activityId, bool available)
+        {
+            return EnsureLoaded("set activity availability") && _state.SetActivityAvailable(activityId, available);
+        }
+
+        private static void LoadAfterConfigs()
+        {
+            Load();
+        }
+
+        private static void HandleConfigLoadFailed(string error)
+        {
+            _state = null;
+            Debug.LogError($"[Player] Runtime configs failed to load; player state was not initialized. {error}");
+        }
+
+        private static bool EnsureLoaded(string action)
+        {
+            if (_state != null)
+                return true;
+
+            if (RuntimeConfigs.IsLoaded)
+                return Load();
+
+            if (!RuntimeConfigs.HasErrors)
+                RuntimeConfigs.WaitUntilLoaded(LoadAfterConfigs);
+
+            var reason = RuntimeConfigs.HasErrors ? $"config load failed: {RuntimeConfigs.LastError}" : "runtime configs are not loaded";
+            Debug.LogError($"[Player] Cannot {action}: {reason}.");
+            return false;
+        }
+    }
+}

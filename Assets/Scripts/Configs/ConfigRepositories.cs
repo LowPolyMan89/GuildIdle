@@ -638,4 +638,27 @@ namespace GuildIdle.Configs
 
         private static string BuildingKey(string buildingId, int level) => $"{buildingId}:{level}";
     }
+
+    public sealed class LocalisationConfigRepository
+    {
+        private readonly Dictionary<string, LocalisationEntryDto> _entriesById = ItemsConfigRepository.NewIndex<LocalisationEntryDto>();
+
+        public LocalisationEntryDto[] Localisations { get; }
+        public int Count => _entriesById.Count;
+
+        public LocalisationConfigRepository(LocalisationRuntimeConfigDto dto)
+        {
+            dto ??= new LocalisationRuntimeConfigDto();
+            Localisations = dto.localisations ?? Array.Empty<LocalisationEntryDto>();
+
+            foreach (var entry in Localisations)
+                ItemsConfigRepository.AddUnique(_entriesById, entry.id, entry, "Localisation/localisations");
+        }
+
+        public bool TryGet(string id, out LocalisationEntryDto entry)
+        {
+            entry = null;
+            return !string.IsNullOrWhiteSpace(id) && _entriesById.TryGetValue(id, out entry);
+        }
+    }
 }

@@ -836,4 +836,19 @@ namespace GuildIdle.Configs
         public string value;
         public string description;
     }
+
+    [Serializable]
+    public sealed class LocalisationRuntimeConfigDto
+    {
+        public LocalisationEntryDto[] localisations = Array.Empty<LocalisationEntryDto>();
+    }
+
+    [Serializable]
+    public sealed class LocalisationEntryDto
+    {
+        public string id;
+        public string ru;
+        public string en;
+        public string tr;
+    }
 }

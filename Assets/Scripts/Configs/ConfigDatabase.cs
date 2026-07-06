@@ -11,6 +11,7 @@ namespace GuildIdle.Configs
         public LootConfigRepository Loot { get; }
         public MapConfigRepository Map { get; }
         public StorageConfigRepository Storage { get; }
+        public LocalisationConfigRepository Localisation { get; }
 
         public ConfigDatabase(
             ItemsRuntimeConfigDto items,
@@ -21,7 +22,8 @@ namespace GuildIdle.Configs
             FormulaRuntimeConfigDto formulas,
             LootRuntimeConfigDto loot,
             MapRuntimeConfigDto map,
-            StorageRuntimeConfigDto storage)
+            StorageRuntimeConfigDto storage,
+            LocalisationRuntimeConfigDto localisation)
         {
             Items = new ItemsConfigRepository(items);
             Heroes = new HeroesConfigRepository(heroes);
@@ -32,6 +34,7 @@ namespace GuildIdle.Configs
             Loot = new LootConfigRepository(loot);
             Map = new MapConfigRepository(map);
             Storage = new StorageConfigRepository(storage);
+            Localisation = new LocalisationConfigRepository(localisation);
         }
     }
 }

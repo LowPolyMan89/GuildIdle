@@ -1,11 +1,13 @@
 using System;
+using GuildIdle.Localisation;
 using UnityEngine;
 
 namespace GuildIdle.Configs
 {
     public static class Configs
     {
-        private static readonly ConfigDatabase EmptyDatabase = new ConfigDatabase(null, null, null, null, null, null, null, null, null);
+        private static readonly ConfigDatabase EmptyDatabase = new ConfigDatabase(null, null, null, null, null, null, null, null, null, null);
+        private static readonly LocalisationService LocalisationService = new LocalisationService();
 
         private static ConfigDatabase _database;
         private static bool _isLoading;
@@ -27,6 +29,16 @@ namespace GuildIdle.Configs
         public static LootConfigRepository Loot => GetRepository(database => database.Loot, "Loot");
         public static MapConfigRepository Map => GetRepository(database => database.Map, "Map");
         public static StorageConfigRepository Storage => GetRepository(database => database.Storage, "Storage");
+        public static LocalisationService Localisation
+        {
+            get
+            {
+                if (Application.isPlaying)
+                    EnsureLoading();
+
+                return LocalisationService;
+            }
+        }
 
         public static void WaitUntilLoaded(Action onLoaded)
         {
@@ -53,6 +65,7 @@ namespace GuildIdle.Configs
         public static void Reload()
         {
             _database = null;
+            LocalisationService.SetRepository(null);
             HasErrors = false;
             LastError = null;
             ConfigLoader.StartLoad(forceReload: true);
@@ -64,6 +77,7 @@ namespace GuildIdle.Configs
             _isLoading = false;
             HasErrors = database == null;
             LastError = database == null ? "Test ConfigDatabase was set to null." : null;
+            LocalisationService.SetRepository(database?.Localisation);
         }
 
         internal static void EnsureLoading()
@@ -84,6 +98,7 @@ namespace GuildIdle.Configs
         internal static void Publish(ConfigDatabase database)
         {
             _database = database;
+            LocalisationService.SetRepository(database?.Localisation);
             _isLoading = false;
             HasErrors = false;
             LastError = null;
@@ -93,6 +108,7 @@ namespace GuildIdle.Configs
         internal static void Fail(string error)
         {
             _database = null;
+            LocalisationService.SetRepository(null);
             _isLoading = false;
             HasErrors = true;
             LastError = string.IsNullOrWhiteSpace(error) ? "Unknown config load error." : error;
