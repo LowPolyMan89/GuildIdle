@@ -45,22 +45,6 @@
       "resourceStackBonus": 0,
       "autoSortEnabled": false,
       "filtersEnabled": false
-    },
-    {
-      "buildingId": "building_warehouse",
-      "level": 2,
-      "slotCount": 60,
-      "resourceStackBonus": 20,
-      "autoSortEnabled": true,
-      "filtersEnabled": false
-    },
-    {
-      "buildingId": "building_warehouse",
-      "level": 3,
-      "slotCount": 90,
-      "resourceStackBonus": 50,
-      "autoSortEnabled": true,
-      "filtersEnabled": true
     }
   ],
   "itemStates": [

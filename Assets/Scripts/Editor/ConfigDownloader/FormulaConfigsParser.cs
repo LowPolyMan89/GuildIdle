@@ -83,13 +83,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             "cap_value"
         };
 
-        private static readonly string[] DeferredRegistryNames =
-        {
-            "Activity Configs / Skills",
-            "Hero Configs / stats",
-            "Runtime derived stats"
-        };
-
         public bool Supports(ConfigSourceSettings source)
         {
             return source != null && string.Equals(source.config_id, ConfigId, StringComparison.OrdinalIgnoreCase);
@@ -146,19 +139,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             context.ValidateSheetsAndColumns();
             context.ValidateHeroDerivedStats();
             context.ValidateSkillStatWeights();
-            AddDeferredCrossConfigWarnings(report);
 
             if (!report.Success)
                 return report;
 
             runtimeJson = ConfigRuntimeJsonWriter.Write(context.BuildRuntimeArrays());
             return report;
-        }
-
-        private static void AddDeferredCrossConfigWarnings(ConfigPipelineReport report)
-        {
-            foreach (var registryName in DeferredRegistryNames)
-                report.Warnings.Add($"Cross-config validation skipped: {registryName} registry is not available yet.");
         }
 
         private sealed class FormulaConfigContext

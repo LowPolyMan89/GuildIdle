@@ -132,13 +132,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             [FieldKey("DangerEncounters", "defeat_loss_rule")] = "DangerDefeatLossRule"
         };
 
-        private static readonly string[] DeferredRegistryNames =
-        {
-            "Activity Configs",
-            "Enemies Configs",
-            "Localisation"
-        };
-
         public bool Supports(ConfigSourceSettings source)
         {
             return source != null && string.Equals(source.config_id, ConfigId, StringComparison.OrdinalIgnoreCase);
@@ -196,19 +189,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             context.CollectEnumValues();
             context.CollectIds();
             context.ValidateRows();
-            AddDeferredCrossConfigWarnings(report);
 
             if (!report.Success)
                 return report;
 
             runtimeJson = ConfigRuntimeJsonWriter.Write(context.BuildRuntimeArrays());
             return report;
-        }
-
-        private static void AddDeferredCrossConfigWarnings(ConfigPipelineReport report)
-        {
-            foreach (var registryName in DeferredRegistryNames)
-                report.Warnings.Add($"Cross-config validation skipped: {registryName} registry is not available yet.");
         }
 
         private sealed class MapConfigContext

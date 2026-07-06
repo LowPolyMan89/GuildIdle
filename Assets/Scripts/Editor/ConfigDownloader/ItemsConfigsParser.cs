@@ -71,15 +71,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             [CurrenciesSheet] = new[] { "currency_id", "icon_id", "name_id", "description_id", "notes" }
         };
 
-        private static readonly string[] DeferredRegistryNames =
-        {
-            "Activity Configs",
-            "Buildings Configs",
-            "Skills",
-            "Rarities",
-            "Localisation"
-        };
-
         public bool Supports(ConfigSourceSettings source)
         {
             return source != null && string.Equals(source.config_id, ConfigId, StringComparison.OrdinalIgnoreCase);
@@ -137,19 +128,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             context.ValidateForbiddenLegacyIds();
             context.CollectIds();
             context.ValidateRows();
-            AddDeferredCrossConfigWarnings(report);
 
             if (!report.Success)
                 return report;
 
             runtimeJson = ConfigRuntimeJsonWriter.Write(context.BuildRuntimeArrays());
             return report;
-        }
-
-        private static void AddDeferredCrossConfigWarnings(ConfigPipelineReport report)
-        {
-            foreach (var registryName in DeferredRegistryNames)
-                report.Warnings.Add($"Cross-config validation skipped: {registryName} registry is not available yet.");
         }
 
         private sealed class ItemsConfigContext

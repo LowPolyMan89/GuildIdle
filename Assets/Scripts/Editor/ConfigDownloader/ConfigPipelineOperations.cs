@@ -40,6 +40,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             ConfigSourceSettingsStore.Save(collection);
         }
 
+        public static void CrossValidate(ConfigSourceSettingsCollection collection)
+        {
+            ApplyCrossConfigValidation(collection);
+            ConfigSourceSettingsStore.Save(collection);
+        }
+
         public static void Parse(ConfigSourceSettings source, ConfigSourceSettingsCollection collection)
         {
             Parse(source);

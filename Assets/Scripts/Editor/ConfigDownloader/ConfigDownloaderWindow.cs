@@ -85,6 +85,13 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Repaint();
             }
 
+            if (GUILayout.Button("Cross Validate", EditorStyles.toolbarButton, GUILayout.Width(115f)))
+            {
+                ConfigPipelineOperations.CrossValidate(_settings);
+                _dirty = false;
+                Repaint();
+            }
+
             EditorGUILayout.EndHorizontal();
         }
 

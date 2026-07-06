@@ -21,18 +21,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             "Tr"
         };
 
-        private static readonly string[] DeferredRegistryNames =
-        {
-            "Buildings Configs",
-            "Items Configs",
-            "Activity Configs",
-            "Enemies Configs",
-            "Map Configs",
-            "Storage Configs",
-            "Skills",
-            "Currency"
-        };
-
         private static readonly Regex IdRegex = new Regex(
             "^[A-Za-z0-9._]+$",
             RegexOptions.Compiled);
@@ -94,19 +82,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             var context = new LocalisationConfigContext(download, report);
             context.ValidateSheetsAndColumns();
             context.ValidateRows();
-            AddDeferredCrossConfigWarnings(report);
 
             if (!report.Success)
                 return report;
 
             runtimeJson = ConfigRuntimeJsonWriter.Write(context.BuildRuntimeArrays());
             return report;
-        }
-
-        private static void AddDeferredCrossConfigWarnings(ConfigPipelineReport report)
-        {
-            foreach (var registryName in DeferredRegistryNames)
-                report.Warnings.Add($"Cross-config validation skipped: {registryName} registry is not available yet.");
         }
 
         private sealed class LocalisationConfigContext

@@ -1,0 +1,619 @@
+{
+  "buildings": [
+    {
+      "buildingId": "building_hall",
+      "nameId": "building_hall_name_id",
+      "descriptionId": "building_hall_description_id",
+      "smallIconId": "building_hall_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 0,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_tavern",
+      "nameId": "building_tavern_name_id",
+      "descriptionId": "building_tavern_description_id",
+      "smallIconId": "building_tavern_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 0,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_warehouse",
+      "nameId": "building_warehouse_name_id",
+      "descriptionId": "building_warehouse_description_id",
+      "smallIconId": "building_warehouse_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 1,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_underwood",
+      "nameId": "building_underwood_name_id",
+      "descriptionId": "building_underwood_description_id",
+      "smallIconId": "building_underwood_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 1,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_abandoned_mine",
+      "nameId": "building_abandoned_mine_name_id",
+      "descriptionId": "building_abandoned_mine_description_id",
+      "smallIconId": "building_abandoned_mine_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 1,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_carpentry",
+      "nameId": "building_carpentry_name_id",
+      "descriptionId": "building_carpentry_description_id",
+      "smallIconId": "building_carpentry_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 1,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_foundry",
+      "nameId": "building_foundry_name_id",
+      "descriptionId": "building_foundry_description_id",
+      "smallIconId": "building_foundry_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 1,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_forge",
+      "nameId": "building_forge_name_id",
+      "descriptionId": "building_forge_description_id",
+      "smallIconId": "building_forge_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 1,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_workshop",
+      "nameId": "building_workshop_name_id",
+      "descriptionId": "building_workshop_description_id",
+      "smallIconId": "building_workshop_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 1,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_watchtower",
+      "nameId": "building_watchtower_name_id",
+      "descriptionId": "building_watchtower_description_id",
+      "smallIconId": "building_watchtower_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 1,
+      "mvpRequired": true
+    },
+    {
+      "buildingId": "building_trader_post",
+      "nameId": "building_trader_post_name_id",
+      "descriptionId": "building_trader_post_description_id",
+      "smallIconId": "building_trader_post_small_icon_id",
+      "levels": 1,
+      "unlockedByHallLevel": 1,
+      "mvpRequired": true
+    }
+  ],
+  "buildingLevels": [
+    {
+      "buildingId": "building_hall",
+      "level": 1,
+      "levelImageId": "building_hall_level_1_image_id",
+      "sourceActivityId": "build_hall",
+      "durationSec": 30,
+      "buildPointsRequired": 100,
+      "craftSkillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 5
+      }
+    ],
+      "requirementsActivities": [
+      {
+        "activityId": "combat_clear_hall_forest",
+        "count": 1
+      }
+    ],
+      "requirementsBuildings": [],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "buildingId": "building_tavern",
+      "level": 1,
+      "levelImageId": "building_tavern_level_1_image_id",
+      "sourceActivityId": "starter_hero_available",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_warehouse",
+      "level": 1,
+      "levelImageId": "building_warehouse_level_1_image_id",
+      "sourceActivityId": "build_warehouse",
+      "durationSec": 30,
+      "buildPointsRequired": 80,
+      "craftSkillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 3
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "buildingId": "building_underwood",
+      "level": 1,
+      "levelImageId": "building_underwood_level_1_image_id",
+      "sourceActivityId": "combat_clear_hall_forest",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "skill_combat",
+      "mainStatId": "Strength",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_abandoned_mine",
+      "level": 1,
+      "levelImageId": "building_abandoned_mine_level_1_image_id",
+      "sourceActivityId": "inspect_abandoned_mine",
+      "durationSec": 5,
+      "buildPointsRequired": 0,
+      "craftSkillId": "skill_exploration",
+      "mainStatId": "Intelligence",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_carpentry",
+      "level": 1,
+      "levelImageId": "building_carpentry_level_1_image_id",
+      "sourceActivityId": "build_carpentry",
+      "durationSec": 30,
+      "buildPointsRequired": 100,
+      "craftSkillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 5
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "buildingId": "building_foundry",
+      "level": 1,
+      "levelImageId": "building_foundry_level_1_image_id",
+      "sourceActivityId": "build_foundry",
+      "durationSec": 30,
+      "buildPointsRequired": 120,
+      "craftSkillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 5
+      },
+      {
+        "id": "resource_copper_ore",
+        "count": 2
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "buildingId": "building_forge",
+      "level": 1,
+      "levelImageId": "building_forge_level_1_image_id",
+      "sourceActivityId": "build_forge",
+      "durationSec": 30,
+      "buildPointsRequired": 150,
+      "craftSkillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_plank",
+        "count": 5
+      },
+      {
+        "id": "resource_copper_nails",
+        "count": 5
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      },
+      {
+        "buildingId": "building_carpentry",
+        "level": 1
+      },
+      {
+        "buildingId": "building_foundry",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 10
+    },
+    {
+      "buildingId": "building_workshop",
+      "level": 1,
+      "levelImageId": "building_workshop_level_1_image_id",
+      "sourceActivityId": "build_workshop",
+      "durationSec": 30,
+      "buildPointsRequired": 120,
+      "craftSkillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_plank",
+        "count": 5
+      },
+      {
+        "id": "resource_copper_nails",
+        "count": 5
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      },
+      {
+        "buildingId": "building_carpentry",
+        "level": 1
+      },
+      {
+        "buildingId": "building_foundry",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 10
+    },
+    {
+      "buildingId": "building_watchtower",
+      "level": 1,
+      "levelImageId": "building_watchtower_level_1_image_id",
+      "sourceActivityId": "combat_watchtower_rats",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "skill_combat",
+      "mainStatId": "Strength",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_trader_post",
+      "level": 1,
+      "levelImageId": "building_trader_post_level_1_image_id",
+      "sourceActivityId": "trader_arrival_event",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    }
+  ],
+  "buildActions": [
+    {
+      "id": "build_hall",
+      "type": "Build",
+      "targetBuildingId": "building_hall",
+      "targetLevel": 1,
+      "durationSec": 30,
+      "buildPointsRequired": 100,
+      "skillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 5
+      }
+    ],
+      "requirementsActivities": [
+      {
+        "activityId": "combat_clear_hall_forest",
+        "count": 1
+      }
+    ],
+      "requirementsBuildings": [],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "id": "build_warehouse",
+      "type": "Build",
+      "targetBuildingId": "building_warehouse",
+      "targetLevel": 1,
+      "durationSec": 30,
+      "buildPointsRequired": 80,
+      "skillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 3
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "id": "build_carpentry",
+      "type": "Build",
+      "targetBuildingId": "building_carpentry",
+      "targetLevel": 1,
+      "durationSec": 30,
+      "buildPointsRequired": 100,
+      "skillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 5
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "id": "build_foundry",
+      "type": "Build",
+      "targetBuildingId": "building_foundry",
+      "targetLevel": 1,
+      "durationSec": 30,
+      "buildPointsRequired": 120,
+      "skillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 5
+      },
+      {
+        "id": "resource_copper_ore",
+        "count": 2
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "id": "build_forge",
+      "type": "Build",
+      "targetBuildingId": "building_forge",
+      "targetLevel": 1,
+      "durationSec": 30,
+      "buildPointsRequired": 150,
+      "skillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_plank",
+        "count": 5
+      },
+      {
+        "id": "resource_copper_nails",
+        "count": 5
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      },
+      {
+        "buildingId": "building_carpentry",
+        "level": 1
+      },
+      {
+        "buildingId": "building_foundry",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 10
+    },
+    {
+      "id": "build_workshop",
+      "type": "Build",
+      "targetBuildingId": "building_workshop",
+      "targetLevel": 1,
+      "durationSec": 30,
+      "buildPointsRequired": 120,
+      "skillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_plank",
+        "count": 5
+      },
+      {
+        "id": "resource_copper_nails",
+        "count": 5
+      }
+    ],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      },
+      {
+        "buildingId": "building_carpentry",
+        "level": 1
+      },
+      {
+        "buildingId": "building_foundry",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 10
+    }
+  ],
+  "buildingCraftables": [
+    {
+      "buildingId": "building_carpentry",
+      "buildingLevel": 1,
+      "itemId": "resource_pine_plank",
+      "sortOrder": 10,
+      "uiCategory": "Materials",
+      "enabled": true
+    },
+    {
+      "buildingId": "building_carpentry",
+      "buildingLevel": 1,
+      "itemId": "item_aska_bow",
+      "sortOrder": 20,
+      "uiCategory": "Weapons",
+      "enabled": true
+    },
+    {
+      "buildingId": "building_foundry",
+      "buildingLevel": 1,
+      "itemId": "resource_copper_ingot",
+      "sortOrder": 10,
+      "uiCategory": "Materials",
+      "enabled": true
+    },
+    {
+      "buildingId": "building_foundry",
+      "buildingLevel": 1,
+      "itemId": "resource_copper_nails",
+      "sortOrder": 20,
+      "uiCategory": "Materials",
+      "enabled": true
+    },
+    {
+      "buildingId": "building_forge",
+      "buildingLevel": 1,
+      "itemId": "item_copper_sword",
+      "sortOrder": 10,
+      "uiCategory": "Weapons",
+      "enabled": true
+    },
+    {
+      "buildingId": "building_forge",
+      "buildingLevel": 1,
+      "itemId": "item_simple_shield",
+      "sortOrder": 20,
+      "uiCategory": "Shields",
+      "enabled": true
+    },
+    {
+      "buildingId": "building_workshop",
+      "buildingLevel": 1,
+      "itemId": "resource_linen_thread",
+      "sortOrder": 10,
+      "uiCategory": "Materials",
+      "enabled": true
+    },
+    {
+      "buildingId": "building_workshop",
+      "buildingLevel": 1,
+      "itemId": "item_light_leather_armor",
+      "sortOrder": 20,
+      "uiCategory": "Armor",
+      "enabled": true
+    }
+  ]
+}

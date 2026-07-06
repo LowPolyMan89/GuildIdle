@@ -61,15 +61,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             "Luck"
         };
 
-        private static readonly string[] DeferredRegistryNames =
-        {
-            "Localisation",
-            "Items Configs",
-            "Activity Configs",
-            "Activity Configs / Skills",
-            "Generated action registry"
-        };
-
         public bool Supports(ConfigSourceSettings source)
         {
             return source != null && string.Equals(source.config_id, ConfigId, StringComparison.OrdinalIgnoreCase);
@@ -127,19 +118,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             context.ParseBuildingSheets();
             context.ValidateBuildingLevels();
             context.ValidateCraftables();
-            AddDeferredCrossConfigWarnings(report);
 
             if (!report.Success)
                 return report;
 
             runtimeJson = ConfigRuntimeJsonWriter.Write(context.BuildRuntimeArrays());
             return report;
-        }
-
-        private static void AddDeferredCrossConfigWarnings(ConfigPipelineReport report)
-        {
-            foreach (var registryName in DeferredRegistryNames)
-                report.Warnings.Add($"Cross-config validation skipped: {registryName} registry is not available yet.");
         }
 
         private sealed class BuildingsConfigContext

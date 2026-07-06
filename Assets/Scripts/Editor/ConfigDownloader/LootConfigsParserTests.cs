@@ -61,7 +61,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
-        public void BuildRuntimeJson_MissingExternalRegistriesProduceWarningsOnly()
+        public void BuildRuntimeJson_DoesNotRunCrossConfigValidation()
         {
             WriteRaw(CreateValidDownload());
 
@@ -70,9 +70,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.True, message);
             Assert.That(runtimeJson, Does.Contain("\"lootTables\""));
-            Assert.That(message, Does.Contain("Warning: Cross-config validation skipped: Items Configs registry is not available yet."));
-            Assert.That(message, Does.Contain("Warning: Cross-config validation skipped: Currency registry is not available yet."));
-            Assert.That(message, Does.Contain("Warning: Cross-config validation skipped: Activity Configs registry is not available yet."));
+            Assert.That(report.Warnings, Is.Empty);
         }
 
         [Test]

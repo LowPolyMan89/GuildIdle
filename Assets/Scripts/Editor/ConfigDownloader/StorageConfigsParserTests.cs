@@ -207,7 +207,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
-        public void BuildRuntimeJson_MissingExternalRegistriesProduceWarningsOnly()
+        public void BuildRuntimeJson_DoesNotRunCrossConfigValidation()
         {
             WriteRaw(CreateValidDownload());
 
@@ -215,9 +215,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
             Assert.That(runtimeJson, Does.Contain("\"storageRules\""));
-            Assert.That(report.ToDisplayMessage(), Does.Contain("Warning: Cross-config validation skipped: Items Configs registry is not available yet."));
-            Assert.That(report.ToDisplayMessage(), Does.Contain("Warning: Cross-config validation skipped: Buildings Configs registry is not available yet."));
-            Assert.That(report.ToDisplayMessage(), Does.Contain("Warning: Cross-config validation skipped: Localisation registry is not available yet."));
+            Assert.That(report.Warnings, Is.Empty);
         }
 
         [Test]

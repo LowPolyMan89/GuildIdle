@@ -9,12 +9,12 @@
             "output_json_path": "ConfigDownloads/activity_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/activity_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-07-04T18:42:51.0521844Z",
+            "last_download_time": "2026-07-05T18:55:19.1142841Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-07-04T18:48:45.5102466Z",
+            "last_parse_time": "2026-07-05T18:55:48.0250082Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-07-04T18:48:45.5102466Z",
-            "error_message": ""
+            "last_validation_time": "2026-07-06T04:46:13.7235244Z",
+            "error_message": "Warning: Cross-config validation skipped: Heroes config registry is not available yet."
         },
         {
             "config_id": "enemies_configs",
@@ -25,12 +25,12 @@
             "output_json_path": "ConfigDownloads/enemies_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/enemies_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-07-05T06:15:18.8014442Z",
+            "last_download_time": "2026-07-05T18:55:22.7889036Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-07-05T06:21:05.9621242Z",
+            "last_parse_time": "2026-07-05T18:55:48.0622798Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-07-05T06:21:05.9621242Z",
-            "error_message": ""
+            "last_validation_time": "2026-07-06T04:46:13.7265244Z",
+            "error_message": "Warning: Cross-config validation skipped: Heroes config registry is not available yet."
         },
         {
             "config_id": "storage_configs",
@@ -41,12 +41,12 @@
             "output_json_path": "ConfigDownloads/storage_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/storage_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-07-05T06:55:20.3268327Z",
+            "last_download_time": "2026-07-05T18:55:25.2219445Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-07-05T06:55:22.7756316Z",
+            "last_parse_time": "2026-07-05T18:55:48.0906573Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-07-05T06:55:22.7756316Z",
-            "error_message": "Warning: Cross-config validation skipped: Items Configs registry is not available yet.\nWarning: Cross-config validation skipped: Buildings Configs registry is not available yet.\nWarning: Cross-config validation skipped: Localisation registry is not available yet."
+            "last_validation_time": "2026-07-06T04:46:13.7265244Z",
+            "error_message": "Warning: Cross-config validation skipped: Heroes config registry is not available yet."
         },
         {
             "config_id": "map_configs",
@@ -57,12 +57,12 @@
             "output_json_path": "ConfigDownloads/map_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/map_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-07-05T09:11:45.3547966Z",
+            "last_download_time": "2026-07-05T18:55:29.9373170Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-07-05T09:24:18.2331096Z",
+            "last_parse_time": "2026-07-05T18:55:48.1161732Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-07-05T09:24:18.2331096Z",
-            "error_message": "Warning: Cross-config validation skipped: Activity Configs registry is not available yet.\nWarning: Cross-config validation skipped: Enemies Configs registry is not available yet.\nWarning: Cross-config validation skipped: Localisation registry is not available yet."
+            "last_validation_time": "2026-07-06T04:46:13.7265244Z",
+            "error_message": "Warning: Cross-config validation skipped: Heroes config registry is not available yet."
         },
         {
             "config_id": "localisation",
@@ -72,13 +72,13 @@
             "enabled": true,
             "output_json_path": "ConfigDownloads/localisation.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/localisation_configs.runtime.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
-            "last_parse_status": "not_run",
-            "last_parse_time": "",
-            "last_validation_status": "not_run",
-            "last_validation_time": "",
-            "error_message": ""
+            "last_download_status": "success",
+            "last_download_time": "2026-07-05T18:55:31.7853136Z",
+            "last_parse_status": "success",
+            "last_parse_time": "2026-07-05T18:55:48.1472053Z",
+            "last_validation_status": "success",
+            "last_validation_time": "2026-07-06T04:46:13.7265244Z",
+            "error_message": "Warning: Cross-config validation skipped: Heroes config registry is not available yet."
         },
         {
             "config_id": "items_configs",
@@ -89,12 +89,12 @@
             "output_json_path": "ConfigDownloads/items_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/items_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-07-05T14:44:12.9396741Z",
+            "last_download_time": "2026-07-05T18:55:35.1127904Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-07-05T16:19:04.3020747Z",
+            "last_parse_time": "2026-07-05T18:55:48.1780594Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-07-05T16:19:04.3020747Z",
-            "error_message": "Warning: Cross-config validation skipped: Activity Configs registry is not available yet.\nWarning: Cross-config validation skipped: Buildings Configs registry is not available yet.\nWarning: Cross-config validation skipped: Skills registry is not available yet.\nWarning: Cross-config validation skipped: Rarities registry is not available yet.\nWarning: Cross-config validation skipped: Localisation registry is not available yet."
+            "last_validation_time": "2026-07-06T04:46:13.7265244Z",
+            "error_message": "Warning: Cross-config validation skipped: Heroes config registry is not available yet."
         },
         {
             "config_id": "formula_configs",
@@ -104,13 +104,13 @@
             "enabled": true,
             "output_json_path": "ConfigDownloads/formula_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/formula_configs.runtime.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
-            "last_parse_status": "unsupported",
-            "last_parse_time": "",
-            "last_validation_status": "not_run",
-            "last_validation_time": "",
-            "error_message": "No parser registered for 'formula_configs'."
+            "last_download_status": "success",
+            "last_download_time": "2026-07-05T18:55:36.9607143Z",
+            "last_parse_status": "success",
+            "last_parse_time": "2026-07-05T18:55:48.2049459Z",
+            "last_validation_status": "success",
+            "last_validation_time": "2026-07-06T04:46:13.7265244Z",
+            "error_message": "Warning: Cross-config validation skipped: Heroes config registry is not available yet."
         },
         {
             "config_id": "loot_configs",
@@ -120,13 +120,13 @@
             "enabled": true,
             "output_json_path": "ConfigDownloads/loot_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/loot_configs.runtime.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
-            "last_parse_status": "not_run",
-            "last_parse_time": "",
-            "last_validation_status": "not_run",
-            "last_validation_time": "",
-            "error_message": ""
+            "last_download_status": "success",
+            "last_download_time": "2026-07-05T18:55:39.4007883Z",
+            "last_parse_status": "success",
+            "last_parse_time": "2026-07-05T18:55:48.2269485Z",
+            "last_validation_status": "success",
+            "last_validation_time": "2026-07-06T04:46:13.7265244Z",
+            "error_message": "Warning: Cross-config validation skipped: Heroes config registry is not available yet."
         },
         {
             "config_id": "buildings_configs",
@@ -136,13 +136,13 @@
             "enabled": true,
             "output_json_path": "ConfigDownloads/buildings_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/buildings_configs.runtime.json",
-            "last_download_status": "not_downloaded",
-            "last_download_time": "",
-            "last_parse_status": "not_run",
-            "last_parse_time": "",
-            "last_validation_status": "not_run",
-            "last_validation_time": "",
-            "error_message": ""
+            "last_download_status": "success",
+            "last_download_time": "2026-07-05T18:55:45.7231538Z",
+            "last_parse_status": "success",
+            "last_parse_time": "2026-07-05T18:55:48.2579832Z",
+            "last_validation_status": "success",
+            "last_validation_time": "2026-07-06T04:46:13.7265244Z",
+            "error_message": "Warning: Cross-config validation skipped: Heroes config registry is not available yet."
         }
     ]
 }
