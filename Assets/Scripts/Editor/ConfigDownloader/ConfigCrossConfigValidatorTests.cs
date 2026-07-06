@@ -165,7 +165,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.False);
             Assert.That(report.ToDisplayMessage(), Does.Contain("EnemyLoot row 2 column 'loot_id' value 'resource_missing'"));
-            Assert.That(report.ToDisplayMessage(), Does.Contain("Items Configs / Ресурсы.id"));
+            Assert.That(report.ToDisplayMessage(), Does.Contain("item/resource/recipe/consumable registry or currency registry"));
         }
 
         [Test]
