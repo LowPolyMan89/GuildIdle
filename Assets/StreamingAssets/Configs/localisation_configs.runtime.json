@@ -1037,6 +1037,66 @@
       "ru": "Старая волчья тропа",
       "en": "Old Wolf Trail",
       "tr": "Eski Kurt Yolu"
+    },
+    {
+      "id": "item.resource_raspberry.name",
+      "ru": "Малина",
+      "en": "Raspberry",
+      "tr": "Ahududu"
+    },
+    {
+      "id": "item.resource_raspberry.description",
+      "ru": "Ягода, которую Аська может дополнительно найти на охоте.",
+      "en": "A berry that Aska can additionally find while hunting.",
+      "tr": "Aska'nın av sırasında ek olarak bulabileceği bir meyve."
+    },
+    {
+      "id": "hero_skill.gatherer.name",
+      "ru": "Собиратель",
+      "en": "Gatherer",
+      "tr": "Toplayıcı"
+    },
+    {
+      "id": "hero_skill.gatherer.description",
+      "ru": "При завершении цикла охоты имеет шанс дополнительно найти малину.",
+      "en": "When completing a hunting cycle, has a chance to additionally find raspberries.",
+      "tr": "Av döngüsünü tamamlarken ek olarak ahududu bulma şansı vardır."
+    },
+    {
+      "id": "hero_skill.melee_dodge.name",
+      "ru": "Уклонист",
+      "en": "Melee Dodge",
+      "tr": "Yakın Dövüşten Kaçınma"
+    },
+    {
+      "id": "hero_skill.melee_dodge.description",
+      "ru": "Имеет шанс уклониться от входящей атаки ближнего боя.",
+      "en": "Has a chance to dodge an incoming melee attack.",
+      "tr": "Gelen yakın dövüş saldırısından kaçınma şansı vardır."
+    },
+    {
+      "id": "hero_skill.reliable_hands.name",
+      "ru": "Надёжные руки",
+      "en": "Reliable Hands",
+      "tr": "Güvenilir Eller"
+    },
+    {
+      "id": "hero_skill.reliable_hands.description",
+      "ru": "Каждый 5-й завершённый цикл сбора даёт 1 дополнительный базовый ресурс.",
+      "en": "Every 5th completed gathering cycle gives 1 extra base resource.",
+      "tr": "Tamamlanan her 5. toplama döngüsü 1 ek temel kaynak verir."
+    },
+    {
+      "id": "hero_skill.will_to_live.name",
+      "ru": "Воля к жизни",
+      "en": "Will to Live",
+      "tr": "Yaşama İradesi"
+    },
+    {
+      "id": "hero_skill.will_to_live.description",
+      "ru": "Имеет шанс пережить смертельный удар и продолжить бой.",
+      "en": "Has a chance to survive lethal damage and continue fighting.",
+      "tr": "Ölümcül hasardan kurtulup savaşa devam etme şansı vardır."
     }
   ]
 }

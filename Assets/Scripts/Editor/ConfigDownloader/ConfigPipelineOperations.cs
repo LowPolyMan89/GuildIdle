@@ -15,6 +15,7 @@ namespace GuildIdle.Editor.ConfigDownloader
     {
         private static readonly IConfigPipelineParser[] _parsers =
         {
+            new HeroesConfigsParser(),
             new ActivityConfigsParser(),
             new EnemiesConfigsParser(),
             new StorageConfigsParser(),

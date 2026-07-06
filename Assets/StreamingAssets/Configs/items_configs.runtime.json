@@ -223,6 +223,29 @@
       "materials": [],
       "sourceActivityId": "hunt_rabbits",
       "skillExp": 0
+    },
+    {
+      "id": "resource_raspberry",
+      "nameId": "item.resource_raspberry.name",
+      "descriptionId": "item.resource_raspberry.description",
+      "iconId": "icon_resource_raspberry",
+      "kind": "resource",
+      "subtype": "berry",
+      "rarityId": "Common",
+      "tier": 1,
+      "craftStationId": "",
+      "craftDurationSec": 0,
+      "craftSkillId": "",
+      "requiredBuildings": [],
+      "requiredSkills": [],
+      "visibilityItemId": "",
+      "visibilityItemCount": 0,
+      "consumeVisibilityItem": false,
+      "hiddenUntilVisibilityItem": false,
+      "outputCount": 0,
+      "materials": [],
+      "sourceActivityId": "hunt_rabbits",
+      "skillExp": 0
     }
   ],
   "equipmentWeapons": [

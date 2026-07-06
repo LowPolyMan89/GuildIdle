@@ -169,6 +169,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             return new[]
             {
+                CreateSource("heroes_configs", "GuildIdle - Heroes Configs", "https://docs.google.com/spreadsheets/d/1ROad00r18FJfrHILmfbMDqTSFJYft93sqIkgg-BmeZU"),
                 CreateSource("activity_configs", "GuildIdle - Activity Configs", "https://docs.google.com/spreadsheets/d/10MOjF_GtcZcji0yv-dk69LtW3kfg6HqC2dyrdy9oa3w"),
                 CreateSource("enemies_configs", "GuildIdle - Enemies Configs", "https://docs.google.com/spreadsheets/d/1hjKKBn81MF6rn6dUECc6MQZoJ-q6TquicYd6CED8gQ4"),
                 CreateSource("storage_configs", "GuildIdle - Storage Configs", "https://docs.google.com/spreadsheets/d/1hSoVEQGuNQOpzQEtIWC95OthajpCXUjjbJe4AxA08-U"),

@@ -88,6 +88,20 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void Validate_HeroUniqueSkillNameIdUsesLocalisationRegistry()
+        {
+            var collection = Collection(
+                Source("heroes_configs", "GuildIdle - Heroes Configs", "heroes.json", HeroesDownload("missing_name_id", "hero_skill.gatherer.description")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("hero_skill.gatherer.description")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Heroes Configs / HeroUniqueSkills row 2 column 'NameId' value 'missing_name_id'"));
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Localisation.id"));
+        }
+
+        [Test]
         public void Validate_StorageBuildingsUsesBuildingsRegistry()
         {
             var collection = Collection(
@@ -270,6 +284,17 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Sheet("StorageBuildings",
                     Row("building_id", "level"),
                     Row(buildingId, level)));
+        }
+
+        private static ConfigSheetDownload HeroesDownload(string nameId, string descriptionId)
+        {
+            return Download(
+                Sheet("Heroes",
+                    Row("HeroId"),
+                    Row("aska")),
+                Sheet("HeroUniqueSkills",
+                    Row("HeroId", "SkillId", "NameId", "DescriptionId"),
+                    Row("aska", "gatherer", nameId, descriptionId)));
         }
 
         private static ConfigSheetDownload StorageRuleWithValue(string value)

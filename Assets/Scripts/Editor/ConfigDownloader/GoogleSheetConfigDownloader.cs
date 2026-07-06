@@ -15,6 +15,9 @@ namespace GuildIdle.Editor.ConfigDownloader
         private static readonly Regex _sheetCaptionRegex = new Regex(
             "docs-sheet-tab-caption\">([^<]+)",
             RegexOptions.Compiled);
+        private static readonly Regex _sheetMetadataRegex = new Regex(
+            "\\[\\d+,0,\\\\\"(?<gid>\\d+)\\\\\",\\[\\{\\\\\"1\\\\\":\\[\\[0,0,\\\\\"(?<name>.*?)\\\\\"\\]",
+            RegexOptions.Compiled);
 
         public static void DownloadEnabled(ConfigSourceSettingsCollection collection)
         {
@@ -84,7 +87,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     return;
                 }
 
-                if (!TryDownloadSheetNames(spreadsheetId, out var sheetNames, out var status, out var sheetError))
+                if (!TryDownloadSheetInfos(spreadsheetId, out var sheetInfos, out var status, out var sheetError))
                 {
                     Fail(source, status, sheetError);
                     return;
@@ -92,24 +95,24 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 var sheets = new List<ConfigDownloadedSheet>();
                 var totalRowCount = 0;
-                for (var index = 0; index < sheetNames.Count; index++)
+                for (var index = 0; index < sheetInfos.Count; index++)
                 {
-                    var sheetName = sheetNames[index];
+                    var sheetInfo = sheetInfos[index];
                     if (showProgress)
                     {
-                        var progress = 0.25f + (0.7f * index / Math.Max(1, sheetNames.Count));
-                        EditorUtility.DisplayProgressBar("Downloading config", $"Downloading {source.display_name}: {sheetName}", progress);
+                        var progress = 0.25f + (0.7f * index / Math.Max(1, sheetInfos.Count));
+                        EditorUtility.DisplayProgressBar("Downloading config", $"Downloading {source.display_name}: {sheetInfo.Name}", progress);
                     }
 
-                    if (!TryDownloadSheetRows(spreadsheetId, sheetName, out var rows, out status, out sheetError))
+                    if (!TryDownloadSheetRows(spreadsheetId, sheetInfo, out var rows, out status, out sheetError))
                     {
-                        Fail(source, status, $"{sheetName}: {sheetError}");
+                        Fail(source, status, $"{sheetInfo.Name}: {sheetError}");
                         return;
                     }
 
                     sheets.Add(new ConfigDownloadedSheet
                     {
-                        sheet_name = sheetName,
+                        sheet_name = sheetInfo.Name,
                         rows = rows.ToArray()
                     });
                     totalRowCount += rows.Count;
@@ -141,13 +144,13 @@ namespace GuildIdle.Editor.ConfigDownloader
             return string.Equals(sourceType, "GoogleSheet", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool TryDownloadSheetNames(
+        private static bool TryDownloadSheetInfos(
             string spreadsheetId,
-            out List<string> sheetNames,
+            out List<SheetInfo> sheetInfos,
             out string status,
             out string error)
         {
-            sheetNames = new List<string>();
+            sheetInfos = new List<SheetInfo>();
             status = null;
             error = null;
 
@@ -166,17 +169,32 @@ namespace GuildIdle.Editor.ConfigDownloader
                 return false;
             }
 
+            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (Match match in _sheetMetadataRegex.Matches(html))
+            {
+                if (!match.Success || match.Groups.Count < 3)
+                    continue;
+
+                var sheetName = WebUtility.HtmlDecode(match.Groups["name"].Value).Trim();
+                var gid = match.Groups["gid"].Value.Trim();
+                if (!string.IsNullOrWhiteSpace(sheetName) && seenNames.Add(sheetName))
+                    sheetInfos.Add(new SheetInfo(sheetName, gid));
+            }
+
+            if (sheetInfos.Count > 0)
+                return true;
+
             foreach (Match match in _sheetCaptionRegex.Matches(html))
             {
                 if (!match.Success || match.Groups.Count < 2)
                     continue;
 
                 var sheetName = WebUtility.HtmlDecode(match.Groups[1].Value).Trim();
-                if (!string.IsNullOrWhiteSpace(sheetName) && !sheetNames.Contains(sheetName))
-                    sheetNames.Add(sheetName);
+                if (!string.IsNullOrWhiteSpace(sheetName) && seenNames.Add(sheetName))
+                    sheetInfos.Add(new SheetInfo(sheetName, string.Empty));
             }
 
-            if (sheetNames.Count > 0)
+            if (sheetInfos.Count > 0)
                 return true;
 
             if (HtmlLooksLikeAccessDenied(html))
@@ -193,7 +211,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         private static bool TryDownloadSheetRows(
             string spreadsheetId,
-            string sheetName,
+            SheetInfo sheetInfo,
             out List<ConfigSheetRow> rows,
             out string status,
             out string error)
@@ -202,7 +220,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             status = null;
             error = null;
 
-            var url = CreateCsvExportUrl(spreadsheetId, sheetName);
+            var url = CreateCsvExportUrl(spreadsheetId, sheetInfo);
             if (!TryDownloadText(url, out var responseText, out var responseCode, out var requestError))
             {
                 status = responseCode == 404 ? ConfigDownloadStatus.LinkError : ConfigDownloadStatus.AccessError;
@@ -264,9 +282,24 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
         }
 
-        private static string CreateCsvExportUrl(string spreadsheetId, string sheetName)
+        private static string CreateCsvExportUrl(string spreadsheetId, SheetInfo sheetInfo)
         {
-            return $"https://docs.google.com/spreadsheets/d/{spreadsheetId}/gviz/tq?tqx=out:csv&sheet={Uri.EscapeDataString(sheetName)}";
+            if (!string.IsNullOrWhiteSpace(sheetInfo.Gid))
+                return $"https://docs.google.com/spreadsheets/d/{spreadsheetId}/export?format=csv&gid={Uri.EscapeDataString(sheetInfo.Gid)}";
+
+            return $"https://docs.google.com/spreadsheets/d/{spreadsheetId}/gviz/tq?tqx=out:csv&sheet={Uri.EscapeDataString(sheetInfo.Name)}";
+        }
+
+        private sealed class SheetInfo
+        {
+            public string Name { get; }
+            public string Gid { get; }
+
+            public SheetInfo(string name, string gid)
+            {
+                Name = name ?? string.Empty;
+                Gid = gid ?? string.Empty;
+            }
         }
 
         private static bool TryGetSpreadsheetId(string sheetUrl, out string spreadsheetId, out string error)

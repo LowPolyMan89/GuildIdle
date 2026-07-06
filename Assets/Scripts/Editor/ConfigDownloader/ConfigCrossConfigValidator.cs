@@ -8,6 +8,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 {
     public static class ConfigCrossConfigValidator
     {
+        private const string HeroesConfigId = "heroes_configs";
         private const string ActivityConfigId = "activity_configs";
         private const string EnemiesConfigId = "enemies_configs";
         private const string StorageConfigId = "storage_configs";
@@ -44,6 +45,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             var registry = ConfigRegistry.Build(collection);
 
             ValidateForbiddenLegacyIdEverywhere(registry, report);
+            HeroesCrossChecks.Validate(registry, report);
             ActivityCrossChecks.Validate(registry, report);
             EnemiesCrossChecks.Validate(registry, report);
             StorageCrossChecks.Validate(registry, report);
@@ -115,6 +117,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         private static bool IsKnownConfig(string configId)
         {
             return IsConfig(configId, ActivityConfigId) ||
+                   IsConfig(configId, HeroesConfigId) ||
                    IsConfig(configId, EnemiesConfigId) ||
                    IsConfig(configId, StorageConfigId) ||
                    IsConfig(configId, MapConfigId) ||
@@ -247,6 +250,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             public IReadOnlyCollection<LoadedConfig> Sources => _sources.Values;
 
+            public HeroesRegistry Heroes { get; private set; }
             public ActivityRegistry Activity { get; private set; }
             public EnemiesRegistry Enemies { get; private set; }
             public StorageRegistry Storage { get; private set; }
@@ -279,6 +283,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                         registry._sources[LocalisationConfigId] = loaded;
                 }
 
+                registry.Heroes = HeroesRegistry.TryBuild(registry.Get(HeroesConfigId));
                 registry.Activity = ActivityRegistry.TryBuild(registry.Get(ActivityConfigId));
                 registry.Enemies = EnemiesRegistry.TryBuild(registry.Get(EnemiesConfigId));
                 registry.Storage = StorageRegistry.TryBuild(registry.Get(StorageConfigId));
@@ -301,6 +306,8 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         private sealed class LoadedConfig
         {
+            private readonly Dictionary<string, ConfigDownloadedSheet> _rawSheets = new Dictionary<string, ConfigDownloadedSheet>(StringComparer.OrdinalIgnoreCase);
+
             public ConfigSourceSettings Source { get; }
             public string DisplayName { get; }
             public Dictionary<string, ConfigSheetTable> Tables { get; } = new Dictionary<string, ConfigSheetTable>(StringComparer.OrdinalIgnoreCase);
@@ -320,12 +327,18 @@ namespace GuildIdle.Editor.ConfigDownloader
                         continue;
 
                     Tables[sheet.sheet_name] = new ConfigSheetTable(sheet);
+                    _rawSheets[sheet.sheet_name] = sheet;
                 }
             }
 
             public bool TryGetTable(string sheetName, out ConfigSheetTable table)
             {
                 return Tables.TryGetValue(sheetName, out table);
+            }
+
+            public bool TryGetRawSheet(string sheetName, out ConfigDownloadedSheet sheet)
+            {
+                return _rawSheets.TryGetValue(sheetName, out sheet);
             }
 
             public bool TryReadRuntimeJson(out string json)
@@ -348,6 +361,69 @@ namespace GuildIdle.Editor.ConfigDownloader
                     json = null;
                     return false;
                 }
+            }
+        }
+
+        private sealed class HeroesRegistry
+        {
+            public LoadedConfig Source { get; }
+            public HashSet<string> HeroIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            private HeroesRegistry(LoadedConfig source)
+            {
+                Source = source;
+            }
+
+            public static HeroesRegistry TryBuild(LoadedConfig source)
+            {
+                if (source == null)
+                    return null;
+
+                var registry = new HeroesRegistry(source);
+                if (!source.TryGetRawSheet("Heroes", out var heroes))
+                    return registry;
+
+                var heroIdColumn = FindColumn(heroes, "HeroId", out var headerRow);
+                if (heroIdColumn < 0)
+                    return registry;
+
+                var rows = heroes.rows ?? Array.Empty<ConfigSheetRow>();
+                for (var rowIndex = headerRow + 1; rowIndex < rows.Length; rowIndex++)
+                {
+                    var heroId = Cell(rows[rowIndex], heroIdColumn);
+                    if (!IsBlank(heroId))
+                        registry.HeroIds.Add(heroId);
+                }
+
+                return registry;
+            }
+
+            private static int FindColumn(ConfigDownloadedSheet sheet, string column, out int headerRow)
+            {
+                var rows = sheet.rows ?? Array.Empty<ConfigSheetRow>();
+                for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
+                {
+                    var cells = rows[rowIndex]?.cells ?? Array.Empty<string>();
+                    for (var columnIndex = 0; columnIndex < cells.Length; columnIndex++)
+                    {
+                        if (string.Equals((cells[columnIndex] ?? string.Empty).Trim(), column, StringComparison.OrdinalIgnoreCase))
+                        {
+                            headerRow = rowIndex;
+                            return columnIndex;
+                        }
+                    }
+                }
+
+                headerRow = -1;
+                return -1;
+            }
+
+            private static string Cell(ConfigSheetRow row, int column)
+            {
+                if (row?.cells == null || column < 0 || column >= row.cells.Length)
+                    return string.Empty;
+
+                return (row.cells[column] ?? string.Empty).Trim();
             }
         }
 
@@ -787,6 +863,35 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
         }
 
+        private static class HeroesCrossChecks
+        {
+            public static void Validate(ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (registry.Heroes == null)
+                    return;
+
+                ValidateLocalisation(registry, report);
+            }
+
+            private static void ValidateLocalisation(ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!registry.Heroes.Source.TryGetTable("HeroUniqueSkills", out var table))
+                    return;
+
+                if (!HasAnyValue(table, "NameId") && !HasAnyValue(table, "DescriptionId"))
+                    return;
+
+                if (!TryGetRequiredRegistry(report, registry.Localisation, "Localisation"))
+                    return;
+
+                foreach (var row in table.DataRows)
+                {
+                    ValidateIdSet(report, registry.Heroes.Source.DisplayName, "HeroUniqueSkills", row, "NameId", registry.Localisation.LocalisationIds, "Localisation.id");
+                    ValidateIdSet(report, registry.Heroes.Source.DisplayName, "HeroUniqueSkills", row, "DescriptionId", registry.Localisation.LocalisationIds, "Localisation.id");
+                }
+            }
+        }
+
         private static class ActivityCrossChecks
         {
             public static void Validate(ConfigRegistry registry, ConfigPipelineReport report)
@@ -858,7 +963,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                             ValidateIdSet(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", activity.ActivityIds, "Activity Configs / Activities.id");
                             break;
                         case "HeroAvailable":
-                            AddMissingRegistryWarning(report, "Heroes config");
+                            if (TryGetRequiredRegistry(report, registry.Heroes, "Heroes Configs"))
+                                ValidateIdSet(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
                             break;
                     }
                 }
@@ -909,7 +1015,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Loot.LootTableIds, "Loot Configs / LootTables.loot_table_id");
                             break;
                         case "Hero":
-                            AddMissingRegistryWarning(report, "Heroes config");
+                            if (TryGetRequiredRegistry(report, registry.Heroes, "Heroes Configs"))
+                                ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
                             break;
                         case "BuildingUnlock":
                             if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))

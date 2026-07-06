@@ -455,18 +455,18 @@
       "reqType": "BuildingLevel",
       "targetId": "building_abandoned_mine",
       "value": 1,
-      "checkMoment": "OnStart",
       "consume": false,
-      "hidden": false
+      "hidden": false,
+      "checkMoment": "OnStart"
     },
     {
       "activityId": "hunt_rabbits",
       "reqType": "HeroAvailable",
       "targetId": "aska",
       "value": 1,
-      "checkMoment": "OnStart",
       "consume": false,
-      "hidden": false
+      "hidden": false,
+      "checkMoment": "OnStart"
     },
     {
       "activityId": "combat_watchtower_rats",
@@ -668,6 +668,9 @@
       "descriptionId": "rarity.common.description",
       "iconId": "icon_rarity_common",
       "colorHex": "#B8B8B8",
+      "rewardMult": 1,
+      "durationMult": 1,
+      "fatigueMult": 1,
       "weight": 100
     },
     {
@@ -688,6 +691,8 @@
       "iconId": "icon_rarity_rare",
       "colorHex": "#3B82F6",
       "rewardMult": 1.6,
+      "durationMult": 1.15,
+      "fatigueMult": 1.25,
       "weight": 18
     },
     {
@@ -696,6 +701,7 @@
       "descriptionId": "rarity.epic.description",
       "iconId": "icon_rarity_epic",
       "colorHex": "#9B5CFF",
+      "rewardMult": 2,
       "durationMult": 1.3,
       "fatigueMult": 1.4,
       "weight": 7

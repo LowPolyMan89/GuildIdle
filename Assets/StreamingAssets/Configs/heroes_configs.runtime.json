@@ -1,0 +1,2120 @@
+{
+  "heroes": [
+    {
+      "heroId": "aska",
+      "sortOrder": 1,
+      "rarityId": "Rare",
+      "typeId": "scout",
+      "enabled": true,
+      "professionIds": ["ranger", "herbalist"],
+      "uniqueSkillIds": ["gatherer", "melee_dodge"],
+      "fullSpriteId": "hero_aska_full",
+      "iconSpriteId": "hero_aska_icon",
+      "battleSpriteId": "hero_aska_battle",
+      "nameId": "hero.aska.name",
+      "descriptionId": "hero.aska.description",
+      "baseStats":   {
+    "strength": 2,
+    "agility": 8,
+    "intelligence": 2,
+    "luck": 4,
+    "endurance": 4
+  }
+    },
+    {
+      "heroId": "ren",
+      "sortOrder": 2,
+      "rarityId": "Common",
+      "typeId": "adventurer",
+      "enabled": true,
+      "professionIds": ["guild_apprentice"],
+      "uniqueSkillIds": ["reliable_hands", "will_to_live"],
+      "fullSpriteId": "hero_ren_full",
+      "iconSpriteId": "hero_ren_icon",
+      "battleSpriteId": "hero_ren_battle",
+      "nameId": "hero.ren.name",
+      "descriptionId": "hero.ren.description",
+      "baseStats":   {
+    "strength": 4,
+    "agility": 2,
+    "intelligence": 2,
+    "luck": 2,
+    "endurance": 5
+  }
+    }
+  ],
+  "heroGrowth": [
+    {
+      "heroId": "aska",
+      "level": 2,
+      "requiredSkillPoints": 5,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 3,
+      "requiredSkillPoints": 10,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 4,
+      "requiredSkillPoints": 15,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 5,
+      "requiredSkillPoints": 20,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 6,
+      "requiredSkillPoints": 25,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 7,
+      "requiredSkillPoints": 30,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 8,
+      "requiredSkillPoints": 35,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 9,
+      "requiredSkillPoints": 40,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 10,
+      "requiredSkillPoints": 45,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 2,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 11,
+      "requiredSkillPoints": 50,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 12,
+      "requiredSkillPoints": 55,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 13,
+      "requiredSkillPoints": 60,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 14,
+      "requiredSkillPoints": 65,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 15,
+      "requiredSkillPoints": 70,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 16,
+      "requiredSkillPoints": 75,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 17,
+      "requiredSkillPoints": 80,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 18,
+      "requiredSkillPoints": 85,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 19,
+      "requiredSkillPoints": 90,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 20,
+      "requiredSkillPoints": 95,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 21,
+      "requiredSkillPoints": 100,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 22,
+      "requiredSkillPoints": 105,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 23,
+      "requiredSkillPoints": 110,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 24,
+      "requiredSkillPoints": 115,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 25,
+      "requiredSkillPoints": 120,
+      "addStrength": 0,
+      "addAgility": 2,
+      "addIntelligence": 0,
+      "addLuck": 2,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 26,
+      "requiredSkillPoints": 125,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 27,
+      "requiredSkillPoints": 130,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 28,
+      "requiredSkillPoints": 135,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 29,
+      "requiredSkillPoints": 140,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 30,
+      "requiredSkillPoints": 145,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 31,
+      "requiredSkillPoints": 150,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 32,
+      "requiredSkillPoints": 155,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 33,
+      "requiredSkillPoints": 160,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 34,
+      "requiredSkillPoints": 165,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 35,
+      "requiredSkillPoints": 170,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 36,
+      "requiredSkillPoints": 175,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 37,
+      "requiredSkillPoints": 180,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 38,
+      "requiredSkillPoints": 185,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 39,
+      "requiredSkillPoints": 190,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 40,
+      "requiredSkillPoints": 195,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 41,
+      "requiredSkillPoints": 200,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 42,
+      "requiredSkillPoints": 205,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 43,
+      "requiredSkillPoints": 210,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 44,
+      "requiredSkillPoints": 215,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 45,
+      "requiredSkillPoints": 220,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 46,
+      "requiredSkillPoints": 225,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 47,
+      "requiredSkillPoints": 230,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 48,
+      "requiredSkillPoints": 235,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 49,
+      "requiredSkillPoints": 240,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 50,
+      "requiredSkillPoints": 245,
+      "addStrength": 0,
+      "addAgility": 3,
+      "addIntelligence": 1,
+      "addLuck": 2,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 51,
+      "requiredSkillPoints": 250,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 52,
+      "requiredSkillPoints": 255,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 53,
+      "requiredSkillPoints": 260,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 54,
+      "requiredSkillPoints": 265,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 55,
+      "requiredSkillPoints": 270,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 56,
+      "requiredSkillPoints": 275,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 57,
+      "requiredSkillPoints": 280,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 58,
+      "requiredSkillPoints": 285,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 59,
+      "requiredSkillPoints": 290,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 60,
+      "requiredSkillPoints": 295,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 61,
+      "requiredSkillPoints": 300,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 62,
+      "requiredSkillPoints": 305,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 63,
+      "requiredSkillPoints": 310,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 64,
+      "requiredSkillPoints": 315,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 65,
+      "requiredSkillPoints": 320,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 66,
+      "requiredSkillPoints": 325,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 67,
+      "requiredSkillPoints": 330,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 68,
+      "requiredSkillPoints": 335,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 69,
+      "requiredSkillPoints": 340,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 70,
+      "requiredSkillPoints": 345,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 71,
+      "requiredSkillPoints": 350,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 72,
+      "requiredSkillPoints": 355,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 73,
+      "requiredSkillPoints": 360,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 74,
+      "requiredSkillPoints": 365,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 75,
+      "requiredSkillPoints": 370,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 76,
+      "requiredSkillPoints": 375,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 77,
+      "requiredSkillPoints": 380,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 78,
+      "requiredSkillPoints": 385,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 79,
+      "requiredSkillPoints": 390,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 80,
+      "requiredSkillPoints": 395,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 81,
+      "requiredSkillPoints": 400,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 82,
+      "requiredSkillPoints": 405,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 83,
+      "requiredSkillPoints": 410,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 84,
+      "requiredSkillPoints": 415,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 85,
+      "requiredSkillPoints": 420,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 86,
+      "requiredSkillPoints": 425,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 87,
+      "requiredSkillPoints": 430,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 88,
+      "requiredSkillPoints": 435,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 89,
+      "requiredSkillPoints": 440,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 90,
+      "requiredSkillPoints": 445,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 91,
+      "requiredSkillPoints": 450,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 92,
+      "requiredSkillPoints": 455,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 93,
+      "requiredSkillPoints": 460,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 94,
+      "requiredSkillPoints": 465,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 95,
+      "requiredSkillPoints": 470,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 96,
+      "requiredSkillPoints": 475,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 97,
+      "requiredSkillPoints": 480,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 98,
+      "requiredSkillPoints": 485,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 99,
+      "requiredSkillPoints": 490,
+      "addStrength": 0,
+      "addAgility": 1,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "aska",
+      "level": 100,
+      "requiredSkillPoints": 495,
+      "addStrength": 0,
+      "addAgility": 4,
+      "addIntelligence": 1,
+      "addLuck": 3,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 2,
+      "requiredSkillPoints": 5,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 3,
+      "requiredSkillPoints": 10,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 4,
+      "requiredSkillPoints": 15,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 5,
+      "requiredSkillPoints": 20,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 6,
+      "requiredSkillPoints": 25,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 7,
+      "requiredSkillPoints": 30,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 8,
+      "requiredSkillPoints": 35,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 9,
+      "requiredSkillPoints": 40,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 10,
+      "requiredSkillPoints": 45,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 2,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 11,
+      "requiredSkillPoints": 50,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 12,
+      "requiredSkillPoints": 55,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 13,
+      "requiredSkillPoints": 60,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 14,
+      "requiredSkillPoints": 65,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 15,
+      "requiredSkillPoints": 70,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 16,
+      "requiredSkillPoints": 75,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 17,
+      "requiredSkillPoints": 80,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 18,
+      "requiredSkillPoints": 85,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 19,
+      "requiredSkillPoints": 90,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 20,
+      "requiredSkillPoints": 95,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 21,
+      "requiredSkillPoints": 100,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 22,
+      "requiredSkillPoints": 105,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 23,
+      "requiredSkillPoints": 110,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 24,
+      "requiredSkillPoints": 115,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 25,
+      "requiredSkillPoints": 120,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 1,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 26,
+      "requiredSkillPoints": 125,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 27,
+      "requiredSkillPoints": 130,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 28,
+      "requiredSkillPoints": 135,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 29,
+      "requiredSkillPoints": 140,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 30,
+      "requiredSkillPoints": 145,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 31,
+      "requiredSkillPoints": 150,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 32,
+      "requiredSkillPoints": 155,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 33,
+      "requiredSkillPoints": 160,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 34,
+      "requiredSkillPoints": 165,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 35,
+      "requiredSkillPoints": 170,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 36,
+      "requiredSkillPoints": 175,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 37,
+      "requiredSkillPoints": 180,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 38,
+      "requiredSkillPoints": 185,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 39,
+      "requiredSkillPoints": 190,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 40,
+      "requiredSkillPoints": 195,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 41,
+      "requiredSkillPoints": 200,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 42,
+      "requiredSkillPoints": 205,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 43,
+      "requiredSkillPoints": 210,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 44,
+      "requiredSkillPoints": 215,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 45,
+      "requiredSkillPoints": 220,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 46,
+      "requiredSkillPoints": 225,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 47,
+      "requiredSkillPoints": 230,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 48,
+      "requiredSkillPoints": 235,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 49,
+      "requiredSkillPoints": 240,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 50,
+      "requiredSkillPoints": 245,
+      "addStrength": 2,
+      "addAgility": 0,
+      "addIntelligence": 1,
+      "addLuck": 2,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 51,
+      "requiredSkillPoints": 250,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 52,
+      "requiredSkillPoints": 255,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 53,
+      "requiredSkillPoints": 260,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 54,
+      "requiredSkillPoints": 265,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 55,
+      "requiredSkillPoints": 270,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 56,
+      "requiredSkillPoints": 275,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 57,
+      "requiredSkillPoints": 280,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 58,
+      "requiredSkillPoints": 285,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 59,
+      "requiredSkillPoints": 290,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 60,
+      "requiredSkillPoints": 295,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 61,
+      "requiredSkillPoints": 300,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 62,
+      "requiredSkillPoints": 305,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 63,
+      "requiredSkillPoints": 310,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 64,
+      "requiredSkillPoints": 315,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 65,
+      "requiredSkillPoints": 320,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 66,
+      "requiredSkillPoints": 325,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 67,
+      "requiredSkillPoints": 330,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 68,
+      "requiredSkillPoints": 335,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 69,
+      "requiredSkillPoints": 340,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 70,
+      "requiredSkillPoints": 345,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 71,
+      "requiredSkillPoints": 350,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 72,
+      "requiredSkillPoints": 355,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 73,
+      "requiredSkillPoints": 360,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 74,
+      "requiredSkillPoints": 365,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 75,
+      "requiredSkillPoints": 370,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 76,
+      "requiredSkillPoints": 375,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 77,
+      "requiredSkillPoints": 380,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 78,
+      "requiredSkillPoints": 385,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 79,
+      "requiredSkillPoints": 390,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 80,
+      "requiredSkillPoints": 395,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 81,
+      "requiredSkillPoints": 400,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 82,
+      "requiredSkillPoints": 405,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 83,
+      "requiredSkillPoints": 410,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 84,
+      "requiredSkillPoints": 415,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 85,
+      "requiredSkillPoints": 420,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 86,
+      "requiredSkillPoints": 425,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 87,
+      "requiredSkillPoints": 430,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 88,
+      "requiredSkillPoints": 435,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 89,
+      "requiredSkillPoints": 440,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 90,
+      "requiredSkillPoints": 445,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 1,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 91,
+      "requiredSkillPoints": 450,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 92,
+      "requiredSkillPoints": 455,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 93,
+      "requiredSkillPoints": 460,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 94,
+      "requiredSkillPoints": 465,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 95,
+      "requiredSkillPoints": 470,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 96,
+      "requiredSkillPoints": 475,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 97,
+      "requiredSkillPoints": 480,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 98,
+      "requiredSkillPoints": 485,
+      "addStrength": 0,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 0
+    },
+    {
+      "heroId": "ren",
+      "level": 99,
+      "requiredSkillPoints": 490,
+      "addStrength": 1,
+      "addAgility": 0,
+      "addIntelligence": 0,
+      "addLuck": 0,
+      "addEndurance": 1
+    },
+    {
+      "heroId": "ren",
+      "level": 100,
+      "requiredSkillPoints": 495,
+      "addStrength": 3,
+      "addAgility": 0,
+      "addIntelligence": 1,
+      "addLuck": 3,
+      "addEndurance": 2
+    }
+  ],
+  "heroUniqueSkills": [
+    {
+      "heroId": "aska",
+      "skillId": "gatherer",
+      "type": "Peaceful",
+      "nameId": "hero_skill.gatherer.name",
+      "descriptionId": "hero_skill.gatherer.description",
+      "iconId": "icon_skill_gatherer",
+      "enabled": true
+    },
+    {
+      "heroId": "aska",
+      "skillId": "melee_dodge",
+      "type": "Combat",
+      "nameId": "hero_skill.melee_dodge.name",
+      "descriptionId": "hero_skill.melee_dodge.description",
+      "iconId": "icon_skill_melee_dodge",
+      "enabled": true
+    },
+    {
+      "heroId": "ren",
+      "skillId": "reliable_hands",
+      "type": "Peaceful",
+      "nameId": "hero_skill.reliable_hands.name",
+      "descriptionId": "hero_skill.reliable_hands.description",
+      "iconId": "icon_skill_reliable_hands",
+      "enabled": true
+    },
+    {
+      "heroId": "ren",
+      "skillId": "will_to_live",
+      "type": "Combat",
+      "nameId": "hero_skill.will_to_live.name",
+      "descriptionId": "hero_skill.will_to_live.description",
+      "iconId": "icon_skill_will_to_live",
+      "enabled": true
+    }
+  ],
+  "heroSkillEffects": [
+    {
+      "skillId": "gatherer",
+      "effectId": "gatherer_add_raspberry",
+      "trigger": "OnWorkCycleComplete",
+      "condition": "activity_category=Hunting",
+      "chancePercent": 10,
+      "interval": 0,
+      "effect": "AddItem",
+      "target": "resource_raspberry",
+      "value": "1",
+      "stackMode": "Independent",
+      "cooldownSeconds": 0
+    },
+    {
+      "skillId": "melee_dodge",
+      "effectId": "melee_dodge_attack",
+      "trigger": "OnIncomingAttack",
+      "condition": "attack_range=Melee",
+      "chancePercent": 5,
+      "interval": 0,
+      "effect": "DodgeAttack",
+      "target": "self",
+      "value": "1",
+      "stackMode": "Independent",
+      "cooldownSeconds": 0
+    },
+    {
+      "skillId": "reliable_hands",
+      "effectId": "reliable_hands_extra_resource",
+      "trigger": "OnWorkCycleComplete",
+      "condition": "activity_category=Gathering",
+      "chancePercent": 100,
+      "interval": 5,
+      "effect": "AddExtraBaseResource",
+      "target": "completed_work_base_resource",
+      "value": "1",
+      "stackMode": "Independent",
+      "cooldownSeconds": 0
+    },
+    {
+      "skillId": "will_to_live",
+      "effectId": "will_to_live_prevent_death",
+      "trigger": "OnLethalDamageTaken",
+      "condition": "damage_would_kill=true",
+      "chancePercent": 25,
+      "interval": 0,
+      "effect": "PreventDeath",
+      "target": "self",
+      "value": "1",
+      "stackMode": "Independent",
+      "cooldownSeconds": 0
+    }
+  ]
+}
