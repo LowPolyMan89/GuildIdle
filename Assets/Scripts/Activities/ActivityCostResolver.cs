@@ -17,18 +17,40 @@ namespace GuildIdle.Activities
             return BuildCostResult(activityId, state, apply: false);
         }
 
-        public static ActivityCostResult ApplyCost(string activityId)
+        public static ActivityCostResult CanPayCost(ActivityExecutionContext context)
         {
-            return ApplyCost(activityId, ActivityResolverUtilities.DefaultState());
+            return CanPayCost(context, ActivityResolverUtilities.DefaultState());
         }
 
+        public static ActivityCostResult CanPayCost(ActivityExecutionContext context, IActivityPlayerState state)
+        {
+            return BuildCostResult(context, state, apply: false);
+        }
+
+        [Obsolete("Use ApplyCost(ActivityExecutionContext) so hero-bound costs have an executor context.")]
+        public static ActivityCostResult ApplyCost(string activityId)
+        {
+            return MissingContextApplyResult(activityId);
+        }
+
+        [Obsolete("Use ApplyCost(ActivityExecutionContext, IActivityPlayerState) so hero-bound costs have an executor context.")]
         public static ActivityCostResult ApplyCost(string activityId, IActivityPlayerState state)
         {
-            var check = BuildCostResult(activityId, state, apply: false);
+            return MissingContextApplyResult(activityId);
+        }
+
+        public static ActivityCostResult ApplyCost(ActivityExecutionContext context)
+        {
+            return ApplyCost(context, ActivityResolverUtilities.DefaultState());
+        }
+
+        public static ActivityCostResult ApplyCost(ActivityExecutionContext context, IActivityPlayerState state)
+        {
+            var check = BuildCostResult(context, state, apply: false);
             if (!check.success)
                 return check;
 
-            return BuildCostResult(activityId, state, apply: true);
+            return BuildCostResult(context, state, apply: true);
         }
 
         private static ActivityCostResult BuildCostResult(string activityId, IActivityPlayerState state, bool apply)
@@ -46,9 +68,10 @@ namespace GuildIdle.Activities
                 {
                     costType = "Fatigue",
                     targetId = "fatigue",
+                    ownerType = ActivityResolverUtilities.OwnerHero,
                     amount = activity.fatigueCost,
                     applied = false,
-                    message = "Fatigue is result-only until PlayerState stores fatigue."
+                    message = "Fatigue requires ActivityExecutionContext to resolve the executor hero."
                 });
             }
 
@@ -64,6 +87,71 @@ namespace GuildIdle.Activities
             AddAggregatedCurrencyCosts(activityId, currencyCosts, state, apply, issues, costs);
 
             return Finish(activityId, issues, costs);
+        }
+
+        private static ActivityCostResult MissingContextApplyResult(string activityId)
+        {
+            var issues = new List<ActivityRequirementIssue>();
+            ActivityResolverUtilities.AddIssue(issues, activityId, "ActivityExecutionContext", string.Empty, 1, 0, true, false, "ApplyCost requires ActivityExecutionContext.");
+            return Finish(activityId, issues, new List<ActivityAppliedCost>());
+        }
+
+        private static ActivityCostResult BuildCostResult(ActivityExecutionContext context, IActivityPlayerState state, bool apply)
+        {
+            var issues = new List<ActivityRequirementIssue>();
+            var costs = new List<ActivityAppliedCost>();
+            var itemCosts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var currencyCosts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var activityId = context?.activityId;
+            if (!ActivityResolverUtilities.TryGetActivity(activityId, issues, out var activity))
+                return Finish(activityId, issues, costs);
+
+            if (!ActivityResolverUtilities.ValidateExecutionContext(context, state, issues))
+                return Finish(activityId, issues, costs);
+
+            if (activity.fatigueCost > 0)
+                AddFatigueCost(context, state, activity.fatigueCost, apply, issues, costs);
+
+            foreach (var requirement in RuntimeConfigs.Activities.GetRequirements(activityId))
+            {
+                if (requirement == null || !requirement.consume)
+                    continue;
+
+                AddConsumableRequirementCost(requirement, issues, itemCosts, currencyCosts);
+            }
+
+            AddAggregatedItemCosts(activityId, itemCosts, state, apply, issues, costs);
+            AddAggregatedCurrencyCosts(activityId, currencyCosts, state, apply, issues, costs);
+
+            return Finish(activityId, issues, costs);
+        }
+
+        private static void AddFatigueCost(
+            ActivityExecutionContext context,
+            IActivityPlayerState state,
+            int amount,
+            bool apply,
+            List<ActivityRequirementIssue> issues,
+            List<ActivityAppliedCost> costs)
+        {
+            var current = state.GetHeroFatigue(context.heroId);
+            if (current < amount)
+            {
+                ActivityResolverUtilities.AddIssue(issues, context.activityId, "Fatigue", context.heroId, amount, current, false, false, $"Cannot pay Fatigue for hero '{context.heroId}': {current}/{amount}.");
+                return;
+            }
+
+            var applied = apply && state.SpendHeroFatigue(context.heroId, amount);
+            costs.Add(new ActivityAppliedCost
+            {
+                costType = "Fatigue",
+                targetId = "fatigue",
+                ownerType = ActivityResolverUtilities.OwnerHero,
+                ownerId = context.heroId,
+                amount = amount,
+                applied = applied,
+                message = apply ? "Spent hero fatigue cost." : "Can spend hero fatigue cost."
+            });
         }
 
         private static void AddConsumableRequirementCost(
@@ -132,7 +220,7 @@ namespace GuildIdle.Activities
                 }
 
                 var applied = apply && state.SpendItem(itemCost.Key, itemCost.Value);
-                costs.Add(new ActivityAppliedCost { costType = "Item", targetId = itemCost.Key, amount = itemCost.Value, applied = applied, message = apply ? "Spent item cost." : "Can spend item cost." });
+                costs.Add(new ActivityAppliedCost { costType = "Item", targetId = itemCost.Key, ownerType = ActivityResolverUtilities.OwnerProfile, amount = itemCost.Value, applied = applied, message = apply ? "Spent item cost." : "Can spend item cost." });
             }
         }
 
@@ -154,7 +242,7 @@ namespace GuildIdle.Activities
                 }
 
                 var applied = apply && state.SpendCurrency(currencyCost.Key, currencyCost.Value);
-                costs.Add(new ActivityAppliedCost { costType = "Currency", targetId = currencyCost.Key, amount = currencyCost.Value, applied = applied, message = apply ? "Spent currency cost." : "Can spend currency cost." });
+                costs.Add(new ActivityAppliedCost { costType = "Currency", targetId = currencyCost.Key, ownerType = ActivityResolverUtilities.OwnerProfile, amount = currencyCost.Value, applied = applied, message = apply ? "Spent currency cost." : "Can spend currency cost." });
             }
         }
 

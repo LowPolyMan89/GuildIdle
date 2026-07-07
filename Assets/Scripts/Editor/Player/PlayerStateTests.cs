@@ -23,8 +23,15 @@ namespace GuildIdle.Editor.Player
 
             Assert.That(state.IsHeroUnlocked("ren"), Is.True);
             Assert.That(state.HasHero("ren"), Is.True);
+            Assert.That(state.HasHeroState("ren"), Is.True);
             Assert.That(state.GetHeroInSlot(0), Is.EqualTo("ren"));
+            Assert.That(state.GetHeroMaxFatigue("ren"), Is.GreaterThan(0));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(state.GetHeroMaxFatigue("ren")));
             Assert.That(state.GetItem("item_wooden_club"), Is.EqualTo(1));
+
+            var saveData = state.ToSaveData();
+            Assert.That(saveData.heroes, Has.Length.EqualTo(1));
+            Assert.That(saveData.heroes[0].heroId, Is.EqualTo("ren"));
         }
 
         [Test]
@@ -114,6 +121,63 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
+        public void HeroState_SaveLoadRoundtripPreservesRuntimeState()
+        {
+            var state = PlayerState.CreateDefault();
+            var maxFatigue = state.GetHeroMaxFatigue("ren");
+
+            Assert.That(state.SpendHeroFatigue("ren", 5), Is.True);
+            Assert.That(state.AddHeroSkillExp("ren", "skill_gathering", 150), Is.True);
+            Assert.That(state.SetHeroBusy("ren", "exec_1"), Is.True);
+
+            var storage = new MemorySaveStorage();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            var restored = SaveService.Load(storage);
+
+            Assert.That(restored.GetHeroFatigue("ren"), Is.EqualTo(maxFatigue - 5));
+            Assert.That(restored.GetHeroSkillExp("ren", "skill_gathering"), Is.EqualTo(150));
+            Assert.That(restored.GetHeroSkillLevel("ren", "skill_gathering"), Is.EqualTo(2));
+            Assert.That(restored.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo("exec_1"));
+        }
+
+        [Test]
+        public void Load_V1SaveWithoutHeroStatesHydratesAcquiredHeroes()
+        {
+            var state = new PlayerState(new SaveData
+            {
+                saveVersion = 1,
+                unlockedHeroes = new[] { "ren" },
+                acquiredHeroes = new[] { "ren" },
+                heroSlots = new[] { new HeroSlotSaveEntry { slotIndex = 0, heroId = "ren" } }
+            });
+
+            Assert.That(state.HasHeroState("ren"), Is.True);
+            Assert.That(state.GetHeroInSlot(0), Is.EqualTo("ren"));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(state.GetHeroMaxFatigue("ren")));
+            Assert.That(state.ToSaveData().saveVersion, Is.EqualTo(SaveData.CurrentSaveVersion));
+        }
+
+        [Test]
+        public void HeroBusy_IsIdempotentForSameExecutionAndRejectsDifferentExecution()
+        {
+            var state = PlayerState.CreateDefault();
+
+            Assert.That(state.SetHeroBusy("ren", "exec_1"), Is.True);
+            Assert.That(state.SetHeroBusy("ren", "exec_1"), Is.True);
+
+            using (var logs = new CapturingLogHandler())
+            {
+                Assert.That(state.SetHeroBusy("ren", "exec_2"), Is.False);
+                logs.AssertErrorContains("Hero 'ren' is already busy with execution 'exec_1'.");
+                Assert.That(state.ClearHeroBusy("ren", "exec_2"), Is.False);
+                logs.AssertErrorContains("Cannot clear busy state for hero 'ren' with execution 'exec_2'");
+            }
+
+            Assert.That(state.ClearHeroBusy("ren", "exec_1"), Is.True);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+        }
+
+        [Test]
         public void SaveService_LoadsDefaultOnCorruptJson()
         {
             var storage = new MemorySaveStorage();
@@ -166,7 +230,12 @@ namespace GuildIdle.Editor.Player
                 {
                     heroes = new[]
                     {
-                        new HeroConfigDto { heroId = "ren", enabled = true }
+                        new HeroConfigDto
+                        {
+                            heroId = "ren",
+                            enabled = true,
+                            baseStats = new HeroBaseStatsDto { endurance = 5 }
+                        }
                     }
                 },
                 new ActivitiesRuntimeConfigDto
@@ -175,6 +244,15 @@ namespace GuildIdle.Editor.Player
                     {
                         new ActivityConfigDto { id = "starter_hero_available" },
                         new ActivityConfigDto { id = "combat_first_map_node" }
+                    },
+                    skills = new[]
+                    {
+                        new SkillConfigDto { skillId = "skill_gathering" }
+                    },
+                    skillsProgression = new[]
+                    {
+                        new SkillProgressionConfigDto { level = 1, totalExpRequired = 0 },
+                        new SkillProgressionConfigDto { level = 2, totalExpRequired = 100 }
                     },
                     rewards = new[]
                     {
@@ -206,7 +284,23 @@ namespace GuildIdle.Editor.Player
                     }
                 },
                 null,
-                null,
+                new FormulaRuntimeConfigDto
+                {
+                    heroDerivedStats = new[]
+                    {
+                        new HeroDerivedStatConfigDto
+                        {
+                            formulaId = "hero_max_fatigue",
+                            derivedStatId = "max_fatigue",
+                            baseValue = 100,
+                            primaryStat = "Endurance",
+                            primaryStatMultiplier = 4,
+                            levelMultiplier = 1,
+                            rounding = "Round",
+                            enabled = true
+                        }
+                    }
+                },
                 null,
                 new MapRuntimeConfigDto
                 {

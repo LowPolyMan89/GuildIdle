@@ -5,7 +5,7 @@ namespace GuildIdle.Player
     [Serializable]
     public sealed class SaveData
     {
-        public const int CurrentSaveVersion = 1;
+        public const int CurrentSaveVersion = 2;
 
         public int saveVersion = CurrentSaveVersion;
         public CurrencySaveEntry[] currencies = Array.Empty<CurrencySaveEntry>();
@@ -13,6 +13,7 @@ namespace GuildIdle.Player
         public string[] unlockedHeroes = Array.Empty<string>();
         public string[] acquiredHeroes = Array.Empty<string>();
         public HeroSlotSaveEntry[] heroSlots = Array.Empty<HeroSlotSaveEntry>();
+        public HeroSaveData[] heroes = Array.Empty<HeroSaveData>();
         public string[] unlockedBuildings = Array.Empty<string>();
         public BuildingLevelSaveEntry[] buildingLevels = Array.Empty<BuildingLevelSaveEntry>();
         public string[] unlockedLocations = Array.Empty<string>();
@@ -39,6 +40,26 @@ namespace GuildIdle.Player
     {
         public int slotIndex;
         public string heroId;
+    }
+
+    [Serializable]
+    public sealed class HeroSaveData
+    {
+        public string heroId;
+        public int level;
+        public long exp;
+        public int fatigue;
+        public int maxFatigue;
+        public string currentActivityExecutionId;
+        public HeroSkillSaveData[] skills = Array.Empty<HeroSkillSaveData>();
+    }
+
+    [Serializable]
+    public sealed class HeroSkillSaveData
+    {
+        public string skillId;
+        public int level;
+        public long exp;
     }
 
     [Serializable]

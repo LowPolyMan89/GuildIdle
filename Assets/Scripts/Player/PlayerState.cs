@@ -18,6 +18,7 @@ namespace GuildIdle.Player
         private readonly HashSet<string> _unlockedHeroes = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _acquiredHeroes = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<int, string> _heroSlots = new Dictionary<int, string>();
+        private readonly Dictionary<string, HeroRuntimeState> _heroes = new Dictionary<string, HeroRuntimeState>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedBuildings = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _buildingLevels = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedLocations = new HashSet<string>(StringComparer.Ordinal);
@@ -46,6 +47,7 @@ namespace GuildIdle.Player
                 unlockedHeroes = BuildSortedArray(_unlockedHeroes),
                 acquiredHeroes = BuildSortedArray(_acquiredHeroes),
                 heroSlots = BuildHeroSlotEntries(),
+                heroes = BuildHeroEntries(),
                 unlockedBuildings = BuildSortedArray(_unlockedBuildings),
                 buildingLevels = BuildBuildingLevelEntries(),
                 unlockedLocations = BuildSortedArray(_unlockedLocations),
@@ -76,7 +78,9 @@ namespace GuildIdle.Player
                 return false;
 
             _unlockedHeroes.Add(heroId);
-            return _acquiredHeroes.Add(heroId);
+            var added = _acquiredHeroes.Add(heroId);
+            EnsureHeroState(heroId);
+            return added;
         }
 
         public string GetHeroInSlot(int slotIndex)
@@ -102,6 +106,137 @@ namespace GuildIdle.Player
             }
 
             _heroSlots[slotIndex] = heroId;
+            return true;
+        }
+
+        public bool HasHeroState(string heroId)
+        {
+            if (!ValidateHeroId(heroId))
+                return false;
+
+            return _heroes.ContainsKey(heroId);
+        }
+
+        public HeroSaveData GetHeroState(string heroId)
+        {
+            if (!ValidateHeroId(heroId) || !_heroes.TryGetValue(heroId, out var hero))
+                return null;
+
+            return hero.ToSaveData();
+        }
+
+        public int GetHeroFatigue(string heroId)
+        {
+            return TryGetHeroState(heroId, out var hero) ? hero.Fatigue : 0;
+        }
+
+        public int GetHeroMaxFatigue(string heroId)
+        {
+            return TryGetHeroState(heroId, out var hero) ? hero.MaxFatigue : 0;
+        }
+
+        public bool SpendHeroFatigue(string heroId, int amount)
+        {
+            if (!ValidatePositiveAmount(amount, "hero fatigue") || !TryGetHeroState(heroId, out var hero))
+                return false;
+
+            if (hero.Fatigue < amount)
+                return false;
+
+            hero.Fatigue -= amount;
+            return true;
+        }
+
+        public bool RestoreHeroFatigue(string heroId, int amount)
+        {
+            if (!ValidatePositiveAmount(amount, "hero fatigue") || !TryGetHeroState(heroId, out var hero))
+                return false;
+
+            hero.Fatigue = Math.Min(hero.MaxFatigue, hero.Fatigue + amount);
+            return true;
+        }
+
+        public int GetHeroSkillLevel(string heroId, string skillId)
+        {
+            if (!ValidateSkillId(skillId) || !TryGetHeroState(heroId, out var hero))
+                return 0;
+
+            return hero.Skills.TryGetValue(skillId, out var skill) ? skill.Level : 1;
+        }
+
+        public long GetHeroSkillExp(string heroId, string skillId)
+        {
+            if (!ValidateSkillId(skillId) || !TryGetHeroState(heroId, out var hero))
+                return 0L;
+
+            return hero.Skills.TryGetValue(skillId, out var skill) ? skill.Exp : 0L;
+        }
+
+        public bool AddHeroSkillExp(string heroId, string skillId, int amount)
+        {
+            if (!ValidateSkillId(skillId) || !ValidatePositiveAmount(amount, "hero skill exp") || !TryGetHeroState(heroId, out var hero))
+                return false;
+
+            if (!hero.Skills.TryGetValue(skillId, out var skill))
+            {
+                skill = new HeroSkillRuntimeState(skillId);
+                hero.Skills.Add(skillId, skill);
+            }
+
+            skill.Exp = AddClamped(skill.Exp, amount);
+            skill.Level = ResolveSkillLevel(skill.Exp);
+            return true;
+        }
+
+        public bool IsHeroBusy(string heroId)
+        {
+            return TryGetHeroState(heroId, out var hero) && !string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId);
+        }
+
+        public string GetHeroCurrentActivityExecutionId(string heroId)
+        {
+            return TryGetHeroState(heroId, out var hero) ? hero.CurrentActivityExecutionId : null;
+        }
+
+        public bool SetHeroBusy(string heroId, string executionId)
+        {
+            if (!TryGetHeroState(heroId, out var hero))
+                return false;
+
+            if (string.IsNullOrWhiteSpace(executionId))
+            {
+                Debug.LogError("[PlayerState] Cannot set hero busy with empty execution id.");
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
+            {
+                hero.CurrentActivityExecutionId = executionId;
+                return true;
+            }
+
+            if (string.Equals(hero.CurrentActivityExecutionId, executionId, StringComparison.Ordinal))
+                return true;
+
+            Debug.LogError($"[PlayerState] Hero '{heroId}' is already busy with execution '{hero.CurrentActivityExecutionId}'.");
+            return false;
+        }
+
+        public bool ClearHeroBusy(string heroId, string executionId)
+        {
+            if (!TryGetHeroState(heroId, out var hero))
+                return false;
+
+            if (string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
+                return true;
+
+            if (!string.Equals(hero.CurrentActivityExecutionId, executionId, StringComparison.Ordinal))
+            {
+                Debug.LogError($"[PlayerState] Cannot clear busy state for hero '{heroId}' with execution '{executionId}': current execution is '{hero.CurrentActivityExecutionId}'.");
+                return false;
+            }
+
+            hero.CurrentActivityExecutionId = null;
             return true;
         }
 
@@ -284,12 +419,14 @@ namespace GuildIdle.Player
             LoadItems(saveData.items);
             LoadHeroes(saveData.unlockedHeroes, _unlockedHeroes);
             LoadHeroes(saveData.acquiredHeroes, _acquiredHeroes);
+            LoadHeroStates(saveData.heroes);
             LoadBuildings(saveData.unlockedBuildings);
             LoadBuildingLevels(saveData.buildingLevels);
             LoadLocations(saveData.unlockedLocations);
             LoadActivities(saveData.completedActivities, _completedActivities);
             LoadActivities(saveData.availableActivities, _availableActivities);
             LoadHeroSlots(saveData.heroSlots);
+            EnsureHeroStatesForAcquiredHeroes();
         }
 
         private void ApplyDefaultBootstrap()
@@ -389,6 +526,51 @@ namespace GuildIdle.Player
                 }
 
                 _heroSlots[entry.slotIndex] = entry.heroId;
+            }
+        }
+
+        private void LoadHeroStates(HeroSaveData[] entries)
+        {
+            if (entries == null)
+                return;
+
+            foreach (var entry in entries)
+            {
+                if (entry == null || !ValidateHeroId(entry.heroId))
+                    continue;
+
+                if (!_acquiredHeroes.Contains(entry.heroId))
+                {
+                    Debug.LogError($"[PlayerState] Ignoring hero state for non-acquired hero '{entry.heroId}'.");
+                    continue;
+                }
+
+                var hero = CreateHeroState(entry.heroId, Math.Max(1, entry.level));
+                hero.Exp = Math.Max(0L, entry.exp);
+                hero.MaxFatigue = entry.maxFatigue > 0 ? entry.maxFatigue : CalculateHeroMaxFatigue(hero.HeroId, hero.Level);
+                hero.Fatigue = Math.Max(0, Math.Min(hero.MaxFatigue, entry.fatigue));
+                hero.CurrentActivityExecutionId = string.IsNullOrWhiteSpace(entry.currentActivityExecutionId) ? null : entry.currentActivityExecutionId;
+                LoadHeroSkills(hero, entry.skills);
+                _heroes[hero.HeroId] = hero;
+            }
+        }
+
+        private void LoadHeroSkills(HeroRuntimeState hero, HeroSkillSaveData[] entries)
+        {
+            if (entries == null)
+                return;
+
+            foreach (var entry in entries)
+            {
+                if (entry == null || !ValidateSkillId(entry.skillId))
+                    continue;
+
+                var exp = Math.Max(0L, entry.exp);
+                hero.Skills[entry.skillId] = new HeroSkillRuntimeState(entry.skillId)
+                {
+                    Exp = exp,
+                    Level = Math.Max(1, entry.level > 0 ? entry.level : ResolveSkillLevel(exp))
+                };
             }
         }
 
@@ -545,6 +727,24 @@ namespace GuildIdle.Player
             return false;
         }
 
+        private static bool ValidateSkillId(string skillId)
+        {
+            if (!ValidateConfigsReady("validate skill id"))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(skillId))
+            {
+                foreach (var skill in RuntimeConfigs.Activities.Skills)
+                {
+                    if (skill != null && string.Equals(skill.skillId, skillId, StringComparison.Ordinal))
+                        return true;
+                }
+            }
+
+            Debug.LogError($"[PlayerState] Unknown skill id '{skillId}'.");
+            return false;
+        }
+
         private static bool ValidatePositiveAmount(long amount, string target)
         {
             if (amount > 0)
@@ -552,6 +752,136 @@ namespace GuildIdle.Player
 
             Debug.LogError($"[PlayerState] Cannot change {target} by non-positive amount '{amount}'.");
             return false;
+        }
+
+        private bool TryGetHeroState(string heroId, out HeroRuntimeState hero)
+        {
+            hero = null;
+            if (!ValidateHeroId(heroId))
+                return false;
+
+            if (_heroes.TryGetValue(heroId, out hero))
+                return true;
+
+            Debug.LogError($"[PlayerState] Missing hero state for hero '{heroId}'.");
+            return false;
+        }
+
+        private void EnsureHeroStatesForAcquiredHeroes()
+        {
+            foreach (var heroId in _acquiredHeroes)
+                EnsureHeroState(heroId);
+        }
+
+        private HeroRuntimeState EnsureHeroState(string heroId)
+        {
+            if (_heroes.TryGetValue(heroId, out var hero))
+                return hero;
+
+            hero = CreateHeroState(heroId, 1);
+            _heroes.Add(heroId, hero);
+            return hero;
+        }
+
+        private static HeroRuntimeState CreateHeroState(string heroId, int level)
+        {
+            var resolvedLevel = Math.Max(1, level);
+            var maxFatigue = CalculateHeroMaxFatigue(heroId, resolvedLevel);
+            return new HeroRuntimeState(heroId)
+            {
+                Level = resolvedLevel,
+                Exp = 0L,
+                MaxFatigue = maxFatigue,
+                Fatigue = maxFatigue
+            };
+        }
+
+        private static int CalculateHeroMaxFatigue(string heroId, int level)
+        {
+            if (RuntimeConfigs.Formulas.TryGetHeroDerivedStat("hero_max_fatigue", out var formula) && formula != null && formula.enabled)
+            {
+                var stat = GetHeroStat(heroId, formula.primaryStat, level);
+                var value = formula.baseValue + stat * formula.primaryStatMultiplier + Math.Max(1, level) * formula.levelMultiplier;
+                return Math.Max(1, RoundFormulaValue(value, formula.rounding));
+            }
+
+            return 100;
+        }
+
+        private static int RoundFormulaValue(float value, string rounding)
+        {
+            if (string.Equals(rounding, "Floor", StringComparison.OrdinalIgnoreCase))
+                return (int)Math.Floor(value);
+
+            if (string.Equals(rounding, "Ceil", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(rounding, "Ceiling", StringComparison.OrdinalIgnoreCase))
+                return (int)Math.Ceiling(value);
+
+            return (int)Math.Round(value, MidpointRounding.AwayFromZero);
+        }
+
+        private static int GetHeroStat(string heroId, string statId, int level)
+        {
+            if (!RuntimeConfigs.Heroes.TryGet(heroId, out var hero) || hero == null)
+                return 0;
+
+            var value = GetBaseStat(hero.baseStats, statId);
+            foreach (var growth in RuntimeConfigs.Heroes.HeroGrowth)
+            {
+                if (growth == null || growth.level > level || !string.Equals(growth.heroId, heroId, StringComparison.Ordinal))
+                    continue;
+
+                value += GetGrowthStat(growth, statId);
+            }
+
+            return value;
+        }
+
+        private static int GetBaseStat(HeroBaseStatsDto stats, string statId)
+        {
+            if (stats == null)
+                return 0;
+
+            if (string.Equals(statId, "Strength", StringComparison.OrdinalIgnoreCase))
+                return stats.strength;
+            if (string.Equals(statId, "Agility", StringComparison.OrdinalIgnoreCase))
+                return stats.agility;
+            if (string.Equals(statId, "Intelligence", StringComparison.OrdinalIgnoreCase))
+                return stats.intelligence;
+            if (string.Equals(statId, "Luck", StringComparison.OrdinalIgnoreCase))
+                return stats.luck;
+            if (string.Equals(statId, "Endurance", StringComparison.OrdinalIgnoreCase))
+                return stats.endurance;
+
+            return 0;
+        }
+
+        private static int GetGrowthStat(HeroGrowthConfigDto growth, string statId)
+        {
+            if (string.Equals(statId, "Strength", StringComparison.OrdinalIgnoreCase))
+                return growth.addStrength;
+            if (string.Equals(statId, "Agility", StringComparison.OrdinalIgnoreCase))
+                return growth.addAgility;
+            if (string.Equals(statId, "Intelligence", StringComparison.OrdinalIgnoreCase))
+                return growth.addIntelligence;
+            if (string.Equals(statId, "Luck", StringComparison.OrdinalIgnoreCase))
+                return growth.addLuck;
+            if (string.Equals(statId, "Endurance", StringComparison.OrdinalIgnoreCase))
+                return growth.addEndurance;
+
+            return 0;
+        }
+
+        private static int ResolveSkillLevel(long exp)
+        {
+            var level = 1;
+            foreach (var row in RuntimeConfigs.Activities.SkillsProgression)
+            {
+                if (row != null && exp >= row.totalExpRequired)
+                    level = Math.Max(level, row.level);
+            }
+
+            return level;
         }
 
         private int GetItemAmount(string itemId)
@@ -621,6 +951,16 @@ namespace GuildIdle.Player
             return entries;
         }
 
+        private HeroSaveData[] BuildHeroEntries()
+        {
+            var keys = SortedKeys(_heroes);
+            var entries = new HeroSaveData[keys.Count];
+            for (var i = 0; i < keys.Count; i++)
+                entries[i] = _heroes[keys[i]].ToSaveData();
+
+            return entries;
+        }
+
         private BuildingLevelSaveEntry[] BuildBuildingLevelEntries()
         {
             var keys = SortedKeys(_buildingLevels);
@@ -646,6 +986,69 @@ namespace GuildIdle.Player
             var keys = new List<string>(dictionary.Keys);
             keys.Sort(StringComparer.Ordinal);
             return keys;
+        }
+
+        private sealed class HeroRuntimeState
+        {
+            public HeroRuntimeState(string heroId)
+            {
+                HeroId = heroId;
+            }
+
+            public string HeroId { get; }
+            public int Level { get; set; }
+            public long Exp { get; set; }
+            public int Fatigue { get; set; }
+            public int MaxFatigue { get; set; }
+            public string CurrentActivityExecutionId { get; set; }
+            public Dictionary<string, HeroSkillRuntimeState> Skills { get; } = new Dictionary<string, HeroSkillRuntimeState>(StringComparer.Ordinal);
+
+            public HeroSaveData ToSaveData()
+            {
+                return new HeroSaveData
+                {
+                    heroId = HeroId,
+                    level = Level,
+                    exp = Exp,
+                    fatigue = Fatigue,
+                    maxFatigue = MaxFatigue,
+                    currentActivityExecutionId = CurrentActivityExecutionId,
+                    skills = BuildSkillEntries()
+                };
+            }
+
+            private HeroSkillSaveData[] BuildSkillEntries()
+            {
+                var keys = SortedKeys(Skills);
+                var entries = new HeroSkillSaveData[keys.Count];
+                for (var i = 0; i < keys.Count; i++)
+                    entries[i] = Skills[keys[i]].ToSaveData();
+
+                return entries;
+            }
+        }
+
+        private sealed class HeroSkillRuntimeState
+        {
+            public HeroSkillRuntimeState(string skillId)
+            {
+                SkillId = skillId;
+                Level = 1;
+            }
+
+            public string SkillId { get; }
+            public int Level { get; set; }
+            public long Exp { get; set; }
+
+            public HeroSkillSaveData ToSaveData()
+            {
+                return new HeroSkillSaveData
+                {
+                    skillId = SkillId,
+                    level = Level,
+                    exp = Exp
+                };
+            }
         }
     }
 }

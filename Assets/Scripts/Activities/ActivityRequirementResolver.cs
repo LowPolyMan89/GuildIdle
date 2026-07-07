@@ -15,17 +15,42 @@ namespace GuildIdle.Activities
 
         public static ActivityRequirementIssue[] GetMissingRequirements(string activityId, IActivityPlayerState state)
         {
+            return GetMissingRequirements(activityId, null, state);
+        }
+
+        public static ActivityRequirementIssue[] GetMissingRequirements(ActivityExecutionContext context)
+        {
+            return GetMissingRequirements(context, ActivityResolverUtilities.DefaultState());
+        }
+
+        public static ActivityRequirementIssue[] GetMissingRequirements(ActivityExecutionContext context, IActivityPlayerState state)
+        {
+            var issues = new List<ActivityRequirementIssue>();
+            if (!ActivityResolverUtilities.TryGetActivity(context?.activityId, issues, out _))
+                return issues.ToArray();
+
+            if (!ActivityResolverUtilities.ValidateExecutionContext(context, state, issues))
+                return issues.ToArray();
+
+            foreach (var requirement in RuntimeConfigs.Activities.GetRequirements(context.activityId))
+                CheckRequirement(requirement, context, state, issues);
+
+            return issues.ToArray();
+        }
+
+        private static ActivityRequirementIssue[] GetMissingRequirements(string activityId, ActivityExecutionContext context, IActivityPlayerState state)
+        {
             var issues = new List<ActivityRequirementIssue>();
             if (!ActivityResolverUtilities.TryGetActivity(activityId, issues, out _))
                 return issues.ToArray();
 
             foreach (var requirement in RuntimeConfigs.Activities.GetRequirements(activityId))
-                CheckRequirement(requirement, state, issues);
+                CheckRequirement(requirement, context, state, issues);
 
             return issues.ToArray();
         }
 
-        internal static void CheckRequirement(ActivityRequirementConfigDto requirement, IActivityPlayerState state, List<ActivityRequirementIssue> issues)
+        internal static void CheckRequirement(ActivityRequirementConfigDto requirement, ActivityExecutionContext context, IActivityPlayerState state, List<ActivityRequirementIssue> issues)
         {
             if (requirement == null)
                 return;
@@ -117,8 +142,27 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "SkillLevel", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "ItemEquipped", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(type, "SkillLevel", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!ActivityResolverUtilities.IsKnownSkill(targetId))
+                {
+                    Unknown(issues, activityId, type, targetId);
+                    return;
+                }
+
+                if (context == null || string.IsNullOrWhiteSpace(context.heroId))
+                {
+                    ActivityResolverUtilities.AddIssue(issues, activityId, type, targetId, required, 0, true, false, $"[ActivityRequirementResolver] Requirement '{type}' needs an executor hero context.");
+                    return;
+                }
+
+                var current = state.GetHeroSkillLevel(context.heroId, targetId);
+                if (current < required)
+                    Missing(issues, activityId, type, targetId, required, current);
+                return;
+            }
+
+            if (string.Equals(type, "ItemEquipped", StringComparison.OrdinalIgnoreCase))
             {
                 ActivityResolverUtilities.AddIssue(issues, activityId, type, targetId, required, 0, false, true, $"[ActivityRequirementResolver] Requirement '{type}' is not implemented in PlayerState yet.");
                 return;

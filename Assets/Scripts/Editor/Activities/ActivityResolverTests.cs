@@ -23,16 +23,19 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var adapter = new PlayerStateActivityAdapter(state);
 
-            var missingBuilding = ActivityResolver.CanStart("work_pine_wood", adapter);
+            var missingBuilding = ActivityResolver.CanStart(Context("work_pine_wood"), adapter);
             Assert.That(missingBuilding.canStart, Is.False);
             Assert.That(missingBuilding.issues[0].issueType, Is.EqualTo("BuildingLevel"));
 
             Assert.That(state.UnlockBuilding("building_underwood"), Is.True);
-            Assert.That(ActivityResolver.CanStart("work_pine_wood", adapter).canStart, Is.True);
+            Assert.That(ActivityResolver.CanStart(Context("work_pine_wood"), adapter).canStart, Is.True);
 
-            var missingHero = ActivityResolver.CanStart("hunt_rabbits", adapter);
+            var missingHero = ActivityResolver.CanStart(Context("hunt_rabbits"), adapter);
             Assert.That(missingHero.canStart, Is.False);
             Assert.That(missingHero.issues[0].targetId, Is.EqualTo("aska"));
+
+            Assert.That(state.AddHero("aska"), Is.True);
+            Assert.That(ActivityResolver.CanStart(Context("hunt_rabbits"), adapter).canStart, Is.True);
         }
 
         [Test]
@@ -40,7 +43,7 @@ namespace GuildIdle.Editor.Activities
         {
             LogAssert.Expect(LogType.Error, "[ActivityResolver] Unknown activity id 'missing_activity'.");
 
-            var result = ActivityResolver.CanStart("missing_activity", new PlayerStateActivityAdapter(NewState()));
+            var result = ActivityResolver.CanStart(Context("missing_activity"), new PlayerStateActivityAdapter(NewState()));
 
             Assert.That(result.canStart, Is.False);
             Assert.That(result.issues, Has.Length.EqualTo(1));
@@ -48,23 +51,61 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void CanStart_ValidatesExecutorHeroSlotAndBusyExecution()
+        {
+            var state = NewState();
+            var adapter = new PlayerStateActivityAdapter(state);
+            Assert.That(state.AddHero("aska"), Is.True);
+            Assert.That(state.SetHeroSlot(1, "aska"), Is.True);
+
+            var slotMismatch = ActivityResolver.CanStart(Context("direct_rewards", slotIndex: 1), adapter);
+            Assert.That(slotMismatch.canStart, Is.False);
+            Assert.That(slotMismatch.issues[0].issueType, Is.EqualTo("HeroSlot"));
+
+            Assert.That(state.SetHeroBusy("ren", "exec_1"), Is.True);
+            Assert.That(ActivityResolver.CanStart(Context("direct_rewards", executionId: "exec_1"), adapter).canStart, Is.True);
+
+            var busyDifferentExecution = ActivityResolver.CanStart(Context("direct_rewards", executionId: "exec_2"), adapter);
+            Assert.That(busyDifferentExecution.canStart, Is.False);
+            Assert.That(busyDifferentExecution.issues[0].issueType, Is.EqualTo("HeroBusy"));
+        }
+
+        [Test]
+        public void CanStart_SkillLevelChecksExecutorHero()
+        {
+            var state = NewState();
+            var adapter = new PlayerStateActivityAdapter(state);
+            var context = Context("skill_required");
+
+            var missingSkill = ActivityResolver.CanStart(context, adapter);
+            Assert.That(missingSkill.canStart, Is.False);
+            Assert.That(missingSkill.issues[0].issueType, Is.EqualTo("SkillLevel"));
+
+            Assert.That(state.AddHeroSkillExp("ren", "skill_gathering", 100), Is.True);
+            Assert.That(ActivityResolver.CanStart(context, adapter).canStart, Is.True);
+        }
+
+        [Test]
         public void ApplyCost_IsAtomicForConsumableRequirements()
         {
             var state = NewState();
             var adapter = new PlayerStateActivityAdapter(state);
+            var maxFatigue = state.GetHeroFatigue("ren");
             Assert.That(state.AddItem("resource_pine_wood", 2), Is.True);
             Assert.That(state.AddCurrency("gold_id", 4), Is.True);
 
-            var failed = ActivityResolver.ApplyCost("cost_activity", adapter);
+            var failed = ActivityResolver.ApplyCost(Context("cost_activity"), adapter);
             Assert.That(failed.success, Is.False);
             Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(2));
             Assert.That(state.GetCurrency("gold_id"), Is.EqualTo(4));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(maxFatigue));
 
             Assert.That(state.AddCurrency("gold_id", 1), Is.True);
-            var paid = ActivityResolver.ApplyCost("cost_activity", adapter);
+            var paid = ActivityResolver.ApplyCost(Context("cost_activity"), adapter);
             Assert.That(paid.success, Is.True);
             Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(0));
             Assert.That(state.GetCurrency("gold_id"), Is.EqualTo(0));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(maxFatigue - 5));
         }
 
         [Test]
@@ -73,7 +114,7 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var adapter = new PlayerStateActivityAdapter(state);
 
-            var result = ActivityRewardResolver.ApplyRewards("direct_rewards", "OnComplete", adapter, new FixedRandom());
+            var result = ActivityRewardResolver.ApplyRewards(Context("direct_rewards"), "OnComplete", adapter, new FixedRandom());
 
             Assert.That(result.success, Is.True);
             Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(2));
@@ -85,6 +126,8 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.HasHero("ren"), Is.True);
             Assert.That(state.IsBuildingUnlocked("building_underwood"), Is.True);
             Assert.That(state.IsLocationUnlocked("fields_1"), Is.True);
+            Assert.That(state.GetHeroSkillExp("ren", "skill_gathering"), Is.EqualTo(5));
+            Assert.That(HasHeroSkillExpReward(result.rewards), Is.True);
 
             var saveData = state.ToSaveData();
             foreach (var item in saveData.items)
@@ -97,18 +140,18 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var adapter = new PlayerStateActivityAdapter(state);
 
-            Assert.That(ActivityRewardResolver.ApplyRewards("once_complete", "OnComplete", adapter, new FixedRandom()).success, Is.True);
+            Assert.That(ActivityRewardResolver.ApplyRewards(Context("once_complete"), "OnComplete", adapter, new FixedRandom()).success, Is.True);
             Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(1));
-            var duplicate = ActivityRewardResolver.ApplyRewards("once_complete", "OnComplete", adapter, new FixedRandom());
+            var duplicate = ActivityRewardResolver.ApplyRewards(Context("once_complete"), "OnComplete", adapter, new FixedRandom());
             Assert.That(duplicate.skippedDuplicate, Is.True);
             Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(1));
 
-            Assert.That(ActivityRewardResolver.ApplyRewards("repeat_complete", "OnComplete", adapter, new FixedRandom()).success, Is.True);
-            Assert.That(ActivityRewardResolver.ApplyRewards("repeat_complete", "OnComplete", adapter, new FixedRandom()).success, Is.True);
+            Assert.That(ActivityRewardResolver.ApplyRewards(Context("repeat_complete"), "OnComplete", adapter, new FixedRandom()).success, Is.True);
+            Assert.That(ActivityRewardResolver.ApplyRewards(Context("repeat_complete"), "OnComplete", adapter, new FixedRandom()).success, Is.True);
             Assert.That(state.GetItem("resource_flax"), Is.EqualTo(2));
 
-            Assert.That(ActivityRewardResolver.ApplyRewards("first_complete", "OnFirstComplete", adapter, new FixedRandom()).success, Is.True);
-            Assert.That(ActivityRewardResolver.ApplyRewards("first_complete", "OnFirstComplete", adapter, new FixedRandom()).skippedDuplicate, Is.True);
+            Assert.That(ActivityRewardResolver.ApplyRewards(Context("first_complete"), "OnFirstComplete", adapter, new FixedRandom()).success, Is.True);
+            Assert.That(ActivityRewardResolver.ApplyRewards(Context("first_complete"), "OnFirstComplete", adapter, new FixedRandom()).skippedDuplicate, Is.True);
             Assert.That(state.GetItem("resource_thin_hide"), Is.EqualTo(1));
         }
 
@@ -141,7 +184,7 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var adapter = new PlayerStateActivityAdapter(state);
 
-            var result = ActivityRewardResolver.ApplyRewards("loot_activity", "OnComplete", adapter, new FixedRandom());
+            var result = ActivityRewardResolver.ApplyRewards(Context("loot_activity"), "OnComplete", adapter, new FixedRandom());
             Assert.That(result.success, Is.True);
             Assert.That(state.GetItem("resource_thin_hide"), Is.EqualTo(1));
 
@@ -153,7 +196,21 @@ namespace GuildIdle.Editor.Activities
 
         private static PlayerState NewState()
         {
-            return new PlayerState(new SaveData());
+            var state = new PlayerState(new SaveData());
+            state.AddHero("ren");
+            state.SetHeroSlot(0, "ren");
+            return state;
+        }
+
+        private static ActivityExecutionContext Context(string activityId, string heroId = "ren", int slotIndex = 0, string executionId = "exec_1")
+        {
+            return new ActivityExecutionContext
+            {
+                activityId = activityId,
+                heroId = heroId,
+                heroSlotIndex = slotIndex,
+                executionId = executionId
+            };
         }
 
         private static ConfigDatabase CreateDatabase()
@@ -230,8 +287,9 @@ namespace GuildIdle.Editor.Activities
                 {
                     new ActivityConfigDto { id = "work_pine_wood", isRepeatable = true, fatigueCost = 1 },
                     new ActivityConfigDto { id = "hunt_rabbits", isRepeatable = true },
-                    new ActivityConfigDto { id = "cost_activity" },
+                    new ActivityConfigDto { id = "cost_activity", fatigueCost = 5 },
                     new ActivityConfigDto { id = "direct_rewards" },
+                    new ActivityConfigDto { id = "skill_required" },
                     new ActivityConfigDto { id = "once_complete", isRepeatable = false },
                     new ActivityConfigDto { id = "repeat_complete", isRepeatable = true },
                     new ActivityConfigDto { id = "first_complete", isRepeatable = false },
@@ -245,6 +303,7 @@ namespace GuildIdle.Editor.Activities
                 {
                     new ActivityRequirementConfigDto { activityId = "work_pine_wood", reqType = "BuildingLevel", targetId = "building_underwood", value = 1 },
                     new ActivityRequirementConfigDto { activityId = "hunt_rabbits", reqType = "HeroAvailable", targetId = "aska", value = 1 },
+                    new ActivityRequirementConfigDto { activityId = "skill_required", reqType = "SkillLevel", targetId = "skill_gathering", value = 2 },
                     new ActivityRequirementConfigDto { activityId = "cost_activity", reqType = "Resource", targetId = "resource_pine_wood", value = 2, consume = true },
                     new ActivityRequirementConfigDto { activityId = "cost_activity", reqType = "Currency", targetId = "gold_id", value = 5, consume = true }
                 },
@@ -264,8 +323,29 @@ namespace GuildIdle.Editor.Activities
                     Reward("repeat_complete", "Resource", "resource_flax", 1, "OnComplete"),
                     Reward("first_complete", "Resource", "resource_thin_hide", 1, "OnFirstComplete"),
                     Reward("loot_activity", "LootTable", "hunting_rabbits_resources", 1, "OnComplete")
+                },
+                skillsProgression = new[]
+                {
+                    new SkillProgressionConfigDto { level = 1, totalExpRequired = 0 },
+                    new SkillProgressionConfigDto { level = 2, totalExpRequired = 100 }
                 }
             };
+        }
+
+        private static bool HasHeroSkillExpReward(ActivityAppliedReward[] rewards)
+        {
+            foreach (var reward in rewards)
+            {
+                if (reward.rewardType == "SkillExp" &&
+                    reward.ownerType == "Hero" &&
+                    reward.ownerId == "ren" &&
+                    !reward.isResultOnly)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static LootRuntimeConfigDto CreateLoot()

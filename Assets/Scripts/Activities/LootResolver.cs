@@ -108,6 +108,7 @@ namespace GuildIdle.Activities
                 {
                     rewardType = drop.dropType,
                     targetId = drop.targetId,
+                    ownerType = ActivityResolverUtilities.OwnerProfile,
                     amount = drop.amount,
                     applied = applied,
                     isCurrency = true,
@@ -121,6 +122,7 @@ namespace GuildIdle.Activities
             {
                 rewardType = drop.dropType,
                 targetId = drop.targetId,
+                ownerType = ActivityResolverUtilities.OwnerProfile,
                 amount = drop.amount,
                 applied = itemApplied,
                 isCurrency = false,

@@ -15,31 +15,65 @@ namespace GuildIdle.Activities
 
         public static ActivityRewardResult PreviewRewards(string activityId, string grantMoment, IActivityPlayerState state)
         {
-            return ResolveRewards(activityId, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: false);
+            return ResolveRewards(activityId, null, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: false);
         }
 
+        public static ActivityRewardResult PreviewRewards(ActivityExecutionContext context, string grantMoment)
+        {
+            return PreviewRewards(context, grantMoment, ActivityResolverUtilities.DefaultState());
+        }
+
+        public static ActivityRewardResult PreviewRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state)
+        {
+            return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: false);
+        }
+
+        [Obsolete("Use ApplyRewards(ActivityExecutionContext, string) so hero-bound rewards have an executor context.")]
         public static ActivityRewardResult ApplyRewards(string activityId, string grantMoment)
         {
             return ApplyRewards(activityId, grantMoment, ActivityResolverUtilities.DefaultState());
         }
 
+        [Obsolete("Use ApplyRewards(ActivityExecutionContext, string, IActivityPlayerState) so hero-bound rewards have an executor context.")]
         public static ActivityRewardResult ApplyRewards(string activityId, string grantMoment, IActivityPlayerState state)
         {
-            return ResolveRewards(activityId, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: true);
+            return ResolveRewards(activityId, null, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: true);
         }
 
+        [Obsolete("Use ApplyRewards(ActivityExecutionContext, string, IActivityPlayerState, IActivityRandom) so hero-bound rewards have an executor context.")]
         public static ActivityRewardResult ApplyRewards(string activityId, string grantMoment, IActivityPlayerState state, IActivityRandom random)
         {
-            return ResolveRewards(activityId, grantMoment, state, random, apply: true);
+            return ResolveRewards(activityId, null, grantMoment, state, random, apply: true);
         }
 
-        private static ActivityRewardResult ResolveRewards(string activityId, string grantMoment, IActivityPlayerState state, IActivityRandom random, bool apply)
+        public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment)
+        {
+            return ApplyRewards(context, grantMoment, ActivityResolverUtilities.DefaultState());
+        }
+
+        public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state)
+        {
+            return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: true);
+        }
+
+        public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random)
+        {
+            return ResolveRewards(context?.activityId, context, grantMoment, state, random, apply: true);
+        }
+
+        private static ActivityRewardResult ResolveRewards(string activityId, ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random, bool apply)
         {
             random ??= ActivityResolverUtilities.DefaultRandom();
             var issues = new List<ActivityRequirementIssue>();
             var appliedRewards = new List<ActivityAppliedReward>();
             if (!ActivityResolverUtilities.TryGetActivity(activityId, issues, out var activity))
                 return Finish(activityId, grantMoment, false, false, issues, appliedRewards);
+
+            if (context != null || apply)
+            {
+                if (!ActivityResolverUtilities.ValidateExecutionContext(context, state, issues))
+                    return Finish(activityId, grantMoment, false, false, issues, appliedRewards);
+            }
 
             var wasCompleted = state.IsActivityCompleted(activityId);
             if (ShouldSkipForCompletion(activity, grantMoment, wasCompleted))
@@ -53,7 +87,7 @@ namespace GuildIdle.Activities
                 if (!ActivityResolverUtilities.ChancePassed(reward.chance, random))
                     continue;
 
-                ApplyOrPreviewReward(reward, state, random, apply, issues, appliedRewards);
+                ApplyOrPreviewReward(reward, context, state, random, apply, issues, appliedRewards);
             }
 
             if (apply && IsCompletionMoment(grantMoment))
@@ -81,6 +115,7 @@ namespace GuildIdle.Activities
 
         private static void ApplyOrPreviewReward(
             ActivityRewardConfigDto reward,
+            ActivityExecutionContext context,
             IActivityPlayerState state,
             IActivityRandom random,
             bool apply,
@@ -94,9 +129,20 @@ namespace GuildIdle.Activities
             if (string.Equals(type, "SkillExp", StringComparison.OrdinalIgnoreCase))
             {
                 if (!ActivityResolverUtilities.IsKnownSkill(targetId))
+                {
                     AddRewardIssue(issues, reward, true, false, $"Unknown skill id '{targetId}'.");
+                    return;
+                }
 
-                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, amount = amount, applied = false, isResultOnly = true, message = "SkillExp is result-only until PlayerState stores skills." });
+                if (context == null || string.IsNullOrWhiteSpace(context.heroId))
+                {
+                    AddRewardIssue(issues, reward, apply, false, "SkillExp reward needs an executor hero context.");
+                    appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, ownerType = ActivityResolverUtilities.OwnerHero, amount = amount, applied = false, message = "Preview hero skill exp reward." });
+                    return;
+                }
+
+                var applied = apply && state.AddHeroSkillExp(context.heroId, targetId, amount);
+                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, ownerType = ActivityResolverUtilities.OwnerHero, ownerId = context.heroId, amount = amount, applied = applied, message = apply ? "Applied hero skill exp reward." : "Preview hero skill exp reward." });
                 return;
             }
 
@@ -104,12 +150,12 @@ namespace GuildIdle.Activities
             {
                 if (!apply)
                 {
-                    appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, applied = false, isResultOnly = true, message = "LootTable is not rolled during preview." });
+                    appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, ownerType = ActivityResolverUtilities.OwnerProfile, applied = false, isResultOnly = true, message = "LootTable is not rolled during preview." });
                     return;
                 }
 
                 var roll = LootResolver.RollLootTable(targetId, random);
-                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, applied = roll.success, lootRoll = roll, message = roll.success ? "Rolled loot table." : "Failed to roll loot table." });
+                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, ownerType = ActivityResolverUtilities.OwnerProfile, applied = roll.success, lootRoll = roll, message = roll.success ? "Rolled loot table." : "Failed to roll loot table." });
                 foreach (var issue in roll.issues)
                     ActivityResolverUtilities.AddIssue(issues, reward.activityId, type, targetId, 0, 0, true, false, issue);
 
@@ -127,7 +173,7 @@ namespace GuildIdle.Activities
                 }
 
                 var applied = apply && state.AddCurrency(currencyId, amount);
-                appliedRewards.Add(new ActivityAppliedReward { rewardType = normalizedType, targetId = currencyId, amount = amount, applied = applied, isCurrency = true, message = apply ? "Applied currency reward." : "Preview currency reward." });
+                appliedRewards.Add(new ActivityAppliedReward { rewardType = normalizedType, targetId = currencyId, ownerType = ActivityResolverUtilities.OwnerProfile, amount = amount, applied = applied, isCurrency = true, message = apply ? "Applied currency reward." : "Preview currency reward." });
                 return;
             }
 
@@ -140,7 +186,7 @@ namespace GuildIdle.Activities
                 }
 
                 var applied = apply && state.AddHero(targetId);
-                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, amount = 1, applied = applied, message = apply ? "Applied hero reward." : "Preview hero reward." });
+                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, ownerType = ActivityResolverUtilities.OwnerProfile, amount = 1, applied = applied, message = apply ? "Applied hero reward." : "Preview hero reward." });
                 return;
             }
 
@@ -154,7 +200,7 @@ namespace GuildIdle.Activities
                 }
 
                 var applied = apply && state.UnlockBuilding(targetId);
-                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, amount = 1, applied = applied, message = apply ? "Applied building unlock." : "Preview building unlock." });
+                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, ownerType = ActivityResolverUtilities.OwnerProfile, amount = 1, applied = applied, message = apply ? "Applied building unlock." : "Preview building unlock." });
                 return;
             }
 
@@ -168,7 +214,7 @@ namespace GuildIdle.Activities
                 }
 
                 var applied = apply && state.UnlockLocation(targetId);
-                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, amount = 1, applied = applied, message = apply ? "Applied location unlock." : "Preview location unlock." });
+                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, ownerType = ActivityResolverUtilities.OwnerProfile, amount = 1, applied = applied, message = apply ? "Applied location unlock." : "Preview location unlock." });
                 return;
             }
 
@@ -181,7 +227,7 @@ namespace GuildIdle.Activities
                 }
 
                 var applied = apply && state.AddItem(targetId, amount);
-                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, amount = amount, applied = applied, message = apply ? "Applied item reward." : "Preview item reward." });
+                appliedRewards.Add(new ActivityAppliedReward { rewardType = type, targetId = targetId, ownerType = ActivityResolverUtilities.OwnerProfile, amount = amount, applied = applied, message = apply ? "Applied item reward." : "Preview item reward." });
                 return;
             }
 

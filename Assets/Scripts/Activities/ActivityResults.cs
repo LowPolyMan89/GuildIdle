@@ -3,9 +3,18 @@ using GuildIdle.Configs;
 
 namespace GuildIdle.Activities
 {
+    public sealed class ActivityExecutionContext
+    {
+        public string activityId;
+        public string heroId;
+        public int heroSlotIndex;
+        public string executionId;
+    }
+
     public sealed class ActivityCheckResult
     {
         public string activityId;
+        public ActivityExecutionContext context;
         public ActivityConfigDto activity;
         public bool canStart;
         public ActivityRequirementIssue[] issues = Array.Empty<ActivityRequirementIssue>();
@@ -35,6 +44,8 @@ namespace GuildIdle.Activities
     {
         public string costType;
         public string targetId;
+        public string ownerType;
+        public string ownerId;
         public int amount;
         public bool applied;
         public string message;
@@ -54,6 +65,8 @@ namespace GuildIdle.Activities
     {
         public string rewardType;
         public string targetId;
+        public string ownerType;
+        public string ownerId;
         public int amount;
         public bool applied;
         public bool isCurrency;

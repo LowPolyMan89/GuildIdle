@@ -9,6 +9,8 @@ namespace GuildIdle.Activities
     internal static class ActivityResolverUtilities
     {
         public const string GoldCurrencyId = "gold_id";
+        public const string OwnerHero = "Hero";
+        public const string OwnerProfile = "Profile";
 
         public static IActivityPlayerState DefaultState() => new PlayerActivityAdapter();
 
@@ -29,6 +31,85 @@ namespace GuildIdle.Activities
             AddIssue(issues, activityId, "Activity", activityId, 0, 0, true, false, $"[ActivityResolver] Unknown activity id '{activityId}'.");
             Debug.LogError($"[ActivityResolver] Unknown activity id '{activityId}'.");
             return false;
+        }
+
+        public static bool ValidateExecutionContext(ActivityExecutionContext context, IActivityPlayerState state, List<ActivityRequirementIssue> issues)
+        {
+            if (context == null)
+            {
+                AddIssue(issues, string.Empty, "ActivityExecutionContext", string.Empty, 1, 0, true, false, "[ActivityResolver] ActivityExecutionContext is required.");
+                return false;
+            }
+
+            var valid = true;
+            var activityId = context.activityId ?? string.Empty;
+
+            if (state == null)
+            {
+                AddIssue(issues, activityId, "PlayerState", string.Empty, 1, 0, true, false, "[ActivityResolver] Player state is required.");
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(context.heroId))
+            {
+                AddIssue(issues, activityId, "HeroExecutor", string.Empty, 1, 0, true, false, "[ActivityResolver] Context heroId is required.");
+                valid = false;
+            }
+            else
+            {
+                var hasHero = state.HasHero(context.heroId);
+                var hasHeroState = false;
+                if (!hasHero)
+                {
+                    AddIssue(issues, activityId, "HeroAvailable", context.heroId, 1, 0, false, false, $"Hero '{context.heroId}' is not acquired.");
+                    valid = false;
+                }
+                else
+                {
+                    hasHeroState = state.HasHeroState(context.heroId);
+                    if (!hasHeroState)
+                    {
+                        AddIssue(issues, activityId, "HeroState", context.heroId, 1, 0, true, false, $"Hero '{context.heroId}' has no runtime state.");
+                        valid = false;
+                    }
+                }
+
+                if (context.heroSlotIndex < 0)
+                {
+                    AddIssue(issues, activityId, "HeroSlot", context.heroId, 0, context.heroSlotIndex, true, false, $"Invalid hero slot index '{context.heroSlotIndex}'.");
+                    valid = false;
+                }
+                else
+                {
+                    var slotHeroId = state.GetHeroInSlot(context.heroSlotIndex);
+                    if (!string.Equals(slotHeroId, context.heroId, StringComparison.Ordinal))
+                    {
+                        AddIssue(issues, activityId, "HeroSlot", context.heroId, 1, 0, false, false, $"Hero slot {context.heroSlotIndex} contains '{slotHeroId ?? string.Empty}', expected '{context.heroId}'.");
+                        valid = false;
+                    }
+                }
+
+                if (!hasHeroState)
+                    return valid;
+
+                if (string.IsNullOrWhiteSpace(context.executionId))
+                {
+                    AddIssue(issues, activityId, "ActivityExecution", string.Empty, 1, 0, true, false, "[ActivityResolver] Context executionId is required.");
+                    valid = false;
+                }
+                else
+                {
+                    var currentExecutionId = state.GetHeroCurrentActivityExecutionId(context.heroId);
+                    if (!string.IsNullOrWhiteSpace(currentExecutionId) &&
+                        !string.Equals(currentExecutionId, context.executionId, StringComparison.Ordinal))
+                    {
+                        AddIssue(issues, activityId, "HeroBusy", context.heroId, 1, 1, false, false, $"Hero '{context.heroId}' is busy with execution '{currentExecutionId}'.");
+                        valid = false;
+                    }
+                }
+            }
+
+            return valid;
         }
 
         public static void AddIssue(

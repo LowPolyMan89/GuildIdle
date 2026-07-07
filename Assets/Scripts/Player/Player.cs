@@ -77,6 +77,71 @@ namespace GuildIdle.Player
             return EnsureLoaded("set hero slot") && _state.SetHeroSlot(slotIndex, heroId);
         }
 
+        public static bool HasHeroState(string heroId)
+        {
+            return EnsureLoaded("check hero state") && _state.HasHeroState(heroId);
+        }
+
+        public static HeroSaveData GetHeroState(string heroId)
+        {
+            return EnsureLoaded("get hero state") ? _state.GetHeroState(heroId) : null;
+        }
+
+        public static int GetHeroFatigue(string heroId)
+        {
+            return EnsureLoaded("get hero fatigue") ? _state.GetHeroFatigue(heroId) : 0;
+        }
+
+        public static int GetHeroMaxFatigue(string heroId)
+        {
+            return EnsureLoaded("get hero max fatigue") ? _state.GetHeroMaxFatigue(heroId) : 0;
+        }
+
+        public static bool SpendHeroFatigue(string heroId, int amount)
+        {
+            return EnsureLoaded("spend hero fatigue") && _state.SpendHeroFatigue(heroId, amount);
+        }
+
+        public static bool RestoreHeroFatigue(string heroId, int amount)
+        {
+            return EnsureLoaded("restore hero fatigue") && _state.RestoreHeroFatigue(heroId, amount);
+        }
+
+        public static int GetHeroSkillLevel(string heroId, string skillId)
+        {
+            return EnsureLoaded("get hero skill level") ? _state.GetHeroSkillLevel(heroId, skillId) : 0;
+        }
+
+        public static long GetHeroSkillExp(string heroId, string skillId)
+        {
+            return EnsureLoaded("get hero skill exp") ? _state.GetHeroSkillExp(heroId, skillId) : 0L;
+        }
+
+        public static bool AddHeroSkillExp(string heroId, string skillId, int amount)
+        {
+            return EnsureLoaded("add hero skill exp") && _state.AddHeroSkillExp(heroId, skillId, amount);
+        }
+
+        public static bool IsHeroBusy(string heroId)
+        {
+            return EnsureLoaded("check hero busy") && _state.IsHeroBusy(heroId);
+        }
+
+        public static string GetHeroCurrentActivityExecutionId(string heroId)
+        {
+            return EnsureLoaded("get hero current activity execution") ? _state.GetHeroCurrentActivityExecutionId(heroId) : null;
+        }
+
+        public static bool SetHeroBusy(string heroId, string executionId)
+        {
+            return EnsureLoaded("set hero busy") && _state.SetHeroBusy(heroId, executionId);
+        }
+
+        public static bool ClearHeroBusy(string heroId, string executionId)
+        {
+            return EnsureLoaded("clear hero busy") && _state.ClearHeroBusy(heroId, executionId);
+        }
+
         public static bool HasItem(string itemId, int amount)
         {
             return EnsureLoaded("check item") && _state.HasItem(itemId, amount);
