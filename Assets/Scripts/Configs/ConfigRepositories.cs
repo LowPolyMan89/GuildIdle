@@ -344,6 +344,7 @@ namespace GuildIdle.Configs
     {
         private readonly Dictionary<string, EnemyConfigDto> _enemiesById = ItemsConfigRepository.NewIndex<EnemyConfigDto>();
         private readonly Dictionary<string, EnemyGroupConfigDto> _enemyGroupsById = ItemsConfigRepository.NewIndex<EnemyGroupConfigDto>();
+        private readonly Dictionary<string, List<EnemyLootConfigDto>> _enemyLootByGroupId = new Dictionary<string, List<EnemyLootConfigDto>>(StringComparer.Ordinal);
 
         public EnemyConfigDto[] Enemies { get; }
         public EnemyLevelConfigDto[] EnemyLevels { get; }
@@ -369,6 +370,8 @@ namespace GuildIdle.Configs
                 ItemsConfigRepository.AddUnique(_enemiesById, enemy.enemyId, enemy, "Enemies/enemies");
             foreach (var group in EnemyGroups)
                 ItemsConfigRepository.AddUnique(_enemyGroupsById, group.enemyGroupId, group, "Enemies/enemyGroups");
+            foreach (var loot in EnemyLoot)
+                ItemsConfigRepository.AddGrouped(_enemyLootByGroupId, loot.lootGroupId, loot);
         }
 
         public EnemyConfigDto Get(string id)
@@ -399,6 +402,14 @@ namespace GuildIdle.Configs
         {
             group = null;
             return !string.IsNullOrWhiteSpace(enemyGroupId) && _enemyGroupsById.TryGetValue(enemyGroupId, out group);
+        }
+
+        public EnemyLootConfigDto[] GetEnemyLoot(string lootGroupId)
+        {
+            if (string.IsNullOrWhiteSpace(lootGroupId) || !_enemyLootByGroupId.TryGetValue(lootGroupId, out var loot))
+                return Array.Empty<EnemyLootConfigDto>();
+
+            return loot.ToArray();
         }
     }
 
@@ -450,6 +461,8 @@ namespace GuildIdle.Configs
     public sealed class LootConfigRepository
     {
         private readonly Dictionary<string, LootTableConfigDto> _lootTablesById = ItemsConfigRepository.NewIndex<LootTableConfigDto>();
+        private readonly Dictionary<string, List<LootTableEntryConfigDto>> _entriesByTableId = new Dictionary<string, List<LootTableEntryConfigDto>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<LootGroupConfigDto>> _groupsByTableId = new Dictionary<string, List<LootGroupConfigDto>>(StringComparer.Ordinal);
 
         public LootTableConfigDto[] LootTables { get; }
         public LootTableEntryConfigDto[] LootTableEntries { get; }
@@ -467,6 +480,10 @@ namespace GuildIdle.Configs
 
             foreach (var table in LootTables)
                 ItemsConfigRepository.AddUnique(_lootTablesById, table.lootTableId, table, "Loot/lootTables");
+            foreach (var entry in LootTableEntries)
+                ItemsConfigRepository.AddGrouped(_entriesByTableId, entry.lootTableId, entry);
+            foreach (var group in LootGroups)
+                ItemsConfigRepository.AddGrouped(_groupsByTableId, group.lootTableId, group);
         }
 
         public LootTableConfigDto Get(string lootTableId)
@@ -482,6 +499,22 @@ namespace GuildIdle.Configs
         {
             table = null;
             return !string.IsNullOrWhiteSpace(lootTableId) && _lootTablesById.TryGetValue(lootTableId, out table);
+        }
+
+        public LootTableEntryConfigDto[] GetEntries(string lootTableId)
+        {
+            if (string.IsNullOrWhiteSpace(lootTableId) || !_entriesByTableId.TryGetValue(lootTableId, out var entries))
+                return Array.Empty<LootTableEntryConfigDto>();
+
+            return entries.ToArray();
+        }
+
+        public LootGroupConfigDto[] GetGroups(string lootTableId)
+        {
+            if (string.IsNullOrWhiteSpace(lootTableId) || !_groupsByTableId.TryGetValue(lootTableId, out var groups))
+                return Array.Empty<LootGroupConfigDto>();
+
+            return groups.ToArray();
         }
     }
 
