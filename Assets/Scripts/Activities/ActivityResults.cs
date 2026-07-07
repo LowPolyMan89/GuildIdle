@@ -9,6 +9,7 @@ namespace GuildIdle.Activities
         public string heroId;
         public int heroSlotIndex;
         public string executionId;
+        public long startedAtUnixSeconds;
     }
 
     public sealed class ActivityCheckResult

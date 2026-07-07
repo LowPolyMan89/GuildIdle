@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using GuildIdle.Activities;
 using GuildIdle.Configs;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
@@ -24,6 +25,7 @@ namespace GuildIdle.Player
         private readonly HashSet<string> _unlockedLocations = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _completedActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _availableActivities = new HashSet<string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, ActivityExecutionSaveData> _activityExecutions = new Dictionary<string, ActivityExecutionSaveData>(StringComparer.Ordinal);
 
         public PlayerState(SaveData saveData)
         {
@@ -52,7 +54,8 @@ namespace GuildIdle.Player
                 buildingLevels = BuildBuildingLevelEntries(),
                 unlockedLocations = BuildSortedArray(_unlockedLocations),
                 completedActivities = BuildSortedArray(_completedActivities),
-                availableActivities = BuildSortedArray(_availableActivities)
+                availableActivities = BuildSortedArray(_availableActivities),
+                activityRuntime = BuildActivityRuntimeSaveData()
             };
         }
 
@@ -86,6 +89,20 @@ namespace GuildIdle.Player
         public string GetHeroInSlot(int slotIndex)
         {
             return _heroSlots.TryGetValue(slotIndex, out var heroId) ? heroId : null;
+        }
+
+        public int GetHeroSlotIndex(string heroId)
+        {
+            if (!ValidateHeroId(heroId))
+                return -1;
+
+            foreach (var slot in _heroSlots)
+            {
+                if (string.Equals(slot.Value, heroId, StringComparison.Ordinal))
+                    return slot.Key;
+            }
+
+            return -1;
         }
 
         public bool SetHeroSlot(int slotIndex, string heroId)
@@ -411,6 +428,88 @@ namespace GuildIdle.Player
             return _availableActivities.Remove(activityId);
         }
 
+        public ActivityExecutionSaveData[] GetActivityExecutions()
+        {
+            var keys = SortedKeys(_activityExecutions);
+            var entries = new ActivityExecutionSaveData[keys.Count];
+            for (var i = 0; i < keys.Count; i++)
+                entries[i] = CloneExecution(_activityExecutions[keys[i]]);
+
+            return entries;
+        }
+
+        public ActivityExecutionSaveData GetActivityExecution(string executionId)
+        {
+            if (string.IsNullOrWhiteSpace(executionId))
+                return null;
+
+            return _activityExecutions.TryGetValue(executionId, out var execution) ? CloneExecution(execution) : null;
+        }
+
+        public bool AddActivityExecution(ActivityExecutionSaveData execution)
+        {
+            if (!ValidateActivityExecution(execution, requireRunning: true))
+                return false;
+
+            if (_activityExecutions.ContainsKey(execution.executionId))
+            {
+                Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' already exists.");
+                return false;
+            }
+
+            if (!TryGetHeroState(execution.heroId, out var hero))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId) &&
+                !string.Equals(hero.CurrentActivityExecutionId, execution.executionId, StringComparison.Ordinal))
+            {
+                Debug.LogError($"[PlayerState] Hero '{execution.heroId}' is already busy with execution '{hero.CurrentActivityExecutionId}'.");
+                return false;
+            }
+
+            var stored = CloneExecution(execution);
+            stored.status = ActivityRuntimeStatus.Running;
+            _activityExecutions.Add(stored.executionId, stored);
+            hero.CurrentActivityExecutionId = stored.executionId;
+            return true;
+        }
+
+        public bool UpdateActivityExecution(ActivityExecutionSaveData execution)
+        {
+            if (!ValidateActivityExecution(execution, requireRunning: true))
+                return false;
+
+            if (!_activityExecutions.ContainsKey(execution.executionId))
+            {
+                Debug.LogError($"[PlayerState] Cannot update missing activity execution '{execution.executionId}'.");
+                return false;
+            }
+
+            _activityExecutions[execution.executionId] = CloneExecution(execution);
+            return true;
+        }
+
+        public bool RemoveActivityExecution(string executionId)
+        {
+            if (string.IsNullOrWhiteSpace(executionId))
+            {
+                Debug.LogError("[PlayerState] Cannot remove activity execution with empty id.");
+                return false;
+            }
+
+            if (!_activityExecutions.TryGetValue(executionId, out var execution))
+                return false;
+
+            _activityExecutions.Remove(executionId);
+            if (_heroes.TryGetValue(execution.heroId, out var hero) &&
+                string.Equals(hero.CurrentActivityExecutionId, executionId, StringComparison.Ordinal))
+            {
+                hero.CurrentActivityExecutionId = null;
+            }
+
+            return true;
+        }
+
         private void Load(SaveData saveData)
         {
             saveData ??= new SaveData();
@@ -427,6 +526,7 @@ namespace GuildIdle.Player
             LoadActivities(saveData.availableActivities, _availableActivities);
             LoadHeroSlots(saveData.heroSlots);
             EnsureHeroStatesForAcquiredHeroes();
+            LoadActivityRuntime(saveData.activityRuntime);
         }
 
         private void ApplyDefaultBootstrap()
@@ -627,6 +727,35 @@ namespace GuildIdle.Player
             {
                 if (ValidateActivityId(activityId))
                     target.Add(activityId);
+            }
+        }
+
+        private void LoadActivityRuntime(ActivityRuntimeSaveData runtime)
+        {
+            _activityExecutions.Clear();
+            foreach (var hero in _heroes.Values)
+                hero.CurrentActivityExecutionId = null;
+
+            if (runtime?.executions == null)
+                return;
+
+            foreach (var execution in runtime.executions)
+            {
+                if (!ValidateActivityExecution(execution, requireRunning: true))
+                    continue;
+
+                if (!_heroes.TryGetValue(execution.heroId, out var hero))
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
+                {
+                    Debug.LogError($"[PlayerState] Ignoring activity execution '{execution.executionId}': hero '{execution.heroId}' is already busy.");
+                    continue;
+                }
+
+                var stored = CloneExecution(execution);
+                _activityExecutions[stored.executionId] = stored;
+                hero.CurrentActivityExecutionId = stored.executionId;
             }
         }
 
@@ -974,11 +1103,82 @@ namespace GuildIdle.Player
             return entries;
         }
 
+        private ActivityRuntimeSaveData BuildActivityRuntimeSaveData()
+        {
+            return new ActivityRuntimeSaveData
+            {
+                executions = GetActivityExecutions()
+            };
+        }
+
         private static string[] BuildSortedArray(HashSet<string> values)
         {
             var list = new List<string>(values);
             list.Sort(StringComparer.Ordinal);
             return list.ToArray();
+        }
+
+        private bool ValidateActivityExecution(ActivityExecutionSaveData execution, bool requireRunning)
+        {
+            if (execution == null)
+            {
+                Debug.LogError("[PlayerState] Activity execution is null.");
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(execution.executionId))
+            {
+                Debug.LogError("[PlayerState] Activity execution id is empty.");
+                return false;
+            }
+
+            if (!ValidateActivityId(execution.activityId) || !ValidateHeroId(execution.heroId))
+                return false;
+
+            if (execution.heroSlotIndex < 0)
+            {
+                Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' has invalid hero slot index '{execution.heroSlotIndex}'.");
+                return false;
+            }
+
+            if (!_acquiredHeroes.Contains(execution.heroId))
+            {
+                Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' references non-acquired hero '{execution.heroId}'.");
+                return false;
+            }
+
+            if (!_heroSlots.TryGetValue(execution.heroSlotIndex, out var slotHeroId) ||
+                !string.Equals(slotHeroId, execution.heroId, StringComparison.Ordinal))
+            {
+                Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' references hero '{execution.heroId}' outside slot {execution.heroSlotIndex}.");
+                return false;
+            }
+
+            if (requireRunning && execution.status != ActivityRuntimeStatus.Running)
+            {
+                Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' has unsupported status '{execution.status}'.");
+                return false;
+            }
+
+            return true;
+        }
+
+        private static ActivityExecutionSaveData CloneExecution(ActivityExecutionSaveData execution)
+        {
+            if (execution == null)
+                return null;
+
+            return new ActivityExecutionSaveData
+            {
+                executionId = execution.executionId,
+                activityId = execution.activityId,
+                heroId = execution.heroId,
+                heroSlotIndex = execution.heroSlotIndex,
+                status = execution.status,
+                elapsedSeconds = Math.Max(0f, execution.elapsedSeconds),
+                completedCycles = Math.Max(0, execution.completedCycles),
+                startedAtUnixSeconds = execution.startedAtUnixSeconds
+            };
         }
 
         private static List<string> SortedKeys<T>(Dictionary<string, T> dictionary)

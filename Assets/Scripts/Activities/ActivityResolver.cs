@@ -155,5 +155,10 @@ namespace GuildIdle.Activities
         {
             return ActivityRewardResolver.ApplyRewards(context, grantMoment, state);
         }
+
+        public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random, bool markCompletion)
+        {
+            return ActivityRewardResolver.ApplyRewards(context, grantMoment, state, random, markCompletion);
+        }
     }
 }

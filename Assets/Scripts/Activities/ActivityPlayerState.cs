@@ -7,6 +7,7 @@ namespace GuildIdle.Activities
         bool HasHero(string heroId);
         bool AddHero(string heroId);
         string GetHeroInSlot(int slotIndex);
+        int GetHeroSlotIndex(string heroId);
         bool HasHeroState(string heroId);
         int GetHeroFatigue(string heroId);
         bool SpendHeroFatigue(string heroId, int amount);
@@ -42,6 +43,7 @@ namespace GuildIdle.Activities
         public bool HasHero(string heroId) => _state != null && _state.HasHero(heroId);
         public bool AddHero(string heroId) => _state != null && _state.AddHero(heroId);
         public string GetHeroInSlot(int slotIndex) => _state != null ? _state.GetHeroInSlot(slotIndex) : null;
+        public int GetHeroSlotIndex(string heroId) => _state != null ? _state.GetHeroSlotIndex(heroId) : -1;
         public bool HasHeroState(string heroId) => _state != null && _state.HasHeroState(heroId);
         public int GetHeroFatigue(string heroId) => _state != null ? _state.GetHeroFatigue(heroId) : 0;
         public bool SpendHeroFatigue(string heroId, int amount) => _state != null && _state.SpendHeroFatigue(heroId, amount);
@@ -70,6 +72,7 @@ namespace GuildIdle.Activities
         public bool HasHero(string heroId) => global::GuildIdle.Player.Player.HasHero(heroId);
         public bool AddHero(string heroId) => global::GuildIdle.Player.Player.AddHero(heroId);
         public string GetHeroInSlot(int slotIndex) => global::GuildIdle.Player.Player.GetHeroInSlot(slotIndex);
+        public int GetHeroSlotIndex(string heroId) => global::GuildIdle.Player.Player.GetHeroSlotIndex(heroId);
         public bool HasHeroState(string heroId) => global::GuildIdle.Player.Player.HasHeroState(heroId);
         public int GetHeroFatigue(string heroId) => global::GuildIdle.Player.Player.GetHeroFatigue(heroId);
         public bool SpendHeroFatigue(string heroId, int amount) => global::GuildIdle.Player.Player.SpendHeroFatigue(heroId, amount);

@@ -15,7 +15,7 @@ namespace GuildIdle.Activities
 
         public static ActivityRewardResult PreviewRewards(string activityId, string grantMoment, IActivityPlayerState state)
         {
-            return ResolveRewards(activityId, null, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: false);
+            return ResolveRewards(activityId, null, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: false, markCompletion: false);
         }
 
         public static ActivityRewardResult PreviewRewards(ActivityExecutionContext context, string grantMoment)
@@ -25,7 +25,7 @@ namespace GuildIdle.Activities
 
         public static ActivityRewardResult PreviewRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state)
         {
-            return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: false);
+            return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: false, markCompletion: false);
         }
 
         [Obsolete("Use ApplyRewards(ActivityExecutionContext, string) so hero-bound rewards have an executor context.")]
@@ -37,13 +37,13 @@ namespace GuildIdle.Activities
         [Obsolete("Use ApplyRewards(ActivityExecutionContext, string, IActivityPlayerState) so hero-bound rewards have an executor context.")]
         public static ActivityRewardResult ApplyRewards(string activityId, string grantMoment, IActivityPlayerState state)
         {
-            return ResolveRewards(activityId, null, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: true);
+            return ResolveRewards(activityId, null, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: true, markCompletion: true);
         }
 
         [Obsolete("Use ApplyRewards(ActivityExecutionContext, string, IActivityPlayerState, IActivityRandom) so hero-bound rewards have an executor context.")]
         public static ActivityRewardResult ApplyRewards(string activityId, string grantMoment, IActivityPlayerState state, IActivityRandom random)
         {
-            return ResolveRewards(activityId, null, grantMoment, state, random, apply: true);
+            return ResolveRewards(activityId, null, grantMoment, state, random, apply: true, markCompletion: true);
         }
 
         public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment)
@@ -53,15 +53,20 @@ namespace GuildIdle.Activities
 
         public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state)
         {
-            return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: true);
+            return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: true, markCompletion: true);
         }
 
         public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random)
         {
-            return ResolveRewards(context?.activityId, context, grantMoment, state, random, apply: true);
+            return ResolveRewards(context?.activityId, context, grantMoment, state, random, apply: true, markCompletion: true);
         }
 
-        private static ActivityRewardResult ResolveRewards(string activityId, ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random, bool apply)
+        public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random, bool markCompletion)
+        {
+            return ResolveRewards(context?.activityId, context, grantMoment, state, random, apply: true, markCompletion: markCompletion);
+        }
+
+        private static ActivityRewardResult ResolveRewards(string activityId, ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random, bool apply, bool markCompletion)
         {
             random ??= ActivityResolverUtilities.DefaultRandom();
             var issues = new List<ActivityRequirementIssue>();
@@ -90,7 +95,7 @@ namespace GuildIdle.Activities
                 ApplyOrPreviewReward(reward, context, state, random, apply, issues, appliedRewards);
             }
 
-            if (apply && IsCompletionMoment(grantMoment))
+            if (apply && markCompletion && IsCompletionMoment(grantMoment))
                 state.CompleteActivity(activityId);
 
             return Finish(activityId, grantMoment, true, false, issues, appliedRewards);

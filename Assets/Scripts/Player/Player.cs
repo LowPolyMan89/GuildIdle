@@ -72,6 +72,11 @@ namespace GuildIdle.Player
             return EnsureLoaded("get hero slot") ? _state.GetHeroInSlot(slotIndex) : null;
         }
 
+        public static int GetHeroSlotIndex(string heroId)
+        {
+            return EnsureLoaded("get hero slot index") ? _state.GetHeroSlotIndex(heroId) : -1;
+        }
+
         public static bool SetHeroSlot(int slotIndex, string heroId)
         {
             return EnsureLoaded("set hero slot") && _state.SetHeroSlot(slotIndex, heroId);
@@ -225,6 +230,31 @@ namespace GuildIdle.Player
         public static bool SetActivityAvailable(string activityId, bool available)
         {
             return EnsureLoaded("set activity availability") && _state.SetActivityAvailable(activityId, available);
+        }
+
+        public static ActivityExecutionSaveData[] GetActivityExecutions()
+        {
+            return EnsureLoaded("get activity executions") ? _state.GetActivityExecutions() : System.Array.Empty<ActivityExecutionSaveData>();
+        }
+
+        public static ActivityExecutionSaveData GetActivityExecution(string executionId)
+        {
+            return EnsureLoaded("get activity execution") ? _state.GetActivityExecution(executionId) : null;
+        }
+
+        public static bool AddActivityExecution(ActivityExecutionSaveData execution)
+        {
+            return EnsureLoaded("add activity execution") && _state.AddActivityExecution(execution);
+        }
+
+        public static bool UpdateActivityExecution(ActivityExecutionSaveData execution)
+        {
+            return EnsureLoaded("update activity execution") && _state.UpdateActivityExecution(execution);
+        }
+
+        public static bool RemoveActivityExecution(string executionId)
+        {
+            return EnsureLoaded("remove activity execution") && _state.RemoveActivityExecution(executionId);
         }
 
         private static void LoadAfterConfigs()
