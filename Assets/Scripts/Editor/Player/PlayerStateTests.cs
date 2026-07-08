@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using GuildIdle.Activities;
 using GuildIdle.Configs;
 using GuildIdle.Player;
 using NUnit.Framework;
@@ -28,6 +29,10 @@ namespace GuildIdle.Editor.Player
             Assert.That(state.GetHeroMaxFatigue("ren"), Is.GreaterThan(0));
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(state.GetHeroMaxFatigue("ren")));
             Assert.That(state.GetItem("item_wooden_club"), Is.EqualTo(1));
+            Assert.That(state.IsBuildingUnlocked("building_hall"), Is.True);
+            Assert.That(state.GetBuildingLevel("building_hall"), Is.EqualTo(0));
+            Assert.That(state.IsBuildingUnlocked("building_watchtower"), Is.True);
+            Assert.That(state.GetBuildingLevel("building_watchtower"), Is.EqualTo(0));
 
             var saveData = state.ToSaveData();
             Assert.That(saveData.heroes, Has.Length.EqualTo(1));
@@ -83,15 +88,30 @@ namespace GuildIdle.Editor.Player
 
             using (var logs = new CapturingLogHandler())
             {
-                Assert.That(state.SetBuildingLevel("building_watchtower", 1), Is.False);
-                logs.AssertErrorContains("[PlayerState] Cannot set level for locked building 'building_watchtower'.");
+                Assert.That(state.SetBuildingLevel("building_hidden", 1), Is.False);
+                logs.AssertErrorContains("[PlayerState] Cannot set level for locked building 'building_hidden'.");
             }
 
-            Assert.That(state.GetBuildingLevel("building_watchtower"), Is.EqualTo(0));
+            Assert.That(state.GetBuildingLevel("building_hidden"), Is.EqualTo(0));
 
-            Assert.That(state.UnlockBuilding("building_watchtower"), Is.True);
-            Assert.That(state.GetBuildingLevel("building_watchtower"), Is.EqualTo(1));
-            Assert.That(state.SetBuildingLevel("building_watchtower", 1), Is.True);
+            Assert.That(state.UnlockBuilding("building_hidden"), Is.True);
+            Assert.That(state.GetBuildingLevel("building_hidden"), Is.EqualTo(0));
+            Assert.That(state.SetBuildingLevel("building_hidden", 0), Is.True);
+            Assert.That(state.SetBuildingLevel("building_hidden", 1), Is.True);
+        }
+
+        [Test]
+        public void BuildingClickability_UsesClickableRequirement()
+        {
+            var state = PlayerState.CreateDefault();
+
+            Assert.That(state.CanClickBuilding("building_hall"), Is.True);
+            Assert.That(state.CanClickBuilding("building_tavern"), Is.True);
+            Assert.That(state.CanClickBuilding("building_watchtower"), Is.False);
+
+            Assert.That(state.SetBuildingLevel("building_hall", 1), Is.True);
+
+            Assert.That(state.CanClickBuilding("building_watchtower"), Is.True);
         }
 
         [Test]
@@ -128,7 +148,14 @@ namespace GuildIdle.Editor.Player
 
             Assert.That(state.SpendHeroFatigue("ren", 5), Is.True);
             Assert.That(state.AddHeroSkillExp("ren", "skill_gathering", 150), Is.True);
-            Assert.That(state.SetHeroBusy("ren", "exec_1"), Is.True);
+            Assert.That(state.AddActivityExecution(new ActivityExecutionSaveData
+            {
+                executionId = "exec_1",
+                activityId = "combat_first_map_node",
+                heroId = "ren",
+                heroSlotIndex = 0,
+                status = ActivityRuntimeStatus.Running
+            }), Is.True);
 
             var storage = new MemorySaveStorage();
             Assert.That(SaveService.Save(state, storage), Is.True);
@@ -280,7 +307,10 @@ namespace GuildIdle.Editor.Player
                 {
                     buildings = new[]
                     {
-                        new BuildingConfigDto { buildingId = "building_watchtower", levels = 1 }
+                        new BuildingConfigDto { buildingId = "building_hall", levels = 1, startLevel = 0, visibleAtStart = true },
+                        new BuildingConfigDto { buildingId = "building_tavern", levels = 1, startLevel = 1, visibleAtStart = true },
+                        new BuildingConfigDto { buildingId = "building_watchtower", levels = 1, startLevel = 0, visibleAtStart = true, clickableRequirement = "building_hall:1" },
+                        new BuildingConfigDto { buildingId = "building_hidden", levels = 1, startLevel = 0, visibleAtStart = false }
                     }
                 },
                 null,

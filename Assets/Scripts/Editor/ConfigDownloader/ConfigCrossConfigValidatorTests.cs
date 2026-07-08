@@ -115,6 +115,76 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void Validate_BuildingActivitiesAcceptsUnifiedActionRegistryAndEmptyOptionalCompletionFields()
+        {
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityIdsDownload("combat_clear_hall_forest")),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", BuildingsActivitiesDownload(
+                    startLevel: "0",
+                    clickableRequirement: "",
+                    buildingActivityLevel: "0",
+                    buildingActivityId: "build_hall",
+                    showIfCompleted: "",
+                    hideIfCompleted: "")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("building_hall_name_id", "building_hall_description_id")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+        }
+
+        [Test]
+        public void Validate_BuildingActivitiesReportsMissingLevelAndActionReferences()
+        {
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityIdsDownload("combat_clear_hall_forest")),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", BuildingsActivitiesDownload(
+                    startLevel: "2",
+                    clickableRequirement: "missing_building:1",
+                    buildingActivityLevel: "2",
+                    buildingActivityId: "missing_action",
+                    showIfCompleted: "build_hall",
+                    hideIfCompleted: "missing_hide_action")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("building_hall_name_id", "building_hall_description_id")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("Index row 2 column 'start_level' value '2'"));
+            Assert.That(message, Does.Contain("clickable_requirement references missing Buildings Configs building_id:level"));
+            Assert.That(message, Does.Contain("BuildingActivities row 2 column 'building_level' value '2'"));
+            Assert.That(message, Does.Contain("BuildingActivities row 2 column 'activity_id' value 'missing_action'"));
+            Assert.That(message, Does.Contain("BuildingActivities row 2 column 'hide_if_activity_completed' value 'missing_hide_action'"));
+            Assert.That(message, Does.Not.Contain("show_if_activity_completed"));
+        }
+
+        [Test]
+        public void Validate_BuildingActivitiesReportsMissingRequiredFields()
+        {
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityIdsDownload("combat_clear_hall_forest")),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", BuildingsActivitiesDownload(
+                    startLevel: "",
+                    clickableRequirement: "",
+                    buildingActivityLevel: "",
+                    buildingActivityId: "",
+                    showIfCompleted: "",
+                    hideIfCompleted: "",
+                    buildingActivityBuildingId: "")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("building_hall_name_id", "building_hall_description_id")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("Index row 2 column 'start_level'"));
+            Assert.That(message, Does.Contain("BuildingActivities row 2 column 'building_id'"));
+            Assert.That(message, Does.Contain("BuildingActivities row 2 column 'building_level'"));
+            Assert.That(message, Does.Contain("BuildingActivities row 2 column 'activity_id'"));
+        }
+
+        [Test]
         public void Validate_EnemyLootGoldIdUsesCurrencyRegistry()
         {
             var collection = Collection(
@@ -251,6 +321,15 @@ namespace GuildIdle.Editor.ConfigDownloader
             return Download(Sheet("ActivityRewards", rows.ToArray()));
         }
 
+        private static ConfigSheetDownload ActivityIdsDownload(params string[] activityIds)
+        {
+            var rows = new List<ConfigSheetRow> { Row("id") };
+            foreach (var activityId in activityIds)
+                rows.Add(Row(activityId));
+
+            return Download(Sheet("Activities", rows.ToArray()));
+        }
+
         private static ConfigSheetDownload EnemiesDownload(string enemyLootId)
         {
             var sheets = new List<ConfigDownloadedSheet>
@@ -309,8 +388,25 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             return Download(
                 Sheet("Index",
-                    Row("building_id", "name_id", "description_id", "levels"),
-                    Row(buildingId, nameId, descriptionId, levels)));
+                    Row("building_id", "name_id", "description_id", "levels", "start_level", "visible_at_start", "clickable_requirement"),
+                    Row(buildingId, nameId, descriptionId, levels, "0", "TRUE", "")));
+        }
+
+        private static ConfigSheetDownload BuildingsActivitiesDownload(string startLevel, string clickableRequirement, string buildingActivityLevel, string buildingActivityId, string showIfCompleted, string hideIfCompleted, string buildingActivityBuildingId = "building_hall")
+        {
+            return Download(
+                Sheet("Index",
+                    Row("building_id", "name_id", "description_id", "levels", "start_level", "visible_at_start", "clickable_requirement"),
+                    Row("building_hall", "building_hall_name_id", "building_hall_description_id", "1", startLevel, "TRUE", clickableRequirement)),
+                Sheet("Hall",
+                    Row("field", "value"),
+                    Row("building_id", "building_hall"),
+                    Row("level", "level_prefab_id", "source_activity_id"),
+                    Row("0", "building_hall_level_0", ""),
+                    Row("1", "building_hall_level_1", "build_hall")),
+                Sheet("BuildingActivities",
+                    Row("building_id", "building_level", "activity_id", "sort_order", "show_if_activity_completed", "hide_if_activity_completed", "clickable_requirement", "enabled"),
+                    Row(buildingActivityBuildingId, buildingActivityLevel, buildingActivityId, "10", showIfCompleted, hideIfCompleted, "", "TRUE")));
         }
 
         private static ConfigSheetDownload ItemsCurrenciesDownload(string currencyId, string nameId, string descriptionId)

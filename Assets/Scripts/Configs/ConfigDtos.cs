@@ -472,6 +472,7 @@ namespace GuildIdle.Configs
         public BuildingConfigDto[] buildings = Array.Empty<BuildingConfigDto>();
         public BuildingLevelConfigDto[] buildingLevels = Array.Empty<BuildingLevelConfigDto>();
         public BuildActionConfigDto[] buildActions = Array.Empty<BuildActionConfigDto>();
+        public BuildingActivityConfigDto[] buildingActivities = Array.Empty<BuildingActivityConfigDto>();
         public BuildingCraftableConfigDto[] buildingCraftables = Array.Empty<BuildingCraftableConfigDto>();
     }
 
@@ -485,6 +486,9 @@ namespace GuildIdle.Configs
         public int levels;
         public int unlockedByHallLevel;
         public bool mvpRequired;
+        public int startLevel;
+        public bool visibleAtStart;
+        public string clickableRequirement;
     }
 
     [Serializable]
@@ -521,6 +525,18 @@ namespace GuildIdle.Configs
         public RequiredBuildingDto[] requirementsBuildings = Array.Empty<RequiredBuildingDto>();
         public RequiredSkillDto[] requirementsSkills = Array.Empty<RequiredSkillDto>();
         public int skillExp;
+    }
+
+    [Serializable]
+    public sealed class BuildingActivityConfigDto
+    {
+        public string buildingId;
+        public int buildingLevel;
+        public string activityId;
+        public int sortOrder;
+        public string showIfActivityCompleted;
+        public string hideIfActivityCompleted;
+        public string clickableRequirement;
     }
 
     [Serializable]

@@ -339,6 +339,27 @@ namespace GuildIdle.Player
             return _unlockedBuildings.Contains(buildingId);
         }
 
+        public bool CanClickBuilding(string buildingId)
+        {
+            if (!ValidateBuildingId(buildingId))
+                return false;
+
+            if (!_unlockedBuildings.Contains(buildingId))
+                return false;
+
+            var requirement = GetBuildingClickableRequirement(buildingId);
+            if (string.IsNullOrWhiteSpace(requirement))
+                return true;
+
+            if (!TryParseBuildingLevelRequirement(requirement, out var requiredBuildingId, out var requiredLevel))
+            {
+                Debug.LogError($"[PlayerState] Invalid clickable_requirement '{requirement}' for building '{buildingId}'.");
+                return false;
+            }
+
+            return GetBuildingLevel(requiredBuildingId) >= requiredLevel;
+        }
+
         public bool UnlockBuilding(string buildingId)
         {
             if (!ValidateBuildingId(buildingId))
@@ -346,7 +367,7 @@ namespace GuildIdle.Player
 
             var added = _unlockedBuildings.Add(buildingId);
             if (!_buildingLevels.ContainsKey(buildingId))
-                _buildingLevels[buildingId] = 1;
+                _buildingLevels[buildingId] = GetConfiguredStartLevel(buildingId);
 
             return added;
         }
@@ -531,6 +552,8 @@ namespace GuildIdle.Player
 
         private void ApplyDefaultBootstrap()
         {
+            ApplyDefaultBuildingsBootstrap();
+
             if (!ValidateActivityId(StarterActivityId))
                 return;
 
@@ -556,6 +579,24 @@ namespace GuildIdle.Player
 
             if (!grantedStarterHero)
                 Debug.LogError($"[PlayerState] Starter bootstrap '{StarterActivityId}' has no Hero reward for '{StarterHeroId}'.");
+        }
+
+        private void ApplyDefaultBuildingsBootstrap()
+        {
+            if (!ValidateConfigsReady("bootstrap buildings"))
+                return;
+
+            foreach (var building in RuntimeConfigs.Buildings.Buildings)
+            {
+                if (building == null || !building.visibleAtStart)
+                    continue;
+
+                if (!ValidateBuildingLevel(building.buildingId, building.startLevel))
+                    continue;
+
+                _unlockedBuildings.Add(building.buildingId);
+                _buildingLevels[building.buildingId] = building.startLevel;
+            }
         }
 
         private static bool IsReward(ActivityRewardConfigDto reward, string rewardType, string targetId)
@@ -819,7 +860,7 @@ namespace GuildIdle.Player
 
         private static bool ValidateBuildingLevel(string buildingId, int level)
         {
-            if (level <= 0)
+            if (level < 0)
             {
                 Debug.LogError($"[PlayerState] Invalid level '{level}' for building '{buildingId}'.");
                 return false;
@@ -830,6 +871,33 @@ namespace GuildIdle.Player
 
             Debug.LogError($"[PlayerState] Level '{level}' is not available for building '{buildingId}'.");
             return false;
+        }
+
+        private static int GetConfiguredStartLevel(string buildingId)
+        {
+            return RuntimeConfigs.Buildings.TryGet(buildingId, out var building) ? Math.Max(0, building.startLevel) : 0;
+        }
+
+        private static string GetBuildingClickableRequirement(string buildingId)
+        {
+            return RuntimeConfigs.Buildings.TryGet(buildingId, out var building) ? building.clickableRequirement : string.Empty;
+        }
+
+        private static bool TryParseBuildingLevelRequirement(string raw, out string buildingId, out int level)
+        {
+            buildingId = string.Empty;
+            level = 0;
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+
+            var parts = raw.Split(':');
+            if (parts.Length != 2)
+                return false;
+
+            buildingId = parts[0].Trim();
+            return !string.IsNullOrWhiteSpace(buildingId) &&
+                   int.TryParse(parts[1].Trim(), out level) &&
+                   level >= 0;
         }
 
         private static bool ValidateLocationId(string locationId)

@@ -309,6 +309,7 @@ namespace GuildIdle.Configs
         public BuildingConfigDto[] Buildings { get; }
         public BuildingLevelConfigDto[] BuildingLevels { get; }
         public BuildActionConfigDto[] BuildActions { get; }
+        public BuildingActivityConfigDto[] BuildingActivities { get; }
         public BuildingCraftableConfigDto[] BuildingCraftables { get; }
         public int Count => _buildingsById.Count;
 
@@ -318,6 +319,7 @@ namespace GuildIdle.Configs
             Buildings = dto.buildings ?? Array.Empty<BuildingConfigDto>();
             BuildingLevels = dto.buildingLevels ?? Array.Empty<BuildingLevelConfigDto>();
             BuildActions = dto.buildActions ?? Array.Empty<BuildActionConfigDto>();
+            BuildingActivities = dto.buildingActivities ?? Array.Empty<BuildingActivityConfigDto>();
             BuildingCraftables = dto.buildingCraftables ?? Array.Empty<BuildingCraftableConfigDto>();
 
             foreach (var building in Buildings)

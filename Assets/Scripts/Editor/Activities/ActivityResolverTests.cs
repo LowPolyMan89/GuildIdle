@@ -28,6 +28,7 @@ namespace GuildIdle.Editor.Activities
             Assert.That(missingBuilding.issues[0].issueType, Is.EqualTo("BuildingLevel"));
 
             Assert.That(state.UnlockBuilding("building_underwood"), Is.True);
+            Assert.That(state.SetBuildingLevel("building_underwood", 1), Is.True);
             Assert.That(ActivityResolver.CanStart(Context("work_pine_wood"), adapter).canStart, Is.True);
 
             var missingHero = ActivityResolver.CanStart(Context("hunt_rabbits"), adapter);

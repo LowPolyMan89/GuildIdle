@@ -105,6 +105,7 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new MemorySaveStorage());
             Assert.That(runtime.Start("bad_cycle", 0).success, Is.True);
+            LogAssert.Expect(LogType.Error, "[ActivityRewardResolver] Unsupported reward type 'Unsupported'.");
             LogAssert.Expect(LogType.Error, "[ActivityRewardResolver] Unsupported reward type 'Unsupported' for activity 'bad_cycle'.");
 
             var result = runtime.Tick(5f);

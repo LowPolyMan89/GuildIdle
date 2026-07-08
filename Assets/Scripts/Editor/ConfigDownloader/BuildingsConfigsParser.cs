@@ -11,6 +11,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         private const string ConfigId = "buildings_configs";
         private const string IndexSheet = "Index";
         private const string ReadmeSheet = "README";
+        private const string BuildingActivitiesSheet = "BuildingActivities";
         private const string CraftablesSheetPrefix = "Craftables -";
         private const string ForbiddenLegacyItemId = "item_gold";
         private const string GoldCurrencyId = "gold_id";
@@ -25,7 +26,10 @@ namespace GuildIdle.Editor.ConfigDownloader
             "small_icon_id",
             "levels",
             "unlocked_by_hall_level",
-            "mvp_required"
+            "mvp_required",
+            "start_level",
+            "visible_at_start",
+            "clickable_requirement"
         };
 
         private static readonly string[] LevelRequiredColumns =
@@ -51,6 +55,18 @@ namespace GuildIdle.Editor.ConfigDownloader
             "item_id",
             "sort_order",
             "ui_category",
+            "enabled"
+        };
+
+        private static readonly string[] BuildingActivitiesRequiredColumns =
+        {
+            "building_id",
+            "building_level",
+            "activity_id",
+            "sort_order",
+            "show_if_activity_completed",
+            "hide_if_activity_completed",
+            "clickable_requirement",
             "enabled"
         };
 
@@ -119,6 +135,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             context.ValidateIndex();
             context.ParseBuildingSheets();
             context.ValidateBuildingLevels();
+            context.ValidateBuildingIndexLevelReferences();
+            context.ValidateBuildingActivities();
             context.ValidateCraftables();
 
             if (!report.Success)
@@ -138,6 +156,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly List<BuildingLevelRow> _levels = new List<BuildingLevelRow>();
             private readonly Dictionary<string, BuildingLevelRow> _levelKeys = new Dictionary<string, BuildingLevelRow>(StringComparer.OrdinalIgnoreCase);
             private readonly List<ConfigSheetTable> _craftableTables = new List<ConfigSheetTable>();
+            private readonly List<ConfigSheetDataRow> _buildingActivities = new List<ConfigSheetDataRow>();
 
             public BuildingsConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
             {
@@ -190,18 +209,32 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ValidateRequired(row, "name_id");
                     ValidateRequired(row, "description_id");
                     ValidateRequired(row, "small_icon_id");
-                    ValidateNumberGreaterThan(row, "levels", 0d, "levels must be greater than 0.");
+                    ValidateNumberGreaterThanOrEqual(row, "levels", 0d, "levels must be greater than or equal to 0.");
                     ValidateNumberGreaterThanOrEqual(row, "unlocked_by_hall_level", 0d, "unlocked_by_hall_level must be greater than or equal to 0.");
-                    TryParseBool(row, "mvp_required", required: true, out _);
+                    TryParseBool(row, "mvp_required", required: true, out var mvpRequired);
+                    TryParseBool(row, "visible_at_start", required: true, out var visibleAtStart);
+
+                    var levels = GetNumber(row, "levels");
+                    var startLevel = 0L;
+                    if (TryParseRequiredWholeNumber(row, "start_level", out startLevel))
+                    {
+                        if (startLevel < 0)
+                            AddIssue(IndexSheet, row.RowNumber, "start_level", row.Get("start_level"), "start_level must be greater than or equal to 0.");
+                        else if (startLevel > levels)
+                            AddIssue(IndexSheet, row.RowNumber, "start_level", row.Get("start_level"), "start_level must not be greater than Index.levels.");
+                    }
 
                     _buildings[buildingId] = new BuildingIndexRow(
                         buildingId,
                         row.Get("name_id"),
                         row.Get("description_id"),
                         row.Get("small_icon_id"),
-                        GetNumber(row, "levels"),
+                        levels,
                         GetNumber(row, "unlocked_by_hall_level"),
-                        GetBool(row, "mvp_required"),
+                        mvpRequired,
+                        startLevel,
+                        visibleAtStart,
+                        row.Get("clickable_requirement"),
                         row.RowNumber);
                 }
             }
@@ -269,9 +302,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                     if (string.IsNullOrWhiteSpace(level.BuildingId))
                         AddIssue(row.Table.Name, row.RowNumber, "building_id", level.BuildingId, "building_id is required.");
 
-                    if (!TryParseRequiredWholeNumber(row, "level", out var parsedLevel) || parsedLevel <= 0)
+                    if (!TryParseRequiredWholeNumber(row, "level", out var parsedLevel) || parsedLevel < 0)
                     {
-                        AddIssue(row.Table.Name, row.RowNumber, "level", levelValue, "level must be a number greater than 0.");
+                        AddIssue(row.Table.Name, row.RowNumber, "level", levelValue, "level must be a number greater than or equal to 0.");
                     }
                     else
                     {
@@ -296,6 +329,17 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ValidatePackedRefs(row, "requirements_buildings", "building_id", "level");
                     ValidatePackedRefs(row, "requirements_skills", "skill_id", "level");
                     ValidateBuildSourceRules(level);
+                }
+            }
+
+            public void ValidateBuildingIndexLevelReferences()
+            {
+                foreach (var building in _buildings.Values)
+                {
+                    if (!_levelKeys.ContainsKey(LevelKey(building.BuildingId, building.StartLevel)))
+                        AddIssue(IndexSheet, building.RowNumber, "start_level", building.StartLevel.ToString(CultureInfo.InvariantCulture), "start_level does not exist in BuildingLevels for this building_id.");
+
+                    ValidateOptionalBuildingLevelRef(IndexSheet, building.RowNumber, "clickable_requirement", building.ClickableRequirement);
                 }
             }
 
@@ -328,8 +372,8 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                         if (TryParseRequiredWholeNumber(row, "building_level", out var buildingLevel))
                         {
-                            if (buildingLevel <= 0)
-                                AddIssue(table.Name, row.RowNumber, "building_level", row.Get("building_level"), "building_level must be a number greater than 0.");
+                            if (buildingLevel < 0)
+                                AddIssue(table.Name, row.RowNumber, "building_level", row.Get("building_level"), "building_level must be a number greater than or equal to 0.");
 
                             if (!string.IsNullOrWhiteSpace(buildingId) &&
                                 !_levelKeys.ContainsKey(LevelKey(buildingId, buildingLevel)))
@@ -354,6 +398,56 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
             }
 
+            public void ValidateBuildingActivities()
+            {
+                if (!_tables.TryGetValue(BuildingActivitiesSheet, out var table))
+                {
+                    AddIssue(BuildingActivitiesSheet, 0, string.Empty, string.Empty, "Required sheet is missing.");
+                    return;
+                }
+
+                ValidateRequiredColumns(table, BuildingActivitiesRequiredColumns);
+                if (!HasRequiredColumns(table, BuildingActivitiesRequiredColumns))
+                    return;
+
+                var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in table.DataRows)
+                {
+                    if (!TryParseBool(row, "enabled", required: true, out var enabled) || !enabled)
+                        continue;
+
+                    ValidateRequired(row, "building_id");
+                    ValidateRequired(row, "activity_id");
+                    ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
+
+                    var buildingId = row.Get("building_id");
+                    if (!string.IsNullOrWhiteSpace(buildingId) && !_buildings.ContainsKey(buildingId))
+                        AddIssue(table.Name, row.RowNumber, "building_id", buildingId, "building_id does not exist in Index.building_id.");
+
+                    if (TryParseRequiredWholeNumber(row, "building_level", out var buildingLevel))
+                    {
+                        if (buildingLevel < 0)
+                            AddIssue(table.Name, row.RowNumber, "building_level", row.Get("building_level"), "building_level must be a number greater than or equal to 0.");
+
+                        if (!string.IsNullOrWhiteSpace(buildingId) &&
+                            !_levelKeys.ContainsKey(LevelKey(buildingId, buildingLevel)))
+                        {
+                            AddIssue(table.Name, row.RowNumber, "building_level", row.Get("building_level"), "building_level does not exist in BuildingLevels for this building_id.");
+                        }
+                    }
+
+                    ValidateOptionalBuildingLevelRef(table.Name, row.RowNumber, "clickable_requirement", row.Get("clickable_requirement"));
+
+                    var key = $"{buildingId}\n{row.Get("building_level")}\n{row.Get("activity_id")}";
+                    if (seen.TryGetValue(key, out var firstRow))
+                        AddIssue(table.Name, row.RowNumber, "activity_id", row.Get("activity_id"), $"Duplicate building_id + building_level + activity_id; first declared at row {firstRow}.");
+                    else
+                        seen[key] = row.RowNumber;
+
+                    _buildingActivities.Add(row);
+                }
+            }
+
             public Dictionary<string, List<Dictionary<string, object>>> BuildRuntimeArrays()
             {
                 return new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.Ordinal)
@@ -361,6 +455,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ["buildings"] = BuildBuildings(),
                     ["buildingLevels"] = BuildBuildingLevels(),
                     ["buildActions"] = BuildBuildActions(),
+                    ["buildingActivities"] = BuildBuildingActivities(),
                     ["buildingCraftables"] = BuildBuildingCraftables()
                 };
             }
@@ -378,7 +473,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                         ["smallIconId"] = building.SmallIconId,
                         ["levels"] = building.Levels,
                         ["unlockedByHallLevel"] = building.UnlockedByHallLevel,
-                        ["mvpRequired"] = building.MvpRequired
+                        ["mvpRequired"] = building.MvpRequired,
+                        ["startLevel"] = building.StartLevel,
+                        ["visibleAtStart"] = building.VisibleAtStart,
+                        ["clickableRequirement"] = building.ClickableRequirement
                     });
                 }
 
@@ -436,6 +534,26 @@ namespace GuildIdle.Editor.ConfigDownloader
                         ["requirementsBuildings"] = ParseBuildingRequirements(row.Get("requirements_buildings")),
                         ["requirementsSkills"] = ParseSkillRequirements(row.Get("requirements_skills")),
                         ["skillExp"] = GetNumber(row, "skill_exp")
+                    });
+                }
+
+                return rows;
+            }
+
+            private List<Dictionary<string, object>> BuildBuildingActivities()
+            {
+                var rows = new List<Dictionary<string, object>>();
+                foreach (var row in _buildingActivities)
+                {
+                    rows.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        ["buildingId"] = row.Get("building_id"),
+                        ["buildingLevel"] = GetNumber(row, "building_level"),
+                        ["activityId"] = row.Get("activity_id"),
+                        ["sortOrder"] = GetNumber(row, "sort_order"),
+                        ["showIfActivityCompleted"] = row.Get("show_if_activity_completed"),
+                        ["hideIfActivityCompleted"] = row.Get("hide_if_activity_completed"),
+                        ["clickableRequirement"] = row.Get("clickable_requirement")
                     });
                 }
 
@@ -538,8 +656,20 @@ namespace GuildIdle.Editor.ConfigDownloader
                         AddIssue(row.Table.Name, row.RowNumber, column, id, "gold_id is a currency_id and must not be used as a material reference.");
                     }
 
-                    if (!long.TryParse(count, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed <= 0)
-                        AddIssue(row.Table.Name, row.RowNumber, column, packedRef.Trim(), $"{countName} in packed reference must be an integer greater than 0.");
+                    if (!long.TryParse(count, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        AddIssue(row.Table.Name, row.RowNumber, column, packedRef.Trim(), $"{countName} in packed reference must be an integer.");
+                        continue;
+                    }
+
+                    var minimum = string.Equals(column, "requirements_buildings", StringComparison.OrdinalIgnoreCase) ? 0L : 1L;
+                    if (parsed < minimum)
+                    {
+                        var message = minimum == 0L
+                            ? $"{countName} in packed reference must be an integer greater than or equal to 0."
+                            : $"{countName} in packed reference must be an integer greater than 0.";
+                        AddIssue(row.Table.Name, row.RowNumber, column, packedRef.Trim(), message);
+                    }
                 }
             }
 
@@ -588,8 +718,29 @@ namespace GuildIdle.Editor.ConfigDownloader
                     return;
                 }
 
-                if (!value.EndsWith("_prefab_id", StringComparison.OrdinalIgnoreCase))
-                    AddIssue(row.Table.Name, row.RowNumber, column, value, $"{column} must reference a prefab asset id ending with _prefab_id.");
+                if (value.EndsWith("_prefab_id", StringComparison.OrdinalIgnoreCase))
+                    AddIssue(row.Table.Name, row.RowNumber, column, value, $"{column} must reference a prefab asset id and must not end with _prefab_id.");
+            }
+
+            private void ValidateOptionalBuildingLevelRef(string sheet, int rowNumber, string column, string raw)
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                    return;
+
+                var parts = raw.Split(':');
+                if (parts.Length != 2 ||
+                    string.IsNullOrWhiteSpace(parts[0]) ||
+                    string.IsNullOrWhiteSpace(parts[1]) ||
+                    !long.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var level) ||
+                    level < 0)
+                {
+                    AddIssue(sheet, rowNumber, column, raw, $"{column} must use building_id:level with level greater than or equal to 0.");
+                    return;
+                }
+
+                var buildingId = parts[0].Trim();
+                if (!_levelKeys.ContainsKey(LevelKey(buildingId, level)))
+                    AddIssue(sheet, rowNumber, column, raw, $"{column} references missing Buildings Configs building_id:level.");
             }
 
             private void ValidateNumberGreaterThan(ConfigSheetDataRow row, string column, double minimum, string message)
@@ -784,7 +935,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             private static bool IsIgnoredSheet(string sheetName)
             {
                 return string.Equals(sheetName, IndexSheet, StringComparison.OrdinalIgnoreCase) ||
-                       string.Equals(sheetName, ReadmeSheet, StringComparison.OrdinalIgnoreCase);
+                       string.Equals(sheetName, ReadmeSheet, StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(sheetName, BuildingActivitiesSheet, StringComparison.OrdinalIgnoreCase);
             }
 
             private static bool IsCraftablesSheet(string sheetName)
@@ -1019,9 +1171,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             public double Levels { get; }
             public double UnlockedByHallLevel { get; }
             public bool MvpRequired { get; }
+            public long StartLevel { get; }
+            public bool VisibleAtStart { get; }
+            public string ClickableRequirement { get; }
             public int RowNumber { get; }
 
-            public BuildingIndexRow(string buildingId, string nameId, string descriptionId, string smallIconId, double levels, double unlockedByHallLevel, bool mvpRequired, int rowNumber)
+            public BuildingIndexRow(string buildingId, string nameId, string descriptionId, string smallIconId, double levels, double unlockedByHallLevel, bool mvpRequired, long startLevel, bool visibleAtStart, string clickableRequirement, int rowNumber)
             {
                 BuildingId = buildingId ?? string.Empty;
                 NameId = nameId ?? string.Empty;
@@ -1030,6 +1185,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Levels = levels;
                 UnlockedByHallLevel = unlockedByHallLevel;
                 MvpRequired = mvpRequired;
+                StartLevel = startLevel;
+                VisibleAtStart = visibleAtStart;
+                ClickableRequirement = clickableRequirement ?? string.Empty;
                 RowNumber = rowNumber;
             }
         }

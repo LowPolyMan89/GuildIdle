@@ -187,6 +187,11 @@ namespace GuildIdle.Player
             return EnsureLoaded("check building") && _state.IsBuildingUnlocked(buildingId);
         }
 
+        public static bool CanClickBuilding(string buildingId)
+        {
+            return EnsureLoaded("check building clickability") && _state.CanClickBuilding(buildingId);
+        }
+
         public static bool UnlockBuilding(string buildingId)
         {
             return EnsureLoaded("unlock building") && _state.UnlockBuilding(buildingId);

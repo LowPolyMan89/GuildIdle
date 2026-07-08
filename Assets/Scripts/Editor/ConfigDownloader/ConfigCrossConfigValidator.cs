@@ -311,6 +311,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             public ConfigSourceSettings Source { get; }
             public string DisplayName { get; }
             public Dictionary<string, ConfigSheetTable> Tables { get; } = new Dictionary<string, ConfigSheetTable>(StringComparer.OrdinalIgnoreCase);
+            public IReadOnlyCollection<ConfigDownloadedSheet> RawSheets => _rawSheets.Values;
 
             public LoadedConfig(ConfigSourceSettings source, ConfigSheetDownload download)
             {
@@ -664,6 +665,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             public LoadedConfig Source { get; }
             public HashSet<string> BuildingIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, long> BuildingMaxLevels { get; } = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, HashSet<long>> BuildingLevels { get; } = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> BuildActionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             private BuildingsRegistry(LoadedConfig source)
@@ -692,23 +694,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     }
                 }
 
-                foreach (var table in source.Tables.Values)
-                {
-                    if (string.Equals(table.Name, "Index", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(table.Name, "README", StringComparison.OrdinalIgnoreCase) ||
-                        table.Name.StartsWith("Craftables -", StringComparison.OrdinalIgnoreCase) ||
-                        !table.HasColumn("source_activity_id"))
-                    {
-                        continue;
-                    }
-
-                    foreach (var row in table.DataRows)
-                    {
-                        var sourceActivityId = row.Get("source_activity_id");
-                        if (IsBuildActionId(sourceActivityId))
-                            registry.BuildActionIds.Add(sourceActivityId);
-                    }
-                }
+                foreach (var sheet in source.RawSheets)
+                    registry.CollectBuildingSheet(sheet);
 
                 return registry;
             }
@@ -721,10 +708,99 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (!long.TryParse(levelText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var level))
                     return false;
 
-                if (!BuildingMaxLevels.TryGetValue(buildingId, out var maxLevel))
-                    return level > 0;
+                if (BuildingLevels.TryGetValue(buildingId, out var configuredLevels) && configuredLevels.Count > 0)
+                    return configuredLevels.Contains(level);
 
-                return level > 0 && level <= maxLevel;
+                if (!BuildingMaxLevels.TryGetValue(buildingId, out var maxLevel))
+                    return level >= 0;
+
+                return level >= 0 && level <= maxLevel;
+            }
+
+            private void CollectBuildingSheet(ConfigDownloadedSheet sheet)
+            {
+                if (sheet == null ||
+                    string.IsNullOrWhiteSpace(sheet.sheet_name) ||
+                    string.Equals(sheet.sheet_name, "Index", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(sheet.sheet_name, "README", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(sheet.sheet_name, "BuildingActivities", StringComparison.OrdinalIgnoreCase) ||
+                    sheet.sheet_name.StartsWith("Craftables -", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                var rows = sheet.rows ?? Array.Empty<ConfigSheetRow>();
+                var buildingId = FindTopBlockValue(rows, "building_id");
+                if (IsBlank(buildingId))
+                    return;
+
+                var headerRow = FindHeaderRow(rows, "level");
+                if (headerRow < 0)
+                    return;
+
+                var levelColumn = FindColumn(rows[headerRow], "level");
+                var sourceActivityColumn = FindColumn(rows[headerRow], "source_activity_id");
+                if (levelColumn < 0)
+                    return;
+
+                if (!BuildingLevels.TryGetValue(buildingId, out var levels))
+                {
+                    levels = new HashSet<long>();
+                    BuildingLevels[buildingId] = levels;
+                }
+
+                for (var rowIndex = headerRow + 1; rowIndex < rows.Length; rowIndex++)
+                {
+                    var levelText = Cell(rows[rowIndex], levelColumn);
+                    if (long.TryParse(levelText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var level))
+                        levels.Add(level);
+
+                    var sourceActivityId = Cell(rows[rowIndex], sourceActivityColumn);
+                    if (IsBuildActionId(sourceActivityId))
+                        BuildActionIds.Add(sourceActivityId);
+                }
+            }
+
+            private static string FindTopBlockValue(ConfigSheetRow[] rows, string key)
+            {
+                foreach (var row in rows)
+                {
+                    if (string.Equals(Cell(row, 0), key, StringComparison.OrdinalIgnoreCase))
+                        return Cell(row, 1);
+                }
+
+                return string.Empty;
+            }
+
+            private static int FindHeaderRow(ConfigSheetRow[] rows, string requiredColumn)
+            {
+                for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
+                {
+                    if (FindColumn(rows[rowIndex], requiredColumn) >= 0)
+                        return rowIndex;
+                }
+
+                return -1;
+            }
+
+            private static int FindColumn(ConfigSheetRow row, string column)
+            {
+                var cells = row?.cells ?? Array.Empty<string>();
+                for (var index = 0; index < cells.Length; index++)
+                {
+                    if (string.Equals((cells[index] ?? string.Empty).Trim(), column, StringComparison.OrdinalIgnoreCase))
+                        return index;
+                }
+
+                return -1;
+            }
+
+            private static string Cell(ConfigSheetRow row, int column)
+            {
+                if (row?.cells == null || column < 0 || column >= row.cells.Length)
+                    return string.Empty;
+
+                return (row.cells[column] ?? string.Empty).Trim();
             }
         }
 
@@ -1429,7 +1505,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                     return;
 
                 ValidateLocalisation(buildings, registry, report);
+                ValidateIndexRules(buildings, report);
                 ValidateBuildingLevelRows(buildings, registry, report);
+                ValidateBuildingActivities(buildings, registry, report);
                 ValidateCraftables(buildings, registry, report);
                 ValidateActionConflicts(buildings, registry, report);
             }
@@ -1446,6 +1524,30 @@ namespace GuildIdle.Editor.ConfigDownloader
                 {
                     ValidateIdSet(report, buildings.Source.DisplayName, "Index", row, "name_id", registry.Localisation.LocalisationIds, "Localisation.id");
                     ValidateIdSet(report, buildings.Source.DisplayName, "Index", row, "description_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                }
+            }
+
+            private static void ValidateIndexRules(BuildingsRegistry buildings, ConfigPipelineReport report)
+            {
+                if (!buildings.Source.TryGetTable("Index", out var index))
+                    return;
+
+                foreach (var row in index.DataRows)
+                {
+                    var buildingId = row.Get("building_id");
+                    if (IsBlank(buildingId))
+                        continue;
+
+                    if (IsBlank(row.Get("start_level")))
+                    {
+                        AddIssue(report, buildings.Source.DisplayName, "Index", row.RowNumber, "start_level", row.Get("start_level"), "start_level is required.");
+                    }
+                    else if (!buildings.ContainsBuildingLevel(buildingId, row.Get("start_level")))
+                    {
+                        AddIssue(report, buildings.Source.DisplayName, "Index", row.RowNumber, "start_level", row.Get("start_level"), "start_level does not exist in BuildingLevels for this building_id.");
+                    }
+
+                    ValidateBuildingLevelRef(report, buildings.Source.DisplayName, "Index", row.RowNumber, "clickable_requirement", row.Get("clickable_requirement"), buildings);
                 }
             }
 
@@ -1544,6 +1646,76 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
 
                 ValidateIdSet(report, buildings.Source.DisplayName, table.Name, row, "craft_skill_id", registry.Activity.SkillIds, "Activity Configs / Skills.skill_id");
+            }
+
+            private static void ValidateBuildingActivities(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!buildings.Source.TryGetTable("BuildingActivities", out var table))
+                    return;
+
+                if (!TryGetRequiredRegistry(report, registry.Activity, "Activity Configs"))
+                    return;
+
+                foreach (var row in table.DataRows)
+                {
+                    if (string.Equals(row.Get("enabled"), "FALSE", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(row.Get("enabled"), "false", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(row.Get("enabled"), "0", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var buildingId = row.Get("building_id");
+                    if (IsBlank(buildingId))
+                        AddIssue(report, buildings.Source.DisplayName, "BuildingActivities", row.RowNumber, "building_id", buildingId, "building_id is required.");
+                    else if (!buildings.BuildingIds.Contains(buildingId))
+                        AddIssue(report, buildings.Source.DisplayName, "BuildingActivities", row.RowNumber, "building_id", buildingId, "building_id does not exist in Buildings Configs / Index.building_id.");
+
+                    if (IsBlank(row.Get("building_level")))
+                    {
+                        AddIssue(report, buildings.Source.DisplayName, "BuildingActivities", row.RowNumber, "building_level", row.Get("building_level"), "building_level is required.");
+                    }
+                    else if (!IsBlank(buildingId) &&
+                             !buildings.ContainsBuildingLevel(buildingId, row.Get("building_level")))
+                    {
+                        AddIssue(report, buildings.Source.DisplayName, "BuildingActivities", row.RowNumber, "building_level", row.Get("building_level"), "building_level does not exist in BuildingLevels for this building_id.");
+                    }
+
+                    if (IsBlank(row.Get("activity_id")))
+                        AddIssue(report, buildings.Source.DisplayName, "BuildingActivities", row.RowNumber, "activity_id", row.Get("activity_id"), "activity_id is required.");
+                    else
+                        ValidateUnifiedAction(report, buildings.Source.DisplayName, "BuildingActivities", row, "activity_id", row.Get("activity_id"), registry, buildings);
+                    ValidateUnifiedAction(report, buildings.Source.DisplayName, "BuildingActivities", row, "show_if_activity_completed", row.Get("show_if_activity_completed"), registry, buildings);
+                    ValidateUnifiedAction(report, buildings.Source.DisplayName, "BuildingActivities", row, "hide_if_activity_completed", row.Get("hide_if_activity_completed"), registry, buildings);
+                    ValidateBuildingLevelRef(report, buildings.Source.DisplayName, "BuildingActivities", row.RowNumber, "clickable_requirement", row.Get("clickable_requirement"), buildings);
+                }
+            }
+
+            private static void ValidateUnifiedAction(ConfigPipelineReport report, string sourceConfig, string sheet, ConfigSheetDataRow row, string column, string value, ConfigRegistry registry, BuildingsRegistry buildings)
+            {
+                if (IsBlank(value))
+                    return;
+
+                var exists = registry.Activity != null && registry.Activity.ActivityIds.Contains(value) ||
+                             buildings.BuildActionIds.Contains(value);
+                if (!exists)
+                    AddIssue(report, sourceConfig, sheet, row.RowNumber, column, value, "Referenced action does not exist in Activity Configs / Activities.id or generated Buildings buildActions.");
+            }
+
+            private static void ValidateBuildingLevelRef(ConfigPipelineReport report, string sourceConfig, string sheet, int rowNumber, string column, string value, BuildingsRegistry buildings)
+            {
+                if (IsBlank(value))
+                    return;
+
+                var parts = value.Split(':');
+                if (parts.Length != 2 || IsBlank(parts[0]) || IsBlank(parts[1]))
+                {
+                    AddIssue(report, sourceConfig, sheet, rowNumber, column, value, $"{column} must use building_id:level.");
+                    return;
+                }
+
+                if (!buildings.ContainsBuildingLevel(parts[0].Trim(), parts[1].Trim()))
+                    AddIssue(report, sourceConfig, sheet, rowNumber, column, value, $"{column} references missing Buildings Configs building_id:level.");
             }
 
             private static void ValidateCraftables(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)

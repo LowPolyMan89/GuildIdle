@@ -316,6 +316,44 @@
       "fatigueCost": 0,
       "isRepeatable": false,
       "offlineEnabled": false
+    },
+    {
+      "id": "inspect_foundry",
+      "nameId": "inspect_foundry_name_id",
+      "descriptionId": "inspect_foundry_description_id",
+      "iconId": "icon_building_foundry",
+      "type": "Explore",
+      "category": "Inspection",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Timer",
+      "durationSec": 5,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "mainSkillId": "skill_exploration",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_exploration"
+    },
+    {
+      "id": "inspect_workshop",
+      "nameId": "inspect_workshop_name_id",
+      "descriptionId": "inspect_workshop_description_id",
+      "iconId": "icon_building_workshop",
+      "type": "Explore",
+      "category": "Inspection",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Timer",
+      "durationSec": 5,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "mainSkillId": "skill_exploration",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_exploration"
     }
   ],
   "workDetails": [
@@ -407,6 +445,16 @@
       "activityId": "explore_fields_1",
       "unlockLocationId": "fields_1",
       "discoveryPointsRequired": 50,
+      "dangerLevel": 0
+    },
+    {
+      "activityId": "inspect_foundry",
+      "discoveryPointsRequired": 5,
+      "dangerLevel": 0
+    },
+    {
+      "activityId": "inspect_workshop",
+      "discoveryPointsRequired": 5,
       "dangerLevel": 0
     }
   ],
@@ -1264,6 +1312,61 @@
       "enumGroup": "SkillId",
       "value": "skill_combat",
       "description": "Бой: боевой навык, прокачивается через боевые активности."
+    },
+    {
+      "enumGroup": "QuestCondition",
+      "value": "NewGame",
+      "description": "Выдача квеста при старте новой игры."
+    },
+    {
+      "enumGroup": "QuestCondition",
+      "value": "BuildingLevel",
+      "description": "Выдача квеста при достижении уровня здания."
+    },
+    {
+      "enumGroup": "QuestCondition",
+      "value": "ActivityCompleted",
+      "description": "Выдача квеста после завершения активности."
+    },
+    {
+      "enumGroup": "QuestCondition",
+      "value": "QuestCompleted",
+      "description": "Выдача квеста после завершения другого квеста."
+    },
+    {
+      "enumGroup": "QuestObjective",
+      "value": "ActivityCompleted",
+      "description": "Шаг засчитывается после завершения activity_id или generated build action."
+    },
+    {
+      "enumGroup": "QuestObjective",
+      "value": "BuildingLevel",
+      "description": "Шаг засчитывается, если building_id достиг target_value."
+    },
+    {
+      "enumGroup": "QuestObjective",
+      "value": "ResourceCount",
+      "description": "Шаг засчитывается по количеству ресурса в PlayerState."
+    },
+    {
+      "enumGroup": "QuestObjective",
+      "value": "ItemCount",
+      "description": "Шаг засчитывается по количеству item/recipe/consumable/equipment."
+    },
+    {
+      "enumGroup": "QuestObjective",
+      "value": "HeroAvailable",
+      "description": "Шаг засчитывается, если герой открыт."
+    },
+    {
+      "enumGroup": "QuestObjective",
+      "value": "LocationUnlocked",
+      "description": "Шаг засчитывается, если локация открыта."
+    },
+    {
+      "enumGroup": "QuestObjective",
+      "value": "QuestCompleted",
+      "description": "Шаг засчитывается после завершения другого квеста."
     }
   ]
 }

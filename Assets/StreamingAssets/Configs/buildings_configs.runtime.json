@@ -7,7 +7,10 @@
       "smallIconId": "building_hall_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 0,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": ""
     },
     {
       "buildingId": "building_tavern",
@@ -16,7 +19,10 @@
       "smallIconId": "building_tavern_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 0,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 1,
+      "visibleAtStart": true,
+      "clickableRequirement": ""
     },
     {
       "buildingId": "building_warehouse",
@@ -25,7 +31,10 @@
       "smallIconId": "building_warehouse_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 1,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": "building_hall:1"
     },
     {
       "buildingId": "building_underwood",
@@ -34,7 +43,10 @@
       "smallIconId": "building_underwood_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 1,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": ""
     },
     {
       "buildingId": "building_abandoned_mine",
@@ -43,7 +55,10 @@
       "smallIconId": "building_abandoned_mine_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 1,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": "building_hall:1"
     },
     {
       "buildingId": "building_carpentry",
@@ -52,7 +67,10 @@
       "smallIconId": "building_carpentry_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 1,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": "building_hall:1"
     },
     {
       "buildingId": "building_foundry",
@@ -61,7 +79,10 @@
       "smallIconId": "building_foundry_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 1,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": "building_hall:1"
     },
     {
       "buildingId": "building_forge",
@@ -70,7 +91,10 @@
       "smallIconId": "building_forge_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 1,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": "building_hall:1"
     },
     {
       "buildingId": "building_workshop",
@@ -79,7 +103,10 @@
       "smallIconId": "building_workshop_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 1,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": "building_hall:1"
     },
     {
       "buildingId": "building_watchtower",
@@ -88,7 +115,10 @@
       "smallIconId": "building_watchtower_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 1,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": "building_hall:1"
     },
     {
       "buildingId": "building_trader_post",
@@ -97,14 +127,32 @@
       "smallIconId": "building_trader_post_small_icon_id",
       "levels": 1,
       "unlockedByHallLevel": 1,
-      "mvpRequired": true
+      "mvpRequired": true,
+      "startLevel": 0,
+      "visibleAtStart": true,
+      "clickableRequirement": "building_hall:1"
     }
   ],
   "buildingLevels": [
     {
       "buildingId": "building_hall",
+      "level": 0,
+      "levelPrefabId": "building_hall_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_hall",
       "level": 1,
-      "levelPrefabId": "building_hall_level_1_prefab_id",
+      "levelPrefabId": "building_hall_level_1",
       "sourceActivityId": "build_hall",
       "durationSec": 30,
       "buildPointsRequired": 100,
@@ -129,7 +177,7 @@
     {
       "buildingId": "building_tavern",
       "level": 1,
-      "levelPrefabId": "building_tavern_level_1_prefab_id",
+      "levelPrefabId": "building_tavern_level_1",
       "sourceActivityId": "starter_hero_available",
       "durationSec": 0,
       "buildPointsRequired": 0,
@@ -143,8 +191,28 @@
     },
     {
       "buildingId": "building_warehouse",
+      "level": 0,
+      "levelPrefabId": "building_warehouse_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_warehouse",
       "level": 1,
-      "levelPrefabId": "building_warehouse_level_1_prefab_id",
+      "levelPrefabId": "building_warehouse_level_1",
       "sourceActivityId": "build_warehouse",
       "durationSec": 30,
       "buildPointsRequired": 80,
@@ -168,8 +236,23 @@
     },
     {
       "buildingId": "building_underwood",
+      "level": 0,
+      "levelPrefabId": "building_underwood_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_underwood",
       "level": 1,
-      "levelPrefabId": "building_underwood_level_1_prefab_id",
+      "levelPrefabId": "building_underwood_level_1",
       "sourceActivityId": "combat_clear_hall_forest",
       "durationSec": 0,
       "buildPointsRequired": 0,
@@ -183,13 +266,63 @@
     },
     {
       "buildingId": "building_abandoned_mine",
-      "level": 1,
-      "levelPrefabId": "building_abandoned_mine_level_1_prefab_id",
-      "sourceActivityId": "inspect_abandoned_mine",
-      "durationSec": 5,
+      "level": 0,
+      "levelPrefabId": "building_abandoned_mine_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
       "buildPointsRequired": 0,
-      "craftSkillId": "skill_exploration",
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_abandoned_mine",
+      "level": 1,
+      "levelPrefabId": "building_abandoned_mine_level_1",
+      "sourceActivityId": "build_abandoned_mine",
+      "durationSec": 30,
+      "buildPointsRequired": 80,
+      "craftSkillId": "skill_construction",
       "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 3
+      }
+    ],
+      "requirementsActivities": [
+      {
+        "activityId": "inspect_abandoned_mine",
+        "count": 1
+      }
+    ],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "buildingId": "building_carpentry",
+      "level": 0,
+      "levelPrefabId": "building_carpentry_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
       "materials": [],
       "requirementsActivities": [],
       "requirementsBuildings": [
@@ -204,7 +337,7 @@
     {
       "buildingId": "building_carpentry",
       "level": 1,
-      "levelPrefabId": "building_carpentry_level_1_prefab_id",
+      "levelPrefabId": "building_carpentry_level_1",
       "sourceActivityId": "build_carpentry",
       "durationSec": 30,
       "buildPointsRequired": 100,
@@ -228,8 +361,28 @@
     },
     {
       "buildingId": "building_foundry",
+      "level": 0,
+      "levelPrefabId": "building_foundry_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_foundry",
       "level": 1,
-      "levelPrefabId": "building_foundry_level_1_prefab_id",
+      "levelPrefabId": "building_foundry_level_1",
       "sourceActivityId": "build_foundry",
       "durationSec": 30,
       "buildPointsRequired": 120,
@@ -257,8 +410,28 @@
     },
     {
       "buildingId": "building_forge",
+      "level": 0,
+      "levelPrefabId": "building_forge_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_forge",
       "level": 1,
-      "levelPrefabId": "building_forge_level_1_prefab_id",
+      "levelPrefabId": "building_forge_level_1",
       "sourceActivityId": "build_forge",
       "durationSec": 30,
       "buildPointsRequired": 150,
@@ -294,8 +467,28 @@
     },
     {
       "buildingId": "building_workshop",
+      "level": 0,
+      "levelPrefabId": "building_workshop_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_workshop",
       "level": 1,
-      "levelPrefabId": "building_workshop_level_1_prefab_id",
+      "levelPrefabId": "building_workshop_level_1",
       "sourceActivityId": "build_workshop",
       "durationSec": 30,
       "buildPointsRequired": 120,
@@ -331,8 +524,28 @@
     },
     {
       "buildingId": "building_watchtower",
+      "level": 0,
+      "levelPrefabId": "building_watchtower_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_watchtower",
       "level": 1,
-      "levelPrefabId": "building_watchtower_level_1_prefab_id",
+      "levelPrefabId": "building_watchtower_level_1",
       "sourceActivityId": "combat_watchtower_rats",
       "durationSec": 0,
       "buildPointsRequired": 0,
@@ -351,8 +564,28 @@
     },
     {
       "buildingId": "building_trader_post",
+      "level": 0,
+      "levelPrefabId": "building_trader_post_level_0",
+      "sourceActivityId": "",
+      "durationSec": 0,
+      "buildPointsRequired": 0,
+      "craftSkillId": "",
+      "mainStatId": "",
+      "materials": [],
+      "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 0
+    },
+    {
+      "buildingId": "building_trader_post",
       "level": 1,
-      "levelPrefabId": "building_trader_post_level_1_prefab_id",
+      "levelPrefabId": "building_trader_post_level_1",
       "sourceActivityId": "trader_arrival_event",
       "durationSec": 0,
       "buildPointsRequired": 0,
@@ -412,6 +645,36 @@
       }
     ],
       "requirementsActivities": [],
+      "requirementsBuildings": [
+      {
+        "buildingId": "building_hall",
+        "level": 1
+      }
+    ],
+      "requirementsSkills": [],
+      "skillExp": 5
+    },
+    {
+      "id": "build_abandoned_mine",
+      "type": "Build",
+      "targetBuildingId": "building_abandoned_mine",
+      "targetLevel": 1,
+      "durationSec": 30,
+      "buildPointsRequired": 80,
+      "skillId": "skill_construction",
+      "mainStatId": "Intelligence",
+      "materials": [
+      {
+        "id": "resource_pine_wood",
+        "count": 3
+      }
+    ],
+      "requirementsActivities": [
+      {
+        "activityId": "inspect_abandoned_mine",
+        "count": 1
+      }
+    ],
       "requirementsBuildings": [
       {
         "buildingId": "building_hall",
@@ -548,6 +811,170 @@
     ],
       "requirementsSkills": [],
       "skillExp": 10
+    }
+  ],
+  "buildingActivities": [
+    {
+      "buildingId": "building_underwood",
+      "buildingLevel": 0,
+      "activityId": "combat_clear_hall_forest",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "combat_clear_hall_forest",
+      "clickableRequirement": ""
+    },
+    {
+      "buildingId": "building_underwood",
+      "buildingLevel": 1,
+      "activityId": "work_pine_wood",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "",
+      "clickableRequirement": ""
+    },
+    {
+      "buildingId": "building_hall",
+      "buildingLevel": 0,
+      "activityId": "build_hall",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "combat_clear_hall_forest",
+      "hideIfActivityCompleted": "build_hall",
+      "clickableRequirement": ""
+    },
+    {
+      "buildingId": "building_warehouse",
+      "buildingLevel": 0,
+      "activityId": "inspect_warehouse",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "inspect_warehouse",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_warehouse",
+      "buildingLevel": 0,
+      "activityId": "build_warehouse",
+      "sortOrder": 20,
+      "showIfActivityCompleted": "inspect_warehouse",
+      "hideIfActivityCompleted": "build_warehouse",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_carpentry",
+      "buildingLevel": 0,
+      "activityId": "inspect_carpentry",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "inspect_carpentry",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_carpentry",
+      "buildingLevel": 0,
+      "activityId": "build_carpentry",
+      "sortOrder": 20,
+      "showIfActivityCompleted": "inspect_carpentry",
+      "hideIfActivityCompleted": "build_carpentry",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_abandoned_mine",
+      "buildingLevel": 0,
+      "activityId": "inspect_abandoned_mine",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "inspect_abandoned_mine",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_abandoned_mine",
+      "buildingLevel": 0,
+      "activityId": "build_abandoned_mine",
+      "sortOrder": 20,
+      "showIfActivityCompleted": "inspect_abandoned_mine",
+      "hideIfActivityCompleted": "build_abandoned_mine",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_abandoned_mine",
+      "buildingLevel": 1,
+      "activityId": "work_copper_ore",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "",
+      "clickableRequirement": ""
+    },
+    {
+      "buildingId": "building_foundry",
+      "buildingLevel": 0,
+      "activityId": "inspect_foundry",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "inspect_foundry",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_foundry",
+      "buildingLevel": 0,
+      "activityId": "build_foundry",
+      "sortOrder": 20,
+      "showIfActivityCompleted": "inspect_foundry",
+      "hideIfActivityCompleted": "build_foundry",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_forge",
+      "buildingLevel": 0,
+      "activityId": "inspect_forge",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "inspect_forge",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_forge",
+      "buildingLevel": 0,
+      "activityId": "build_forge",
+      "sortOrder": 20,
+      "showIfActivityCompleted": "inspect_forge",
+      "hideIfActivityCompleted": "build_forge",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_workshop",
+      "buildingLevel": 0,
+      "activityId": "inspect_workshop",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "inspect_workshop",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_workshop",
+      "buildingLevel": 0,
+      "activityId": "build_workshop",
+      "sortOrder": 20,
+      "showIfActivityCompleted": "inspect_workshop",
+      "hideIfActivityCompleted": "build_workshop",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_watchtower",
+      "buildingLevel": 0,
+      "activityId": "inspect_watchtower",
+      "sortOrder": 10,
+      "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "inspect_watchtower",
+      "clickableRequirement": "building_hall:1"
+    },
+    {
+      "buildingId": "building_watchtower",
+      "buildingLevel": 0,
+      "activityId": "combat_watchtower_rats",
+      "sortOrder": 20,
+      "showIfActivityCompleted": "inspect_watchtower",
+      "hideIfActivityCompleted": "combat_watchtower_rats",
+      "clickableRequirement": "building_hall:1"
     }
   ],
   "buildingCraftables": [

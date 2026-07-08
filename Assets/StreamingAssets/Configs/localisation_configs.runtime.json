@@ -1097,6 +1097,294 @@
       "ru": "Имеет шанс пережить смертельный удар и продолжить бой.",
       "en": "Has a chance to survive lethal damage and continue fighting.",
       "tr": "Ölümcül hasardan kurtulup savaşa devam etme şansı vardır."
+    },
+    {
+      "id": "inspect_foundry_name_id",
+      "ru": "Исследовать Литейную",
+      "en": "Inspect the Foundry",
+      "tr": "Dökümhaneyi İncele"
+    },
+    {
+      "id": "inspect_foundry_description_id",
+      "ru": "Осмотрите руины Литейной и подготовьте её к ремонту.",
+      "en": "Inspect the ruined Foundry and prepare it for repair.",
+      "tr": "Yıkık Dökümhaneyi incele ve onarıma hazırla."
+    },
+    {
+      "id": "inspect_workshop_name_id",
+      "ru": "Исследовать Мастерскую",
+      "en": "Inspect the Workshop",
+      "tr": "Atölyeyi İncele"
+    },
+    {
+      "id": "inspect_workshop_description_id",
+      "ru": "Осмотрите руины Мастерской и подготовьте её к ремонту.",
+      "en": "Inspect the ruined Workshop and prepare it for repair.",
+      "tr": "Yıkık Atölyeyi incele ve onarıma hazırla."
+    },
+    {
+      "id": "build_abandoned_mine_name_id",
+      "ru": "Разобрать завалы шахты",
+      "en": "Clear the Mine Rubble",
+      "tr": "Maden Enkazını Temizle"
+    },
+    {
+      "id": "build_abandoned_mine_description_id",
+      "ru": "Разберите завалы у входа в шахту, чтобы открыть добычу меди.",
+      "en": "Clear the rubble at the mine entrance to unlock copper mining.",
+      "tr": "Bakır madenciliğini açmak için maden girişindeki enkazı temizle."
+    },
+    {
+      "id": "quest_restore_hall_name_id",
+      "ru": "Новое начало",
+      "en": "A New Beginning",
+      "tr": "Yeni Bir Başlangıç"
+    },
+    {
+      "id": "quest_restore_hall_description_id",
+      "ru": "Очистите лес, добудьте древесину и восстановите Холл гильдии.",
+      "en": "Clear the forest, gather wood, and restore the Guild Hall.",
+      "tr": "Ormanı temizle, odun topla ve Lonca Holünü onar."
+    },
+    {
+      "id": "quest_repair_warehouse_name_id",
+      "ru": "Склад: осмотр и ремонт",
+      "en": "Warehouse: Inspect and Repair",
+      "tr": "Depo: İncele ve Onar"
+    },
+    {
+      "id": "quest_repair_warehouse_description_id",
+      "ru": "Осмотрите Склад и восстановите его работу.",
+      "en": "Inspect the Warehouse and restore its function.",
+      "tr": "Depoyu incele ve işlevini geri kazandır."
+    },
+    {
+      "id": "quest_repair_carpentry_name_id",
+      "ru": "Плотницкая: осмотр и ремонт",
+      "en": "Carpentry: Inspect and Repair",
+      "tr": "Marangozhane: İncele ve Onar"
+    },
+    {
+      "id": "quest_repair_carpentry_description_id",
+      "ru": "Осмотрите Плотницкую и восстановите производство досок.",
+      "en": "Inspect the Carpentry and restore plank production.",
+      "tr": "Marangozhaneyi incele ve tahta üretimini geri kazandır."
+    },
+    {
+      "id": "quest_open_abandoned_mine_name_id",
+      "ru": "Шахта: осмотр и завалы",
+      "en": "Mine: Inspect and Clear",
+      "tr": "Maden: İncele ve Temizle"
+    },
+    {
+      "id": "quest_open_abandoned_mine_description_id",
+      "ru": "Осмотрите Заброшенную шахту и разберите завалы у входа.",
+      "en": "Inspect the Abandoned Mine and clear the entrance rubble.",
+      "tr": "Terk Edilmiş Madeni incele ve giriş enkazını temizle."
+    },
+    {
+      "id": "quest_repair_foundry_name_id",
+      "ru": "Литейная: осмотр и ремонт",
+      "en": "Foundry: Inspect and Repair",
+      "tr": "Dökümhane: İncele ve Onar"
+    },
+    {
+      "id": "quest_repair_foundry_description_id",
+      "ru": "Осмотрите Литейную и восстановите плавку меди.",
+      "en": "Inspect the Foundry and restore copper smelting.",
+      "tr": "Dökümhaneyi incele ve bakır eritme işini geri kazandır."
+    },
+    {
+      "id": "quest_repair_forge_name_id",
+      "ru": "Кузница: осмотр и ремонт",
+      "en": "Forge: Inspect and Repair",
+      "tr": "Demirhane: İncele ve Onar"
+    },
+    {
+      "id": "quest_repair_forge_description_id",
+      "ru": "Осмотрите Кузницу и восстановите создание оружия и щитов.",
+      "en": "Inspect the Forge and restore weapon and shield crafting.",
+      "tr": "Demirhaneyi incele, silah ve kalkan üretimini geri kazandır."
+    },
+    {
+      "id": "quest_repair_workshop_name_id",
+      "ru": "Мастерская: осмотр и ремонт",
+      "en": "Workshop: Inspect and Repair",
+      "tr": "Atölye: İncele ve Onar"
+    },
+    {
+      "id": "quest_repair_workshop_description_id",
+      "ru": "Осмотрите Мастерскую и восстановите ремесленные работы.",
+      "en": "Inspect the Workshop and restore crafting work.",
+      "tr": "Atölyeyi incele ve zanaat işlerini geri kazandır."
+    },
+    {
+      "id": "quest_clear_watchtower_name_id",
+      "ru": "Дозорная башня: осмотр и зачистка",
+      "en": "Watchtower: Inspect and Clear",
+      "tr": "Gözcü Kulesi: İncele ve Temizle"
+    },
+    {
+      "id": "quest_clear_watchtower_description_id",
+      "ru": "Осмотрите Дозорную башню, зачистите крыс и откройте карту.",
+      "en": "Inspect the Watchtower, clear out the rats, and unlock the map.",
+      "tr": "Gözcü Kulesini incele, sıçanları temizle ve haritayı aç."
+    },
+    {
+      "id": "quest_restore_hall_step_clear_forest_id",
+      "ru": "Очистить лес у Холла",
+      "en": "Clear the forest by the Hall",
+      "tr": "Holün yanındaki ormanı temizle"
+    },
+    {
+      "id": "quest_restore_hall_step_collect_wood_id",
+      "ru": "Добыть 5 сосновой древесины",
+      "en": "Gather 5 Pine Wood",
+      "tr": "5 Çam Odunu topla"
+    },
+    {
+      "id": "quest_restore_hall_step_build_hall_id",
+      "ru": "Отремонтировать Холл",
+      "en": "Repair the Hall",
+      "tr": "Holü onar"
+    },
+    {
+      "id": "quest_restore_hall_step_hall_level_id",
+      "ru": "Холл восстановлен",
+      "en": "Hall restored",
+      "tr": "Hol onarıldı"
+    },
+    {
+      "id": "quest_repair_warehouse_step_inspect_id",
+      "ru": "Осмотреть Склад",
+      "en": "Inspect the Warehouse",
+      "tr": "Depoyu incele"
+    },
+    {
+      "id": "quest_repair_warehouse_step_repair_id",
+      "ru": "Отремонтировать Склад",
+      "en": "Repair the Warehouse",
+      "tr": "Depoyu onar"
+    },
+    {
+      "id": "quest_repair_warehouse_step_level_id",
+      "ru": "Склад восстановлен",
+      "en": "Warehouse restored",
+      "tr": "Depo onarıldı"
+    },
+    {
+      "id": "quest_repair_carpentry_step_inspect_id",
+      "ru": "Осмотреть Плотницкую",
+      "en": "Inspect the Carpentry",
+      "tr": "Marangozhaneyi incele"
+    },
+    {
+      "id": "quest_repair_carpentry_step_repair_id",
+      "ru": "Отремонтировать Плотницкую",
+      "en": "Repair the Carpentry",
+      "tr": "Marangozhaneyi onar"
+    },
+    {
+      "id": "quest_repair_carpentry_step_level_id",
+      "ru": "Плотницкая восстановлена",
+      "en": "Carpentry restored",
+      "tr": "Marangozhane onarıldı"
+    },
+    {
+      "id": "quest_open_abandoned_mine_step_inspect_id",
+      "ru": "Осмотреть шахту",
+      "en": "Inspect the mine",
+      "tr": "Madeni incele"
+    },
+    {
+      "id": "quest_open_abandoned_mine_step_clear_id",
+      "ru": "Разобрать завалы",
+      "en": "Clear the rubble",
+      "tr": "Enkazı temizle"
+    },
+    {
+      "id": "quest_open_abandoned_mine_step_level_id",
+      "ru": "Шахта открыта",
+      "en": "Mine opened",
+      "tr": "Maden açıldı"
+    },
+    {
+      "id": "quest_repair_foundry_step_inspect_id",
+      "ru": "Осмотреть Литейную",
+      "en": "Inspect the Foundry",
+      "tr": "Dökümhaneyi incele"
+    },
+    {
+      "id": "quest_repair_foundry_step_repair_id",
+      "ru": "Отремонтировать Литейную",
+      "en": "Repair the Foundry",
+      "tr": "Dökümhaneyi onar"
+    },
+    {
+      "id": "quest_repair_foundry_step_level_id",
+      "ru": "Литейная восстановлена",
+      "en": "Foundry restored",
+      "tr": "Dökümhane onarıldı"
+    },
+    {
+      "id": "quest_repair_forge_step_inspect_id",
+      "ru": "Осмотреть Кузницу",
+      "en": "Inspect the Forge",
+      "tr": "Demirhaneyi incele"
+    },
+    {
+      "id": "quest_repair_forge_step_repair_id",
+      "ru": "Отремонтировать Кузницу",
+      "en": "Repair the Forge",
+      "tr": "Demirhaneyi onar"
+    },
+    {
+      "id": "quest_repair_forge_step_level_id",
+      "ru": "Кузница восстановлена",
+      "en": "Forge restored",
+      "tr": "Demirhane onarıldı"
+    },
+    {
+      "id": "quest_repair_workshop_step_inspect_id",
+      "ru": "Осмотреть Мастерскую",
+      "en": "Inspect the Workshop",
+      "tr": "Atölyeyi incele"
+    },
+    {
+      "id": "quest_repair_workshop_step_repair_id",
+      "ru": "Отремонтировать Мастерскую",
+      "en": "Repair the Workshop",
+      "tr": "Atölyeyi onar"
+    },
+    {
+      "id": "quest_repair_workshop_step_level_id",
+      "ru": "Мастерская восстановлена",
+      "en": "Workshop restored",
+      "tr": "Atölye onarıldı"
+    },
+    {
+      "id": "quest_clear_watchtower_step_inspect_id",
+      "ru": "Осмотреть Дозорную башню",
+      "en": "Inspect the Watchtower",
+      "tr": "Gözcü Kulesini incele"
+    },
+    {
+      "id": "quest_clear_watchtower_step_combat_id",
+      "ru": "Зачистить башню от крыс",
+      "en": "Clear rats from the tower",
+      "tr": "Kuledeki sıçanları temizle"
+    },
+    {
+      "id": "quest_clear_watchtower_step_level_id",
+      "ru": "Башня восстановлена",
+      "en": "Watchtower restored",
+      "tr": "Gözcü Kulesi onarıldı"
+    },
+    {
+      "id": "quest_clear_watchtower_step_map_fields_id",
+      "ru": "Открыть Поля",
+      "en": "Unlock the Fields",
+      "tr": "Tarlaları aç"
     }
   ]
 }

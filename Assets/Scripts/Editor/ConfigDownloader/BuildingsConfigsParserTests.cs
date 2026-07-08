@@ -32,9 +32,13 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"buildings\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingLevels\""));
             Assert.That(runtimeJson, Does.Contain("\"buildActions\""));
+            Assert.That(runtimeJson, Does.Contain("\"buildingActivities\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingCraftables\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingId\": \"building_hall\""));
             Assert.That(runtimeJson, Does.Contain("\"levels\": 1"));
+            Assert.That(runtimeJson, Does.Contain("\"startLevel\": 0"));
+            Assert.That(runtimeJson, Does.Contain("\"visibleAtStart\": true"));
+            Assert.That(runtimeJson, Does.Contain("\"clickableRequirement\": \"building_hall:1\""));
             Assert.That(runtimeJson, Does.Contain("\"mvpRequired\": true"));
             Assert.That(runtimeJson, Does.Contain("\"materials\": ["));
             Assert.That(runtimeJson, Does.Contain("\"id\": \"resource_pine_wood\""));
@@ -42,7 +46,10 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"requirementsActivities\": ["));
             Assert.That(runtimeJson, Does.Contain("\"activityId\": \"combat_clear_hall_forest\""));
             Assert.That(runtimeJson, Does.Contain("\"requirementsBuildings\": []"));
-            Assert.That(runtimeJson, Does.Contain("\"levelPrefabId\": \"building_underwood_level_1_prefab_id\""));
+            Assert.That(runtimeJson, Does.Contain("\"level\": 0"));
+            Assert.That(runtimeJson, Does.Contain("\"levelPrefabId\": \"building_underwood_level_0\""));
+            Assert.That(runtimeJson, Does.Contain("\"activityId\": \"build_warehouse\""));
+            Assert.That(runtimeJson, Does.Not.Contain("missing_disabled_activity"));
             Assert.That(runtimeJson, Does.Not.Contain("levelImageId"));
             Assert.That(runtimeJson, Does.Not.Contain("README"));
             Assert.That(runtimeJson, Does.Not.Contain("Title"));
@@ -83,7 +90,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         public void BuildRuntimeJson_SupportsDecimalComma()
         {
             var download = CreateValidDownload();
-            FindSheet(download, "Hall").rows[9].cells[4] = "30,5";
+            FindSheet(download, "Hall").rows[10].cells[4] = "30,5";
             WriteRaw(download);
 
             var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
@@ -123,7 +130,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
             Assert.That(runtimeJson, Does.Contain("\"id\": \"build_hall\""));
-            Assert.That(runtimeJson, Does.Contain("\"levelPrefabId\": \"building_hall_level_1_prefab_id\""));
+            Assert.That(runtimeJson, Does.Contain("\"levelPrefabId\": \"building_hall_level_1\""));
             Assert.That(runtimeJson, Does.Not.Contain("levelImageId"));
         }
 
@@ -133,7 +140,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             var download = CreateValidDownload();
             var hall = FindSheet(download, "Hall");
             hall.rows[8].cells[1] = "level_image_id";
-            hall.rows[9].cells[1] = "building_hall_level_1_image_id";
+            hall.rows[9].cells[1] = "building_hall_level_0_image_id";
             WriteRaw(download);
 
             var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
@@ -145,12 +152,25 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void BuildRuntimeJson_RejectsLevelPrefabIdValueWithPrefabIdSuffix()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "Hall").rows[9].cells[1] = "building_hall_level_0_prefab_id";
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("level_prefab_id must reference a prefab asset id and must not end with _prefab_id."));
+        }
+
+        [Test]
         public void BuildRuntimeJson_ReportsLocalValidationErrors()
         {
             var download = CreateValidDownload();
-            FindSheet(download, "Index").rows[1].cells[5] = "0";
-            FindSheet(download, "Hall").rows[9].cells[7] = "BadStat";
-            FindSheet(download, "Hall").rows[9].cells[8] = "badpacked";
+            FindSheet(download, "Index").rows[1].cells[5] = "-1";
+            FindSheet(download, "Hall").rows[10].cells[7] = "BadStat";
+            FindSheet(download, "Hall").rows[10].cells[8] = "badpacked";
             FindSheet(download, "Craftables - Carpentry").rows = Append(
                 FindSheet(download, "Craftables - Carpentry").rows,
                 Row("building_carpentry", "2", "item_missing_level", "-1", "", "MAYBE", "bad row"));
@@ -160,7 +180,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             var message = report.ToDisplayMessage();
 
             Assert.That(report.Success, Is.False);
-            Assert.That(message, Does.Contain("levels must be greater than 0."));
+            Assert.That(message, Does.Contain("levels must be greater than or equal to 0."));
             Assert.That(message, Does.Contain("main_stat_id must be one of Strength, Agility, Intelligence, Endurance, Luck"));
             Assert.That(message, Does.Contain("Expected materials format id:count; id:count."));
             Assert.That(message, Does.Contain("building_level does not exist in BuildingLevels for this building_id."));
@@ -216,16 +236,29 @@ namespace GuildIdle.Editor.ConfigDownloader
                 sheets = new[]
                 {
                     Sheet("Index",
-                        Row("building_id", "Title", "name_id", "description_id", "small_icon_id", "levels", "unlocked_by_hall_level", "mvp_required", "notes"),
-                        Row("building_hall", "Hall", "building_hall_name_id", "building_hall_description_id", "building_hall_small_icon_id", "1", "0", "TRUE", "note"),
-                        Row("building_underwood", "Underwood", "building_underwood_name_id", "building_underwood_description_id", "building_underwood_small_icon_id", "1", "1", "TRUE", "note"),
-                        Row("building_carpentry", "Carpentry", "building_carpentry_name_id", "building_carpentry_description_id", "building_carpentry_small_icon_id", "1", "1", "TRUE", "note")),
+                        Row("building_id", "Title", "name_id", "description_id", "small_icon_id", "levels", "unlocked_by_hall_level", "mvp_required", "notes", "start_level", "visible_at_start", "clickable_requirement"),
+                        Row("building_hall", "Hall", "building_hall_name_id", "building_hall_description_id", "building_hall_small_icon_id", "1", "0", "TRUE", "note", "0", "TRUE", ""),
+                        Row("building_underwood", "Underwood", "building_underwood_name_id", "building_underwood_description_id", "building_underwood_small_icon_id", "1", "1", "TRUE", "note", "0", "TRUE", ""),
+                        Row("building_warehouse", "Warehouse", "building_warehouse_name_id", "building_warehouse_description_id", "building_warehouse_small_icon_id", "1", "1", "TRUE", "note", "0", "TRUE", "building_hall:1"),
+                        Row("building_carpentry", "Carpentry", "building_carpentry_name_id", "building_carpentry_description_id", "building_carpentry_small_icon_id", "1", "1", "TRUE", "note", "0", "TRUE", "building_hall:1")),
                     BuildingSheet("Hall", "building_hall", "building_hall_name_id", "building_hall_description_id", "building_hall_small_icon_id", "build_hall", "",
-                        Row("1", "building_hall_level_1_prefab_id", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5")),
+                        Row("0", "building_hall_level_0", "", "Ruined Hall", "0", "0", "", "", "", "", "", "", "note", ""),
+                        Row("1", "building_hall_level_1", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5")),
                     BuildingSheet("Underwood", "building_underwood", "building_underwood_name_id", "building_underwood_description_id", "building_underwood_small_icon_id", "combat_clear_hall_forest", "",
-                        Row("1", "building_underwood_level_1_prefab_id", "combat_clear_hall_forest", "Clear forest", "0", "0", "skill_combat", "Strength", "", "", "", "", "note", "")),
+                        Row("0", "building_underwood_level_0", "", "Overgrown forest", "0", "0", "", "", "", "", "", "", "note", ""),
+                        Row("1", "building_underwood_level_1", "combat_clear_hall_forest", "Clear forest", "0", "0", "skill_combat", "Strength", "", "", "", "", "note", "")),
+                    BuildingSheet("Warehouse", "building_warehouse", "building_warehouse_name_id", "building_warehouse_description_id", "building_warehouse_small_icon_id", "build_warehouse", "",
+                        Row("0", "building_warehouse_level_0", "", "Ruined Warehouse", "0", "0", "", "", "", "", "building_hall:1", "", "note", ""),
+                        Row("1", "building_warehouse_level_1", "build_warehouse", "Repair Warehouse", "30", "80", "skill_construction", "Intelligence", "resource_pine_wood:3", "", "building_hall:1", "", "note", "5")),
                     BuildingSheet("Carpentry", "building_carpentry", "building_carpentry_name_id", "building_carpentry_description_id", "building_carpentry_small_icon_id", "build_carpentry", "Craftables - Carpentry",
-                        Row("1", "building_carpentry_level_1_prefab_id", "build_carpentry", "Repair Carpentry", "30", "80", "skill_construction", "Intelligence", "resource_pine_wood:3", "", "building_hall:1", "", "note", "5")),
+                        Row("0", "building_carpentry_level_0", "", "Ruined Carpentry", "0", "0", "", "", "", "", "building_hall:1", "", "note", ""),
+                        Row("1", "building_carpentry_level_1", "build_carpentry", "Repair Carpentry", "30", "80", "skill_construction", "Intelligence", "resource_pine_wood:3", "", "building_hall:1", "", "note", "5")),
+                    Sheet("BuildingActivities",
+                        Row("building_id", "building_level", "activity_id", "sort_order", "show_if_activity_completed", "hide_if_activity_completed", "clickable_requirement", "enabled", "notes"),
+                        Row("building_underwood", "0", "combat_clear_hall_forest", "10", "", "combat_clear_hall_forest", "", "TRUE", "note"),
+                        Row("building_hall", "0", "build_hall", "10", "combat_clear_hall_forest", "build_hall", "", "TRUE", "note"),
+                        Row("building_warehouse", "0", "build_warehouse", "20", "", "", "building_hall:1", "TRUE", "note"),
+                        Row("building_carpentry", "0", "missing_disabled_activity", "30", "", "", "building_hall:1", "FALSE", "note")),
                     Sheet("Craftables - Carpentry",
                         Row("building_id", "building_level", "item_id", "sort_order", "ui_category", "enabled", "notes"),
                         Row("building_carpentry", "1", "resource_pine_plank", "10", "Materials", "TRUE", "note")),
@@ -278,7 +311,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     "requirements_skills",
                     "notes",
                     "skill_exp"),
-                Row("1", "building_hall_level_1_prefab_id", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5"));
+                Row("0", "building_hall_level_0", "", "Ruined Hall", "0", "0", "", "", "", "", "", "", "note", ""),
+                Row("1", "building_hall_level_1", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5"));
         }
 
         private static ConfigDownloadedSheet Sheet(string name, params ConfigSheetRow[] rows)
