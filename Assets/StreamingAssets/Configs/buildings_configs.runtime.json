@@ -104,7 +104,7 @@
     {
       "buildingId": "building_hall",
       "level": 1,
-      "levelImageId": "building_hall_level_1_image_id",
+      "levelPrefabId": "building_hall_level_1_prefab_id",
       "sourceActivityId": "build_hall",
       "durationSec": 30,
       "buildPointsRequired": 100,
@@ -129,7 +129,7 @@
     {
       "buildingId": "building_tavern",
       "level": 1,
-      "levelImageId": "building_tavern_level_1_image_id",
+      "levelPrefabId": "building_tavern_level_1_prefab_id",
       "sourceActivityId": "starter_hero_available",
       "durationSec": 0,
       "buildPointsRequired": 0,
@@ -144,7 +144,7 @@
     {
       "buildingId": "building_warehouse",
       "level": 1,
-      "levelImageId": "building_warehouse_level_1_image_id",
+      "levelPrefabId": "building_warehouse_level_1_prefab_id",
       "sourceActivityId": "build_warehouse",
       "durationSec": 30,
       "buildPointsRequired": 80,
@@ -169,7 +169,7 @@
     {
       "buildingId": "building_underwood",
       "level": 1,
-      "levelImageId": "building_underwood_level_1_image_id",
+      "levelPrefabId": "building_underwood_level_1_prefab_id",
       "sourceActivityId": "combat_clear_hall_forest",
       "durationSec": 0,
       "buildPointsRequired": 0,
@@ -184,7 +184,7 @@
     {
       "buildingId": "building_abandoned_mine",
       "level": 1,
-      "levelImageId": "building_abandoned_mine_level_1_image_id",
+      "levelPrefabId": "building_abandoned_mine_level_1_prefab_id",
       "sourceActivityId": "inspect_abandoned_mine",
       "durationSec": 5,
       "buildPointsRequired": 0,
@@ -204,7 +204,7 @@
     {
       "buildingId": "building_carpentry",
       "level": 1,
-      "levelImageId": "building_carpentry_level_1_image_id",
+      "levelPrefabId": "building_carpentry_level_1_prefab_id",
       "sourceActivityId": "build_carpentry",
       "durationSec": 30,
       "buildPointsRequired": 100,
@@ -229,7 +229,7 @@
     {
       "buildingId": "building_foundry",
       "level": 1,
-      "levelImageId": "building_foundry_level_1_image_id",
+      "levelPrefabId": "building_foundry_level_1_prefab_id",
       "sourceActivityId": "build_foundry",
       "durationSec": 30,
       "buildPointsRequired": 120,
@@ -258,7 +258,7 @@
     {
       "buildingId": "building_forge",
       "level": 1,
-      "levelImageId": "building_forge_level_1_image_id",
+      "levelPrefabId": "building_forge_level_1_prefab_id",
       "sourceActivityId": "build_forge",
       "durationSec": 30,
       "buildPointsRequired": 150,
@@ -295,7 +295,7 @@
     {
       "buildingId": "building_workshop",
       "level": 1,
-      "levelImageId": "building_workshop_level_1_image_id",
+      "levelPrefabId": "building_workshop_level_1_prefab_id",
       "sourceActivityId": "build_workshop",
       "durationSec": 30,
       "buildPointsRequired": 120,
@@ -332,7 +332,7 @@
     {
       "buildingId": "building_watchtower",
       "level": 1,
-      "levelImageId": "building_watchtower_level_1_image_id",
+      "levelPrefabId": "building_watchtower_level_1_prefab_id",
       "sourceActivityId": "combat_watchtower_rats",
       "durationSec": 0,
       "buildPointsRequired": 0,
@@ -352,7 +352,7 @@
     {
       "buildingId": "building_trader_post",
       "level": 1,
-      "levelImageId": "building_trader_post_level_1_image_id",
+      "levelPrefabId": "building_trader_post_level_1_prefab_id",
       "sourceActivityId": "trader_arrival_event",
       "durationSec": 0,
       "buildPointsRequired": 0,

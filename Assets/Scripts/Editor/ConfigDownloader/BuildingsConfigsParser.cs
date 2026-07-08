@@ -14,6 +14,8 @@ namespace GuildIdle.Editor.ConfigDownloader
         private const string CraftablesSheetPrefix = "Craftables -";
         private const string ForbiddenLegacyItemId = "item_gold";
         private const string GoldCurrencyId = "gold_id";
+        private const string LevelPrefabColumn = "level_prefab_id";
+        private const string LegacyLevelImageColumn = "level_image_id";
 
         private static readonly string[] IndexRequiredColumns =
         {
@@ -29,7 +31,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         private static readonly string[] LevelRequiredColumns =
         {
             "level",
-            "level_image_id",
+            LevelPrefabColumn,
             "source_activity_id",
             "duration_sec",
             "build_points_required",
@@ -244,6 +246,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                         AddIssue(sheet.sheet_name, 1, "craftables_sheet", buildingSheet.CraftablesSheet, "Referenced craftables_sheet does not exist.");
                     }
 
+                    ValidateForbiddenLegacyColumns(buildingSheet.Table);
                     ValidateRequiredColumns(buildingSheet.Table, LevelRequiredColumns);
                     foreach (var row in buildingSheet.Table.DataRows)
                         _levels.Add(new BuildingLevelRow(buildingSheet.BuildingId, row));
@@ -284,7 +287,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                         _levelKeys[key] = level;
                     }
 
-                    ValidateRequired(row, "level_image_id");
+                    ValidatePrefabId(row, LevelPrefabColumn);
                     ValidateNumberGreaterThanOrEqual(row, "duration_sec", 0d, "duration_sec must be greater than or equal to 0.");
                     ValidateNumberGreaterThanOrEqual(row, "build_points_required", 0d, "build_points_required must be greater than or equal to 0.");
                     ValidateOptionalNumberGreaterThanOrEqual(row, "skill_exp", 0d, "skill_exp must be greater than or equal to 0.");
@@ -392,7 +395,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     {
                         ["buildingId"] = level.BuildingId,
                         ["level"] = GetNumber(row, "level"),
-                        ["levelImageId"] = row.Get("level_image_id"),
+                        ["levelPrefabId"] = row.Get(LevelPrefabColumn),
                         ["sourceActivityId"] = row.Get("source_activity_id"),
                         ["durationSec"] = GetNumber(row, "duration_sec"),
                         ["buildPointsRequired"] = GetNumber(row, "build_points_required"),
@@ -549,6 +552,12 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
             }
 
+            private void ValidateForbiddenLegacyColumns(ConfigSheetTable table)
+            {
+                if (table.HasColumn(LegacyLevelImageColumn))
+                    AddIssue(table.Name, 1, LegacyLevelImageColumn, string.Empty, "level_image_id is deprecated; use level_prefab_id.");
+            }
+
             private static bool HasRequiredColumns(ConfigSheetTable table, string[] requiredColumns)
             {
                 foreach (var column in requiredColumns)
@@ -565,6 +574,22 @@ namespace GuildIdle.Editor.ConfigDownloader
                 var value = row.Get(column);
                 if (string.IsNullOrWhiteSpace(value))
                     AddIssue(row.Table.Name, row.RowNumber, column, value, $"{column} is required.");
+            }
+
+            private void ValidatePrefabId(ConfigSheetDataRow row, string column)
+            {
+                if (!row.Table.HasColumn(column))
+                    return;
+
+                var value = row.Get(column);
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    AddIssue(row.Table.Name, row.RowNumber, column, value, $"{column} is required.");
+                    return;
+                }
+
+                if (!value.EndsWith("_prefab_id", StringComparison.OrdinalIgnoreCase))
+                    AddIssue(row.Table.Name, row.RowNumber, column, value, $"{column} must reference a prefab asset id ending with _prefab_id.");
             }
 
             private void ValidateNumberGreaterThan(ConfigSheetDataRow row, string column, double minimum, string message)
@@ -840,7 +865,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 metadata = ParseCompressedMetadata(firstCell, secondCell);
                 var normalizedRows = new List<ConfigSheetRow>();
-                var headers = new List<string> { "level", "level_image_id" };
+                var headers = new List<string> { "level", LevelPrefabColumn };
                 for (var index = 2; index < rows[0].cells.Length; index++)
                 {
                     var header = (rows[0].cells[index] ?? string.Empty).Trim();
@@ -870,7 +895,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                 for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
                 {
                     var cells = rows[rowIndex]?.cells ?? Array.Empty<string>();
-                    if (ContainsCell(cells, "level") && ContainsCell(cells, "level_image_id"))
+                    if (ContainsCell(cells, "level") &&
+                        (ContainsCell(cells, LevelPrefabColumn) || ContainsCell(cells, LegacyLevelImageColumn)))
                     {
                         headerRowIndex = rowIndex;
                         break;
@@ -907,7 +933,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                 var nameIdIndex = FindToken(valueTokens, token => token.EndsWith("_name_id", StringComparison.OrdinalIgnoreCase));
                 var descriptionIdIndex = FindToken(valueTokens, token => token.EndsWith("_description_id", StringComparison.OrdinalIgnoreCase));
                 var smallIconIdIndex = FindToken(valueTokens, token => token.EndsWith("_small_icon_id", StringComparison.OrdinalIgnoreCase));
-                var levelImageIdIndex = FindToken(valueTokens, token => string.Equals(token, "level_image_id", StringComparison.OrdinalIgnoreCase));
+                var levelPrefabIdIndex = FindToken(valueTokens, token => string.Equals(token, LevelPrefabColumn, StringComparison.OrdinalIgnoreCase));
+                if (levelPrefabIdIndex < 0)
+                    levelPrefabIdIndex = FindToken(valueTokens, token => string.Equals(token, LegacyLevelImageColumn, StringComparison.OrdinalIgnoreCase));
 
                 if (buildingIdIndex >= 0)
                     metadata["building_id"] = valueTokens[buildingIdIndex];
@@ -918,10 +946,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (smallIconIdIndex >= 0)
                     metadata["small_icon_id"] = valueTokens[smallIconIdIndex];
 
-                if (smallIconIdIndex >= 0 && levelImageIdIndex > smallIconIdIndex)
+                if (smallIconIdIndex >= 0 && levelPrefabIdIndex > smallIconIdIndex)
                 {
                     var remaining = new List<string>();
-                    for (var index = smallIconIdIndex + 1; index < levelImageIdIndex; index++)
+                    for (var index = smallIconIdIndex + 1; index < levelPrefabIdIndex; index++)
                         remaining.Add(valueTokens[index]);
 
                     if (remaining.Count > 0)

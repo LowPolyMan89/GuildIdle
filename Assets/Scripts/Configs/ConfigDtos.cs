@@ -492,7 +492,7 @@ namespace GuildIdle.Configs
     {
         public string buildingId;
         public int level;
-        public string levelImageId;
+        public string levelPrefabId;
         public string sourceActivityId;
         public int durationSec;
         public int buildPointsRequired;
