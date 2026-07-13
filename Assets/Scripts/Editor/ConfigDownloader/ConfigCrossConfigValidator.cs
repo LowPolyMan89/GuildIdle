@@ -704,6 +704,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             public HashSet<string> BuildingIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, long> BuildingMaxLevels { get; } = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, HashSet<long>> BuildingLevels { get; } = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> BuildingIdsBySheetName { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> BuildActionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> StageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> EnabledStageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -795,6 +796,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                 var buildingId = FindTopBlockValue(rows, "building_id");
                 if (IsBlank(buildingId))
                     return;
+
+                BuildingIdsBySheetName[sheet.sheet_name] = buildingId;
 
                 var headerRow = FindHeaderRow(rows, "level");
                 if (headerRow < 0)
@@ -1982,6 +1985,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     foreach (var row in table.DataRows)
                     {
                         ValidateSourceActivity(buildings, registry, report, table, row);
+                        ValidateActiveHeroLimit(buildings, report, table, row);
                         ValidateMaterials(buildings, registry, report, table, row);
                         ValidateRequirementActivities(buildings, registry, report, table, row);
                         ValidateRequirementSkills(buildings, registry, report, table, row);
@@ -2005,6 +2009,48 @@ namespace GuildIdle.Editor.ConfigDownloader
                     (registry.Items == null || !registry.Items.ItemActionIds.Contains(sourceActivityId)))
                 {
                     AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "source_activity_id", sourceActivityId, "source_activity_id does not exist in Activity Configs / Activities.id or unified action registry.");
+                }
+            }
+
+            private static void ValidateActiveHeroLimit(BuildingsRegistry buildings, ConfigPipelineReport report, ConfigSheetTable table, ConfigSheetDataRow row)
+            {
+                buildings.BuildingIdsBySheetName.TryGetValue(table.Name, out var buildingId);
+                var isHall = string.Equals(buildingId, "building_hall", StringComparison.OrdinalIgnoreCase);
+                if (!table.HasColumn("active_hero_limit"))
+                {
+                    if (isHall)
+                        AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "active_hero_limit", string.Empty, "active_hero_limit is required for building_hall levels.");
+
+                    return;
+                }
+
+                var raw = row.Get("active_hero_limit");
+                if (IsBlank(raw))
+                {
+                    if (isHall)
+                        AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "active_hero_limit", raw, "active_hero_limit is required for building_hall levels.");
+
+                    return;
+                }
+
+                if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit))
+                {
+                    AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "active_hero_limit", raw, "active_hero_limit must be an integer greater than or equal to 0.");
+                    return;
+                }
+
+                if (limit < 0)
+                {
+                    AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "active_hero_limit", raw, "active_hero_limit must be greater than or equal to 0.");
+                    return;
+                }
+
+                if (isHall &&
+                    (string.Equals(row.Get("level"), "0", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(row.Get("level"), "1", StringComparison.OrdinalIgnoreCase)) &&
+                    limit != 1)
+                {
+                    AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "active_hero_limit", raw, "building_hall level 0 and 1 must have active_hero_limit = 1 for Stage 1.");
                 }
             }
 

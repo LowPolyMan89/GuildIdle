@@ -10,7 +10,7 @@ namespace GuildIdle.Editor.Activities
     {
         private readonly ActivityRuntimeService _runtime = new ActivityRuntimeService();
         private string _activityId = "work_pine_wood";
-        private int _heroSlotIndex;
+        private string _heroId = "ren";
         private float _tickSeconds = 1f;
         private string _selectedExecutionId;
         private Vector2 _scroll;
@@ -34,14 +34,14 @@ namespace GuildIdle.Editor.Activities
                 EditorGUILayout.HelpBox("Player state is not loaded.", MessageType.Warning);
 
             _activityId = EditorGUILayout.TextField("Activity Id", _activityId);
-            _heroSlotIndex = EditorGUILayout.IntField("Hero Slot Index", _heroSlotIndex);
+            _heroId = EditorGUILayout.TextField("Hero Id", _heroId);
             _tickSeconds = Mathf.Max(0f, EditorGUILayout.FloatField("Tick Seconds", _tickSeconds));
             _selectedExecutionId = EditorGUILayout.TextField("Execution Id", _selectedExecutionId);
 
             EditorGUI.BeginDisabledGroup(!canUseRuntime);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Start"))
-                ShowStart(_runtime.Start(_activityId, _heroSlotIndex));
+                ShowStart(_runtime.Start(_activityId, _heroId));
             if (GUILayout.Button("Tick"))
                 ShowTick(_runtime.Tick(_tickSeconds));
             if (GUILayout.Button("Cancel"))
@@ -70,12 +70,12 @@ namespace GuildIdle.Editor.Activities
 
         private void DrawHeroState()
         {
-            var heroId = RuntimePlayer.GetHeroInSlot(_heroSlotIndex);
-            var heroState = _runtime.GetHeroActivityState(heroId);
+            var heroState = _runtime.GetHeroActivityState(_heroId);
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Hero", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Hero Id", heroId ?? string.Empty);
+            EditorGUILayout.LabelField("Active Hero Limit", _runtime.GetActiveHeroLimit().ToString());
+            EditorGUILayout.LabelField("Hero Id", _heroId ?? string.Empty);
             EditorGUILayout.Toggle("Busy", heroState.isBusy);
             EditorGUILayout.LabelField("Current Execution", heroState.currentActivityExecutionId ?? string.Empty);
         }
@@ -99,7 +99,7 @@ namespace GuildIdle.Editor.Activities
                     _selectedExecutionId = execution.executionId;
                 EditorGUILayout.EndHorizontal();
                 EditorGUILayout.LabelField("Activity", execution.activityId);
-                EditorGUILayout.LabelField("Hero", $"{execution.heroId} / slot {execution.heroSlotIndex}");
+                EditorGUILayout.LabelField("Hero", execution.heroId);
                 EditorGUILayout.LabelField("Status", execution.status.ToString());
                 EditorGUILayout.LabelField("Elapsed", $"{execution.elapsedSeconds:0.##} / {execution.durationSeconds:0.##}");
                 EditorGUILayout.Slider("Progress", execution.progress, 0f, 1f);

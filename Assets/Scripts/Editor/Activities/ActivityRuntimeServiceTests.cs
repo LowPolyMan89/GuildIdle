@@ -25,7 +25,7 @@ namespace GuildIdle.Editor.Activities
             var runtime = new ActivityRuntimeService(state, storage);
             var fatigue = state.GetHeroFatigue("ren");
 
-            var result = runtime.Start("work_pine_wood", 0);
+            var result = runtime.Start("work_pine_wood", "ren");
 
             Assert.That(result.success, Is.True);
             Assert.That(state.GetActivityExecutions(), Has.Length.EqualTo(1));
@@ -42,7 +42,7 @@ namespace GuildIdle.Editor.Activities
             var fatigue = state.GetHeroFatigue("ren");
             Assert.That(state.CompleteActivity("one_shot"), Is.True);
 
-            var result = runtime.Start("one_shot", 0);
+            var result = runtime.Start("one_shot", "ren");
 
             Assert.That(result.success, Is.False);
             Assert.That(HasIssue(result.issues, "ActivityCompleted"), Is.True);
@@ -60,12 +60,12 @@ namespace GuildIdle.Editor.Activities
             LogAssert.Expect(LogType.Error, "[ActivityResolver] Unknown activity id 'missing_activity'.");
             LogAssert.Expect(LogType.Error, "[ActivityResolver] Unknown activity id 'missing_activity'.");
 
-            var missing = runtime.Start("missing_activity", 0);
-            var emptySlot = runtime.Start("work_pine_wood", 7);
+            var missing = runtime.Start("missing_activity", "ren");
+            var emptyHero = runtime.Start("work_pine_wood", string.Empty);
 
             Assert.That(missing.success, Is.False);
-            Assert.That(emptySlot.success, Is.False);
-            Assert.That(HasIssue(emptySlot.issues, "HeroSlot"), Is.True);
+            Assert.That(emptyHero.success, Is.False);
+            Assert.That(HasIssue(emptyHero.issues, "HeroExecutor"), Is.True);
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(fatigue));
             Assert.That(state.GetActivityExecutions(), Is.Empty);
         }
@@ -75,7 +75,7 @@ namespace GuildIdle.Editor.Activities
         {
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new MemorySaveStorage());
-            Assert.That(runtime.Start("work_pine_wood", 0).success, Is.True);
+            Assert.That(runtime.Start("work_pine_wood", "ren").success, Is.True);
 
             var firstTick = runtime.Tick(25f);
             var execution = state.GetActivityExecutions()[0];
@@ -104,7 +104,7 @@ namespace GuildIdle.Editor.Activities
         {
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new MemorySaveStorage());
-            Assert.That(runtime.Start("bad_cycle", 0).success, Is.True);
+            Assert.That(runtime.Start("bad_cycle", "ren").success, Is.True);
             LogAssert.Expect(LogType.Error, "[ActivityRewardResolver] Unsupported reward type 'Unsupported'.");
             LogAssert.Expect(LogType.Error, "[ActivityRewardResolver] Unsupported reward type 'Unsupported' for activity 'bad_cycle'.");
 
@@ -122,7 +122,7 @@ namespace GuildIdle.Editor.Activities
         {
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new MemorySaveStorage());
-            Assert.That(runtime.Start("one_shot_new", 0).success, Is.True);
+            Assert.That(runtime.Start("one_shot_new", "ren").success, Is.True);
 
             var result = runtime.Tick(5f);
 
@@ -142,7 +142,7 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new MemorySaveStorage());
             var fatigue = state.GetHeroFatigue("ren");
-            var start = runtime.Start("work_pine_wood", 0);
+            var start = runtime.Start("work_pine_wood", "ren");
             Assert.That(start.success, Is.True);
 
             var result = runtime.Cancel(start.executionId);
@@ -160,7 +160,7 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var storage = new MemorySaveStorage();
             var runtime = new ActivityRuntimeService(state, storage);
-            Assert.That(runtime.Start("work_pine_wood", 0).success, Is.True);
+            Assert.That(runtime.Start("work_pine_wood", "ren").success, Is.True);
             Assert.That(runtime.Tick(3f).success, Is.True);
 
             var restored = SaveService.Load(storage);
@@ -173,11 +173,32 @@ namespace GuildIdle.Editor.Activities
             Assert.That(restored.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo(execution.executionId));
         }
 
+        [Test]
+        public void Start_EnforcesActiveHeroLimitAndCancelReleasesIt()
+        {
+            var state = NewState();
+            Assert.That(state.AddHero("aska"), Is.True);
+            var runtime = new ActivityRuntimeService(state, new MemorySaveStorage());
+
+            var first = runtime.Start("work_pine_wood", "ren");
+            var limited = runtime.Start("work_pine_wood", "aska");
+
+            Assert.That(first.success, Is.True);
+            Assert.That(limited.success, Is.False);
+            Assert.That(HasIssue(limited.issues, "ActiveHeroLimitReached"), Is.True);
+            Assert.That(state.GetActivityExecutions(), Has.Length.EqualTo(1));
+
+            Assert.That(runtime.Cancel(first.executionId).success, Is.True);
+            var afterCancel = runtime.Start("work_pine_wood", "aska");
+
+            Assert.That(afterCancel.success, Is.True);
+            Assert.That(state.IsHeroBusy("aska"), Is.True);
+        }
+
         private static PlayerState NewState()
         {
             var state = new PlayerState(new SaveData());
             state.AddHero("ren");
-            state.SetHeroSlot(0, "ren");
             return state;
         }
 
@@ -210,7 +231,8 @@ namespace GuildIdle.Editor.Activities
                 {
                     heroes = new[]
                     {
-                        new HeroConfigDto { heroId = "ren", enabled = true }
+                        new HeroConfigDto { heroId = "ren", enabled = true },
+                        new HeroConfigDto { heroId = "aska", enabled = true }
                     }
                 },
                 new ActivitiesRuntimeConfigDto
@@ -239,7 +261,18 @@ namespace GuildIdle.Editor.Activities
                         Reward("one_shot_new", "Gold", "ignored", 2, "OnFirstComplete")
                     }
                 },
-                null,
+                new BuildingsRuntimeConfigDto
+                {
+                    buildings = new[]
+                    {
+                        new BuildingConfigDto { buildingId = "building_hall", levels = 1, startLevel = 0, visibleAtStart = true }
+                    },
+                    buildingLevels = new[]
+                    {
+                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 0, activeHeroLimit = 1 },
+                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 1, activeHeroLimit = 1 }
+                    }
+                },
                 null,
                 null,
                 null,

@@ -52,6 +52,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"requirementsBuildings\": []"));
             Assert.That(runtimeJson, Does.Contain("\"level\": 0"));
             Assert.That(runtimeJson, Does.Contain("\"levelPrefabId\": \"building_underwood_level_0\""));
+            Assert.That(runtimeJson, Does.Contain("\"activeHeroLimit\": 1"));
             Assert.That(runtimeJson, Does.Contain("\"activityId\": \"build_warehouse\""));
             Assert.That(runtimeJson, Does.Not.Contain("missing_disabled_activity"));
             Assert.That(runtimeJson, Does.Not.Contain("levelImageId"));
@@ -194,6 +195,49 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void BuildRuntimeJson_ReportsActiveHeroLimitErrors()
+        {
+            var missing = CreateValidDownload();
+            FindSheet(missing, "Hall").rows[9].cells[14] = "";
+            WriteRaw(missing);
+
+            var missingReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            Assert.That(missingReport.Success, Is.False);
+            Assert.That(missingReport.ToDisplayMessage(), Does.Contain("active_hero_limit is required for active building_hall levels."));
+
+            var negative = CreateValidDownload();
+            FindSheet(negative, "Hall").rows[9].cells[14] = "-1";
+            WriteRaw(negative);
+
+            var negativeReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            Assert.That(negativeReport.Success, Is.False);
+            Assert.That(negativeReport.ToDisplayMessage(), Does.Contain("active_hero_limit must be greater than or equal to 0."));
+
+            var wrongStage1Value = CreateValidDownload();
+            FindSheet(wrongStage1Value, "Hall").rows[10].cells[14] = "2";
+            WriteRaw(wrongStage1Value);
+
+            var wrongStage1Report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            Assert.That(wrongStage1Report.Success, Is.False);
+            Assert.That(wrongStage1Report.ToDisplayMessage(), Does.Contain("building_hall level 0 and 1 must have active_hero_limit = 1"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_AllowsMissingActiveHeroLimitColumnOnNonHallBuildings()
+        {
+            var download = CreateValidDownload();
+            RemoveColumn(FindSheet(download, "Underwood"), "active_hero_limit");
+            RemoveColumn(FindSheet(download, "Warehouse"), "active_hero_limit");
+            RemoveColumn(FindSheet(download, "Carpentry"), "active_hero_limit");
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(runtimeJson, Does.Contain("\"activeHeroLimit\": 1"));
+        }
+
+        [Test]
         public void BuildRuntimeJson_RequiresEnabledStage2()
         {
             var missingStage2 = CreateValidDownload();
@@ -308,17 +352,17 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("building_warehouse", "Warehouse", "building_warehouse_name_id", "building_warehouse_description_id", "building_warehouse_small_icon_id", "1", "1", "TRUE", "note", "0", "TRUE", "building_hall:1"),
                         Row("building_carpentry", "Carpentry", "building_carpentry_name_id", "building_carpentry_description_id", "building_carpentry_small_icon_id", "1", "1", "TRUE", "note", "0", "TRUE", "building_hall:1")),
                     BuildingSheet("Hall", "building_hall", "building_hall_name_id", "building_hall_description_id", "building_hall_small_icon_id", "build_hall", "",
-                        Row("0", "building_hall_level_0", "", "Ruined Hall", "0", "0", "", "", "", "", "", "", "note", ""),
-                        Row("1", "building_hall_level_1", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5")),
+                        Row("0", "building_hall_level_0", "", "Ruined Hall", "0", "0", "", "", "", "", "", "", "note", "", "1"),
+                        Row("1", "building_hall_level_1", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5", "1")),
                     BuildingSheet("Underwood", "building_underwood", "building_underwood_name_id", "building_underwood_description_id", "building_underwood_small_icon_id", "combat_clear_hall_forest", "",
-                        Row("0", "building_underwood_level_0", "", "Overgrown forest", "0", "0", "", "", "", "", "", "", "note", ""),
-                        Row("1", "building_underwood_level_1", "combat_clear_hall_forest", "Clear forest", "0", "0", "skill_combat", "Strength", "", "", "", "", "note", "")),
+                        Row("0", "building_underwood_level_0", "", "Overgrown forest", "0", "0", "", "", "", "", "", "", "note", "", ""),
+                        Row("1", "building_underwood_level_1", "combat_clear_hall_forest", "Clear forest", "0", "0", "skill_combat", "Strength", "", "", "", "", "note", "", "")),
                     BuildingSheet("Warehouse", "building_warehouse", "building_warehouse_name_id", "building_warehouse_description_id", "building_warehouse_small_icon_id", "build_warehouse", "",
-                        Row("0", "building_warehouse_level_0", "", "Ruined Warehouse", "0", "0", "", "", "", "", "building_hall:1", "", "note", ""),
-                        Row("1", "building_warehouse_level_1", "build_warehouse", "Repair Warehouse", "30", "80", "skill_construction", "Intelligence", "resource_pine_wood:3", "", "building_hall:1", "", "note", "5")),
+                        Row("0", "building_warehouse_level_0", "", "Ruined Warehouse", "0", "0", "", "", "", "", "building_hall:1", "", "note", "", ""),
+                        Row("1", "building_warehouse_level_1", "build_warehouse", "Repair Warehouse", "30", "80", "skill_construction", "Intelligence", "resource_pine_wood:3", "", "building_hall:1", "", "note", "5", "")),
                     BuildingSheet("Carpentry", "building_carpentry", "building_carpentry_name_id", "building_carpentry_description_id", "building_carpentry_small_icon_id", "build_carpentry", "Craftables - Carpentry",
-                        Row("0", "building_carpentry_level_0", "", "Ruined Carpentry", "0", "0", "", "", "", "", "building_hall:1", "", "note", ""),
-                        Row("1", "building_carpentry_level_1", "build_carpentry", "Repair Carpentry", "30", "80", "skill_construction", "Intelligence", "resource_pine_wood:3", "", "building_hall:1", "", "note", "5")),
+                        Row("0", "building_carpentry_level_0", "", "Ruined Carpentry", "0", "0", "", "", "", "", "building_hall:1", "", "note", "", ""),
+                        Row("1", "building_carpentry_level_1", "build_carpentry", "Repair Carpentry", "30", "80", "skill_construction", "Intelligence", "resource_pine_wood:3", "", "building_hall:1", "", "note", "5", "")),
                     Sheet("BuildingActivities",
                         Row("building_id", "building_level", "activity_id", "sort_order", "show_if_activity_completed", "hide_if_activity_completed", "clickable_requirement", "enabled", "notes"),
                         Row("building_underwood", "0", "combat_clear_hall_forest", "10", "", "combat_clear_hall_forest", "", "TRUE", "note"),
@@ -365,7 +409,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Row("source_activity_id", sourceActivityId),
                 Row("craftables_sheet", craftablesSheet),
                 Row("", ""),
-                Row("level", "level_prefab_id", "source_activity_id", "Title", "duration_sec", "build_points_required", "craft_skill_id", "main_stat_id", "materials", "requirements_activities", "requirements_buildings", "requirements_skills", "notes", "skill_exp")
+                Row("level", "level_prefab_id", "source_activity_id", "Title", "duration_sec", "build_points_required", "craft_skill_id", "main_stat_id", "materials", "requirements_activities", "requirements_buildings", "requirements_skills", "notes", "skill_exp", "active_hero_limit")
             };
             rows.AddRange(levelRows);
             return Sheet(name, rows.ToArray());
@@ -388,9 +432,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                     "requirements_buildings",
                     "requirements_skills",
                     "notes",
-                    "skill_exp"),
-                Row("0", "building_hall_level_0", "", "Ruined Hall", "0", "0", "", "", "", "", "", "", "note", ""),
-                Row("1", "building_hall_level_1", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5"));
+                    "skill_exp",
+                    "active_hero_limit"),
+                Row("0", "building_hall_level_0", "", "Ruined Hall", "0", "0", "", "", "", "", "", "", "note", "", "1"),
+                Row("1", "building_hall_level_1", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5", "1"));
         }
 
         private static ConfigDownloadedSheet Sheet(string name, params ConfigSheetRow[] rows)
@@ -423,6 +468,50 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
 
             throw new InvalidOperationException($"Missing test sheet {sheetName}.");
+        }
+
+        private static void RemoveColumn(ConfigDownloadedSheet sheet, string column)
+        {
+            var headerRowIndex = -1;
+            var columnIndex = -1;
+            for (var rowIndex = 0; rowIndex < sheet.rows.Length; rowIndex++)
+            {
+                var cells = sheet.rows[rowIndex].cells;
+                for (var cellIndex = 0; cellIndex < cells.Length; cellIndex++)
+                {
+                    if (!string.Equals(cells[cellIndex], column, StringComparison.Ordinal))
+                        continue;
+
+                    headerRowIndex = rowIndex;
+                    columnIndex = cellIndex;
+                    break;
+                }
+
+                if (columnIndex >= 0)
+                    break;
+            }
+
+            if (columnIndex < 0)
+                throw new InvalidOperationException($"Missing test column {column} in {sheet.sheet_name}.");
+
+            for (var rowIndex = headerRowIndex; rowIndex < sheet.rows.Length; rowIndex++)
+            {
+                var cells = sheet.rows[rowIndex].cells;
+                if (columnIndex >= cells.Length)
+                    continue;
+
+                var resized = new string[cells.Length - 1];
+                for (var oldIndex = 0; oldIndex < cells.Length; oldIndex++)
+                {
+                    if (oldIndex == columnIndex)
+                        continue;
+
+                    var newIndex = oldIndex < columnIndex ? oldIndex : oldIndex - 1;
+                    resized[newIndex] = cells[oldIndex];
+                }
+
+                sheet.rows[rowIndex].cells = resized;
+            }
         }
 
         private static void ReplaceSheet(ConfigSheetDownload download, ConfigDownloadedSheet replacement)

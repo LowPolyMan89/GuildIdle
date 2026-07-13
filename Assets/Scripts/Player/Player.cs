@@ -67,21 +67,6 @@ namespace GuildIdle.Player
             return EnsureLoaded("add hero") && _state.AddHero(heroId);
         }
 
-        public static string GetHeroInSlot(int slotIndex)
-        {
-            return EnsureLoaded("get hero slot") ? _state.GetHeroInSlot(slotIndex) : null;
-        }
-
-        public static int GetHeroSlotIndex(string heroId)
-        {
-            return EnsureLoaded("get hero slot index") ? _state.GetHeroSlotIndex(heroId) : -1;
-        }
-
-        public static bool SetHeroSlot(int slotIndex, string heroId)
-        {
-            return EnsureLoaded("set hero slot") && _state.SetHeroSlot(slotIndex, heroId);
-        }
-
         public static bool HasHeroState(string heroId)
         {
             return EnsureLoaded("check hero state") && _state.HasHeroState(heroId);

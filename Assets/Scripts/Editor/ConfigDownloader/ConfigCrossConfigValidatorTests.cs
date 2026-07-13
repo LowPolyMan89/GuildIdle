@@ -186,6 +186,30 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void Validate_BuildingHallActiveHeroLimitRules()
+        {
+            var download = BuildingsActivitiesDownload(
+                startLevel: "0",
+                clickableRequirement: "",
+                buildingActivityLevel: "0",
+                buildingActivityId: "build_hall",
+                showIfCompleted: "",
+                hideIfCompleted: "");
+            FindSheet(download, "Hall").rows[3].cells[3] = "2";
+
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityIdsDownload("combat_clear_hall_forest")),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", download),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("building_hall_name_id", "building_hall_description_id")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("active_hero_limit"));
+            Assert.That(report.ToDisplayMessage(), Does.Contain("building_hall level 0 and 1 must have active_hero_limit = 1"));
+        }
+
+        [Test]
         public void Validate_EnemyLootGoldIdUsesCurrencyRegistry()
         {
             var collection = Collection(
@@ -554,11 +578,14 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(activityRepository.GetQuestRewards("quest_runtime"), Has.Length.EqualTo(1));
 
             var buildings = JsonUtility.FromJson<BuildingsRuntimeConfigDto>(
-                "{\"settlementStages\":[{\"stageId\":\"stage_runtime\",\"nameId\":\"stage.name\",\"descriptionId\":\"stage.desc\",\"stagePrefabId\":\"stage_prefab\",\"targetDurationSec\":0,\"completionRule\":\"AllRequired\",\"nextStageId\":\"\",\"sortOrder\":10,\"enabled\":true}]}");
+                "{\"buildingLevels\":[{\"buildingId\":\"building_hall\",\"level\":0,\"activeHeroLimit\":1}]," +
+                "\"settlementStages\":[{\"stageId\":\"stage_runtime\",\"nameId\":\"stage.name\",\"descriptionId\":\"stage.desc\",\"stagePrefabId\":\"stage_prefab\",\"targetDurationSec\":0,\"completionRule\":\"AllRequired\",\"nextStageId\":\"\",\"sortOrder\":10,\"enabled\":true}]}");
             var buildingsRepository = new BuildingsConfigRepository(buildings);
 
             Assert.That(buildingsRepository.TryGetSettlementStage("stage_runtime", out var stage), Is.True);
             Assert.That(stage.completionRule, Is.EqualTo("AllRequired"));
+            Assert.That(buildingsRepository.TryGetBuildingLevel("building_hall", 0, out var hallLevel), Is.True);
+            Assert.That(hallLevel.activeHeroLimit, Is.EqualTo(1));
         }
 
         private static ConfigSourceSettingsCollection Collection(params ConfigSourceSettings[] sources)
@@ -750,9 +777,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Sheet("Hall",
                     Row("field", "value"),
                     Row("building_id", "building_hall"),
-                    Row("level", "level_prefab_id", "source_activity_id"),
-                    Row("0", "building_hall_level_0", ""),
-                    Row("1", "building_hall_level_1", "build_hall")),
+                    Row("level", "level_prefab_id", "source_activity_id", "active_hero_limit"),
+                    Row("0", "building_hall_level_0", "", "1"),
+                    Row("1", "building_hall_level_1", "build_hall", "1")),
                 Sheet("BuildingActivities",
                     Row("building_id", "building_level", "activity_id", "sort_order", "show_if_activity_completed", "hide_if_activity_completed", "clickable_requirement", "enabled"),
                     Row(buildingActivityBuildingId, buildingActivityLevel, buildingActivityId, "10", showIfCompleted, hideIfCompleted, "", "TRUE")));

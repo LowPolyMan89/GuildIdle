@@ -25,7 +25,6 @@ namespace GuildIdle.Editor.Player
             Assert.That(state.IsHeroUnlocked("ren"), Is.True);
             Assert.That(state.HasHero("ren"), Is.True);
             Assert.That(state.HasHeroState("ren"), Is.True);
-            Assert.That(state.GetHeroInSlot(0), Is.EqualTo("ren"));
             Assert.That(state.GetHeroMaxFatigue("ren"), Is.GreaterThan(0));
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(state.GetHeroMaxFatigue("ren")));
             Assert.That(state.GetItem("item_wooden_club"), Is.EqualTo(1));
@@ -153,7 +152,6 @@ namespace GuildIdle.Editor.Player
                 executionId = "exec_1",
                 activityId = "combat_first_map_node",
                 heroId = "ren",
-                heroSlotIndex = 0,
                 status = ActivityRuntimeStatus.Running
             }), Is.True);
 
@@ -170,18 +168,38 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void Load_V1SaveWithoutHeroStatesHydratesAcquiredHeroes()
         {
-            var state = new PlayerState(new SaveData
-            {
-                saveVersion = 1,
-                unlockedHeroes = new[] { "ren" },
-                acquiredHeroes = new[] { "ren" },
-                heroSlots = new[] { new HeroSlotSaveEntry { slotIndex = 0, heroId = "ren" } }
-            });
+            var state = new PlayerState(
+                new SaveData
+                {
+                    saveVersion = 1,
+                    unlockedHeroes = new[] { "ren" },
+                    acquiredHeroes = Array.Empty<string>()
+                },
+                new[] { new HeroSlotSaveEntry { slotIndex = 0, heroId = "ren" } });
 
             Assert.That(state.HasHeroState("ren"), Is.True);
-            Assert.That(state.GetHeroInSlot(0), Is.EqualTo("ren"));
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(state.GetHeroMaxFatigue("ren")));
+            Assert.That(state.HasHero("ren"), Is.True);
             Assert.That(state.ToSaveData().saveVersion, Is.EqualTo(SaveData.CurrentSaveVersion));
+        }
+
+        [Test]
+        public void SaveService_MigratesLegacyHeroSlotsWithoutWritingThemBack()
+        {
+            var storage = new MemorySaveStorage();
+            storage.SetString(
+                SaveService.SaveKey,
+                "{\"saveVersion\":3,\"heroSlots\":[{\"slotIndex\":0,\"heroId\":\"ren\"}],\"activityRuntime\":{\"executions\":[{\"executionId\":\"exec_legacy\",\"activityId\":\"combat_first_map_node\",\"heroId\":\"ren\",\"heroSlotIndex\":0,\"status\":1}]}}");
+
+            var state = SaveService.Load(storage);
+
+            Assert.That(state.HasHero("ren"), Is.True);
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
+            Assert.That(state.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo("exec_legacy"));
+
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Not.Contain("heroSlots"));
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Not.Contain("heroSlotIndex"));
         }
 
         [Test]
@@ -218,9 +236,9 @@ namespace GuildIdle.Editor.Player
             }
 
             Assert.That(state.HasHero("ren"), Is.True);
-            Assert.That(state.GetHeroInSlot(0), Is.EqualTo("ren"));
             Assert.That(storage.HasKey(SaveService.SaveKey), Is.True);
             Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"heroId\":\"ren\""));
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Not.Contain("heroSlots"));
         }
 
         [Test]
@@ -311,6 +329,17 @@ namespace GuildIdle.Editor.Player
                         new BuildingConfigDto { buildingId = "building_tavern", levels = 1, startLevel = 1, visibleAtStart = true },
                         new BuildingConfigDto { buildingId = "building_watchtower", levels = 1, startLevel = 0, visibleAtStart = true, clickableRequirement = "building_hall:1" },
                         new BuildingConfigDto { buildingId = "building_hidden", levels = 1, startLevel = 0, visibleAtStart = false }
+                    },
+                    buildingLevels = new[]
+                    {
+                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 0, activeHeroLimit = 1 },
+                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 1, activeHeroLimit = 1 },
+                        new BuildingLevelConfigDto { buildingId = "building_tavern", level = 0 },
+                        new BuildingLevelConfigDto { buildingId = "building_tavern", level = 1 },
+                        new BuildingLevelConfigDto { buildingId = "building_watchtower", level = 0 },
+                        new BuildingLevelConfigDto { buildingId = "building_watchtower", level = 1 },
+                        new BuildingLevelConfigDto { buildingId = "building_hidden", level = 0 },
+                        new BuildingLevelConfigDto { buildingId = "building_hidden", level = 1 }
                     }
                 },
                 null,

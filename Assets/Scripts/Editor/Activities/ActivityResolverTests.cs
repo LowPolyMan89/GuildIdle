@@ -52,16 +52,14 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
-        public void CanStart_ValidatesExecutorHeroSlotAndBusyExecution()
+        public void CanStart_ValidatesExecutorHeroAndBusyExecution()
         {
             var state = NewState();
             var adapter = new PlayerStateActivityAdapter(state);
-            Assert.That(state.AddHero("aska"), Is.True);
-            Assert.That(state.SetHeroSlot(1, "aska"), Is.True);
 
-            var slotMismatch = ActivityResolver.CanStart(Context("direct_rewards", slotIndex: 1), adapter);
-            Assert.That(slotMismatch.canStart, Is.False);
-            Assert.That(slotMismatch.issues[0].issueType, Is.EqualTo("HeroSlot"));
+            var missingHero = ActivityResolver.CanStart(Context("direct_rewards", heroId: "aska"), adapter);
+            Assert.That(missingHero.canStart, Is.False);
+            Assert.That(missingHero.issues[0].issueType, Is.EqualTo("HeroAvailable"));
 
             Assert.That(state.SetHeroBusy("ren", "exec_1"), Is.True);
             Assert.That(ActivityResolver.CanStart(Context("direct_rewards", executionId: "exec_1"), adapter).canStart, Is.True);
@@ -199,17 +197,15 @@ namespace GuildIdle.Editor.Activities
         {
             var state = new PlayerState(new SaveData());
             state.AddHero("ren");
-            state.SetHeroSlot(0, "ren");
             return state;
         }
 
-        private static ActivityExecutionContext Context(string activityId, string heroId = "ren", int slotIndex = 0, string executionId = "exec_1")
+        private static ActivityExecutionContext Context(string activityId, string heroId = "ren", string executionId = "exec_1")
         {
             return new ActivityExecutionContext
             {
                 activityId = activityId,
                 heroId = heroId,
-                heroSlotIndex = slotIndex,
                 executionId = executionId
             };
         }

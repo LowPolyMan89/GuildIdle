@@ -12,13 +12,11 @@ namespace GuildIdle.Player
         private const string StarterActivityId = "starter_hero_available";
         private const string StarterHeroId = "ren";
         private const string StarterEquipmentId = "item_wooden_club";
-        private const int FirstHeroSlotIndex = 0;
 
         private readonly Dictionary<string, long> _currencies = new Dictionary<string, long>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _items = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedHeroes = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _acquiredHeroes = new HashSet<string>(StringComparer.Ordinal);
-        private readonly Dictionary<int, string> _heroSlots = new Dictionary<int, string>();
         private readonly Dictionary<string, HeroRuntimeState> _heroes = new Dictionary<string, HeroRuntimeState>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedBuildings = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _buildingLevels = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -29,7 +27,12 @@ namespace GuildIdle.Player
 
         public PlayerState(SaveData saveData)
         {
-            Load(saveData);
+            Load(saveData, null);
+        }
+
+        public PlayerState(SaveData saveData, HeroSlotSaveEntry[] legacyHeroSlots)
+        {
+            Load(saveData, legacyHeroSlots);
         }
 
         public static PlayerState CreateDefault()
@@ -48,7 +51,6 @@ namespace GuildIdle.Player
                 items = BuildItemEntries(),
                 unlockedHeroes = BuildSortedArray(_unlockedHeroes),
                 acquiredHeroes = BuildSortedArray(_acquiredHeroes),
-                heroSlots = BuildHeroSlotEntries(),
                 heroes = BuildHeroEntries(),
                 unlockedBuildings = BuildSortedArray(_unlockedBuildings),
                 buildingLevels = BuildBuildingLevelEntries(),
@@ -84,46 +86,6 @@ namespace GuildIdle.Player
             var added = _acquiredHeroes.Add(heroId);
             EnsureHeroState(heroId);
             return added;
-        }
-
-        public string GetHeroInSlot(int slotIndex)
-        {
-            return _heroSlots.TryGetValue(slotIndex, out var heroId) ? heroId : null;
-        }
-
-        public int GetHeroSlotIndex(string heroId)
-        {
-            if (!ValidateHeroId(heroId))
-                return -1;
-
-            foreach (var slot in _heroSlots)
-            {
-                if (string.Equals(slot.Value, heroId, StringComparison.Ordinal))
-                    return slot.Key;
-            }
-
-            return -1;
-        }
-
-        public bool SetHeroSlot(int slotIndex, string heroId)
-        {
-            if (slotIndex < 0)
-            {
-                Debug.LogError($"[PlayerState] Invalid hero slot index '{slotIndex}'.");
-                return false;
-            }
-
-            if (!ValidateHeroId(heroId))
-                return false;
-
-            if (!HasHero(heroId))
-            {
-                Debug.LogError($"[PlayerState] Cannot assign hero '{heroId}' to slot {slotIndex}: hero is not acquired.");
-                return false;
-            }
-
-            _heroSlots[slotIndex] = heroId;
-            return true;
         }
 
         public bool HasHeroState(string heroId)
@@ -531,7 +493,7 @@ namespace GuildIdle.Player
             return true;
         }
 
-        private void Load(SaveData saveData)
+        private void Load(SaveData saveData, HeroSlotSaveEntry[] legacyHeroSlots)
         {
             saveData ??= new SaveData();
 
@@ -539,13 +501,13 @@ namespace GuildIdle.Player
             LoadItems(saveData.items);
             LoadHeroes(saveData.unlockedHeroes, _unlockedHeroes);
             LoadHeroes(saveData.acquiredHeroes, _acquiredHeroes);
+            LoadLegacyHeroSlots(legacyHeroSlots);
             LoadHeroStates(saveData.heroes);
             LoadBuildings(saveData.unlockedBuildings);
             LoadBuildingLevels(saveData.buildingLevels);
             LoadLocations(saveData.unlockedLocations);
             LoadActivities(saveData.completedActivities, _completedActivities);
             LoadActivities(saveData.availableActivities, _availableActivities);
-            LoadHeroSlots(saveData.heroSlots);
             EnsureHeroStatesForAcquiredHeroes();
             LoadActivityRuntime(saveData.activityRuntime);
         }
@@ -568,7 +530,6 @@ namespace GuildIdle.Player
                 if (IsReward(reward, "Hero", StarterHeroId))
                 {
                     AddHero(StarterHeroId);
-                    SetHeroSlot(FirstHeroSlotIndex, StarterHeroId);
                     grantedStarterHero = true;
                     continue;
                 }
@@ -650,7 +611,7 @@ namespace GuildIdle.Player
             }
         }
 
-        private void LoadHeroSlots(HeroSlotSaveEntry[] entries)
+        private void LoadLegacyHeroSlots(HeroSlotSaveEntry[] entries)
         {
             if (entries == null)
                 return;
@@ -660,13 +621,8 @@ namespace GuildIdle.Player
                 if (entry == null || entry.slotIndex < 0 || !ValidateHeroId(entry.heroId))
                     continue;
 
-                if (!_acquiredHeroes.Contains(entry.heroId))
-                {
-                    Debug.LogError($"[PlayerState] Ignoring hero slot {entry.slotIndex}: hero '{entry.heroId}' is not acquired.");
-                    continue;
-                }
-
-                _heroSlots[entry.slotIndex] = entry.heroId;
+                _unlockedHeroes.Add(entry.heroId);
+                _acquiredHeroes.Add(entry.heroId);
             }
         }
 
@@ -1133,21 +1089,6 @@ namespace GuildIdle.Player
             return entries;
         }
 
-        private HeroSlotSaveEntry[] BuildHeroSlotEntries()
-        {
-            var slotIndexes = new List<int>(_heroSlots.Keys);
-            slotIndexes.Sort();
-
-            var entries = new HeroSlotSaveEntry[slotIndexes.Count];
-            for (var i = 0; i < slotIndexes.Count; i++)
-            {
-                var slotIndex = slotIndexes[i];
-                entries[i] = new HeroSlotSaveEntry { slotIndex = slotIndex, heroId = _heroSlots[slotIndex] };
-            }
-
-            return entries;
-        }
-
         private HeroSaveData[] BuildHeroEntries()
         {
             var keys = SortedKeys(_heroes);
@@ -1203,22 +1144,9 @@ namespace GuildIdle.Player
             if (!ValidateActivityId(execution.activityId) || !ValidateHeroId(execution.heroId))
                 return false;
 
-            if (execution.heroSlotIndex < 0)
-            {
-                Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' has invalid hero slot index '{execution.heroSlotIndex}'.");
-                return false;
-            }
-
             if (!_acquiredHeroes.Contains(execution.heroId))
             {
                 Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' references non-acquired hero '{execution.heroId}'.");
-                return false;
-            }
-
-            if (!_heroSlots.TryGetValue(execution.heroSlotIndex, out var slotHeroId) ||
-                !string.Equals(slotHeroId, execution.heroId, StringComparison.Ordinal))
-            {
-                Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' references hero '{execution.heroId}' outside slot {execution.heroSlotIndex}.");
                 return false;
             }
 
@@ -1241,7 +1169,6 @@ namespace GuildIdle.Player
                 executionId = execution.executionId,
                 activityId = execution.activityId,
                 heroId = execution.heroId,
-                heroSlotIndex = execution.heroSlotIndex,
                 status = execution.status,
                 elapsedSeconds = Math.Max(0f, execution.elapsedSeconds),
                 completedCycles = Math.Max(0, execution.completedCycles),

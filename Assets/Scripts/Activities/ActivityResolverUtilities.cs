@@ -74,21 +74,6 @@ namespace GuildIdle.Activities
                     }
                 }
 
-                if (context.heroSlotIndex < 0)
-                {
-                    AddIssue(issues, activityId, "HeroSlot", context.heroId, 0, context.heroSlotIndex, true, false, $"Invalid hero slot index '{context.heroSlotIndex}'.");
-                    valid = false;
-                }
-                else
-                {
-                    var slotHeroId = state.GetHeroInSlot(context.heroSlotIndex);
-                    if (!string.Equals(slotHeroId, context.heroId, StringComparison.Ordinal))
-                    {
-                        AddIssue(issues, activityId, "HeroSlot", context.heroId, 1, 0, false, false, $"Hero slot {context.heroSlotIndex} contains '{slotHeroId ?? string.Empty}', expected '{context.heroId}'.");
-                        valid = false;
-                    }
-                }
-
                 if (!hasHeroState)
                     return valid;
 

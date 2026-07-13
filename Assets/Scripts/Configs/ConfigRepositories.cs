@@ -330,6 +330,7 @@ namespace GuildIdle.Configs
     public sealed class BuildingsConfigRepository
     {
         private readonly Dictionary<string, BuildingConfigDto> _buildingsById = ItemsConfigRepository.NewIndex<BuildingConfigDto>();
+        private readonly Dictionary<string, BuildingLevelConfigDto> _buildingLevelsByIdAndLevel = ItemsConfigRepository.NewIndex<BuildingLevelConfigDto>();
         private readonly Dictionary<string, SettlementStageConfigDto> _settlementStagesById = ItemsConfigRepository.NewIndex<SettlementStageConfigDto>();
 
         public BuildingConfigDto[] Buildings { get; }
@@ -356,6 +357,8 @@ namespace GuildIdle.Configs
 
             foreach (var building in Buildings)
                 ItemsConfigRepository.AddUnique(_buildingsById, building.buildingId, building, "Buildings/buildings");
+            foreach (var level in BuildingLevels)
+                ItemsConfigRepository.AddUnique(_buildingLevelsByIdAndLevel, BuildingLevelKey(level.buildingId, level.level), level, "Buildings/buildingLevels");
             foreach (var stage in SettlementStages)
                 ItemsConfigRepository.AddUnique(_settlementStagesById, stage.stageId, stage, "Buildings/settlementStages");
         }
@@ -375,6 +378,23 @@ namespace GuildIdle.Configs
             return !string.IsNullOrWhiteSpace(id) && _buildingsById.TryGetValue(id, out building);
         }
 
+        public BuildingLevelConfigDto GetBuildingLevel(string buildingId, int level)
+        {
+            if (TryGetBuildingLevel(buildingId, level, out var buildingLevel))
+                return buildingLevel;
+
+            ItemsConfigRepository.LogMissing("Buildings/buildingLevels", BuildingLevelKey(buildingId, level));
+            return null;
+        }
+
+        public bool TryGetBuildingLevel(string buildingId, int level, out BuildingLevelConfigDto buildingLevel)
+        {
+            buildingLevel = null;
+            return !string.IsNullOrWhiteSpace(buildingId) &&
+                   level >= 0 &&
+                   _buildingLevelsByIdAndLevel.TryGetValue(BuildingLevelKey(buildingId, level), out buildingLevel);
+        }
+
         public SettlementStageConfigDto GetSettlementStage(string stageId)
         {
             if (TryGetSettlementStage(stageId, out var stage))
@@ -388,6 +408,11 @@ namespace GuildIdle.Configs
         {
             stage = null;
             return !string.IsNullOrWhiteSpace(stageId) && _settlementStagesById.TryGetValue(stageId, out stage);
+        }
+
+        private static string BuildingLevelKey(string buildingId, int level)
+        {
+            return $"{buildingId}:{level}";
         }
     }
 

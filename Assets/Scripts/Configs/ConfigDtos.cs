@@ -558,6 +558,7 @@ namespace GuildIdle.Configs
         public RequiredBuildingDto[] requirementsBuildings = Array.Empty<RequiredBuildingDto>();
         public RequiredSkillDto[] requirementsSkills = Array.Empty<RequiredSkillDto>();
         public int skillExp;
+        public int activeHeroLimit;
     }
 
     [Serializable]

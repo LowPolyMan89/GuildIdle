@@ -75,7 +75,8 @@
       "requirementsActivities": [],
       "requirementsBuildings": [],
       "requirementsSkills": [],
-      "skillExp": 0
+      "skillExp": 0,
+      "activeHeroLimit": 1
     },
     {
       "buildingId": "building_hall",
@@ -99,7 +100,8 @@
       "requirementsActivities": [],
       "requirementsBuildings": [],
       "requirementsSkills": [],
-      "skillExp": 5
+      "skillExp": 5,
+      "activeHeroLimit": 1
     },
     {
       "buildingId": "building_campfire",
@@ -114,7 +116,8 @@
       "requirementsActivities": [],
       "requirementsBuildings": [],
       "requirementsSkills": [],
-      "skillExp": 0
+      "skillExp": 0,
+      "activeHeroLimit": 0
     },
     {
       "buildingId": "building_campfire",
@@ -138,7 +141,8 @@
       "requirementsActivities": [],
       "requirementsBuildings": [],
       "requirementsSkills": [],
-      "skillExp": 3
+      "skillExp": 3,
+      "activeHeroLimit": 0
     },
     {
       "buildingId": "building_warehouse",
@@ -153,7 +157,8 @@
       "requirementsActivities": [],
       "requirementsBuildings": [],
       "requirementsSkills": [],
-      "skillExp": 0
+      "skillExp": 0,
+      "activeHeroLimit": 0
     },
     {
       "buildingId": "building_underwood",
@@ -168,7 +173,8 @@
       "requirementsActivities": [],
       "requirementsBuildings": [],
       "requirementsSkills": [],
-      "skillExp": 0
+      "skillExp": 0,
+      "activeHeroLimit": 0
     },
     {
       "buildingId": "building_underwood",
@@ -183,7 +189,8 @@
       "requirementsActivities": [],
       "requirementsBuildings": [],
       "requirementsSkills": [],
-      "skillExp": 0
+      "skillExp": 0,
+      "activeHeroLimit": 0
     },
     {
       "buildingId": "building_stone_pile",
@@ -198,7 +205,8 @@
       "requirementsActivities": [],
       "requirementsBuildings": [],
       "requirementsSkills": [],
-      "skillExp": 0
+      "skillExp": 0,
+      "activeHeroLimit": 0
     }
   ],
   "buildActions": [

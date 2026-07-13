@@ -40,7 +40,8 @@ namespace GuildIdle.Player
                 if (saveData == null)
                     throw new InvalidOperationException("JsonUtility returned null SaveData.");
 
-                return new PlayerState(saveData);
+                var legacySaveData = JsonUtility.FromJson<LegacySaveData>(json);
+                return new PlayerState(saveData, legacySaveData?.heroSlots);
             }
             catch (Exception exception)
             {
@@ -88,6 +89,12 @@ namespace GuildIdle.Player
             var state = PlayerState.CreateDefault();
             Save(state, storage);
             return state;
+        }
+
+        [Serializable]
+        private sealed class LegacySaveData
+        {
+            public HeroSlotSaveEntry[] heroSlots = Array.Empty<HeroSlotSaveEntry>();
         }
 
         private sealed class PlayerPrefsSaveStorage : ISaveStorage

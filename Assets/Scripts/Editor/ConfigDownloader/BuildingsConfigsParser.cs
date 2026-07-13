@@ -369,6 +369,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ValidatePackedRefs(row, "requirements_activities", "activity_id", "count");
                     ValidatePackedRefs(row, "requirements_buildings", "building_id", "level");
                     ValidatePackedRefs(row, "requirements_skills", "skill_id", "level");
+                    ValidateActiveHeroLimit(level);
                     ValidateBuildSourceRules(level);
                 }
             }
@@ -792,7 +793,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                         ["requirementsActivities"] = ParseActivityRequirements(row.Get("requirements_activities")),
                         ["requirementsBuildings"] = ParseBuildingRequirements(row.Get("requirements_buildings")),
                         ["requirementsSkills"] = ParseSkillRequirements(row.Get("requirements_skills")),
-                        ["skillExp"] = GetNumber(row, "skill_exp")
+                        ["skillExp"] = GetNumber(row, "skill_exp"),
+                        ["activeHeroLimit"] = GetNumber(row, "active_hero_limit")
                     });
                 }
 
@@ -906,6 +908,39 @@ namespace GuildIdle.Editor.ConfigDownloader
                 var mainStatId = row.Get("main_stat_id");
                 if (string.IsNullOrWhiteSpace(mainStatId) || !HeroStatIds.Contains(mainStatId))
                     AddIssue(row.Table.Name, row.RowNumber, "main_stat_id", mainStatId, "main_stat_id must be one of Strength, Agility, Intelligence, Endurance, Luck when source_activity_id starts with build_.");
+            }
+
+            private void ValidateActiveHeroLimit(BuildingLevelRow level)
+            {
+                var row = level.Row;
+                var raw = row.Get("active_hero_limit");
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    if (string.Equals(level.BuildingId, "building_hall", StringComparison.OrdinalIgnoreCase))
+                        AddIssue(row.Table.Name, row.RowNumber, "active_hero_limit", raw, "active_hero_limit is required for active building_hall levels.");
+
+                    return;
+                }
+
+                if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit))
+                {
+                    AddIssue(row.Table.Name, row.RowNumber, "active_hero_limit", raw, "active_hero_limit must be an integer greater than or equal to 0.");
+                    return;
+                }
+
+                if (limit < 0)
+                {
+                    AddIssue(row.Table.Name, row.RowNumber, "active_hero_limit", raw, "active_hero_limit must be greater than or equal to 0.");
+                    return;
+                }
+
+                if (string.Equals(level.BuildingId, "building_hall", StringComparison.OrdinalIgnoreCase) &&
+                    (string.Equals(row.Get("level"), "0", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(row.Get("level"), "1", StringComparison.OrdinalIgnoreCase)) &&
+                    limit != 1)
+                {
+                    AddIssue(row.Table.Name, row.RowNumber, "active_hero_limit", raw, "building_hall level 0 and 1 must have active_hero_limit = 1 for Stage 1.");
+                }
             }
 
             private bool CreatesBuildAction(BuildingLevelRow level)

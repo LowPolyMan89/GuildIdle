@@ -27,7 +27,6 @@ namespace GuildIdle.Activities
         public string executionId;
         public string activityId;
         public string heroId;
-        public int heroSlotIndex;
         public ActivityRuntimeStatus status;
         public float elapsedSeconds;
         public float durationSeconds;

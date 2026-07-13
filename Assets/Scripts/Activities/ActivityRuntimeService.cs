@@ -27,15 +27,9 @@ namespace GuildIdle.Activities
             _activityState = new PlayerStateActivityAdapter(state);
         }
 
-        public ActivityStartResult Start(string activityId, int heroSlotIndex)
-        {
-            var heroId = heroSlotIndex >= 0 ? _activityState.GetHeroInSlot(heroSlotIndex) : null;
-            return Start(activityId, heroId, heroSlotIndex);
-        }
-
         public ActivityStartResult Start(string activityId, string heroId)
         {
-            return Start(activityId, heroId, FindHeroSlotIndex(heroId));
+            return StartInternal(activityId, heroId);
         }
 
         public ActivityTickResult Tick(float deltaTime)
@@ -153,12 +147,17 @@ namespace GuildIdle.Activities
             };
         }
 
+        public int GetActiveHeroLimit()
+        {
+            return ActiveHeroLimitResolver.GetCurrentLimit(_activityState);
+        }
+
         public static bool TryGetRuntimeInfo(string activityId, out ActivityRuntimeInfo info)
         {
             return TryGetRuntimeInfo(activityId, new List<ActivityRequirementIssue>(), out info);
         }
 
-        private ActivityStartResult Start(string activityId, string heroId, int heroSlotIndex)
+        private ActivityStartResult StartInternal(string activityId, string heroId)
         {
             var issues = new List<ActivityRequirementIssue>();
             var executionId = NewExecutionId();
@@ -167,7 +166,6 @@ namespace GuildIdle.Activities
             {
                 activityId = activityId,
                 heroId = heroId,
-                heroSlotIndex = heroSlotIndex,
                 executionId = executionId,
                 startedAtUnixSeconds = startedAt
             };
@@ -180,8 +178,8 @@ namespace GuildIdle.Activities
 
             TryGetRuntimeInfo(activityId, issues, out var info);
 
-            if (heroSlotIndex < 0 || string.IsNullOrWhiteSpace(heroId))
-                AddIssue(issues, activityId, "HeroSlot", heroId ?? string.Empty, 1, 0, false, false, $"Hero slot {heroSlotIndex} has no active hero.");
+            if (string.IsNullOrWhiteSpace(heroId))
+                AddIssue(issues, activityId, "HeroExecutor", string.Empty, 1, 0, true, false, "Activity start requires heroId.");
 
             result.startCheck = ActivityResolver.CanStart(context, _activityState);
             issues.AddRange(result.startCheck.issues);
@@ -197,6 +195,9 @@ namespace GuildIdle.Activities
             if (!HasBlockingIssues(issues))
                 CanStoreExecution(context, issues);
 
+            if (!HasBlockingIssues(issues))
+                ValidateActiveHeroLimit(context, issues);
+
             if (HasBlockingIssues(issues))
                 return FinishStart(result, issues, false);
 
@@ -210,7 +211,6 @@ namespace GuildIdle.Activities
                 executionId = executionId,
                 activityId = activityId,
                 heroId = heroId,
-                heroSlotIndex = heroSlotIndex,
                 status = ActivityRuntimeStatus.Running,
                 elapsedSeconds = 0f,
                 completedCycles = 0,
@@ -343,7 +343,6 @@ namespace GuildIdle.Activities
             {
                 activityId = execution.activityId,
                 heroId = execution.heroId,
-                heroSlotIndex = execution.heroSlotIndex,
                 executionId = execution.executionId,
                 startedAtUnixSeconds = execution.startedAtUnixSeconds
             };
@@ -358,7 +357,6 @@ namespace GuildIdle.Activities
                 executionId = execution.executionId,
                 activityId = execution.activityId,
                 heroId = execution.heroId,
-                heroSlotIndex = execution.heroSlotIndex,
                 status = execution.status,
                 elapsedSeconds = execution.elapsedSeconds,
                 durationSeconds = duration,
@@ -407,12 +405,41 @@ namespace GuildIdle.Activities
             }
         }
 
-        private int FindHeroSlotIndex(string heroId)
+        private void ValidateActiveHeroLimit(ActivityExecutionContext context, List<ActivityRequirementIssue> issues)
         {
-            if (string.IsNullOrWhiteSpace(heroId))
-                return -1;
+            var currentLimit = ActiveHeroLimitResolver.GetCurrentLimit(_activityState);
+            var activeHeroCount = CountActiveHeroes();
+            if (activeHeroCount < currentLimit)
+                return;
 
-            return _activityState.GetHeroSlotIndex(heroId);
+            AddIssue(
+                issues,
+                context.activityId,
+                "ActiveHeroLimitReached",
+                context.heroId,
+                currentLimit,
+                activeHeroCount,
+                false,
+                false,
+                $"Active hero limit reached: {activeHeroCount}/{currentLimit} heroes are already running activities.");
+        }
+
+        private int CountActiveHeroes()
+        {
+            var heroIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var execution in GetExecutions())
+            {
+                if (execution == null ||
+                    execution.status != ActivityRuntimeStatus.Running ||
+                    string.IsNullOrWhiteSpace(execution.heroId))
+                {
+                    continue;
+                }
+
+                heroIds.Add(execution.heroId);
+            }
+
+            return heroIds.Count;
         }
 
         private ActivityExecutionSaveData[] GetExecutions()
