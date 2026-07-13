@@ -196,6 +196,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly List<ConfigSheetDataRow> _settlementStageSlots = new List<ConfigSheetDataRow>();
             private readonly List<ConfigSheetDataRow> _settlementStageObjectives = new List<ConfigSheetDataRow>();
             private readonly HashSet<string> _stageIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            private readonly HashSet<string> _enabledStageIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             public BuildingsConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
             {
@@ -636,14 +637,19 @@ namespace GuildIdle.Editor.ConfigDownloader
                         AddIssue(SettlementStagesSheet, row.RowNumber, "completion_rule", completionRule, "completion_rule must be AllRequired for Stage 1 MVP.");
 
                     if (enabled)
+                    {
+                        if (!string.IsNullOrWhiteSpace(stageId))
+                            _enabledStageIds.Add(stageId);
+
                         _settlementStages.Add(row);
+                    }
                 }
 
                 foreach (var row in _settlementStages)
                 {
                     var nextStageId = row.Get("next_stage_id");
-                    if (!string.IsNullOrWhiteSpace(nextStageId) && !_stageIds.Contains(nextStageId))
-                        AddIssue(SettlementStagesSheet, row.RowNumber, "next_stage_id", nextStageId, "next_stage_id references missing SettlementStages.stage_id.");
+                    if (!string.IsNullOrWhiteSpace(nextStageId) && !_enabledStageIds.Contains(nextStageId))
+                        AddIssue(SettlementStagesSheet, row.RowNumber, "next_stage_id", nextStageId, "next_stage_id references missing enabled SettlementStages.stage_id.");
                 }
             }
 
@@ -674,8 +680,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ValidateRequired(row, "building_id");
                     ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
 
-                    if (!string.IsNullOrWhiteSpace(stageId) && !_stageIds.Contains(stageId))
-                        AddIssue(SettlementStageSlotsSheet, row.RowNumber, "stage_id", stageId, "stage_id references missing SettlementStages.stage_id.");
+                    if (!string.IsNullOrWhiteSpace(stageId) && !_enabledStageIds.Contains(stageId))
+                        AddIssue(SettlementStageSlotsSheet, row.RowNumber, "stage_id", stageId, "stage_id references missing enabled SettlementStages.stage_id.");
 
                     if (!string.IsNullOrWhiteSpace(buildingId) && !_buildings.ContainsKey(buildingId))
                         AddIssue(SettlementStageSlotsSheet, row.RowNumber, "building_id", buildingId, "building_id does not exist in Index.building_id.");
@@ -714,8 +720,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
                     TryParseBool(row, "required", required: true, out var required);
 
-                    if (!string.IsNullOrWhiteSpace(stageId) && !_stageIds.Contains(stageId))
-                        AddIssue(SettlementStageObjectivesSheet, row.RowNumber, "stage_id", stageId, "stage_id references missing SettlementStages.stage_id.");
+                    if (!string.IsNullOrWhiteSpace(stageId) && !_enabledStageIds.Contains(stageId))
+                        AddIssue(SettlementStageObjectivesSheet, row.RowNumber, "stage_id", stageId, "stage_id references missing enabled SettlementStages.stage_id.");
 
                     var key = $"{stageId}\n{questId}";
                     if (seen.TryGetValue(key, out var firstRow))
@@ -742,7 +748,16 @@ namespace GuildIdle.Editor.ConfigDownloader
             private void ValidateStage2IsEmpty()
             {
                 if (!_stageIds.Contains("stage_2"))
+                {
+                    AddIssue(SettlementStagesSheet, 0, "stage_id", "stage_2", "stage_2 is required.");
                     return;
+                }
+
+                if (!_enabledStageIds.Contains("stage_2"))
+                {
+                    AddIssue(SettlementStagesSheet, 0, "enabled", "stage_2", "stage_2 must be enabled.");
+                    return;
+                }
 
                 foreach (var row in _settlementStageSlots)
                 {

@@ -447,6 +447,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             public LoadedConfig Source { get; }
             public HashSet<string> ActivityIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> QuestIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> EnabledQuestIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> SkillIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> RarityIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, string> ActivityTypes { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -479,8 +480,25 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 CollectIds(source, "Skills", "skill_id", registry.SkillIds);
                 CollectIds(source, "Rarities", "id", registry.RarityIds);
-                CollectIds(source, "Quests", "quest_id", registry.QuestIds);
+                registry.CollectQuestIds();
                 return registry;
+            }
+
+            private void CollectQuestIds()
+            {
+                if (!Source.TryGetTable("Quests", out var quests))
+                    return;
+
+                foreach (var row in quests.DataRows)
+                {
+                    var questId = row.Get("quest_id");
+                    if (IsBlank(questId))
+                        continue;
+
+                    QuestIds.Add(questId);
+                    if (IsTrue(row.Get("enabled")))
+                        EnabledQuestIds.Add(questId);
+                }
             }
         }
 
@@ -688,6 +706,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             public Dictionary<string, HashSet<long>> BuildingLevels { get; } = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> BuildActionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> StageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> EnabledStageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             private BuildingsRegistry(LoadedConfig source)
             {
@@ -718,9 +737,26 @@ namespace GuildIdle.Editor.ConfigDownloader
                 foreach (var sheet in source.RawSheets)
                     registry.CollectBuildingSheet(sheet);
 
-                CollectIds(source, "SettlementStages", "stage_id", registry.StageIds);
+                registry.CollectStageIds();
 
                 return registry;
+            }
+
+            private void CollectStageIds()
+            {
+                if (!Source.TryGetTable("SettlementStages", out var stages))
+                    return;
+
+                foreach (var row in stages.DataRows)
+                {
+                    var stageId = row.Get("stage_id");
+                    if (IsBlank(stageId))
+                        continue;
+
+                    StageIds.Add(stageId);
+                    if (IsTrue(row.Get("enabled")))
+                        EnabledStageIds.Add(stageId);
+                }
             }
 
             public bool ContainsBuildingLevel(string buildingId, string levelText)
@@ -1178,27 +1214,55 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var row in table.DataRows)
                 {
-                    ValidateIdSet(report, activity.Source.DisplayName, "QuestStartConditions", row, "quest_id", activity.QuestIds, "Activity Configs / Quests.quest_id");
+                    ValidateIdSet(report, activity.Source.DisplayName, "QuestStartConditions", row, "quest_id", activity.EnabledQuestIds, "Activity Configs / enabled Quests.quest_id");
+                    var conditionType = row.Get("condition_type");
                     var targetId = row.Get("target_id");
-                    if (IsBlank(targetId))
-                        continue;
 
-                    switch (row.Get("condition_type"))
+                    switch (conditionType)
                     {
+                        case "NewGame":
+                            if (!IsBlank(targetId))
+                                AddIssue(report, activity.Source.DisplayName, "QuestStartConditions", row.RowNumber, "target_id", targetId, "NewGame condition requires empty target_id.");
+                            break;
                         case "ActivityFailed":
                         case "ActivityCompleted":
-                            ValidateIdSet(report, activity.Source.DisplayName, "QuestStartConditions", row, "target_id", activity.ActivityIds, "Activity Configs / Activities.id");
+                            if (ValidateRequiredTargetId(report, activity.Source.DisplayName, "QuestStartConditions", row, conditionType))
+                                ValidateIdSet(report, activity.Source.DisplayName, "QuestStartConditions", row, "target_id", activity.ActivityIds, "Activity Configs / Activities.id");
                             break;
                         case "StageEntered":
-                            if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs / SettlementStages"))
-                                ValidateIdSet(report, activity.Source.DisplayName, "QuestStartConditions", row, "target_id", registry.Buildings.StageIds, "Buildings Configs / SettlementStages.stage_id");
+                            if (ValidateRequiredTargetId(report, activity.Source.DisplayName, "QuestStartConditions", row, conditionType) &&
+                                TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs / SettlementStages"))
+                            {
+                                ValidateIdSet(report, activity.Source.DisplayName, "QuestStartConditions", row, "target_id", registry.Buildings.EnabledStageIds, "Buildings Configs / enabled SettlementStages.stage_id");
+                            }
                             break;
                         case "BuildingLevel":
-                            if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))
+                            if (ValidateRequiredTargetId(report, activity.Source.DisplayName, "QuestStartConditions", row, conditionType) &&
+                                TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))
+                            {
                                 ValidateIdSet(report, activity.Source.DisplayName, "QuestStartConditions", row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
+                            }
+                            break;
+                        default:
+                            AddIssue(report, activity.Source.DisplayName, "QuestStartConditions", row.RowNumber, "condition_type", conditionType, "Unknown QuestStartConditions.condition_type.");
                             break;
                     }
                 }
+            }
+
+            private static bool ValidateRequiredTargetId(
+                ConfigPipelineReport report,
+                string sourceConfig,
+                string sheet,
+                ConfigSheetDataRow row,
+                string conditionType)
+            {
+                var targetId = row.Get("target_id");
+                if (!IsBlank(targetId))
+                    return true;
+
+                AddIssue(report, sourceConfig, sheet, row.RowNumber, "target_id", targetId, $"{conditionType} condition requires target_id.");
+                return false;
             }
 
             private static void ValidateQuestSteps(ActivityRegistry activity, ConfigRegistry registry, ConfigPipelineReport report)
@@ -1208,7 +1272,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var row in table.DataRows)
                 {
-                    ValidateIdSet(report, activity.Source.DisplayName, "QuestSteps", row, "quest_id", activity.QuestIds, "Activity Configs / Quests.quest_id");
+                    ValidateIdSet(report, activity.Source.DisplayName, "QuestSteps", row, "quest_id", activity.EnabledQuestIds, "Activity Configs / enabled Quests.quest_id");
                     if (TryGetRequiredRegistry(report, registry.Localisation, "Localisation"))
                         ValidateIdSet(report, activity.Source.DisplayName, "QuestSteps", row, "description_id", registry.Localisation.LocalisationIds, "Localisation.id");
 
@@ -1252,7 +1316,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var row in table.DataRows)
                 {
-                    ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "quest_id", activity.QuestIds, "Activity Configs / Quests.quest_id");
+                    ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "quest_id", activity.EnabledQuestIds, "Activity Configs / enabled Quests.quest_id");
                     if (!IsBlank(row.Get("target_id")))
                         ValidateQuestRewardTarget(activity, registry, report, row);
                 }
@@ -1792,9 +1856,12 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var row in table.DataRows)
                 {
+                    if (IsDisabled(row.Get("enabled")))
+                        continue;
+
                     var nextStageId = row.Get("next_stage_id");
-                    if (!IsBlank(nextStageId) && !buildings.StageIds.Contains(nextStageId))
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStages", row.RowNumber, "next_stage_id", nextStageId, "next_stage_id references missing SettlementStages.stage_id.");
+                    if (!IsBlank(nextStageId) && !buildings.EnabledStageIds.Contains(nextStageId))
+                        AddIssue(report, buildings.Source.DisplayName, "SettlementStages", row.RowNumber, "next_stage_id", nextStageId, "next_stage_id references missing enabled SettlementStages.stage_id.");
                 }
             }
 
@@ -1813,8 +1880,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     var slotId = row.Get("slot_id");
                     var buildingId = row.Get("building_id");
 
-                    if (!IsBlank(stageId) && !buildings.StageIds.Contains(stageId))
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageSlots", row.RowNumber, "stage_id", stageId, "stage_id references missing SettlementStages.stage_id.");
+                    if (!IsBlank(stageId) && !buildings.EnabledStageIds.Contains(stageId))
+                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageSlots", row.RowNumber, "stage_id", stageId, "stage_id references missing enabled SettlementStages.stage_id.");
 
                     if (!IsBlank(buildingId) && !buildings.BuildingIds.Contains(buildingId))
                         AddIssue(report, buildings.Source.DisplayName, "SettlementStageSlots", row.RowNumber, "building_id", buildingId, "building_id does not exist in Buildings Configs / Index.building_id.");
@@ -1840,10 +1907,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                     var stageId = row.Get("stage_id");
                     var questId = row.Get("quest_id");
 
-                    if (!IsBlank(stageId) && !buildings.StageIds.Contains(stageId))
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageObjectives", row.RowNumber, "stage_id", stageId, "stage_id references missing SettlementStages.stage_id.");
+                    if (!IsBlank(stageId) && !buildings.EnabledStageIds.Contains(stageId))
+                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageObjectives", row.RowNumber, "stage_id", stageId, "stage_id references missing enabled SettlementStages.stage_id.");
 
-                    ValidateIdSet(report, buildings.Source.DisplayName, "SettlementStageObjectives", row, "quest_id", registry.Activity.QuestIds, "Activity Configs / Quests.quest_id");
+                    ValidateIdSet(report, buildings.Source.DisplayName, "SettlementStageObjectives", row, "quest_id", registry.Activity.EnabledQuestIds, "Activity Configs / enabled Quests.quest_id");
 
                     var key = $"{stageId}\n{questId}";
                     if (!IsBlank(stageId) && !IsBlank(questId) && !seen.Add(key))
@@ -1867,7 +1934,16 @@ namespace GuildIdle.Editor.ConfigDownloader
             private static void ValidateStage2IsEmpty(BuildingsRegistry buildings, ConfigPipelineReport report)
             {
                 if (!buildings.StageIds.Contains("stage_2"))
+                {
+                    AddIssue(report, buildings.Source.DisplayName, "SettlementStages", 0, "stage_id", "stage_2", "stage_2 is required.");
                     return;
+                }
+
+                if (!buildings.EnabledStageIds.Contains("stage_2"))
+                {
+                    AddIssue(report, buildings.Source.DisplayName, "SettlementStages", 0, "enabled", "stage_2", "stage_2 must be enabled.");
+                    return;
+                }
 
                 if (buildings.Source.TryGetTable("SettlementStageSlots", out var slots))
                 {

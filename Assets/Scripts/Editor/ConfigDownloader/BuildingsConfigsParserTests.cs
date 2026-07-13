@@ -194,6 +194,68 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void BuildRuntimeJson_RequiresEnabledStage2()
+        {
+            var missingStage2 = CreateValidDownload();
+            ReplaceSheet(missingStage2, Sheet("SettlementStages",
+                Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes"),
+                Row("stage_arrival", "stage.arrival.name", "stage.arrival.desc", "stage_arrival_location", "1800", "AllRequired", "", "10", "TRUE", "note")));
+            WriteRaw(missingStage2);
+
+            var missingReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            Assert.That(missingReport.Success, Is.False);
+            Assert.That(missingReport.ToDisplayMessage(), Does.Contain("stage_2 is required."));
+
+            var disabledStage2 = CreateValidDownload();
+            FindSheet(disabledStage2, "SettlementStages").rows[2].cells[8] = "FALSE";
+            WriteRaw(disabledStage2);
+
+            var disabledReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            Assert.That(disabledReport.Success, Is.False);
+            Assert.That(disabledReport.ToDisplayMessage(), Does.Contain("stage_2 must be enabled."));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsRuntimeRowsThatReferenceDisabledStage()
+        {
+            var download = CreateValidDownload();
+            var stages = FindSheet(download, "SettlementStages");
+            stages.rows = Append(stages.rows, Row("stage_disabled", "stage.disabled.name", "stage.disabled.desc", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE", "note"));
+            FindSheet(download, "SettlementStageSlots").rows = Append(
+                FindSheet(download, "SettlementStageSlots").rows,
+                Row("stage_disabled", "slot_disabled", "building_hall", "30", "TRUE", "note"));
+            FindSheet(download, "SettlementStageObjectives").rows = Append(
+                FindSheet(download, "SettlementStageObjectives").rows,
+                Row("stage_disabled", "quest_disabled_stage", "100", "TRUE", "30", "note"));
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("SettlementStageSlots row 4 column 'stage_id' value 'stage_disabled'"));
+            Assert.That(message, Does.Contain("SettlementStageObjectives row 4 column 'stage_id' value 'stage_disabled'"));
+            Assert.That(message, Does.Contain("missing enabled SettlementStages.stage_id"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsActiveStageNextStageIdWhenTargetStageDisabled()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "SettlementStages").rows[1].cells[6] = "stage_disabled";
+            FindSheet(download, "SettlementStages").rows = Append(
+                FindSheet(download, "SettlementStages").rows,
+                Row("stage_disabled", "stage.disabled.name", "stage.disabled.desc", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE", "note"));
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("SettlementStages row 2 column 'next_stage_id' value 'stage_disabled'"));
+            Assert.That(report.ToDisplayMessage(), Does.Contain("missing enabled SettlementStages.stage_id"));
+        }
+
+        [Test]
         public void ParseAndWrite_DoesNotOverwriteExistingRuntimeWhenValidationFails()
         {
             var download = CreateValidDownload();

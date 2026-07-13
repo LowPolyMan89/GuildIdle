@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using GuildIdle.Configs;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -340,6 +341,226 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(message, Does.Contain("stage_2 must not have slots."));
         }
 
+        [Test]
+        public void Validate_StageQuestReferencesRejectDisabledQuestAndStage()
+        {
+            var activityDownload = ActivityQuestsDownload(
+                questStepTargetId: "resource_pine_wood",
+                questRewardTargetId: string.Empty);
+            FindSheet(activityDownload, "Quests").rows = Append(
+                FindSheet(activityDownload, "Quests").rows,
+                Row("quest_disabled", "quest_disabled_name_id", "quest_disabled_description_id", "StageObjective", "20", "FALSE", "FALSE"));
+
+            var buildingsDownload = BuildingsStagesDownload(
+                objectiveQuestId: "quest_disabled",
+                firstWeight: "100",
+                includeStage2Slot: false);
+            FindSheet(buildingsDownload, "SettlementStages").rows = Append(
+                FindSheet(buildingsDownload, "SettlementStages").rows,
+                Row("stage_disabled", "stage_disabled_name_id", "stage_disabled_description_id", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE"));
+            FindSheet(buildingsDownload, "SettlementStageSlots").rows = Append(
+                FindSheet(buildingsDownload, "SettlementStageSlots").rows,
+                Row("stage_disabled", "slot_disabled", "building_hall", "30", "TRUE"));
+            FindSheet(buildingsDownload, "SettlementStageObjectives").rows = Append(
+                FindSheet(buildingsDownload, "SettlementStageObjectives").rows,
+                Row("stage_disabled", "quest_build_hut", "100", "TRUE", "30"));
+
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", activityDownload),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", buildingsDownload),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "quest_build_hut_name_id",
+                    "quest_build_hut_description_id",
+                    "quest_build_hut_step_collect_wood_id",
+                    "quest_disabled_name_id",
+                    "quest_disabled_description_id",
+                    "stage_arrival_name_id",
+                    "stage_arrival_description_id",
+                    "stage_2_name_id",
+                    "stage_2_description_id",
+                    "stage_disabled_name_id",
+                    "stage_disabled_description_id",
+                    "building_hall_name_id",
+                    "building_hall_description_id",
+                    "resource.name",
+                    "resource.description")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("SettlementStageObjectives row 2 column 'quest_id' value 'quest_disabled'"));
+            Assert.That(message, Does.Contain("SettlementStageSlots row 3 column 'stage_id' value 'stage_disabled'"));
+            Assert.That(message, Does.Contain("SettlementStageObjectives row 3 column 'stage_id' value 'stage_disabled'"));
+            Assert.That(message, Does.Contain("enabled"));
+        }
+
+        [Test]
+        public void Validate_StageRowsRejectDisabledNextStage()
+        {
+            var buildingsDownload = BuildingsStagesDownload(
+                objectiveQuestId: "quest_build_hut",
+                firstWeight: "100",
+                includeStage2Slot: false);
+            FindSheet(buildingsDownload, "SettlementStages").rows[1].cells[6] = "stage_disabled";
+            FindSheet(buildingsDownload, "SettlementStages").rows = Append(
+                FindSheet(buildingsDownload, "SettlementStages").rows,
+                Row("stage_disabled", "stage_disabled_name_id", "stage_disabled_description_id", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE"));
+
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityQuestsDownload(
+                    questStepTargetId: "resource_pine_wood",
+                    questRewardTargetId: string.Empty)),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", buildingsDownload),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "quest_build_hut_name_id",
+                    "quest_build_hut_description_id",
+                    "quest_build_hut_step_collect_wood_id",
+                    "stage_arrival_name_id",
+                    "stage_arrival_description_id",
+                    "stage_2_name_id",
+                    "stage_2_description_id",
+                    "stage_disabled_name_id",
+                    "stage_disabled_description_id",
+                    "building_hall_name_id",
+                    "building_hall_description_id",
+                    "resource.name",
+                    "resource.description")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("SettlementStages row 2 column 'next_stage_id' value 'stage_disabled'"));
+            Assert.That(report.ToDisplayMessage(), Does.Contain("enabled SettlementStages.stage_id"));
+        }
+
+        [TestCase("ActivityFailed")]
+        [TestCase("ActivityCompleted")]
+        [TestCase("StageEntered")]
+        [TestCase("BuildingLevel")]
+        public void Validate_QuestStartConditionsRequireTargetId(string conditionType)
+        {
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityQuestsDownload(
+                    questStepTargetId: "resource_pine_wood",
+                    questRewardTargetId: string.Empty,
+                    conditionType: conditionType,
+                    conditionTargetId: string.Empty)),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "quest_build_hut_name_id",
+                    "quest_build_hut_description_id",
+                    "quest_build_hut_step_collect_wood_id",
+                    "resource.name",
+                    "resource.description")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain($"{conditionType} condition requires target_id."));
+        }
+
+        [Test]
+        public void Validate_QuestStartConditionsRejectNewGameTargetUnknownTypeAndDisabledStageTarget()
+        {
+            var newGameCollection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityQuestsDownload(
+                    questStepTargetId: "resource_pine_wood",
+                    questRewardTargetId: string.Empty,
+                    conditionType: "NewGame",
+                    conditionTargetId: "unexpected_target")),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "quest_build_hut_name_id",
+                    "quest_build_hut_description_id",
+                    "quest_build_hut_step_collect_wood_id",
+                    "resource.name",
+                    "resource.description")));
+
+            var newGameReport = ConfigCrossConfigValidator.Validate(newGameCollection);
+            Assert.That(newGameReport.Success, Is.False);
+            Assert.That(newGameReport.ToDisplayMessage(), Does.Contain("NewGame condition requires empty target_id."));
+
+            var unknownCollection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityQuestsDownload(
+                    questStepTargetId: "resource_pine_wood",
+                    questRewardTargetId: string.Empty,
+                    conditionType: "BadCondition",
+                    conditionTargetId: string.Empty)),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "quest_build_hut_name_id",
+                    "quest_build_hut_description_id",
+                    "quest_build_hut_step_collect_wood_id",
+                    "resource.name",
+                    "resource.description")));
+
+            var unknownReport = ConfigCrossConfigValidator.Validate(unknownCollection);
+            Assert.That(unknownReport.Success, Is.False);
+            Assert.That(unknownReport.ToDisplayMessage(), Does.Contain("Unknown QuestStartConditions.condition_type."));
+
+            var buildingsDownload = BuildingsStagesDownload(
+                objectiveQuestId: "quest_build_hut",
+                firstWeight: "100",
+                includeStage2Slot: false);
+            FindSheet(buildingsDownload, "SettlementStages").rows = Append(
+                FindSheet(buildingsDownload, "SettlementStages").rows,
+                Row("stage_disabled", "stage_disabled_name_id", "stage_disabled_description_id", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE"));
+            var disabledStageCollection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityQuestsDownload(
+                    questStepTargetId: "resource_pine_wood",
+                    questRewardTargetId: string.Empty,
+                    conditionType: "StageEntered",
+                    conditionTargetId: "stage_disabled")),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", buildingsDownload),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "quest_build_hut_name_id",
+                    "quest_build_hut_description_id",
+                    "quest_build_hut_step_collect_wood_id",
+                    "stage_arrival_name_id",
+                    "stage_arrival_description_id",
+                    "stage_2_name_id",
+                    "stage_2_description_id",
+                    "stage_disabled_name_id",
+                    "stage_disabled_description_id",
+                    "building_hall_name_id",
+                    "building_hall_description_id",
+                    "resource.name",
+                    "resource.description")));
+
+            var disabledStageReport = ConfigCrossConfigValidator.Validate(disabledStageCollection);
+            Assert.That(disabledStageReport.Success, Is.False);
+            Assert.That(disabledStageReport.ToDisplayMessage(), Does.Contain("QuestStartConditions row 2 column 'target_id' value 'stage_disabled'"));
+            Assert.That(disabledStageReport.ToDisplayMessage(), Does.Contain("enabled SettlementStages.stage_id"));
+        }
+
+        [Test]
+        public void RuntimeDtosDeserializeAndRepositoriesLookupQuestAndStageIds()
+        {
+            var activities = JsonUtility.FromJson<ActivitiesRuntimeConfigDto>(
+                "{\"quests\":[{\"questId\":\"quest_runtime\",\"nameId\":\"quest.name\",\"descriptionId\":\"quest.desc\",\"category\":\"StageObjective\",\"sortOrder\":10,\"isTutorial\":true}]," +
+                "\"questStartConditions\":[{\"questId\":\"quest_runtime\",\"conditionType\":\"NewGame\",\"targetId\":\"\",\"value\":1}]," +
+                "\"questSteps\":[{\"questId\":\"quest_runtime\",\"stepId\":\"step_runtime\",\"stepOrder\":10,\"objectiveType\":\"ResourceCount\",\"targetId\":\"resource_pine_wood\",\"targetValue\":1,\"descriptionId\":\"step.desc\",\"required\":true}]," +
+                "\"questRewards\":[{\"questId\":\"quest_runtime\",\"rewardType\":\"Resource\",\"targetId\":\"resource_pine_wood\",\"min\":1,\"max\":1,\"grantMoment\":\"OnComplete\"}]}");
+            var activityRepository = new ActivitiesConfigRepository(activities);
+
+            Assert.That(activityRepository.TryGetQuest("quest_runtime", out var quest), Is.True);
+            Assert.That(quest.category, Is.EqualTo("StageObjective"));
+            Assert.That(activityRepository.GetQuestStartConditions("quest_runtime"), Has.Length.EqualTo(1));
+            Assert.That(activityRepository.GetQuestSteps("quest_runtime"), Has.Length.EqualTo(1));
+            Assert.That(activityRepository.GetQuestRewards("quest_runtime"), Has.Length.EqualTo(1));
+
+            var buildings = JsonUtility.FromJson<BuildingsRuntimeConfigDto>(
+                "{\"settlementStages\":[{\"stageId\":\"stage_runtime\",\"nameId\":\"stage.name\",\"descriptionId\":\"stage.desc\",\"stagePrefabId\":\"stage_prefab\",\"targetDurationSec\":0,\"completionRule\":\"AllRequired\",\"nextStageId\":\"\",\"sortOrder\":10,\"enabled\":true}]}");
+            var buildingsRepository = new BuildingsConfigRepository(buildings);
+
+            Assert.That(buildingsRepository.TryGetSettlementStage("stage_runtime", out var stage), Is.True);
+            Assert.That(stage.completionRule, Is.EqualTo("AllRequired"));
+        }
+
         private static ConfigSourceSettingsCollection Collection(params ConfigSourceSettings[] sources)
         {
             return new ConfigSourceSettingsCollection { sources = sources };
@@ -394,7 +615,13 @@ namespace GuildIdle.Editor.ConfigDownloader
             return Download(Sheet("Activities", rows.ToArray()));
         }
 
-        private static ConfigSheetDownload ActivityQuestsDownload(string questStepTargetId, string questRewardTargetId)
+        private static ConfigSheetDownload ActivityQuestsDownload(
+            string questStepTargetId,
+            string questRewardTargetId,
+            string conditionType = "NewGame",
+            string conditionTargetId = "",
+            string questId = "quest_build_hut",
+            string questEnabled = "TRUE")
         {
             var sheets = new List<ConfigDownloadedSheet>
             {
@@ -403,20 +630,20 @@ namespace GuildIdle.Editor.ConfigDownloader
                     Row("work_pine_wood", "", "")),
                 Sheet("Quests",
                     Row("quest_id", "name_id", "description_id", "category", "sort_order", "is_tutorial", "enabled"),
-                    Row("quest_build_hut", "quest_build_hut_name_id", "quest_build_hut_description_id", "StageObjective", "10", "TRUE", "TRUE")),
+                    Row(questId, "quest_build_hut_name_id", "quest_build_hut_description_id", "StageObjective", "10", "TRUE", questEnabled)),
                 Sheet("QuestStartConditions",
                     Row("quest_id", "condition_type", "target_id", "value"),
-                    Row("quest_build_hut", "NewGame", "", "1")),
+                    Row(questId, conditionType, conditionTargetId, "1")),
                 Sheet("QuestSteps",
                     Row("quest_id", "step_id", "step_order", "objective_type", "target_id", "target_value", "description_id", "required"),
-                    Row("quest_build_hut", "step_collect_wood", "10", "ResourceCount", questStepTargetId, "8", "quest_build_hut_step_collect_wood_id", "TRUE"))
+                    Row(questId, "step_collect_wood", "10", "ResourceCount", questStepTargetId, "8", "quest_build_hut_step_collect_wood_id", "TRUE"))
             };
 
             if (!string.IsNullOrWhiteSpace(questRewardTargetId))
             {
                 sheets.Add(Sheet("QuestRewards",
                     Row("quest_id", "reward_type", "target_id", "min", "max", "grant_moment"),
-                    Row("quest_build_hut", "Resource", questRewardTargetId, "1", "1", "OnComplete")));
+                    Row(questId, "Resource", questRewardTargetId, "1", "1", "OnComplete")));
             }
             else
             {
@@ -596,6 +823,24 @@ namespace GuildIdle.Editor.ConfigDownloader
         private static ConfigSheetRow Row(params string[] cells)
         {
             return new ConfigSheetRow { cells = cells };
+        }
+
+        private static ConfigSheetRow[] Append(ConfigSheetRow[] rows, params ConfigSheetRow[] appendedRows)
+        {
+            var list = new List<ConfigSheetRow>(rows);
+            list.AddRange(appendedRows);
+            return list.ToArray();
+        }
+
+        private static ConfigDownloadedSheet FindSheet(ConfigSheetDownload download, string sheetName)
+        {
+            foreach (var sheet in download.sheets)
+            {
+                if (string.Equals(sheet.sheet_name, sheetName, StringComparison.OrdinalIgnoreCase))
+                    return sheet;
+            }
+
+            throw new InvalidOperationException($"Missing test sheet {sheetName}.");
         }
 
         private static void WriteProjectFile(string projectPath, string text)

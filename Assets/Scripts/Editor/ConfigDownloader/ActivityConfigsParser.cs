@@ -722,6 +722,12 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private void ValidateEnum(string sheetName, SheetDataRow row, string column, string value)
             {
+                if (IsQuestConditionTypeColumn(sheetName, column))
+                {
+                    ValidateQuestConditionEnum(row, column, value);
+                    return;
+                }
+
                 if (!TryGetEnumGroup(sheetName, column, out var enumGroup))
                     return;
 
@@ -730,6 +736,28 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 if (!allowedValues.Contains(value))
                     AddIssue(sheetName, row.RowNumber, column, value, $"Value is not listed in EnumValues group '{enumGroup}'.");
+            }
+
+            private void ValidateQuestConditionEnum(SheetDataRow row, string column, string value)
+            {
+                var hasQuestCondition = _enumValues.TryGetValue("QuestCondition", out var questConditions);
+                var hasQuestConditionType = _enumValues.TryGetValue("QuestConditionType", out var questConditionTypes);
+                if (!hasQuestCondition && !hasQuestConditionType)
+                    return;
+
+                if (hasQuestCondition && questConditions.Contains(value))
+                    return;
+
+                if (hasQuestConditionType && questConditionTypes.Contains(value))
+                    return;
+
+                AddIssue(row.Table.Name, row.RowNumber, column, value, "Value is not listed in EnumValues group 'QuestCondition' or 'QuestConditionType'.");
+            }
+
+            private static bool IsQuestConditionTypeColumn(string sheetName, string column)
+            {
+                return string.Equals(sheetName, "QuestStartConditions", StringComparison.OrdinalIgnoreCase) &&
+                       string.Equals(column, "condition_type", StringComparison.OrdinalIgnoreCase);
             }
 
             private bool TryGetEnumGroup(string sheetName, string column, out string enumGroup)

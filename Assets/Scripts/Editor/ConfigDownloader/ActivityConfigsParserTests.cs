@@ -243,6 +243,23 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void BuildRuntimeJson_RejectsUnknownQuestStartConditionType()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "EnumValues").rows = Append(
+                FindSheet(download, "EnumValues").rows,
+                Row("NewGame", "QuestCondition", "NewGame", "New game quest condition"));
+            FindSheet(download, "QuestStartConditions").rows[1].cells[1] = "BadCondition";
+            WriteRaw(download);
+
+            var report = new ActivityConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("QuestStartConditions row 2 column 'condition_type' value 'BadCondition'"));
+            Assert.That(report.ToDisplayMessage(), Does.Contain("QuestCondition"));
+        }
+
+        [Test]
         public void ParseAndWrite_DoesNotOverwriteExistingRuntimeWhenValidationFails()
         {
             var download = CreateValidDownload();
