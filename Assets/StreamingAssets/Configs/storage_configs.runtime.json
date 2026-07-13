@@ -40,8 +40,8 @@
   "storageBuildings": [
     {
       "buildingId": "building_warehouse",
-      "level": 1,
-      "slotCount": 40,
+      "level": 0,
+      "slotCount": 20,
       "resourceStackBonus": 0,
       "autoSortEnabled": false,
       "filtersEnabled": false

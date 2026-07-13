@@ -196,6 +196,10 @@ namespace GuildIdle.Configs
         private readonly Dictionary<string, ExploreDetailConfigDto> _exploreDetailsByActivityId = ItemsConfigRepository.NewIndex<ExploreDetailConfigDto>();
         private readonly Dictionary<string, EventDetailConfigDto> _eventDetailsByActivityId = ItemsConfigRepository.NewIndex<EventDetailConfigDto>();
         private readonly Dictionary<string, CombatDetailConfigDto> _combatDetailsByActivityId = ItemsConfigRepository.NewIndex<CombatDetailConfigDto>();
+        private readonly Dictionary<string, QuestConfigDto> _questsById = ItemsConfigRepository.NewIndex<QuestConfigDto>();
+        private readonly Dictionary<string, List<QuestStartConditionConfigDto>> _questStartConditionsByQuestId = new Dictionary<string, List<QuestStartConditionConfigDto>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<QuestStepConfigDto>> _questStepsByQuestId = new Dictionary<string, List<QuestStepConfigDto>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<QuestRewardConfigDto>> _questRewardsByQuestId = new Dictionary<string, List<QuestRewardConfigDto>>(StringComparer.Ordinal);
 
         public ActivityConfigDto[] Activities { get; }
         public WorkDetailConfigDto[] WorkDetails { get; }
@@ -210,6 +214,10 @@ namespace GuildIdle.Configs
         public SkillConfigDto[] Skills { get; }
         public SkillProgressionConfigDto[] SkillsProgression { get; }
         public EnumValueConfigDto[] EnumValues { get; }
+        public QuestConfigDto[] Quests { get; }
+        public QuestStartConditionConfigDto[] QuestStartConditions { get; }
+        public QuestStepConfigDto[] QuestSteps { get; }
+        public QuestRewardConfigDto[] QuestRewards { get; }
         public int Count => _activitiesById.Count;
 
         public ActivitiesConfigRepository(ActivitiesRuntimeConfigDto dto)
@@ -228,6 +236,10 @@ namespace GuildIdle.Configs
             Skills = dto.skills ?? Array.Empty<SkillConfigDto>();
             SkillsProgression = dto.skillsProgression ?? Array.Empty<SkillProgressionConfigDto>();
             EnumValues = dto.enumValues ?? Array.Empty<EnumValueConfigDto>();
+            Quests = dto.quests ?? Array.Empty<QuestConfigDto>();
+            QuestStartConditions = dto.questStartConditions ?? Array.Empty<QuestStartConditionConfigDto>();
+            QuestSteps = dto.questSteps ?? Array.Empty<QuestStepConfigDto>();
+            QuestRewards = dto.questRewards ?? Array.Empty<QuestRewardConfigDto>();
 
             foreach (var activity in Activities)
                 ItemsConfigRepository.AddUnique(_activitiesById, activity.id, activity, "Activities/activities");
@@ -245,6 +257,14 @@ namespace GuildIdle.Configs
                 ItemsConfigRepository.AddUnique(_eventDetailsByActivityId, detail.activityId, detail, "Activities/eventDetails");
             foreach (var detail in CombatDetails)
                 ItemsConfigRepository.AddUnique(_combatDetailsByActivityId, detail.activityId, detail, "Activities/combatDetails");
+            foreach (var quest in Quests)
+                ItemsConfigRepository.AddUnique(_questsById, quest.questId, quest, "Activities/quests");
+            foreach (var condition in QuestStartConditions)
+                ItemsConfigRepository.AddGrouped(_questStartConditionsByQuestId, condition.questId, condition);
+            foreach (var step in QuestSteps)
+                ItemsConfigRepository.AddGrouped(_questStepsByQuestId, step.questId, step);
+            foreach (var reward in QuestRewards)
+                ItemsConfigRepository.AddGrouped(_questRewardsByQuestId, reward.questId, reward);
         }
 
         public ActivityConfigDto Get(string id)
@@ -264,17 +284,22 @@ namespace GuildIdle.Configs
 
         public ActivityRequirementConfigDto[] GetRequirements(string activityId) => GetGroup(_requirementsByActivityId, activityId);
         public ActivityRewardConfigDto[] GetRewards(string activityId) => GetGroup(_rewardsByActivityId, activityId);
+        public QuestStartConditionConfigDto[] GetQuestStartConditions(string questId) => GetGroup(_questStartConditionsByQuestId, questId);
+        public QuestStepConfigDto[] GetQuestSteps(string questId) => GetGroup(_questStepsByQuestId, questId);
+        public QuestRewardConfigDto[] GetQuestRewards(string questId) => GetGroup(_questRewardsByQuestId, questId);
         public WorkDetailConfigDto GetWorkDetails(string activityId) => GetSingle(_workDetailsByActivityId, activityId, "Activities/workDetails");
         public OrderDetailConfigDto GetOrderDetails(string activityId) => GetSingle(_orderDetailsByActivityId, activityId, "Activities/orderDetails");
         public ExploreDetailConfigDto GetExploreDetails(string activityId) => GetSingle(_exploreDetailsByActivityId, activityId, "Activities/exploreDetails");
         public EventDetailConfigDto GetEventDetails(string activityId) => GetSingle(_eventDetailsByActivityId, activityId, "Activities/eventDetails");
         public CombatDetailConfigDto GetCombatDetails(string activityId) => GetSingle(_combatDetailsByActivityId, activityId, "Activities/combatDetails");
+        public QuestConfigDto GetQuest(string questId) => GetSingle(_questsById, questId, "Activities/quests");
 
         public bool TryGetWorkDetails(string activityId, out WorkDetailConfigDto details) => TryGetSingle(_workDetailsByActivityId, activityId, out details);
         public bool TryGetOrderDetails(string activityId, out OrderDetailConfigDto details) => TryGetSingle(_orderDetailsByActivityId, activityId, out details);
         public bool TryGetExploreDetails(string activityId, out ExploreDetailConfigDto details) => TryGetSingle(_exploreDetailsByActivityId, activityId, out details);
         public bool TryGetEventDetails(string activityId, out EventDetailConfigDto details) => TryGetSingle(_eventDetailsByActivityId, activityId, out details);
         public bool TryGetCombatDetails(string activityId, out CombatDetailConfigDto details) => TryGetSingle(_combatDetailsByActivityId, activityId, out details);
+        public bool TryGetQuest(string questId, out QuestConfigDto quest) => TryGetSingle(_questsById, questId, out quest);
 
         private static T[] GetGroup<T>(Dictionary<string, List<T>> index, string id)
         {
@@ -305,12 +330,16 @@ namespace GuildIdle.Configs
     public sealed class BuildingsConfigRepository
     {
         private readonly Dictionary<string, BuildingConfigDto> _buildingsById = ItemsConfigRepository.NewIndex<BuildingConfigDto>();
+        private readonly Dictionary<string, SettlementStageConfigDto> _settlementStagesById = ItemsConfigRepository.NewIndex<SettlementStageConfigDto>();
 
         public BuildingConfigDto[] Buildings { get; }
         public BuildingLevelConfigDto[] BuildingLevels { get; }
         public BuildActionConfigDto[] BuildActions { get; }
         public BuildingActivityConfigDto[] BuildingActivities { get; }
         public BuildingCraftableConfigDto[] BuildingCraftables { get; }
+        public SettlementStageConfigDto[] SettlementStages { get; }
+        public SettlementStageSlotConfigDto[] SettlementStageSlots { get; }
+        public SettlementStageObjectiveConfigDto[] SettlementStageObjectives { get; }
         public int Count => _buildingsById.Count;
 
         public BuildingsConfigRepository(BuildingsRuntimeConfigDto dto)
@@ -321,9 +350,14 @@ namespace GuildIdle.Configs
             BuildActions = dto.buildActions ?? Array.Empty<BuildActionConfigDto>();
             BuildingActivities = dto.buildingActivities ?? Array.Empty<BuildingActivityConfigDto>();
             BuildingCraftables = dto.buildingCraftables ?? Array.Empty<BuildingCraftableConfigDto>();
+            SettlementStages = dto.settlementStages ?? Array.Empty<SettlementStageConfigDto>();
+            SettlementStageSlots = dto.settlementStageSlots ?? Array.Empty<SettlementStageSlotConfigDto>();
+            SettlementStageObjectives = dto.settlementStageObjectives ?? Array.Empty<SettlementStageObjectiveConfigDto>();
 
             foreach (var building in Buildings)
                 ItemsConfigRepository.AddUnique(_buildingsById, building.buildingId, building, "Buildings/buildings");
+            foreach (var stage in SettlementStages)
+                ItemsConfigRepository.AddUnique(_settlementStagesById, stage.stageId, stage, "Buildings/settlementStages");
         }
 
         public BuildingConfigDto Get(string id)
@@ -339,6 +373,21 @@ namespace GuildIdle.Configs
         {
             building = null;
             return !string.IsNullOrWhiteSpace(id) && _buildingsById.TryGetValue(id, out building);
+        }
+
+        public SettlementStageConfigDto GetSettlementStage(string stageId)
+        {
+            if (TryGetSettlementStage(stageId, out var stage))
+                return stage;
+
+            ItemsConfigRepository.LogMissing("Buildings/settlementStages", stageId);
+            return null;
+        }
+
+        public bool TryGetSettlementStage(string stageId, out SettlementStageConfigDto stage)
+        {
+            stage = null;
+            return !string.IsNullOrWhiteSpace(stageId) && _settlementStagesById.TryGetValue(stageId, out stage);
         }
     }
 

@@ -2,21 +2,23 @@
 
 ## GuildIdle Google Drive Docs Reading Policy
 
-Дизайн-данные GuildIdle живут в Google Drive. **DO NOT** загружать все документы или целые таблицы вслепую. **MUST** экономить контекст и читать только самый маленький релевантный источник.
+Дизайн-данные GuildIdle хранятся в Google Drive. **DO NOT** загружать все документы или целые таблицы вслепую. **MUST** экономить контекст и читать только минимальный релевантный источник.
 
-### Source of truth
+### Sources of truth
 
-Before reading any project document or config, start from:
+Перед чтением проектной документации начни с:
 
 1. **GuildIdle — Project Index**  
    Главный реестр canonical project documents and configs.  
    https://docs.google.com/document/d/1OsIgOiYgb6NxxwvgjQfuhaBXCVGqxg6DUkVp6CdXFwo
 
+Для задач, связанных с конфигами, после Project Index используй:
+
 2. **GuildIdle — Config Schema**  
    Technical schema для config architecture, id ownership, sheet relations, import order, validation rules, and links to concrete config sheets/tabs.  
    https://docs.google.com/document/d/1z3f1RWfy5OqAZRYswMrWUzCF_bCJFOq8QW3GgBLZJqo
 
-Use these two files as the entry point. **DO NOT** search the whole Drive unless the needed file is not listed there.
+**DO NOT** искать по всему Google Drive, если нужный файл указан в Project Index или Config Schema.
 
 ### Token-saving rules
 
@@ -32,7 +34,7 @@ When working with Drive documents:
 When working with Google Sheets configs:
 
 - **DO NOT** load full spreadsheets.
-- First read spreadsheet metadata: sheet names, sheet ids, grid sizes.
+- First read spreadsheet metadata: sheet names, sheet ids, and grid sizes.
 - Then read only:
   - the header row;
   - the specific sheet involved in the task;
@@ -46,15 +48,21 @@ When working with Google Sheets configs:
 
 For any task involving configs, use this order:
 
-1. Read the **Config Schema** section related to the system.
-2. Open only the linked config sheet/tab from the “Быстрые ссылки” section.
-3. Read the header row of the relevant sheet.
-4. Read or search only the rows related to the requested ids.
-5. If the task may change config architecture, stop implementation and follow the architecture change approval flow below before making changes.
+1. Find the relevant system and canonical sources in **Project Index**.
+2. Read the related section of **Config Schema**.
+3. Open only the linked config sheet/tab from the “Быстрые ссылки” section.
+4. Read the header row of the relevant sheet.
+5. Read or search only the rows related to the requested ids.
+6. If the task may change config architecture, stop implementation and follow the architecture change approval flow below.
 
 ### Architecture update rule
 
-If a task changes any config architecture, first switch to **Plan Mode** and ask the user targeted questions about the intended changes. Make architecture changes only after explicit user approval, then update **GuildIdle — Config Schema** before or together with the approved code/config changes.
+If a task changes config architecture:
+
+1. Present a concise implementation plan.
+2. Ask targeted questions about decisions that cannot be inferred from the current schema.
+3. Wait for explicit user approval.
+4. Update **GuildIdle — Config Schema** before or together with the approved code/config changes.
 
 Architecture changes include:
 
@@ -67,7 +75,7 @@ Architecture changes include:
 - moving an entity between configs;
 - changing how `target_id`, `loot_id`, `req_type`, `reward_type`, `drop_type`, or `trigger_type` is resolved.
 
-**DO NOT** implement importer/runtime assumptions that are not described in **Config Schema**. If the schema is missing a rule, update the schema first.
+**DO NOT** implement importer or runtime assumptions that are not described in **Config Schema**. If the schema is missing a required rule, propose the schema change and wait for approval before implementation.
 
 ### Canonical config access pattern
 
@@ -78,7 +86,7 @@ Typical examples:
 - Need activity ids: open `Activity Configs / Activities`.
 - Need activity rewards: open `Activity Configs / ActivityRewards`.
 - Need skill ids: open `Activity Configs / Skills`.
-- Need item/resource ids: open `Items Configs / Ресурсы`, `Снаряжение`, `Рецепты`, `Расходники`.
+- Need item/resource ids: open `Items Configs / Ресурсы`, `Снаряжение`, `Рецепты`, or `Расходники`.
 - Need currencies: open `Items Configs / Валюты`.
 - Need building ids: open `Buildings Configs / Index`.
 - Need map cells or locations: open `Map Configs / MapCells` or `MapLocations`.
@@ -90,7 +98,7 @@ Typical examples:
 
 - `gold_id` is a `currency_id`, not an `item_id`.
 - `item_gold` is forbidden legacy data.
-- **DO NOT** treat currency as inventory item, craft material, stackable item, or craftable.
+- **DO NOT** treat currency as an inventory item, craft material, stackable item, or craftable entity.
 - Polymorphic fields **MUST** be resolved through their type field:
   - `ActivityRequirements.target_id` depends on `req_type`;
   - `ActivityRewards.target_id` depends on `reward_type`;
@@ -103,43 +111,53 @@ Typical examples:
 
 If Google Drive tools or MCP are unavailable:
 
-- **DO NOT** guess config structure.
+- **DO NOT** guess document or config structure.
 - Ask the user to provide the relevant export, screenshot, or copied section.
-- Use already cached local project files only if they are clearly up to date.
-- If a local file conflicts with **Project Index** or **Config Schema**, treat Drive canonical docs as the source of truth.
+- Use local project files only if they are clearly up to date.
+- If a local file conflicts with **Project Index** or **Config Schema**, treat the canonical Drive documents as the source of truth.
 
 ### Response discipline
 
 When answering or implementing:
 
-- Mention which canonical source was used.
-- Mention which sheets/sections were read.
-- Avoid dumping raw config data into the response.
+- Mention which canonical sources were used.
+- Mention which sections, sheets, or bounded ranges were read.
+- Avoid dumping raw document or config data into the response.
 - Prefer concise summaries, ids, and exact changed files.
 
-## Project Documentation
+## Project Tracking
 
-- Use the Asana project `GuildIdle` for project tracking.
+Project work is tracked through GitHub Issues:
 
-### Asana task discipline
+https://github.com/LowPolyMan89/GuildIdle/issues
 
-Разработка должна идти в рамках задач Asana проекта `GuildIdle`. Если работа не привязана к задаче, сначала уточнить task context.
+### GitHub Issue discipline
 
-- Development should happen only within the scope of an Asana task in the `GuildIdle` project.
-- Before changing or creating code, configs, assets, documentation, or project files, identify the active Asana task or ask the user which task should own the work.
-- Keep changes limited to the active task scope and directly related linked tasks.
-- If implementation reveals work in another system, feature area, config architecture, or asset category that is not covered by the active task, stop and ask the user whether to create a new Asana task or link an existing related task before making those extra changes.
-- **DO NOT** silently expand the task scope. Record or mention the Asana task context in the final response when changes are made.
+Changes to code, configs, assets, documentation, or project files should be performed within the scope of a GitHub Issue in the `LowPolyMan89/GuildIdle` repository.
+
+- Before changing project files, identify the active GitHub Issue.
+- If the user has not provided an Issue number or URL, ask which Issue should own the work.
+- Read the active Issue before implementation and keep changes within its stated scope and acceptance criteria.
+- Read linked Issues only when they are directly relevant to the requested work.
+- If implementation reveals additional work outside the active Issue scope, stop before making those extra changes.
+- Ask the user whether to create a separate Issue, extend the current Issue, or link an existing related Issue.
+- **DO NOT** silently expand the active Issue scope.
+- **DO NOT** create, edit, close, reopen, label, assign, or comment on GitHub Issues without explicit user permission.
+- **DO NOT** modify the repository, create commits, push branches, or open Pull Requests without explicit user permission.
+- Reviews, explanations, planning, and other read-only work do not require an active GitHub Issue unless the user explicitly requests Issue-based tracking.
+- When project files are changed, mention the active Issue number and the exact changed files in the final response.
 
 ## Build And Verification
 
 - **DO NOT** run code builds after completing code tasks unless the user explicitly asks for a build.
 - **DO NOT** try to run Unity EditMode tests.
-- **DO NOT** search for Unity in PATH, Program Files, registry, or typical local install paths.
-- For verification, use `git diff --check`.
+- **DO NOT** search for Unity in PATH, Program Files, the registry, or typical local install paths.
+- **DO NOT** generate or rebuild runtime config JSON files yourself. If runtime config regeneration is needed, ask the user to run the existing Unity Config Downloader pipeline, wait for the result, then continue from the reported errors or updated files.
+- For default verification, inspect the resulting diff and run `git diff --check`.
+- Run additional verification only when explicitly requested by the user.
 
 ## Unity Assets
 
 - **DO NOT** edit Unity scenes or prefabs unless the user explicitly asks for scene or prefab changes.
-- Treat `.unity`, `.prefab`, and related scene/prefab metadata changes as out of scope without explicit permission.
+- Treat `.unity`, `.prefab`, and their related metadata changes as out of scope without explicit permission.
 - **DO NOT** create Unity `.meta` files manually. Let Unity generate and update `.meta` files.

@@ -24,45 +24,12 @@
       "skillExp": 0
     },
     {
-      "id": "resource_pine_plank",
-      "nameId": "item.resource_pine_plank.name",
-      "descriptionId": "item.resource_pine_plank.description",
-      "iconId": "icon_resource_pine_plank",
+      "id": "resource_stone",
+      "nameId": "item.resource_stone.name",
+      "descriptionId": "item.resource_stone.description",
+      "iconId": "icon_resource_stone",
       "kind": "resource",
-      "subtype": "processed",
-      "rarityId": "Common",
-      "tier": 1,
-      "craftStationId": "building_carpentry",
-      "craftDurationSec": 30,
-      "craftSkillId": "skill_processing",
-      "requiredBuildings": [
-      {
-        "buildingId": "building_carpentry",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false,
-      "outputCount": 1,
-      "materials": [
-      {
-        "id": "resource_pine_wood",
-        "count": 2
-      }
-    ],
-      "sourceActivityId": "process_pine_plank",
-      "skillExp": 10
-    },
-    {
-      "id": "resource_copper_ore",
-      "nameId": "item.resource_copper_ore.name",
-      "descriptionId": "item.resource_copper_ore.description",
-      "iconId": "icon_resource_copper_ore",
-      "kind": "resource",
-      "subtype": "ore",
+      "subtype": "stone",
       "rarityId": "Common",
       "tier": 1,
       "craftStationId": "",
@@ -76,161 +43,16 @@
       "hiddenUntilVisibilityItem": false,
       "outputCount": 0,
       "materials": [],
-      "sourceActivityId": "work_copper_ore",
+      "sourceActivityId": "work_stone",
       "skillExp": 0
     },
     {
-      "id": "resource_copper_ingot",
-      "nameId": "item.resource_copper_ingot.name",
-      "descriptionId": "item.resource_copper_ingot.description",
-      "iconId": "icon_resource_copper_ingot",
+      "id": "resource_rabbit_meat",
+      "nameId": "item.resource_rabbit_meat.name",
+      "descriptionId": "item.resource_rabbit_meat.description",
+      "iconId": "icon_resource_rabbit_meat",
       "kind": "resource",
-      "subtype": "processed",
-      "rarityId": "Common",
-      "tier": 1,
-      "craftStationId": "building_foundry",
-      "craftDurationSec": 30,
-      "craftSkillId": "skill_processing",
-      "requiredBuildings": [
-      {
-        "buildingId": "building_foundry",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false,
-      "outputCount": 1,
-      "materials": [
-      {
-        "id": "resource_copper_ore",
-        "count": 2
-      }
-    ],
-      "sourceActivityId": "process_copper_ingot",
-      "skillExp": 10
-    },
-    {
-      "id": "resource_copper_nails",
-      "nameId": "item.resource_copper_nails.name",
-      "descriptionId": "item.resource_copper_nails.description",
-      "iconId": "icon_resource_copper_nails",
-      "kind": "resource",
-      "subtype": "processed",
-      "rarityId": "Common",
-      "tier": 1,
-      "craftStationId": "building_foundry",
-      "craftDurationSec": 30,
-      "craftSkillId": "skill_processing",
-      "requiredBuildings": [
-      {
-        "buildingId": "building_foundry",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false,
-      "outputCount": 2,
-      "materials": [
-      {
-        "id": "resource_copper_ingot",
-        "count": 1
-      }
-    ],
-      "sourceActivityId": "process_copper_nails",
-      "skillExp": 10
-    },
-    {
-      "id": "resource_flax",
-      "nameId": "item.resource_flax.name",
-      "descriptionId": "item.resource_flax.description",
-      "iconId": "icon_resource_flax",
-      "kind": "resource",
-      "subtype": "plant",
-      "rarityId": "Common",
-      "tier": 1,
-      "craftStationId": "",
-      "craftDurationSec": 0,
-      "craftSkillId": "",
-      "requiredBuildings": [],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false,
-      "outputCount": 0,
-      "materials": [],
-      "sourceActivityId": "work_flax",
-      "skillExp": 0
-    },
-    {
-      "id": "resource_linen_thread",
-      "nameId": "item.resource_linen_thread.name",
-      "descriptionId": "item.resource_linen_thread.description",
-      "iconId": "icon_resource_linen_thread",
-      "kind": "resource",
-      "subtype": "processed",
-      "rarityId": "Common",
-      "tier": 1,
-      "craftStationId": "building_workshop",
-      "craftDurationSec": 30,
-      "craftSkillId": "skill_processing",
-      "requiredBuildings": [
-      {
-        "buildingId": "building_workshop",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false,
-      "outputCount": 1,
-      "materials": [
-      {
-        "id": "resource_flax",
-        "count": 2
-      }
-    ],
-      "sourceActivityId": "process_linen_thread",
-      "skillExp": 10
-    },
-    {
-      "id": "resource_thin_hide",
-      "nameId": "item.resource_thin_hide.name",
-      "descriptionId": "item.resource_thin_hide.description",
-      "iconId": "icon_resource_thin_hide",
-      "kind": "resource",
-      "subtype": "animal_material",
-      "rarityId": "Common",
-      "tier": 1,
-      "craftStationId": "",
-      "craftDurationSec": 0,
-      "craftSkillId": "",
-      "requiredBuildings": [],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false,
-      "outputCount": 0,
-      "materials": [],
-      "sourceActivityId": "hunt_rabbits",
-      "skillExp": 0
-    },
-    {
-      "id": "resource_raspberry",
-      "nameId": "item.resource_raspberry.name",
-      "descriptionId": "item.resource_raspberry.description",
-      "iconId": "icon_resource_raspberry",
-      "kind": "resource",
-      "subtype": "berry",
+      "subtype": "animal_food",
       "rarityId": "Common",
       "tier": 1,
       "craftStationId": "",
@@ -278,218 +100,49 @@
       "weaponAttackInterval": 1.2,
       "attackRange": "Melee",
       "damageType": "Physical"
-    },
-    {
-      "id": "item_copper_sword",
-      "nameId": "item.item_copper_sword.name",
-      "descriptionId": "item.item_copper_sword.description",
-      "iconId": "icon_item_copper_sword",
-      "kind": "equipment",
-      "subtype": "weapon",
-      "equipmentSlot": "weapon",
-      "rarityId": "Common",
-      "tier": 1,
-      "craftStationId": "building_forge",
-      "craftDurationSec": 30,
-      "craftSkillId": "skill_production",
-      "craftMainStatId": "Strength",
-      "requiredBuildings": [
-      {
-        "buildingId": "building_forge",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false,
-      "outputCount": 1,
-      "materials": [
-      {
-        "id": "resource_copper_ingot",
-        "count": 2
-      },
-      {
-        "id": "resource_pine_plank",
-        "count": 1
-      }
-    ],
-      "sourceActivityId": "craft_copper_sword",
-      "skillExp": 10,
-      "weaponDamageMin": 5,
-      "weaponDamageMax": 10,
-      "weaponAttackInterval": 1,
-      "attackRange": "Melee",
-      "damageType": "Physical"
-    },
-    {
-      "id": "item_aska_bow",
-      "nameId": "item.item_aska_bow.name",
-      "descriptionId": "item.item_aska_bow.description",
-      "iconId": "icon_item_aska_bow",
-      "kind": "equipment",
-      "subtype": "weapon",
-      "equipmentSlot": "weapon",
-      "rarityId": "Uncommon",
-      "tier": 1,
-      "craftStationId": "building_carpentry",
-      "craftDurationSec": 30,
-      "craftSkillId": "skill_crafting",
-      "craftMainStatId": "Agility",
-      "requiredBuildings": [
-      {
-        "buildingId": "building_carpentry",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "recipe_aska_bow",
-      "visibilityItemCount": 1,
-      "consumeVisibilityItem": true,
-      "hiddenUntilVisibilityItem": true,
-      "outputCount": 1,
-      "materials": [
-      {
-        "id": "resource_pine_plank",
-        "count": 2
-      }
-    ],
-      "sourceActivityId": "craft_aska_bow",
-      "skillExp": 10,
-      "weaponDamageMin": 4,
-      "weaponDamageMax": 8,
-      "weaponAttackInterval": 1.1,
-      "attackRange": "Ranged",
-      "damageType": "Physical"
     }
   ],
-  "equipmentArmor": [
-    {
-      "id": "item_simple_shield",
-      "nameId": "item.item_simple_shield.name",
-      "descriptionId": "item.item_simple_shield.description",
-      "iconId": "icon_item_simple_shield",
-      "kind": "equipment",
-      "subtype": "shield",
-      "equipmentSlot": "offhand",
-      "rarityId": "Common",
-      "tier": 1,
-      "craftStationId": "building_forge",
-      "craftDurationSec": 30,
-      "craftSkillId": "skill_production",
-      "craftMainStatId": "Endurance",
-      "requiredBuildings": [
-      {
-        "buildingId": "building_forge",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false,
-      "outputCount": 1,
-      "materials": [
-      {
-        "id": "resource_pine_plank",
-        "count": 2
-      },
-      {
-        "id": "resource_copper_ingot",
-        "count": 1
-      }
-    ],
-      "sourceActivityId": "craft_simple_shield",
-      "skillExp": 10,
-      "physicalResistBonus": 5,
-      "magicResistBonus": 0,
-      "maxHpBonus": 10
-    },
-    {
-      "id": "item_light_leather_armor",
-      "nameId": "item.item_light_leather_armor.name",
-      "descriptionId": "item.item_light_leather_armor.description",
-      "iconId": "icon_item_light_leather_armor",
-      "kind": "equipment",
-      "subtype": "armor",
-      "equipmentSlot": "armor",
-      "rarityId": "Common",
-      "tier": 1,
-      "craftStationId": "building_workshop",
-      "craftDurationSec": 30,
-      "craftSkillId": "skill_production",
-      "craftMainStatId": "Agility",
-      "requiredBuildings": [
-      {
-        "buildingId": "building_workshop",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false,
-      "outputCount": 1,
-      "materials": [
-      {
-        "id": "resource_thin_hide",
-        "count": 2
-      },
-      {
-        "id": "resource_linen_thread",
-        "count": 1
-      }
-    ],
-      "sourceActivityId": "craft_light_leather_armor",
-      "skillExp": 15,
-      "physicalResistBonus": 3,
-      "magicResistBonus": 0,
-      "maxHpBonus": 15
-    }
-  ],
+  "equipmentArmor": [],
   "recipes": [
     {
-      "id": "recipe_aska_bow",
-      "nameId": "item.recipe_aska_bow.name",
-      "descriptionId": "item.recipe_aska_bow.description",
-      "iconId": "icon_recipe_aska_bow",
+      "id": "recipe_roasted_rabbit_meat",
+      "nameId": "item.recipe_roasted_rabbit_meat.name",
+      "descriptionId": "item.recipe_roasted_rabbit_meat.description",
+      "iconId": "icon_recipe_roasted_rabbit_meat",
       "kind": "recipe",
-      "targetItemId": "item_aska_bow",
-      "rarityId": "Uncommon",
-      "craftId": "craft_aska_bow",
-      "craftStationId": "building_carpentry",
-      "craftDurationSec": 30,
+      "targetItemId": "consumable_roasted_rabbit_meat",
+      "rarityId": "Common",
+      "craftId": "cook_roasted_rabbit_meat",
+      "craftStationId": "building_campfire",
+      "craftDurationSec": 10,
       "craftSkillId": "skill_crafting",
       "requiredBuildings": [
       {
-        "buildingId": "building_carpentry",
+        "buildingId": "building_campfire",
         "level": 1
       }
     ],
       "materials": [
       {
-        "id": "resource_pine_plank",
-        "count": 2
+        "id": "resource_rabbit_meat",
+        "count": 1
       }
     ],
-      "consumeOnCraft": true,
+      "consumeOnCraft": false,
       "hiddenUntilRecipe": true
     }
   ],
   "consumables": [
     {
-      "id": "consumable_hunting_potion",
-      "nameId": "item.consumable_hunting_potion.name",
-      "descriptionId": "item.consumable_hunting_potion.description",
-      "iconId": "icon_consumable_hunting_potion",
+      "id": "consumable_roasted_rabbit_meat",
+      "nameId": "item.consumable_roasted_rabbit_meat.name",
+      "descriptionId": "item.consumable_roasted_rabbit_meat.description",
+      "iconId": "icon_consumable_roasted_rabbit_meat",
       "kind": "consumable",
       "rarityId": "Common",
-      "usePlace": "work",
-      "useCondition": "activity_id=hunt_rabbits",
-      "effects": ["ModifyRisk: hunting_combat_risk -10%", "ModifyReward: resource_thin_hide +1"],
+      "usePlace": "combat",
+      "useCondition": "hp_percent<=40;max_uses_per_combat=3",
+      "effects": ["RestoreHealthPercent:25"],
       "cooldownSeconds": 0
     }
   ],
@@ -501,234 +154,5 @@
       "descriptionId": "gold_description_id"
     }
   ],
-  "itemActions": [
-    {
-      "id": "process_pine_plank",
-      "type": "Process",
-      "outputItemId": "resource_pine_plank",
-      "outputCount": 1,
-      "craftStationId": "building_carpentry",
-      "durationSec": 30,
-      "skillId": "skill_processing",
-      "skillExp": 10,
-      "materials": [
-      {
-        "id": "resource_pine_wood",
-        "count": 2
-      }
-    ],
-      "requiredBuildings": [
-      {
-        "buildingId": "building_carpentry",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false
-    },
-    {
-      "id": "process_copper_ingot",
-      "type": "Process",
-      "outputItemId": "resource_copper_ingot",
-      "outputCount": 1,
-      "craftStationId": "building_foundry",
-      "durationSec": 30,
-      "skillId": "skill_processing",
-      "skillExp": 10,
-      "materials": [
-      {
-        "id": "resource_copper_ore",
-        "count": 2
-      }
-    ],
-      "requiredBuildings": [
-      {
-        "buildingId": "building_foundry",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false
-    },
-    {
-      "id": "process_copper_nails",
-      "type": "Process",
-      "outputItemId": "resource_copper_nails",
-      "outputCount": 2,
-      "craftStationId": "building_foundry",
-      "durationSec": 30,
-      "skillId": "skill_processing",
-      "skillExp": 10,
-      "materials": [
-      {
-        "id": "resource_copper_ingot",
-        "count": 1
-      }
-    ],
-      "requiredBuildings": [
-      {
-        "buildingId": "building_foundry",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false
-    },
-    {
-      "id": "process_linen_thread",
-      "type": "Process",
-      "outputItemId": "resource_linen_thread",
-      "outputCount": 1,
-      "craftStationId": "building_workshop",
-      "durationSec": 30,
-      "skillId": "skill_processing",
-      "skillExp": 10,
-      "materials": [
-      {
-        "id": "resource_flax",
-        "count": 2
-      }
-    ],
-      "requiredBuildings": [
-      {
-        "buildingId": "building_workshop",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false
-    },
-    {
-      "id": "craft_copper_sword",
-      "type": "Craft",
-      "outputItemId": "item_copper_sword",
-      "outputCount": 1,
-      "craftStationId": "building_forge",
-      "durationSec": 30,
-      "skillId": "skill_production",
-      "skillExp": 10,
-      "materials": [
-      {
-        "id": "resource_copper_ingot",
-        "count": 2
-      },
-      {
-        "id": "resource_pine_plank",
-        "count": 1
-      }
-    ],
-      "requiredBuildings": [
-      {
-        "buildingId": "building_forge",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false
-    },
-    {
-      "id": "craft_aska_bow",
-      "type": "Craft",
-      "outputItemId": "item_aska_bow",
-      "outputCount": 1,
-      "craftStationId": "building_carpentry",
-      "durationSec": 30,
-      "skillId": "skill_crafting",
-      "skillExp": 10,
-      "materials": [
-      {
-        "id": "resource_pine_plank",
-        "count": 2
-      }
-    ],
-      "requiredBuildings": [
-      {
-        "buildingId": "building_carpentry",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "recipe_aska_bow",
-      "visibilityItemCount": 1,
-      "consumeVisibilityItem": true,
-      "hiddenUntilVisibilityItem": true
-    },
-    {
-      "id": "craft_simple_shield",
-      "type": "Craft",
-      "outputItemId": "item_simple_shield",
-      "outputCount": 1,
-      "craftStationId": "building_forge",
-      "durationSec": 30,
-      "skillId": "skill_production",
-      "skillExp": 10,
-      "materials": [
-      {
-        "id": "resource_pine_plank",
-        "count": 2
-      },
-      {
-        "id": "resource_copper_ingot",
-        "count": 1
-      }
-    ],
-      "requiredBuildings": [
-      {
-        "buildingId": "building_forge",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false
-    },
-    {
-      "id": "craft_light_leather_armor",
-      "type": "Craft",
-      "outputItemId": "item_light_leather_armor",
-      "outputCount": 1,
-      "craftStationId": "building_workshop",
-      "durationSec": 30,
-      "skillId": "skill_production",
-      "skillExp": 15,
-      "materials": [
-      {
-        "id": "resource_thin_hide",
-        "count": 2
-      },
-      {
-        "id": "resource_linen_thread",
-        "count": 1
-      }
-    ],
-      "requiredBuildings": [
-      {
-        "buildingId": "building_workshop",
-        "level": 1
-      }
-    ],
-      "requiredSkills": [],
-      "visibilityItemId": "",
-      "visibilityItemCount": 0,
-      "consumeVisibilityItem": false,
-      "hiddenUntilVisibilityItem": false
-    }
-  ]
+  "itemActions": []
 }

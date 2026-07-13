@@ -81,7 +81,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Row("storage_resource", "resource", "stack", "100", "TRUE", "FALSE", "FALSE", "duplicate"));
             FindSheet(download, "StorageBuildings").rows = Append(
                 FindSheet(download, "StorageBuildings").rows,
-                Row("building_warehouse", "1", "40", "0", "FALSE", "FALSE", "duplicate"));
+                Row("building_warehouse", "0", "40", "0", "FALSE", "FALSE", "duplicate"));
             FindSheet(download, "ItemStates").rows = Append(
                 FindSheet(download, "ItemStates").rows,
                 Row("on_storage", "storage_item_state_on_storage_name_id", "TRUE", "TRUE", "TRUE", "TRUE", "duplicate"));
@@ -150,8 +150,8 @@ namespace GuildIdle.Editor.ConfigDownloader
         public void BuildRuntimeJson_ReportsStorageBuildingRanges()
         {
             var download = CreateValidDownload();
-            FindSheet(download, "StorageBuildings").rows[1].cells[1] = "0";
-            FindSheet(download, "StorageBuildings").rows[1].cells[2] = "-1";
+            FindSheet(download, "StorageBuildings").rows[1].cells[1] = "-1";
+            FindSheet(download, "StorageBuildings").rows[1].cells[2] = "0";
             FindSheet(download, "StorageBuildings").rows[1].cells[3] = "-1";
             WriteRaw(download);
 
@@ -159,8 +159,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             var message = report.ToDisplayMessage();
 
             Assert.That(report.Success, Is.False);
-            Assert.That(message, Does.Contain("level must be greater than 0."));
-            Assert.That(message, Does.Contain("slot_count must be greater than or equal to 0."));
+            Assert.That(message, Does.Contain("level must be greater than or equal to 0."));
+            Assert.That(message, Does.Contain("slot_count must be greater than 0."));
             Assert.That(message, Does.Contain("resource_stack_bonus must be greater than or equal to 0."));
         }
 
@@ -273,9 +273,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("storage_equipment", "equipment", "single", "1", "TRUE", "TRUE", "TRUE", "Equipment is instanced.")),
                     Sheet("StorageBuildings",
                         Row("building_id", "level", "slot_count", "resource_stack_bonus", "auto_sort_enabled", "filters_enabled", "notes"),
-                        Row("building_warehouse", "1", "40", "0", "FALSE", "FALSE", "MVP warehouse."),
-                        Row("building_warehouse", "2", "60", "20", "TRUE", "FALSE", "Future level."),
-                        Row("building_warehouse", "3", "90", "50", "TRUE", "TRUE", "Future level.")),
+                        Row("building_warehouse", "0", "20", "0", "FALSE", "FALSE", "Stage 1 storage.")),
                     Sheet("ItemStates",
                         Row("state_id", "storage_item_state_name_id", "available_for_craft", "available_for_sale", "available_for_order", "available_for_equip", "notes"),
                         Row("on_storage", "storage_item_state_on_storage_name_id", "TRUE", "TRUE", "TRUE", "TRUE", "Free item."),

@@ -276,6 +276,70 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(report.ToDisplayMessage(), Does.Contain("item_gold is a forbidden legacy id."));
         }
 
+        [Test]
+        public void Validate_StageQuestReferencesSucceed()
+        {
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityQuestsDownload(
+                    questStepTargetId: "resource_pine_wood",
+                    questRewardTargetId: string.Empty)),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", BuildingsStagesDownload(
+                    objectiveQuestId: "quest_build_hut",
+                    firstWeight: "100",
+                    includeStage2Slot: false)),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "quest_build_hut_name_id",
+                    "quest_build_hut_description_id",
+                    "quest_build_hut_step_collect_wood_id",
+                    "stage_arrival_name_id",
+                    "stage_arrival_description_id",
+                    "stage_2_name_id",
+                    "stage_2_description_id",
+                    "building_hall_name_id",
+                    "building_hall_description_id",
+                    "resource.name",
+                    "resource.description")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+        }
+
+        [Test]
+        public void Validate_StageQuestReferencesReportMissingQuestWeightAndStage2Content()
+        {
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityQuestsDownload(
+                    questStepTargetId: "resource_pine_wood",
+                    questRewardTargetId: string.Empty)),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", BuildingsStagesDownload(
+                    objectiveQuestId: "quest_missing",
+                    firstWeight: "50",
+                    includeStage2Slot: true)),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "quest_build_hut_name_id",
+                    "quest_build_hut_description_id",
+                    "quest_build_hut_step_collect_wood_id",
+                    "stage_arrival_name_id",
+                    "stage_arrival_description_id",
+                    "stage_2_name_id",
+                    "stage_2_description_id",
+                    "building_hall_name_id",
+                    "building_hall_description_id",
+                    "resource.name",
+                    "resource.description")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("SettlementStageObjectives row 2 column 'quest_id' value 'quest_missing'"));
+            Assert.That(message, Does.Contain("Required objective weight_percent total must be 100"));
+            Assert.That(message, Does.Contain("stage_2 must not have slots."));
+        }
+
         private static ConfigSourceSettingsCollection Collection(params ConfigSourceSettings[] sources)
         {
             return new ConfigSourceSettingsCollection { sources = sources };
@@ -328,6 +392,39 @@ namespace GuildIdle.Editor.ConfigDownloader
                 rows.Add(Row(activityId));
 
             return Download(Sheet("Activities", rows.ToArray()));
+        }
+
+        private static ConfigSheetDownload ActivityQuestsDownload(string questStepTargetId, string questRewardTargetId)
+        {
+            var sheets = new List<ConfigDownloadedSheet>
+            {
+                Sheet("Activities",
+                    Row("id", "location_id", "stat_profile_id"),
+                    Row("work_pine_wood", "", "")),
+                Sheet("Quests",
+                    Row("quest_id", "name_id", "description_id", "category", "sort_order", "is_tutorial", "enabled"),
+                    Row("quest_build_hut", "quest_build_hut_name_id", "quest_build_hut_description_id", "StageObjective", "10", "TRUE", "TRUE")),
+                Sheet("QuestStartConditions",
+                    Row("quest_id", "condition_type", "target_id", "value"),
+                    Row("quest_build_hut", "NewGame", "", "1")),
+                Sheet("QuestSteps",
+                    Row("quest_id", "step_id", "step_order", "objective_type", "target_id", "target_value", "description_id", "required"),
+                    Row("quest_build_hut", "step_collect_wood", "10", "ResourceCount", questStepTargetId, "8", "quest_build_hut_step_collect_wood_id", "TRUE"))
+            };
+
+            if (!string.IsNullOrWhiteSpace(questRewardTargetId))
+            {
+                sheets.Add(Sheet("QuestRewards",
+                    Row("quest_id", "reward_type", "target_id", "min", "max", "grant_moment"),
+                    Row("quest_build_hut", "Resource", questRewardTargetId, "1", "1", "OnComplete")));
+            }
+            else
+            {
+                sheets.Add(Sheet("QuestRewards",
+                    Row("quest_id", "reward_type", "target_id", "min", "max", "grant_moment")));
+            }
+
+            return Download(sheets.ToArray());
         }
 
         private static ConfigSheetDownload EnemiesDownload(string enemyLootId)
@@ -390,6 +487,31 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Sheet("Index",
                     Row("building_id", "name_id", "description_id", "levels", "start_level", "visible_at_start", "clickable_requirement"),
                     Row(buildingId, nameId, descriptionId, levels, "0", "TRUE", "")));
+        }
+
+        private static ConfigSheetDownload BuildingsStagesDownload(string objectiveQuestId, string firstWeight, bool includeStage2Slot)
+        {
+            var slots = new List<ConfigSheetRow>
+            {
+                Row("stage_id", "slot_id", "building_id", "sort_order", "enabled"),
+                Row("stage_arrival", "slot_hut", "building_hall", "10", "TRUE")
+            };
+
+            if (includeStage2Slot)
+                slots.Add(Row("stage_2", "slot_stage_2", "building_hall", "10", "TRUE"));
+
+            return Download(
+                Sheet("Index",
+                    Row("building_id", "name_id", "description_id", "levels", "start_level", "visible_at_start", "clickable_requirement"),
+                    Row("building_hall", "building_hall_name_id", "building_hall_description_id", "1", "0", "TRUE", "")),
+                Sheet("SettlementStages",
+                    Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled"),
+                    Row("stage_arrival", "stage_arrival_name_id", "stage_arrival_description_id", "stage_arrival_location", "1800", "AllRequired", "stage_2", "10", "TRUE"),
+                    Row("stage_2", "stage_2_name_id", "stage_2_description_id", "stage_2_location", "0", "AllRequired", "", "20", "TRUE")),
+                Sheet("SettlementStageSlots", slots.ToArray()),
+                Sheet("SettlementStageObjectives",
+                    Row("stage_id", "quest_id", "weight_percent", "required", "sort_order"),
+                    Row("stage_arrival", objectiveQuestId, firstWeight, "TRUE", "10")));
         }
 
         private static ConfigSheetDownload BuildingsActivitiesDownload(string startLevel, string clickableRequirement, string buildingActivityLevel, string buildingActivityId, string showIfCompleted, string hideIfCompleted, string buildingActivityBuildingId = "building_hall")

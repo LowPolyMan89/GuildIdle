@@ -1,27 +1,6 @@
 {
   "enemies": [
     {
-      "enemyId": "enemy_rat",
-      "nameId": "enemy_rat_name",
-      "descriptionId": "enemy_rat_description",
-      "iconId": "icon_enemy_rat",
-      "battleImageId": "battle_enemy_rat",
-      "enemyType": "animal",
-      "combatExp": 3,
-      "hp": 20,
-      "damageMin": 1,
-      "damageMax": 3,
-      "attackSpeed": 1.2,
-      "attackRange": "Melee",
-      "damageType": "Physical",
-      "critChancePercent": 0,
-      "physicalResistPercent": 0,
-      "magicResistPercent": 0,
-      "dodgeChancePercent": 2,
-      "combatAbilityIds": ["enemy_ability_dirty_bite"],
-      "lootGroupId": "loot_enemy_rat"
-    },
-    {
       "enemyId": "enemy_lean_wolf",
       "nameId": "enemy_lean_wolf_name",
       "descriptionId": "enemy_lean_wolf_description",
@@ -43,16 +22,16 @@
       "lootGroupId": "loot_enemy_lean_wolf"
     },
     {
-      "enemyId": "enemy_old_wolf",
-      "nameId": "enemy_old_wolf_name",
-      "descriptionId": "enemy_old_wolf_description",
-      "iconId": "icon_enemy_old_wolf",
-      "battleImageId": "battle_enemy_old_wolf",
+      "enemyId": "enemy_wolf_leader",
+      "nameId": "enemy_wolf_leader_name",
+      "descriptionId": "enemy_wolf_leader_description",
+      "iconId": "icon_enemy_wolf_leader",
+      "battleImageId": "battle_enemy_wolf_leader",
       "enemyType": "animal",
-      "combatExp": 10,
+      "combatExp": 15,
       "hp": 80,
       "damageMin": 6,
-      "damageMax": 12,
+      "damageMax": 10,
       "attackSpeed": 0.95,
       "attackRange": "Melee",
       "damageType": "Physical",
@@ -61,7 +40,7 @@
       "magicResistPercent": 0,
       "dodgeChancePercent": 4,
       "combatAbilityIds": ["enemy_ability_bleeding_claws", "enemy_ability_intimidating_howl"],
-      "lootGroupId": "loot_enemy_old_wolf"
+      "lootGroupId": "loot_enemy_wolf_leader"
     },
     {
       "enemyId": "enemy_rabbit",
@@ -329,8 +308,8 @@
   ],
   "enemyLoot": [
     {
-      "lootGroupId": "loot_enemy_rat",
-      "enemyId": "enemy_rat",
+      "lootGroupId": "loot_enemy_lean_wolf",
+      "enemyId": "enemy_lean_wolf",
       "lootId": "gold_id",
       "minCount": 1,
       "maxCount": 3,
@@ -339,76 +318,27 @@
       "qualityMax": 0
     },
     {
-      "lootGroupId": "loot_enemy_lean_wolf",
-      "enemyId": "enemy_lean_wolf",
+      "lootGroupId": "loot_enemy_wolf_leader",
+      "enemyId": "enemy_wolf_leader",
       "lootId": "gold_id",
-      "minCount": 2,
-      "maxCount": 5,
+      "minCount": 5,
+      "maxCount": 8,
       "chancePercent": 100,
-      "qualityMin": 0,
-      "qualityMax": 0
-    },
-    {
-      "lootGroupId": "loot_enemy_lean_wolf",
-      "enemyId": "enemy_lean_wolf",
-      "lootId": "resource_thin_hide",
-      "minCount": 1,
-      "maxCount": 1,
-      "chancePercent": 35,
-      "qualityMin": 0,
-      "qualityMax": 0
-    },
-    {
-      "lootGroupId": "loot_enemy_old_wolf",
-      "enemyId": "enemy_old_wolf",
-      "lootId": "gold_id",
-      "minCount": 6,
-      "maxCount": 12,
-      "chancePercent": 100,
-      "qualityMin": 0,
-      "qualityMax": 0
-    },
-    {
-      "lootGroupId": "loot_enemy_old_wolf",
-      "enemyId": "enemy_old_wolf",
-      "lootId": "resource_thin_hide",
-      "minCount": 1,
-      "maxCount": 2,
-      "chancePercent": 60,
       "qualityMin": 0,
       "qualityMax": 0
     },
     {
       "lootGroupId": "loot_enemy_rabbit",
       "enemyId": "enemy_rabbit",
-      "lootId": "resource_thin_hide",
+      "lootId": "resource_rabbit_meat",
       "minCount": 1,
       "maxCount": 1,
       "chancePercent": 70,
       "qualityMin": 0,
       "qualityMax": 0
-    },
-    {
-      "lootGroupId": "loot_enemy_rabbit",
-      "enemyId": "enemy_rabbit",
-      "lootId": "gold_id",
-      "minCount": 0,
-      "maxCount": 1,
-      "chancePercent": 30,
-      "qualityMin": 0,
-      "qualityMax": 0
     }
   ],
   "enemyAbilities": [
-    {
-      "abilityId": "enemy_ability_dirty_bite",
-      "nameId": "enemy_ability_dirty_bite_name",
-      "trigger": "OnAttackHit",
-      "chancePercent": 15,
-      "effects": "ApplyStatus: poison_weak",
-      "target": "enemy",
-      "cooldownSec": 6
-    },
     {
       "abilityId": "enemy_ability_bleeding_claws",
       "nameId": "enemy_ability_bleeding_claws_name",
@@ -440,17 +370,6 @@
   ],
   "combatStatuses": [
     {
-      "statusId": "poison_weak",
-      "nameId": "status_poison_weak_name",
-      "type": "poison",
-      "durationSec": 10,
-      "tickIntervalSec": 2,
-      "maxStacks": 5,
-      "effectType": "DamageOverTime",
-      "damageType": "Poison",
-      "damageValue": 2
-    },
-    {
       "statusId": "bleed_weak",
       "nameId": "status_bleed_weak_name",
       "type": "bleed",
@@ -467,26 +386,12 @@
       "enemyGroupId": "enemy_group_underwood_first_wolves",
       "enemyRef": "enemy_lean_wolf:1",
       "weight": 100,
-      "minCount": 3,
-      "maxCount": 3
+      "minCount": 4,
+      "maxCount": 4
     },
     {
-      "enemyGroupId": "enemy_group_watchtower_rats",
-      "enemyRef": "enemy_rat:1",
-      "weight": 100,
-      "minCount": 6,
-      "maxCount": 6
-    },
-    {
-      "enemyGroupId": "enemy_group_warehouse_rats",
-      "enemyRef": "enemy_rat:2",
-      "weight": 100,
-      "minCount": 15,
-      "maxCount": 15
-    },
-    {
-      "enemyGroupId": "enemy_group_first_map_node",
-      "enemyRef": "enemy_old_wolf:5",
+      "enemyGroupId": "enemy_group_underwood_wolf_leader",
+      "enemyRef": "enemy_wolf_leader:1",
       "weight": 100,
       "minCount": 1,
       "maxCount": 1

@@ -491,8 +491,8 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private void ValidateStorageBuilding(ConfigSheetDataRow row)
             {
-                ValidateIntegerMinimum(row, "level", 1, "level must be greater than 0.");
-                ValidateIntegerMinimum(row, "slot_count", 0, "slot_count must be greater than or equal to 0.");
+                ValidateIntegerMinimum(row, "level", 0, "level must be greater than or equal to 0.");
+                ValidateIntegerMinimum(row, "slot_count", 1, "slot_count must be greater than 0.");
                 ValidateIntegerMinimum(row, "resource_stack_bonus", 0, "resource_stack_bonus must be greater than or equal to 0.");
             }
 

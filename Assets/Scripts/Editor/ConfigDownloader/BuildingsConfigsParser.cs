@@ -12,6 +12,9 @@ namespace GuildIdle.Editor.ConfigDownloader
         private const string IndexSheet = "Index";
         private const string ReadmeSheet = "README";
         private const string BuildingActivitiesSheet = "BuildingActivities";
+        private const string SettlementStagesSheet = "SettlementStages";
+        private const string SettlementStageSlotsSheet = "SettlementStageSlots";
+        private const string SettlementStageObjectivesSheet = "SettlementStageObjectives";
         private const string CraftablesSheetPrefix = "Craftables -";
         private const string ForbiddenLegacyItemId = "item_gold";
         private const string GoldCurrencyId = "gold_id";
@@ -68,6 +71,37 @@ namespace GuildIdle.Editor.ConfigDownloader
             "hide_if_activity_completed",
             "clickable_requirement",
             "enabled"
+        };
+
+        private static readonly string[] SettlementStagesRequiredColumns =
+        {
+            "stage_id",
+            "name_id",
+            "description_id",
+            "stage_prefab_id",
+            "target_duration_sec",
+            "completion_rule",
+            "next_stage_id",
+            "sort_order",
+            "enabled"
+        };
+
+        private static readonly string[] SettlementStageSlotsRequiredColumns =
+        {
+            "stage_id",
+            "slot_id",
+            "building_id",
+            "sort_order",
+            "enabled"
+        };
+
+        private static readonly string[] SettlementStageObjectivesRequiredColumns =
+        {
+            "stage_id",
+            "quest_id",
+            "weight_percent",
+            "required",
+            "sort_order"
         };
 
         private static readonly HashSet<string> HeroStatIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -138,6 +172,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             context.ValidateBuildingIndexLevelReferences();
             context.ValidateBuildingActivities();
             context.ValidateCraftables();
+            context.ValidateSettlementStages();
 
             if (!report.Success)
                 return report;
@@ -157,6 +192,10 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly Dictionary<string, BuildingLevelRow> _levelKeys = new Dictionary<string, BuildingLevelRow>(StringComparer.OrdinalIgnoreCase);
             private readonly List<ConfigSheetTable> _craftableTables = new List<ConfigSheetTable>();
             private readonly List<ConfigSheetDataRow> _buildingActivities = new List<ConfigSheetDataRow>();
+            private readonly List<ConfigSheetDataRow> _settlementStages = new List<ConfigSheetDataRow>();
+            private readonly List<ConfigSheetDataRow> _settlementStageSlots = new List<ConfigSheetDataRow>();
+            private readonly List<ConfigSheetDataRow> _settlementStageObjectives = new List<ConfigSheetDataRow>();
+            private readonly HashSet<string> _stageIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             public BuildingsConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
             {
@@ -247,6 +286,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     if (sheet == null ||
                         string.IsNullOrWhiteSpace(sheet.sheet_name) ||
                         IsIgnoredSheet(sheet.sheet_name) ||
+                        IsSettlementStageSheet(sheet.sheet_name) ||
                         IsCraftablesSheet(sheet.sheet_name))
                     {
                         continue;
@@ -448,6 +488,14 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
             }
 
+            public void ValidateSettlementStages()
+            {
+                ValidateSettlementStagesTable();
+                ValidateSettlementStageSlotsTable();
+                ValidateSettlementStageObjectivesTable();
+                ValidateStage2IsEmpty();
+            }
+
             public Dictionary<string, List<Dictionary<string, object>>> BuildRuntimeArrays()
             {
                 return new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.Ordinal)
@@ -456,7 +504,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ["buildingLevels"] = BuildBuildingLevels(),
                     ["buildActions"] = BuildBuildActions(),
                     ["buildingActivities"] = BuildBuildingActivities(),
-                    ["buildingCraftables"] = BuildBuildingCraftables()
+                    ["buildingCraftables"] = BuildBuildingCraftables(),
+                    ["settlementStages"] = BuildSettlementStages(),
+                    ["settlementStageSlots"] = BuildSettlementStageSlots(),
+                    ["settlementStageObjectives"] = BuildSettlementStageObjectives()
                 };
             }
 
@@ -481,6 +532,229 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
 
                 return rows;
+            }
+
+            private List<Dictionary<string, object>> BuildSettlementStages()
+            {
+                var rows = new List<Dictionary<string, object>>();
+                foreach (var row in _settlementStages)
+                {
+                    rows.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        ["stageId"] = row.Get("stage_id"),
+                        ["nameId"] = row.Get("name_id"),
+                        ["descriptionId"] = row.Get("description_id"),
+                        ["stagePrefabId"] = row.Get("stage_prefab_id"),
+                        ["targetDurationSec"] = GetNumber(row, "target_duration_sec"),
+                        ["completionRule"] = row.Get("completion_rule"),
+                        ["nextStageId"] = row.Get("next_stage_id"),
+                        ["sortOrder"] = GetNumber(row, "sort_order"),
+                        ["enabled"] = GetBool(row, "enabled")
+                    });
+                }
+
+                return rows;
+            }
+
+            private List<Dictionary<string, object>> BuildSettlementStageSlots()
+            {
+                var rows = new List<Dictionary<string, object>>();
+                foreach (var row in _settlementStageSlots)
+                {
+                    rows.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        ["stageId"] = row.Get("stage_id"),
+                        ["slotId"] = row.Get("slot_id"),
+                        ["buildingId"] = row.Get("building_id"),
+                        ["sortOrder"] = GetNumber(row, "sort_order"),
+                        ["enabled"] = GetBool(row, "enabled")
+                    });
+                }
+
+                return rows;
+            }
+
+            private List<Dictionary<string, object>> BuildSettlementStageObjectives()
+            {
+                var rows = new List<Dictionary<string, object>>();
+                foreach (var row in _settlementStageObjectives)
+                {
+                    rows.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        ["stageId"] = row.Get("stage_id"),
+                        ["questId"] = row.Get("quest_id"),
+                        ["weightPercent"] = GetNumber(row, "weight_percent"),
+                        ["required"] = GetBool(row, "required"),
+                        ["sortOrder"] = GetNumber(row, "sort_order")
+                    });
+                }
+
+                return rows;
+            }
+
+            private void ValidateSettlementStagesTable()
+            {
+                if (!_tables.TryGetValue(SettlementStagesSheet, out var table))
+                {
+                    AddIssue(SettlementStagesSheet, 0, string.Empty, string.Empty, "Required sheet is missing.");
+                    return;
+                }
+
+                ValidateRequiredColumns(table, SettlementStagesRequiredColumns);
+                if (!HasRequiredColumns(table, SettlementStagesRequiredColumns))
+                    return;
+
+                var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in table.DataRows)
+                {
+                    var stageId = row.Get("stage_id");
+                    if (string.IsNullOrWhiteSpace(stageId))
+                    {
+                        AddIssue(SettlementStagesSheet, row.RowNumber, "stage_id", stageId, "stage_id is required.");
+                    }
+                    else if (seen.TryGetValue(stageId, out var firstRow))
+                    {
+                        AddIssue(SettlementStagesSheet, row.RowNumber, "stage_id", stageId, $"Duplicate stage_id; first declared at row {firstRow}.");
+                    }
+                    else
+                    {
+                        seen[stageId] = row.RowNumber;
+                        _stageIds.Add(stageId);
+                    }
+
+                    ValidateRequired(row, "name_id");
+                    ValidateRequired(row, "description_id");
+                    ValidateRequired(row, "stage_prefab_id");
+                    ValidateNumberGreaterThanOrEqual(row, "target_duration_sec", 0d, "target_duration_sec must be greater than or equal to 0.");
+                    ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
+                    TryParseBool(row, "enabled", required: true, out var enabled);
+
+                    var completionRule = row.Get("completion_rule");
+                    if (string.IsNullOrWhiteSpace(completionRule))
+                        AddIssue(SettlementStagesSheet, row.RowNumber, "completion_rule", completionRule, "completion_rule is required.");
+                    else if (!string.Equals(completionRule, "AllRequired", StringComparison.OrdinalIgnoreCase))
+                        AddIssue(SettlementStagesSheet, row.RowNumber, "completion_rule", completionRule, "completion_rule must be AllRequired for Stage 1 MVP.");
+
+                    if (enabled)
+                        _settlementStages.Add(row);
+                }
+
+                foreach (var row in _settlementStages)
+                {
+                    var nextStageId = row.Get("next_stage_id");
+                    if (!string.IsNullOrWhiteSpace(nextStageId) && !_stageIds.Contains(nextStageId))
+                        AddIssue(SettlementStagesSheet, row.RowNumber, "next_stage_id", nextStageId, "next_stage_id references missing SettlementStages.stage_id.");
+                }
+            }
+
+            private void ValidateSettlementStageSlotsTable()
+            {
+                if (!_tables.TryGetValue(SettlementStageSlotsSheet, out var table))
+                {
+                    AddIssue(SettlementStageSlotsSheet, 0, string.Empty, string.Empty, "Required sheet is missing.");
+                    return;
+                }
+
+                ValidateRequiredColumns(table, SettlementStageSlotsRequiredColumns);
+                if (!HasRequiredColumns(table, SettlementStageSlotsRequiredColumns))
+                    return;
+
+                var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in table.DataRows)
+                {
+                    if (!TryParseBool(row, "enabled", required: true, out var enabled) || !enabled)
+                        continue;
+
+                    var stageId = row.Get("stage_id");
+                    var slotId = row.Get("slot_id");
+                    var buildingId = row.Get("building_id");
+
+                    ValidateRequired(row, "stage_id");
+                    ValidateRequired(row, "slot_id");
+                    ValidateRequired(row, "building_id");
+                    ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
+
+                    if (!string.IsNullOrWhiteSpace(stageId) && !_stageIds.Contains(stageId))
+                        AddIssue(SettlementStageSlotsSheet, row.RowNumber, "stage_id", stageId, "stage_id references missing SettlementStages.stage_id.");
+
+                    if (!string.IsNullOrWhiteSpace(buildingId) && !_buildings.ContainsKey(buildingId))
+                        AddIssue(SettlementStageSlotsSheet, row.RowNumber, "building_id", buildingId, "building_id does not exist in Index.building_id.");
+
+                    var key = $"{stageId}\n{slotId}";
+                    if (seen.TryGetValue(key, out var firstRow))
+                        AddIssue(SettlementStageSlotsSheet, row.RowNumber, "slot_id", slotId, $"Duplicate stage_id + slot_id; first declared at row {firstRow}.");
+                    else
+                        seen[key] = row.RowNumber;
+
+                    _settlementStageSlots.Add(row);
+                }
+            }
+
+            private void ValidateSettlementStageObjectivesTable()
+            {
+                if (!_tables.TryGetValue(SettlementStageObjectivesSheet, out var table))
+                {
+                    AddIssue(SettlementStageObjectivesSheet, 0, string.Empty, string.Empty, "Required sheet is missing.");
+                    return;
+                }
+
+                ValidateRequiredColumns(table, SettlementStageObjectivesRequiredColumns);
+                if (!HasRequiredColumns(table, SettlementStageObjectivesRequiredColumns))
+                    return;
+
+                var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var requiredWeights = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in table.DataRows)
+                {
+                    var stageId = row.Get("stage_id");
+                    var questId = row.Get("quest_id");
+                    ValidateRequired(row, "stage_id");
+                    ValidateRequired(row, "quest_id");
+                    ValidateNumberGreaterThanOrEqual(row, "weight_percent", 0d, "weight_percent must be greater than or equal to 0.");
+                    ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
+                    TryParseBool(row, "required", required: true, out var required);
+
+                    if (!string.IsNullOrWhiteSpace(stageId) && !_stageIds.Contains(stageId))
+                        AddIssue(SettlementStageObjectivesSheet, row.RowNumber, "stage_id", stageId, "stage_id references missing SettlementStages.stage_id.");
+
+                    var key = $"{stageId}\n{questId}";
+                    if (seen.TryGetValue(key, out var firstRow))
+                        AddIssue(SettlementStageObjectivesSheet, row.RowNumber, "quest_id", questId, $"Duplicate stage_id + quest_id; first declared at row {firstRow}.");
+                    else
+                        seen[key] = row.RowNumber;
+
+                    if (required && long.TryParse(row.Get("weight_percent"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var weight))
+                    {
+                        requiredWeights.TryGetValue(stageId, out var total);
+                        requiredWeights[stageId] = total + weight;
+                    }
+
+                    _settlementStageObjectives.Add(row);
+                }
+
+                foreach (var pair in requiredWeights)
+                {
+                    if (pair.Value != 100L)
+                        AddIssue(SettlementStageObjectivesSheet, 0, "weight_percent", pair.Key, "Required objective weight_percent total must be 100 for each stage.");
+                }
+            }
+
+            private void ValidateStage2IsEmpty()
+            {
+                if (!_stageIds.Contains("stage_2"))
+                    return;
+
+                foreach (var row in _settlementStageSlots)
+                {
+                    if (string.Equals(row.Get("stage_id"), "stage_2", StringComparison.OrdinalIgnoreCase))
+                        AddIssue(SettlementStageSlotsSheet, row.RowNumber, "stage_id", "stage_2", "stage_2 must not have slots.");
+                }
+
+                foreach (var row in _settlementStageObjectives)
+                {
+                    if (string.Equals(row.Get("stage_id"), "stage_2", StringComparison.OrdinalIgnoreCase))
+                        AddIssue(SettlementStageObjectivesSheet, row.RowNumber, "stage_id", "stage_2", "stage_2 must not have objectives.");
+                }
             }
 
             private List<Dictionary<string, object>> BuildBuildingLevels()
@@ -936,7 +1210,15 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 return string.Equals(sheetName, IndexSheet, StringComparison.OrdinalIgnoreCase) ||
                        string.Equals(sheetName, ReadmeSheet, StringComparison.OrdinalIgnoreCase) ||
-                       string.Equals(sheetName, BuildingActivitiesSheet, StringComparison.OrdinalIgnoreCase);
+                       string.Equals(sheetName, BuildingActivitiesSheet, StringComparison.OrdinalIgnoreCase) ||
+                       IsSettlementStageSheet(sheetName);
+            }
+
+            private static bool IsSettlementStageSheet(string sheetName)
+            {
+                return string.Equals(sheetName, SettlementStagesSheet, StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(sheetName, SettlementStageSlotsSheet, StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(sheetName, SettlementStageObjectivesSheet, StringComparison.OrdinalIgnoreCase);
             }
 
             private static bool IsCraftablesSheet(string sheetName)

@@ -13,34 +13,6 @@
       "explorationDifficulty": 0,
       "isBlocking": false,
       "visualMarkerId": ""
-    },
-    {
-      "cellId": "cell_fields_1",
-      "q": 1,
-      "r": 0,
-      "mapCellNameId": "map_cell_fields_1_name_id",
-      "stateDefault": "Unexplored",
-      "terrainType": "Fields",
-      "regionId": "region_near",
-      "locationId": "fields_1",
-      "maxExplorationLevel": 8,
-      "explorationDifficulty": 1,
-      "isBlocking": false,
-      "visualMarkerId": "poi_gathering"
-    },
-    {
-      "cellId": "cell_old_wolf_den_1_1",
-      "q": 1,
-      "r": 1,
-      "mapCellNameId": "map_cell_old_wolf_den_1_1_name_id",
-      "stateDefault": "Unexplored",
-      "terrainType": "Forest",
-      "regionId": "region_near",
-      "locationId": "old_wolf_den_1_1",
-      "maxExplorationLevel": 6,
-      "explorationDifficulty": 2,
-      "isBlocking": false,
-      "visualMarkerId": "poi_combat"
     }
   ],
   "mapLocations": [
@@ -51,125 +23,11 @@
       "tier": 1,
       "regionId": "region_village",
       "defaultCellId": "cell_village_0_0",
-      "visibleInWatchtower": true
-    },
-    {
-      "locationId": "fields_1",
-      "mapLocationNameId": "map_location_fields_1_name_id",
-      "locationType": "ResourceNode",
-      "tier": 1,
-      "regionId": "region_near",
-      "defaultCellId": "cell_fields_1",
-      "visibleInWatchtower": true
-    },
-    {
-      "locationId": "old_wolf_den_1_1",
-      "mapLocationNameId": "map_location_old_wolf_den_1_1_name_id",
-      "locationType": "DangerCombatNode",
-      "tier": 1,
-      "regionId": "region_near",
-      "defaultCellId": "cell_old_wolf_den_1_1",
-      "visibleInWatchtower": true
+      "visibleInWatchtower": false
     }
   ],
-  "mapExplorationLevels": [
-    {
-      "explorationLevel": 1,
-      "pointsRequired": 50
-    },
-    {
-      "explorationLevel": 2,
-      "pointsRequired": 60
-    },
-    {
-      "explorationLevel": 3,
-      "pointsRequired": 70
-    },
-    {
-      "explorationLevel": 4,
-      "pointsRequired": 80
-    },
-    {
-      "explorationLevel": 5,
-      "pointsRequired": 90
-    },
-    {
-      "explorationLevel": 6,
-      "pointsRequired": 100
-    },
-    {
-      "explorationLevel": 7,
-      "pointsRequired": 115
-    },
-    {
-      "explorationLevel": 8,
-      "pointsRequired": 130
-    },
-    {
-      "explorationLevel": 9,
-      "pointsRequired": 145
-    },
-    {
-      "explorationLevel": 10,
-      "pointsRequired": 160
-    },
-    {
-      "explorationLevel": 11,
-      "pointsRequired": 180
-    },
-    {
-      "explorationLevel": 12,
-      "pointsRequired": 200
-    },
-    {
-      "explorationLevel": 13,
-      "pointsRequired": 220
-    },
-    {
-      "explorationLevel": 14,
-      "pointsRequired": 240
-    },
-    {
-      "explorationLevel": 15,
-      "pointsRequired": 265
-    },
-    {
-      "explorationLevel": 16,
-      "pointsRequired": 290
-    },
-    {
-      "explorationLevel": 17,
-      "pointsRequired": 315
-    },
-    {
-      "explorationLevel": 18,
-      "pointsRequired": 340
-    },
-    {
-      "explorationLevel": 19,
-      "pointsRequired": 370
-    },
-    {
-      "explorationLevel": 20,
-      "pointsRequired": 400
-    }
-  ],
-  "mapCellActivities": [
-    {
-      "cellId": "cell_fields_1",
-      "locationId": "fields_1",
-      "activityId": "work_flax",
-      "revealAtExplorationLevel": 1,
-      "visibleInWatchtower": true
-    },
-    {
-      "cellId": "cell_old_wolf_den_1_1",
-      "locationId": "old_wolf_den_1_1",
-      "activityId": "combat_first_map_node",
-      "revealAtExplorationLevel": 1,
-      "visibleInWatchtower": true
-    }
-  ],
+  "mapExplorationLevels": [],
+  "mapCellActivities": [],
   "dangerEncounters": [
     {
       "dangerEncounterId": "danger_hunt_rabbits",

@@ -34,7 +34,11 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"buildActions\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingActivities\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingCraftables\""));
+            Assert.That(runtimeJson, Does.Contain("\"settlementStages\""));
+            Assert.That(runtimeJson, Does.Contain("\"settlementStageSlots\""));
+            Assert.That(runtimeJson, Does.Contain("\"settlementStageObjectives\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingId\": \"building_hall\""));
+            Assert.That(runtimeJson, Does.Contain("\"stageId\": \"stage_arrival\""));
             Assert.That(runtimeJson, Does.Contain("\"levels\": 1"));
             Assert.That(runtimeJson, Does.Contain("\"startLevel\": 0"));
             Assert.That(runtimeJson, Does.Contain("\"visibleAtStart\": true"));
@@ -259,6 +263,18 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("building_hall", "0", "build_hall", "10", "combat_clear_hall_forest", "build_hall", "", "TRUE", "note"),
                         Row("building_warehouse", "0", "build_warehouse", "20", "", "", "building_hall:1", "TRUE", "note"),
                         Row("building_carpentry", "0", "missing_disabled_activity", "30", "", "", "building_hall:1", "FALSE", "note")),
+                    Sheet("SettlementStages",
+                        Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes"),
+                        Row("stage_arrival", "stage.arrival.name", "stage.arrival.desc", "stage_arrival_location", "1800", "AllRequired", "stage_2", "10", "TRUE", "note"),
+                        Row("stage_2", "stage.2.name", "stage.2.desc", "stage_2_location", "0", "AllRequired", "", "20", "TRUE", "note")),
+                    Sheet("SettlementStageSlots",
+                        Row("stage_id", "slot_id", "building_id", "sort_order", "enabled", "notes"),
+                        Row("stage_arrival", "slot_hall", "building_hall", "10", "TRUE", "note"),
+                        Row("stage_arrival", "slot_underwood", "building_underwood", "20", "TRUE", "note")),
+                    Sheet("SettlementStageObjectives",
+                        Row("stage_id", "quest_id", "weight_percent", "required", "sort_order", "notes"),
+                        Row("stage_arrival", "quest_build_hall", "50", "TRUE", "10", "note"),
+                        Row("stage_arrival", "quest_clear_underwood", "50", "TRUE", "20", "note")),
                     Sheet("Craftables - Carpentry",
                         Row("building_id", "building_level", "item_id", "sort_order", "ui_category", "enabled", "notes"),
                         Row("building_carpentry", "1", "resource_pine_plank", "10", "Materials", "TRUE", "note")),

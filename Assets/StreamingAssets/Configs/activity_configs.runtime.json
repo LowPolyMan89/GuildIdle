@@ -56,105 +56,10 @@
       "statProfileId": "profile_gathering"
     },
     {
-      "id": "inspect_carpentry",
-      "nameId": "inspect_carpentry_name_id",
-      "descriptionId": "inspect_carpentry_description_id",
-      "iconId": "icon_building_carpentry",
-      "type": "Explore",
-      "category": "Inspection",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Timer",
-      "durationSec": 5,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "mainSkillId": "skill_exploration",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_exploration"
-    },
-    {
-      "id": "inspect_warehouse",
-      "nameId": "inspect_warehouse_name_id",
-      "descriptionId": "inspect_warehouse_description_id",
-      "iconId": "icon_building_warehouse",
-      "type": "Explore",
-      "category": "Inspection",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Timer",
-      "durationSec": 5,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "mainSkillId": "skill_exploration",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_exploration"
-    },
-    {
-      "id": "inspect_abandoned_mine",
-      "nameId": "inspect_abandoned_mine_name_id",
-      "descriptionId": "inspect_abandoned_mine_description_id",
-      "iconId": "icon_mine",
-      "type": "Explore",
-      "category": "Inspection",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Timer",
-      "durationSec": 5,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "mainSkillId": "skill_exploration",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_exploration"
-    },
-    {
-      "id": "inspect_forge",
-      "nameId": "inspect_forge_name_id",
-      "descriptionId": "inspect_forge_description_id",
-      "iconId": "icon_building_forge",
-      "type": "Explore",
-      "category": "Inspection",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Timer",
-      "durationSec": 5,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "mainSkillId": "skill_exploration",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_exploration"
-    },
-    {
-      "id": "inspect_watchtower",
-      "nameId": "inspect_watchtower_name_id",
-      "descriptionId": "inspect_watchtower_description_id",
-      "iconId": "icon_watchtower",
-      "type": "Explore",
-      "category": "Inspection",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Timer",
-      "durationSec": 5,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "mainSkillId": "skill_exploration",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_exploration"
-    },
-    {
-      "id": "work_copper_ore",
-      "nameId": "work_copper_ore_name_id",
-      "descriptionId": "work_copper_ore_description_id",
-      "iconId": "work_copper_ore_icon_id",
+      "id": "work_stone",
+      "nameId": "work_stone_name_id",
+      "descriptionId": "work_stone_description_id",
+      "iconId": "work_stone_icon_id",
       "type": "Work",
       "category": "Gathering",
       "rarityId": "Common",
@@ -168,99 +73,6 @@
       "isRepeatable": true,
       "offlineEnabled": true,
       "statProfileId": "profile_gathering"
-    },
-    {
-      "id": "combat_watchtower_rats",
-      "nameId": "combat_watchtower_rats_name_id",
-      "descriptionId": "combat_watchtower_rats_description_id",
-      "iconId": "icon_combat_rat",
-      "type": "CombatTask",
-      "category": "Combat",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Trigger",
-      "durationSec": 0,
-      "cycleSec": 0,
-      "fatigueCost": 5,
-      "mainSkillId": "skill_combat",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_combat"
-    },
-    {
-      "id": "explore_fields_1",
-      "nameId": "explore_fields_1_name_id",
-      "descriptionId": "explore_fields_1_description_id",
-      "iconId": "icon_fields",
-      "type": "Explore",
-      "category": "MapExploration",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "fields_1",
-      "progressMode": "ProgressBar",
-      "durationSec": 0,
-      "cycleSec": 30,
-      "fatigueCost": 1,
-      "mainSkillId": "skill_exploration",
-      "isRepeatable": false,
-      "offlineEnabled": true,
-      "statProfileId": "profile_exploration"
-    },
-    {
-      "id": "work_flax",
-      "nameId": "work_flax_name_id",
-      "descriptionId": "work_flax_description_id",
-      "iconId": "work_flax_icon_id",
-      "type": "Work",
-      "category": "Gathering",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "fields_1",
-      "progressMode": "Cycle",
-      "durationSec": 0,
-      "cycleSec": 30,
-      "fatigueCost": 1,
-      "mainSkillId": "skill_gathering",
-      "isRepeatable": true,
-      "offlineEnabled": true,
-      "statProfileId": "profile_gathering"
-    },
-    {
-      "id": "combat_first_map_node",
-      "nameId": "combat_first_map_node_name_id",
-      "descriptionId": "combat_first_map_node_description_id",
-      "iconId": "icon_combat_old_wolf",
-      "type": "CombatTask",
-      "category": "Combat",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "old_wolf_den_1_1",
-      "progressMode": "Trigger",
-      "durationSec": 0,
-      "cycleSec": 0,
-      "fatigueCost": 5,
-      "mainSkillId": "skill_combat",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_combat"
-    },
-    {
-      "id": "grant_aska_and_recipe",
-      "nameId": "grant_aska_and_recipe_name_id",
-      "descriptionId": "grant_aska_and_recipe_description_id",
-      "iconId": "icon_aska",
-      "type": "Event",
-      "category": "Tutorial",
-      "rarityId": "Uncommon",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Trigger",
-      "durationSec": 0,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "isRepeatable": false,
-      "offlineEnabled": false
     },
     {
       "id": "hunt_rabbits",
@@ -282,12 +94,12 @@
       "statProfileId": "profile_hunting"
     },
     {
-      "id": "order_warehouse_rats",
-      "nameId": "order_warehouse_rats_name_id",
-      "descriptionId": "order_warehouse_rats_description_id",
-      "iconId": "icon_order_rats",
-      "type": "Order",
-      "category": "CombatOrder",
+      "id": "combat_underwood_wolf_leader",
+      "nameId": "combat_underwood_wolf_leader_name_id",
+      "descriptionId": "combat_underwood_wolf_leader_description_id",
+      "iconId": "icon_combat_wolf_leader",
+      "type": "CombatTask",
+      "category": "Combat",
       "rarityId": "Common",
       "tier": 1,
       "locationId": "village",
@@ -299,61 +111,6 @@
       "isRepeatable": false,
       "offlineEnabled": false,
       "statProfileId": "profile_combat"
-    },
-    {
-      "id": "trader_arrival_event",
-      "nameId": "trader_arrival_event_name_id",
-      "descriptionId": "trader_arrival_event_description_id",
-      "iconId": "icon_trader",
-      "type": "Event",
-      "category": "Trader",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Trigger",
-      "durationSec": 0,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "isRepeatable": false,
-      "offlineEnabled": false
-    },
-    {
-      "id": "inspect_foundry",
-      "nameId": "inspect_foundry_name_id",
-      "descriptionId": "inspect_foundry_description_id",
-      "iconId": "icon_building_foundry",
-      "type": "Explore",
-      "category": "Inspection",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Timer",
-      "durationSec": 5,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "mainSkillId": "skill_exploration",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_exploration"
-    },
-    {
-      "id": "inspect_workshop",
-      "nameId": "inspect_workshop_name_id",
-      "descriptionId": "inspect_workshop_description_id",
-      "iconId": "icon_building_workshop",
-      "type": "Explore",
-      "category": "Inspection",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Timer",
-      "durationSec": 5,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "mainSkillId": "skill_exploration",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_exploration"
     }
   ],
   "workDetails": [
@@ -363,12 +120,7 @@
       "autoRepeat": true
     },
     {
-      "activityId": "work_copper_ore",
-      "successChance": 100,
-      "autoRepeat": true
-    },
-    {
-      "activityId": "work_flax",
+      "activityId": "work_stone",
       "successChance": 100,
       "autoRepeat": true
     },
@@ -379,110 +131,20 @@
       "failMode": "DangerEncounter"
     }
   ],
-  "orderDetails": [
-    {
-      "activityId": "order_warehouse_rats",
-      "orderSource": "HallBoard",
-      "reputationId": "guild_reputation",
-      "canRepeat": false,
-      "repeatCooldownSec": 0,
-      "consumeRequirementsOnStart": false
-    }
-  ],
-  "eventDetails": [
-    {
-      "activityId": "starter_hero_available",
-      "eventKind": "GrantHero",
-      "discoverConditionId": "new_game",
-      "startsCombat": false,
-      "oneTime": true,
-      "hiddenUntilDiscovered": false
-    },
-    {
-      "activityId": "grant_aska_and_recipe",
-      "eventKind": "GrantHeroAndRecipe",
-      "discoverConditionId": "combat_first_map_node_victory",
-      "startsCombat": false,
-      "oneTime": true,
-      "hiddenUntilDiscovered": true
-    },
-    {
-      "activityId": "trader_arrival_event",
-      "eventKind": "TraderArrival",
-      "discoverConditionId": "mvp_foundry_step",
-      "startsCombat": false,
-      "oneTime": true,
-      "hiddenUntilDiscovered": true
-    }
-  ],
-  "exploreDetails": [
-    {
-      "activityId": "inspect_carpentry",
-      "discoveryPointsRequired": 5,
-      "dangerLevel": 0
-    },
-    {
-      "activityId": "inspect_warehouse",
-      "discoveryPointsRequired": 5,
-      "dangerLevel": 0
-    },
-    {
-      "activityId": "inspect_abandoned_mine",
-      "discoveryPointsRequired": 5,
-      "dangerLevel": 0
-    },
-    {
-      "activityId": "inspect_forge",
-      "discoveryPointsRequired": 5,
-      "dangerLevel": 0
-    },
-    {
-      "activityId": "inspect_watchtower",
-      "discoveryPointsRequired": 5,
-      "dangerLevel": 0
-    },
-    {
-      "activityId": "explore_fields_1",
-      "unlockLocationId": "fields_1",
-      "discoveryPointsRequired": 50,
-      "dangerLevel": 0
-    },
-    {
-      "activityId": "inspect_foundry",
-      "discoveryPointsRequired": 5,
-      "dangerLevel": 0
-    },
-    {
-      "activityId": "inspect_workshop",
-      "discoveryPointsRequired": 5,
-      "dangerLevel": 0
-    }
-  ],
+  "orderDetails": [],
+  "eventDetails": [],
+  "exploreDetails": [],
   "combatDetails": [
     {
       "activityId": "combat_clear_hall_forest",
       "enemyGroupId": "enemy_group_underwood_first_wolves",
       "combatMode": "Queue_1v1",
-      "intendedFirstResult": "VictoryExpected",
-      "completionRewardRule": "ActivityRewards"
-    },
-    {
-      "activityId": "combat_watchtower_rats",
-      "enemyGroupId": "enemy_group_watchtower_rats",
-      "combatMode": "Queue_1v1",
-      "intendedFirstResult": "VictoryExpected",
-      "completionRewardRule": "ActivityRewards"
-    },
-    {
-      "activityId": "combat_first_map_node",
-      "enemyGroupId": "enemy_group_first_map_node",
-      "combatMode": "Queue_1v1",
       "intendedFirstResult": "FirstDefeatThenVictory",
       "completionRewardRule": "ActivityRewards"
     },
     {
-      "activityId": "order_warehouse_rats",
-      "enemyGroupId": "enemy_group_warehouse_rats",
+      "activityId": "combat_underwood_wolf_leader",
+      "enemyGroupId": "enemy_group_underwood_wolf_leader",
       "combatMode": "Queue_1v1",
       "intendedFirstResult": "VictoryExpected",
       "completionRewardRule": "ActivityRewards"
@@ -490,54 +152,9 @@
   ],
   "requirements": [
     {
-      "activityId": "work_pine_wood",
-      "reqType": "BuildingLevel",
-      "targetId": "building_underwood",
-      "value": 1,
-      "consume": false,
-      "hidden": false,
-      "checkMoment": "OnStart"
-    },
-    {
-      "activityId": "work_copper_ore",
-      "reqType": "BuildingLevel",
-      "targetId": "building_abandoned_mine",
-      "value": 1,
-      "consume": false,
-      "hidden": false,
-      "checkMoment": "OnStart"
-    },
-    {
-      "activityId": "hunt_rabbits",
-      "reqType": "HeroAvailable",
-      "targetId": "aska",
-      "value": 1,
-      "consume": false,
-      "hidden": false,
-      "checkMoment": "OnStart"
-    },
-    {
-      "activityId": "combat_watchtower_rats",
-      "reqType": "BuildingLevel",
-      "targetId": "building_watchtower",
-      "value": 1,
-      "consume": false,
-      "hidden": false,
-      "checkMoment": "OnStart"
-    },
-    {
-      "activityId": "work_flax",
-      "reqType": "LocationUnlocked",
-      "targetId": "fields_1",
-      "value": 1,
-      "consume": false,
-      "hidden": false,
-      "checkMoment": "OnStart"
-    },
-    {
-      "activityId": "order_warehouse_rats",
-      "reqType": "BuildingLevel",
-      "targetId": "building_hall",
+      "activityId": "combat_underwood_wolf_leader",
+      "reqType": "ActivityCompleted",
+      "targetId": "combat_clear_hall_forest",
       "value": 1,
       "consume": false,
       "hidden": false,
@@ -558,15 +175,6 @@
       "activityId": "starter_hero_available",
       "rewardType": "Equipment",
       "targetId": "item_wooden_club",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
-    },
-    {
-      "activityId": "combat_clear_hall_forest",
-      "rewardType": "BuildingUnlock",
-      "targetId": "building_underwood",
       "min": 1,
       "max": 1,
       "chance": 100,
@@ -600,108 +208,27 @@
       "grantMoment": "OnCycle"
     },
     {
-      "activityId": "inspect_abandoned_mine",
-      "rewardType": "BuildingUnlock",
-      "targetId": "building_abandoned_mine",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
-    },
-    {
-      "activityId": "work_copper_ore",
+      "activityId": "work_stone",
       "rewardType": "Resource",
-      "targetId": "resource_copper_ore",
+      "targetId": "resource_stone",
       "min": 1,
       "max": 3,
       "chance": 100,
       "grantMoment": "OnCycle"
     },
     {
-      "activityId": "work_copper_ore",
+      "activityId": "work_stone",
       "rewardType": "SkillExp",
       "targetId": "skill_gathering",
       "min": 10,
       "max": 10,
       "chance": 100,
       "grantMoment": "OnCycle"
-    },
-    {
-      "activityId": "combat_watchtower_rats",
-      "rewardType": "BuildingUnlock",
-      "targetId": "building_watchtower",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
-    },
-    {
-      "activityId": "combat_watchtower_rats",
-      "rewardType": "MapAccess",
-      "targetId": "fields_1",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
-    },
-    {
-      "activityId": "combat_watchtower_rats",
-      "rewardType": "MapAccess",
-      "targetId": "old_wolf_den_1_1",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
-    },
-    {
-      "activityId": "work_flax",
-      "rewardType": "Resource",
-      "targetId": "resource_flax",
-      "min": 1,
-      "max": 3,
-      "chance": 100,
-      "grantMoment": "OnCycle"
-    },
-    {
-      "activityId": "work_flax",
-      "rewardType": "SkillExp",
-      "targetId": "skill_gathering",
-      "min": 10,
-      "max": 10,
-      "chance": 100,
-      "grantMoment": "OnCycle"
-    },
-    {
-      "activityId": "combat_first_map_node",
-      "rewardType": "Consumable",
-      "targetId": "consumable_hunting_potion",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
-    },
-    {
-      "activityId": "grant_aska_and_recipe",
-      "rewardType": "Hero",
-      "targetId": "aska",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
-    },
-    {
-      "activityId": "grant_aska_and_recipe",
-      "rewardType": "Recipe",
-      "targetId": "recipe_aska_bow",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
     },
     {
       "activityId": "hunt_rabbits",
       "rewardType": "Resource",
-      "targetId": "resource_thin_hide",
+      "targetId": "resource_rabbit_meat",
       "min": 1,
       "max": 2,
       "chance": 100,
@@ -715,9 +242,28 @@
       "max": 10,
       "chance": 100,
       "grantMoment": "OnCycle"
+    },
+    {
+      "activityId": "combat_underwood_wolf_leader",
+      "rewardType": "SkillExp",
+      "targetId": "skill_combat",
+      "min": 25,
+      "max": 25,
+      "chance": 100,
+      "grantMoment": "OnComplete"
     }
   ],
-  "triggers": [],
+  "triggers": [
+    {
+      "activityId": "combat_clear_hall_forest",
+      "triggerMoment": "OnFail",
+      "triggerType": "GiveItem",
+      "targetId": "recipe_roasted_rabbit_meat",
+      "value": 1,
+      "chance": 100,
+      "onceOnly": true
+    }
+  ],
   "rarities": [
     {
       "id": "Common",
@@ -1367,6 +913,148 @@
       "enumGroup": "QuestObjective",
       "value": "QuestCompleted",
       "description": "Шаг засчитывается после завершения другого квеста."
+    },
+    {
+      "enumGroup": "QuestConditionType",
+      "value": "ActivityFailed",
+      "description": "Квест запускается после первой неудачи указанной активности."
+    },
+    {
+      "enumGroup": "QuestConditionType",
+      "value": "StageEntered",
+      "description": "Квест запускается при входе в этап."
+    },
+    {
+      "enumGroup": "IntendedFirstResult",
+      "value": "FirstDefeatThenVictory",
+      "description": "Первая попытка рассчитана на поражение, повторная — на победу после подготовки."
     }
-  ]
+  ],
+  "quests": [
+    {
+      "questId": "quest_build_hut",
+      "nameId": "quest_build_hut_name_id",
+      "descriptionId": "quest_build_hut_description_id",
+      "category": "StageObjective",
+      "sortOrder": 10,
+      "isTutorial": true
+    },
+    {
+      "questId": "quest_clear_underwood",
+      "nameId": "quest_clear_underwood_name_id",
+      "descriptionId": "quest_clear_underwood_description_id",
+      "category": "StageObjective",
+      "sortOrder": 20,
+      "isTutorial": true
+    },
+    {
+      "questId": "quest_prepare_for_wolves",
+      "nameId": "quest_prepare_for_wolves_name_id",
+      "descriptionId": "quest_prepare_for_wolves_description_id",
+      "category": "Tutorial",
+      "sortOrder": 30,
+      "isTutorial": true
+    }
+  ],
+  "questStartConditions": [
+    {
+      "questId": "quest_build_hut",
+      "conditionType": "NewGame",
+      "value": 1
+    },
+    {
+      "questId": "quest_clear_underwood",
+      "conditionType": "NewGame",
+      "value": 1
+    },
+    {
+      "questId": "quest_prepare_for_wolves",
+      "conditionType": "ActivityFailed",
+      "targetId": "combat_clear_hall_forest",
+      "value": 1
+    }
+  ],
+  "questSteps": [
+    {
+      "questId": "quest_build_hut",
+      "stepId": "step_collect_wood",
+      "stepOrder": 10,
+      "objectiveType": "ResourceCount",
+      "targetId": "resource_pine_wood",
+      "targetValue": 8,
+      "descriptionId": "quest_build_hut_step_collect_wood_id",
+      "required": true
+    },
+    {
+      "questId": "quest_build_hut",
+      "stepId": "step_collect_stone",
+      "stepOrder": 20,
+      "objectiveType": "ResourceCount",
+      "targetId": "resource_stone",
+      "targetValue": 6,
+      "descriptionId": "quest_build_hut_step_collect_stone_id",
+      "required": true
+    },
+    {
+      "questId": "quest_build_hut",
+      "stepId": "step_build_hut",
+      "stepOrder": 30,
+      "objectiveType": "BuildingLevel",
+      "targetId": "building_hall",
+      "targetValue": 1,
+      "descriptionId": "quest_build_hut_step_build_hut_id",
+      "required": true
+    },
+    {
+      "questId": "quest_clear_underwood",
+      "stepId": "step_defeat_pack",
+      "stepOrder": 10,
+      "objectiveType": "ActivityCompleted",
+      "targetId": "combat_clear_hall_forest",
+      "targetValue": 1,
+      "descriptionId": "quest_clear_underwood_step_defeat_pack_id",
+      "required": true
+    },
+    {
+      "questId": "quest_clear_underwood",
+      "stepId": "step_defeat_boss",
+      "stepOrder": 20,
+      "objectiveType": "ActivityCompleted",
+      "targetId": "combat_underwood_wolf_leader",
+      "targetValue": 1,
+      "descriptionId": "quest_clear_underwood_step_defeat_boss_id",
+      "required": true
+    },
+    {
+      "questId": "quest_prepare_for_wolves",
+      "stepId": "step_build_campfire",
+      "stepOrder": 10,
+      "objectiveType": "BuildingLevel",
+      "targetId": "building_campfire",
+      "targetValue": 1,
+      "descriptionId": "quest_prepare_for_wolves_step_build_campfire_id",
+      "required": true
+    },
+    {
+      "questId": "quest_prepare_for_wolves",
+      "stepId": "step_hunt_meat",
+      "stepOrder": 20,
+      "objectiveType": "ResourceCount",
+      "targetId": "resource_rabbit_meat",
+      "targetValue": 10,
+      "descriptionId": "quest_prepare_for_wolves_step_hunt_meat_id",
+      "required": true
+    },
+    {
+      "questId": "quest_prepare_for_wolves",
+      "stepId": "step_cook_meat",
+      "stepOrder": 30,
+      "objectiveType": "ItemCount",
+      "targetId": "consumable_roasted_rabbit_meat",
+      "targetValue": 10,
+      "descriptionId": "quest_prepare_for_wolves_step_cook_meat_id",
+      "required": true
+    }
+  ],
+  "questRewards": []
 }

@@ -329,6 +329,10 @@ namespace GuildIdle.Configs
         public SkillConfigDto[] skills = Array.Empty<SkillConfigDto>();
         public SkillProgressionConfigDto[] skillsProgression = Array.Empty<SkillProgressionConfigDto>();
         public EnumValueConfigDto[] enumValues = Array.Empty<EnumValueConfigDto>();
+        public QuestConfigDto[] quests = Array.Empty<QuestConfigDto>();
+        public QuestStartConditionConfigDto[] questStartConditions = Array.Empty<QuestStartConditionConfigDto>();
+        public QuestStepConfigDto[] questSteps = Array.Empty<QuestStepConfigDto>();
+        public QuestRewardConfigDto[] questRewards = Array.Empty<QuestRewardConfigDto>();
     }
 
     [Serializable]
@@ -467,6 +471,50 @@ namespace GuildIdle.Configs
     }
 
     [Serializable]
+    public sealed class QuestConfigDto
+    {
+        public string questId;
+        public string nameId;
+        public string descriptionId;
+        public string category;
+        public int sortOrder;
+        public bool isTutorial;
+    }
+
+    [Serializable]
+    public sealed class QuestStartConditionConfigDto
+    {
+        public string questId;
+        public string conditionType;
+        public string targetId;
+        public int value;
+    }
+
+    [Serializable]
+    public sealed class QuestStepConfigDto
+    {
+        public string questId;
+        public string stepId;
+        public int stepOrder;
+        public string objectiveType;
+        public string targetId;
+        public int targetValue;
+        public string descriptionId;
+        public bool required;
+    }
+
+    [Serializable]
+    public sealed class QuestRewardConfigDto
+    {
+        public string questId;
+        public string rewardType;
+        public string targetId;
+        public int min;
+        public int max;
+        public string grantMoment;
+    }
+
+    [Serializable]
     public sealed class BuildingsRuntimeConfigDto
     {
         public BuildingConfigDto[] buildings = Array.Empty<BuildingConfigDto>();
@@ -474,6 +522,9 @@ namespace GuildIdle.Configs
         public BuildActionConfigDto[] buildActions = Array.Empty<BuildActionConfigDto>();
         public BuildingActivityConfigDto[] buildingActivities = Array.Empty<BuildingActivityConfigDto>();
         public BuildingCraftableConfigDto[] buildingCraftables = Array.Empty<BuildingCraftableConfigDto>();
+        public SettlementStageConfigDto[] settlementStages = Array.Empty<SettlementStageConfigDto>();
+        public SettlementStageSlotConfigDto[] settlementStageSlots = Array.Empty<SettlementStageSlotConfigDto>();
+        public SettlementStageObjectiveConfigDto[] settlementStageObjectives = Array.Empty<SettlementStageObjectiveConfigDto>();
     }
 
     [Serializable]
@@ -548,6 +599,40 @@ namespace GuildIdle.Configs
         public int sortOrder;
         public string uiCategory;
         public bool enabled;
+    }
+
+    [Serializable]
+    public sealed class SettlementStageConfigDto
+    {
+        public string stageId;
+        public string nameId;
+        public string descriptionId;
+        public string stagePrefabId;
+        public int targetDurationSec;
+        public string completionRule;
+        public string nextStageId;
+        public int sortOrder;
+        public bool enabled;
+    }
+
+    [Serializable]
+    public sealed class SettlementStageSlotConfigDto
+    {
+        public string stageId;
+        public string slotId;
+        public string buildingId;
+        public int sortOrder;
+        public bool enabled;
+    }
+
+    [Serializable]
+    public sealed class SettlementStageObjectiveConfigDto
+    {
+        public string stageId;
+        public string questId;
+        public int weightPercent;
+        public bool required;
+        public int sortOrder;
     }
 
     [Serializable]

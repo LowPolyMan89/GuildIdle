@@ -32,7 +32,9 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"activities\""));
             Assert.That(runtimeJson, Does.Contain("\"workDetails\""));
             Assert.That(runtimeJson, Does.Contain("\"id\": \"work_active\""));
+            Assert.That(runtimeJson, Does.Contain("\"questId\": \"quest_active\""));
             Assert.That(runtimeJson, Does.Not.Contain("work_disabled"));
+            Assert.That(runtimeJson, Does.Not.Contain("quest_disabled"));
             Assert.That(runtimeJson, Does.Not.Contain("README"));
             Assert.That(runtimeJson, Does.Not.Contain("Название"));
             Assert.That(runtimeJson, Does.Not.Contain("notes"));
@@ -234,9 +236,9 @@ namespace GuildIdle.Editor.ConfigDownloader
             var message = report.ToDisplayMessage();
 
             Assert.That(report.Success, Is.False);
-            Assert.That(message, Does.Contain("EnumValues row 13 column 'enum_group'"));
-            Assert.That(message, Does.Contain("EnumValues row 14 column 'value'"));
-            Assert.That(message, Does.Contain("EnumValues row 15 column 'value' value 'Work': Duplicate enum value in group 'ActivityType'."));
+            Assert.That(message, Does.Contain("EnumValues row 14 column 'enum_group'"));
+            Assert.That(message, Does.Contain("EnumValues row 15 column 'value'"));
+            Assert.That(message, Does.Contain("EnumValues row 16 column 'value' value 'Work': Duplicate enum value in group 'ActivityType'."));
             Assert.That(message, Does.Not.Contain("Expected a number."));
         }
 
@@ -327,8 +329,23 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("Resource", "RequirementType", "Resource", "Resource requirement"),
                         Row("Resource", "RewardType", "Resource", "Resource reward"),
                         Row("UnlockLocation", "TriggerType", "UnlockLocation", "Unlock location"),
+                        Row("ResourceCount", "QuestObjective", "ResourceCount", "Resource-count quest objective"),
                         Row("OnStart", "Moment", "OnStart", "On start"),
                         Row("OnComplete", "Moment", "OnComplete", "On complete")),
+                    Sheet("Quests",
+                        Row("quest_id", "name_id", "description_id", "category", "sort_order", "is_tutorial", "enabled", "notes"),
+                        Row("quest_active", "quest.active.name", "quest.active.desc", "Tutorial", "10", "TRUE", "TRUE", "note"),
+                        Row("quest_disabled", "quest.disabled.name", "quest.disabled.desc", "Tutorial", "20", "TRUE", "FALSE", "note")),
+                    Sheet("QuestStartConditions",
+                        Row("quest_id", "condition_type", "target_id", "value", "notes"),
+                        Row("quest_active", "NewGame", "", "1", "note"),
+                        Row("quest_disabled", "NewGame", "", "1", "note")),
+                    Sheet("QuestSteps",
+                        Row("quest_id", "step_id", "step_order", "objective_type", "target_id", "target_value", "description_id", "required", "notes"),
+                        Row("quest_active", "step_collect", "10", "ResourceCount", "resource_pine_wood", "1", "quest.step.collect", "TRUE", "note"),
+                        Row("quest_disabled", "step_disabled", "10", "ResourceCount", "resource_pine_wood", "1", "quest.step.disabled", "TRUE", "note")),
+                    Sheet("QuestRewards",
+                        Row("quest_id", "reward_type", "target_id", "min", "max", "grant_moment", "notes")),
                     Sheet("README", Row("README"), Row("This sheet must not be emitted"))
                 }
             };
