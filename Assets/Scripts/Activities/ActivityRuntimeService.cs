@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
-using GuildIdle.Player;
+using GuildIdle.Core;
 using UnityEngine;
+using CoreActivityRuntimeStatus = GuildIdle.Core.ActivityRuntimeStatus;
 
 namespace GuildIdle.Activities
 {
@@ -10,15 +11,13 @@ namespace GuildIdle.Activities
     {
         public const int MaxCyclesPerTick = 100;
 
-        private readonly PlayerState _state;
-        private readonly ISaveStorage _storage;
+        private readonly IActivityRuntimeStore _store;
         private readonly IActivityPlayerState _activityState;
 
-        public ActivityRuntimeService(PlayerState state, ISaveStorage storage = null)
+        public ActivityRuntimeService(IActivityRuntimeStore store, IActivityPlayerState activityState)
         {
-            _state = state ?? throw new ArgumentNullException(nameof(state));
-            _storage = storage;
-            _activityState = new PlayerStateActivityAdapter(state);
+            _store = store ?? throw new ArgumentNullException(nameof(store));
+            _activityState = activityState ?? throw new ArgumentNullException(nameof(activityState));
         }
 
         public ActivityStartResult Start(string activityId, string heroId)
@@ -42,7 +41,7 @@ namespace GuildIdle.Activities
             var executions = GetExecutions();
             foreach (var execution in executions)
             {
-                if (execution == null || execution.status != ActivityRuntimeStatus.Running)
+                if (execution == null || execution.status != CoreActivityRuntimeStatus.Running)
                     continue;
 
                 result.processedExecutions++;
@@ -205,7 +204,7 @@ namespace GuildIdle.Activities
                 executionId = executionId,
                 activityId = activityId,
                 heroId = heroId,
-                status = ActivityRuntimeStatus.Running,
+                status = CoreActivityRuntimeStatus.Running,
                 elapsedSeconds = 0f,
                 completedCycles = 0,
                 startedAtUnixSeconds = startedAt
@@ -351,7 +350,7 @@ namespace GuildIdle.Activities
                 executionId = execution.executionId,
                 activityId = execution.activityId,
                 heroId = execution.heroId,
-                status = execution.status,
+                status = (ActivityRuntimeStatus)execution.status,
                 elapsedSeconds = execution.elapsedSeconds,
                 durationSeconds = duration,
                 progress = progress,
@@ -424,7 +423,7 @@ namespace GuildIdle.Activities
             foreach (var execution in GetExecutions())
             {
                 if (execution == null ||
-                    execution.status != ActivityRuntimeStatus.Running ||
+                    execution.status != CoreActivityRuntimeStatus.Running ||
                     string.IsNullOrWhiteSpace(execution.heroId))
                 {
                     continue;
@@ -438,32 +437,32 @@ namespace GuildIdle.Activities
 
         private ActivityExecutionSaveData[] GetExecutions()
         {
-            return _state.GetActivityExecutions();
+            return _store.GetActivityExecutions();
         }
 
         private ActivityExecutionSaveData GetExecution(string executionId)
         {
-            return _state.GetActivityExecution(executionId);
+            return _store.GetActivityExecution(executionId);
         }
 
         private bool AddExecution(ActivityExecutionSaveData execution)
         {
-            return _state.AddActivityExecution(execution);
+            return _store.AddActivityExecution(execution);
         }
 
         private bool UpdateExecution(ActivityExecutionSaveData execution)
         {
-            return _state.UpdateActivityExecution(execution);
+            return _store.UpdateActivityExecution(execution);
         }
 
         private bool RemoveExecution(string executionId)
         {
-            return _state.RemoveActivityExecution(executionId);
+            return _store.RemoveActivityExecution(executionId);
         }
 
         private bool Save()
         {
-            return _storage != null ? SaveService.Save(_state, _storage) : SaveService.Save(_state);
+            return _store.Save();
         }
 
         private ActivityStartResult FinishStart(ActivityStartResult result, List<ActivityRequirementIssue> issues, bool success)

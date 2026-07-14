@@ -1,3 +1,4 @@
+using GuildIdle.Core;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
@@ -11,7 +12,7 @@ namespace GuildIdle.Player
         public static bool IsLoaded => _state != null && RuntimeConfigs.IsLoaded;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void Bootstrap()
+        public static void Bootstrap()
         {
             RuntimeConfigs.OnLoaded -= LoadAfterConfigs;
             RuntimeConfigs.OnLoaded += LoadAfterConfigs;
@@ -254,7 +255,7 @@ namespace GuildIdle.Player
             Load();
         }
 
-        private static void HandleConfigLoadFailed(string error)
+        public static void HandleConfigLoadFailed(string error)
         {
             _state = null;
             Debug.LogError($"[Player] Runtime configs failed to load; player state was not initialized. {error}");

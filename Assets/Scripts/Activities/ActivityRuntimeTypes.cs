@@ -1,15 +1,17 @@
 using System;
 using GuildIdle.Configs;
-using GuildIdle.Player;
+using GuildIdle.Core;
 
 namespace GuildIdle.Activities
 {
+    // Re-exported from GuildIdle.Core to break the Player → Activities dependency cycle.
+    // Runtime code should use GuildIdle.Core.ActivityRuntimeStatus directly.
     public enum ActivityRuntimeStatus
     {
-        None = 0,
-        Running = 1,
-        Completed = 2,
-        Cancelled = 3
+        None = GuildIdle.Core.ActivityRuntimeStatus.None,
+        Running = GuildIdle.Core.ActivityRuntimeStatus.Running,
+        Completed = GuildIdle.Core.ActivityRuntimeStatus.Completed,
+        Cancelled = GuildIdle.Core.ActivityRuntimeStatus.Cancelled
     }
 
     public sealed class ActivityRuntimeInfo

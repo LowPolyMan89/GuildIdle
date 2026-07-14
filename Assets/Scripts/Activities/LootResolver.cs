@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
+using GuildIdle.Core;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
@@ -156,7 +157,7 @@ namespace GuildIdle.Activities
             List<LootDropResult> drops,
             List<string> issues)
         {
-            if (string.Equals(rollMode, "GuaranteedAll", StringComparison.OrdinalIgnoreCase))
+            if (LootRollMode.Matches(rollMode, LootRollMode.GuaranteedAll))
             {
                 foreach (var entry in entries)
                 {
@@ -167,8 +168,8 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (!string.Equals(rollMode, "WeightedOne", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(rollMode, "WeightedMany", StringComparison.OrdinalIgnoreCase))
+            if (!LootRollMode.Matches(rollMode, LootRollMode.WeightedOne) &&
+                !LootRollMode.Matches(rollMode, LootRollMode.WeightedMany))
             {
                 issues.Add($"Unsupported roll mode '{rollMode}' in loot table '{lootTableId}' group '{rollGroup}'.");
                 return;
@@ -183,7 +184,7 @@ namespace GuildIdle.Activities
 
                 AddDrop(selected.dropType, selected.targetId, ActivityResolverUtilities.PositiveAmount(selected.min, selected.max, random), selected.entryId, drops, issues);
 
-                if (string.Equals(rollMode, "WeightedOne", StringComparison.OrdinalIgnoreCase))
+                if (LootRollMode.Matches(rollMode, LootRollMode.WeightedOne))
                     break;
             }
         }

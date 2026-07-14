@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
-using GuildIdle.Activities;
 using GuildIdle.Configs;
+using GuildIdle.Core;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Player
 {
-    public sealed class PlayerState
+    public sealed class PlayerState : IActivityRuntimeStore
     {
         private readonly Dictionary<string, long> _currencies = new Dictionary<string, long>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _items = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -1047,6 +1047,11 @@ namespace GuildIdle.Player
             {
                 executions = GetActivityExecutions()
             };
+        }
+
+        public bool Save()
+        {
+            return SaveService.Save(this);
         }
 
         private static string[] BuildSortedArray(HashSet<string> values)

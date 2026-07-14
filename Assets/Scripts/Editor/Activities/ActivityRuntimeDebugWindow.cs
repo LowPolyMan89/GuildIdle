@@ -1,4 +1,5 @@
 using GuildIdle.Activities;
+using GuildIdle.Player;
 using UnityEditor;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
@@ -9,6 +10,7 @@ namespace GuildIdle.Editor.Activities
     public sealed class ActivityRuntimeDebugWindow : EditorWindow
     {
         private ActivityRuntimeService _runtime;
+        private PlayerState _boundState;
         private string _activityId = "work_pine_wood";
         private string _heroId = "ren";
         private float _tickSeconds = 1f;
@@ -68,8 +70,11 @@ namespace GuildIdle.Editor.Activities
             if (!Application.isPlaying || !RuntimeConfigs.IsLoaded || !RuntimePlayer.IsLoaded)
                 return false;
 
-            if (_runtime == null)
-                _runtime = new ActivityRuntimeService(RuntimePlayer.State);
+            if (_runtime == null || !ReferenceEquals(_boundState, RuntimePlayer.State))
+            {
+                _runtime = PlayerRuntimeComposition.CreateRuntimeService();
+                _boundState = RuntimePlayer.State;
+            }
 
             return true;
         }

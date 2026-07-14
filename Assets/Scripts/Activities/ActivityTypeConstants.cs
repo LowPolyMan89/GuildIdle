@@ -1,8 +1,9 @@
 using System;
+using GuildIdle.Core;
 
 namespace GuildIdle.Activities
 {
-    internal static class RequirementType
+    public static class RequirementType
     {
         public const string SkillLevel = "SkillLevel";
         public const string LocationUnlocked = "LocationUnlocked";
@@ -17,9 +18,12 @@ namespace GuildIdle.Activities
 
         public static bool Matches(string value, string constant) =>
             string.Equals(value, constant, StringComparison.OrdinalIgnoreCase);
+
+        public static bool TryParse(string value, out RequirementTypeEnum result) =>
+            ActivityTypeParser.TryParseRequirementType(value, out result);
     }
 
-    internal static class RewardType
+    public static class RewardType
     {
         public const string Resource = "Resource";
         public const string Item = "Item";
@@ -36,9 +40,15 @@ namespace GuildIdle.Activities
 
         public static bool Matches(string value, string constant) =>
             string.Equals(value, constant, StringComparison.OrdinalIgnoreCase);
+
+        public static bool TryParse(string value, out RewardTypeEnum result) =>
+            ActivityTypeParser.TryParseRewardType(value, out result);
+
+        public static bool TryParseLegacy(string value, out RewardTypeEnum result) =>
+            ActivityTypeParser.TryParseRewardTypeLegacy(value, out result);
     }
 
-    internal static class DropType
+    public static class DropType
     {
         public const string Resource = "Resource";
         public const string Item = "Item";
@@ -50,9 +60,12 @@ namespace GuildIdle.Activities
 
         public static bool Matches(string value, string constant) =>
             string.Equals(value, constant, StringComparison.OrdinalIgnoreCase);
+
+        public static bool TryParse(string value, out DropTypeEnum result) =>
+            ActivityTypeParser.TryParseDropType(value, out result);
     }
 
-    internal static class TriggerType
+    public static class TriggerType
     {
         public const string ActivityCompleted = "ActivityCompleted";
         public const string BuildingLevel = "BuildingLevel";
@@ -62,9 +75,12 @@ namespace GuildIdle.Activities
 
         public static bool Matches(string value, string constant) =>
             string.Equals(value, constant, StringComparison.OrdinalIgnoreCase);
+
+        public static bool TryParse(string value, out TriggerTypeEnum result) =>
+            ActivityTypeParser.TryParseTriggerType(value, out result);
     }
 
-    internal static class GrantMoment
+    public static class GrantMoment
     {
         public const string OnStart = "OnStart";
         public const string OnCycle = "OnCycle";
@@ -73,5 +89,8 @@ namespace GuildIdle.Activities
 
         public static bool Matches(string value, string constant) =>
             string.Equals(value, constant, StringComparison.OrdinalIgnoreCase);
+
+        public static bool TryParse(string value, out GrantMomentEnum result) =>
+            ActivityTypeParser.TryParseGrantMoment(value, out result);
     }
 }

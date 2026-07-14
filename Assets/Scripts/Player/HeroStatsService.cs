@@ -18,47 +18,8 @@ namespace GuildIdle.Player
             return level;
         }
 
-        public static int CalculateMaxFatigue(HeroConfigDto hero)
-        {
-            if (hero?.baseStats == null)
-                return 0;
-
-            foreach (var formula in RuntimeConfigs.Formulas.HeroDerivedStats)
-            {
-                if (formula == null || !string.Equals(formula.derivedStatId, "max_fatigue", System.StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var baseValue = formula.baseValue;
-                var statValue = GetBaseStatValue(hero.baseStats, formula.primaryStat);
-                var levelValue = 1 * formula.levelMultiplier;
-                var raw = baseValue + (statValue * formula.primaryStatMultiplier) + levelValue;
-
-                return formula.rounding switch
-                {
-                    "Round" => (int)System.Math.Round(raw),
-                    "Floor" => (int)System.Math.Floor(raw),
-                    "Ceil" => (int)System.Math.Ceiling(raw),
-                    _ => (int)raw
-                };
-            }
-
-            return 0;
-        }
-
-        private static int GetBaseStatValue(HeroBaseStatsDto stats, string statName)
-        {
-            if (string.IsNullOrWhiteSpace(statName))
-                return 0;
-
-            return statName.ToUpperInvariant() switch
-            {
-                "STRENGTH" => stats.strength,
-                "AGILITY" => stats.agility,
-                "INTELLIGENCE" => stats.intelligence,
-                "LUCK" => stats.luck,
-                "ENDURANCE" => stats.endurance,
-                _ => 0
-            };
-        }
+        // TODO: Вынести CalculateHeroMaxFatigue из PlayerState в этот сервис
+        // с сохранением точной логики (GetHeroStat, GetBaseStat, GetGrowthStat,
+        // RoundFormulaValue, проверка formula.enabled).
     }
 }

@@ -4,6 +4,7 @@ using GuildIdle.Player;
 using NUnit.Framework;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace GuildIdle.Editor.Player
 {
@@ -69,6 +70,44 @@ namespace GuildIdle.Editor.Player
             // After reload, the item should be gone (fresh default state)
             Assert.That(global::GuildIdle.Player.Player.GetItem("resource_pine_wood"), Is.EqualTo(0),
                 "Load() replaces _state with a fresh load from SaveService.");
+        }
+
+        [Test]
+        public void Bootstrap_DoesNotDoubleLoad_AfterConfigReload()
+        {
+            // Bootstrap подписывается на OnLoaded
+            global::GuildIdle.Player.Player.Bootstrap();
+
+            // Симулируем OnLoaded → LoadAfterConfigs
+            global::GuildIdle.Player.Player.LoadAfterConfigs();
+            Assert.That(global::GuildIdle.Player.Player.IsLoaded, Is.True);
+            Assert.That(global::GuildIdle.Player.Player.AddItem("resource_pine_wood", 5), Is.True);
+
+            // Симулируем OnLoadFailed — _state сбрасывается
+            LogAssert.Expect(LogType.Error, "[Player] Runtime configs failed to load; player state was not initialized. test error");
+            global::GuildIdle.Player.Player.HandleConfigLoadFailed("test error");
+            Assert.That(global::GuildIdle.Player.Player.IsLoaded, Is.False);
+
+            // Симулируем Configs.Reload → OnLoaded
+            global::GuildIdle.Player.Player.LoadAfterConfigs();
+            Assert.That(global::GuildIdle.Player.Player.IsLoaded, Is.True);
+
+            // После reload состояние свежее — предмета нет
+            Assert.That(global::GuildIdle.Player.Player.GetItem("resource_pine_wood"), Is.EqualTo(0),
+                "After config fail + reload, LoadAfterConfigs must create fresh state.");
+        }
+
+        [Test]
+        public void Bootstrap_SubscribesOnce_AfterConfigFailThenReload()
+        {
+            global::GuildIdle.Player.Player.Bootstrap();
+            global::GuildIdle.Player.Player.LoadAfterConfigs();
+            Assert.That(global::GuildIdle.Player.Player.AddItem("resource_pine_wood", 3), Is.True);
+
+            // Второй OnLoaded — guard не даёт перезагрузить
+            global::GuildIdle.Player.Player.LoadAfterConfigs();
+            Assert.That(global::GuildIdle.Player.Player.GetItem("resource_pine_wood"), Is.EqualTo(3),
+                "Second LoadAfterConfigs must not reset state.");
         }
 
         private static ConfigDatabase CreateDatabase()

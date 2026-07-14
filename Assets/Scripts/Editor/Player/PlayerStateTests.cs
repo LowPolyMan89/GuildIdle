@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using GuildIdle.Activities;
 using GuildIdle.Configs;
+using GuildIdle.Core;
 using GuildIdle.Editor.Configs;
 using GuildIdle.Player;
 using NUnit.Framework;
@@ -153,7 +154,7 @@ namespace GuildIdle.Editor.Player
                 executionId = "exec_1",
                 activityId = "combat_first_map_node",
                 heroId = "ren",
-                status = ActivityRuntimeStatus.Running
+                status = GuildIdle.Core.ActivityRuntimeStatus.Running
             }), Is.True);
 
             var storage = new MemorySaveStorage();

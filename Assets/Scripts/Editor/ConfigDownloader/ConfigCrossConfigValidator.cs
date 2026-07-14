@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using GuildIdle.Core;
 using UnityEngine;
 
 namespace GuildIdle.Editor.ConfigDownloader
@@ -1123,48 +1124,56 @@ namespace GuildIdle.Editor.ConfigDownloader
                     if (IsBlank(targetId))
                         continue;
 
-                    switch (row.Get("reward_type"))
+                    var rewardTypeRaw = row.Get("reward_type");
+                    if (!ActivityTypeParser.TryParseRewardTypeLegacy(rewardTypeRaw, out var rewardType))
                     {
-                        case "Resource":
+                        AddIssue(report, activity.Source.DisplayName, "ActivityRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Unknown reward_type '{rewardTypeRaw}'.");
+                        break;
+                    }
+
+                    switch (rewardType)
+                    {
+                        case RewardTypeEnum.Resource:
                             if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                                 ValidateItemTarget(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Items, ItemTargetKind.Resource, "Items Configs / Ресурсы.id");
                             break;
-                        case "Item":
+                        case RewardTypeEnum.Item:
                             if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                                 ValidateItemTarget(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Items, ItemTargetKind.AnyItem, "Items Configs item/recipe/consumable registry");
                             break;
-                        case "Equipment":
+                        case RewardTypeEnum.Equipment:
                             if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                                 ValidateItemTarget(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Items, ItemTargetKind.Equipment, "Items Configs / Снаряжение.id");
                             break;
-                        case "Consumable":
+                        case RewardTypeEnum.Consumable:
                             if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                                 ValidateItemTarget(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Items, ItemTargetKind.Consumable, "Items Configs / Расходники.id");
                             break;
-                        case "Recipe":
+                        case RewardTypeEnum.Recipe:
                             if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                                 ValidateItemTarget(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Items, ItemTargetKind.Recipe, "Items Configs / Рецепты.id");
                             break;
-                        case "SkillExp":
+                        case RewardTypeEnum.SkillExp:
                             ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", activity.SkillIds, "Activity Configs / Skills.skill_id");
                             break;
-                        case "Currency":
+                        case RewardTypeEnum.Currency:
+                        case RewardTypeEnum.Gold:
                             if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Items.CurrencyIds, "Items Configs / Валюты.currency_id");
                             break;
-                        case "LootTable":
+                        case RewardTypeEnum.LootTable:
                             if (TryGetRequiredRegistry(report, registry.Loot, "Loot Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Loot.LootTableIds, "Loot Configs / LootTables.loot_table_id");
                             break;
-                        case "Hero":
+                        case RewardTypeEnum.Hero:
                             if (TryGetRequiredRegistry(report, registry.Heroes, "Heroes Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
                             break;
-                        case "BuildingUnlock":
+                        case RewardTypeEnum.Building:
                             if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
                             break;
-                        case "MapAccess":
+                        case RewardTypeEnum.Location:
                             if (TryGetRequiredRegistry(report, registry.Map, "Map Configs"))
                                 ValidateMapAccess(report, activity.Source.DisplayName, "ActivityRewards", row, registry.Map);
                             break;
@@ -1327,51 +1336,56 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static void ValidateQuestRewardTarget(ActivityRegistry activity, ConfigRegistry registry, ConfigPipelineReport report, ConfigSheetDataRow row)
             {
-                switch (row.Get("reward_type"))
+                var rewardTypeRaw = row.Get("reward_type");
+                if (!ActivityTypeParser.TryParseRewardTypeLegacy(rewardTypeRaw, out var rewardType))
                 {
-                    case "Resource":
+                    AddIssue(report, activity.Source.DisplayName, "QuestRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Unknown reward_type '{rewardTypeRaw}'.");
+                    return;
+                }
+
+                switch (rewardType)
+                {
+                    case RewardTypeEnum.Resource:
                         if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                             ValidateItemTarget(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Items, ItemTargetKind.Resource, "Items Configs / resources.id");
                         break;
-                    case "Item":
+                    case RewardTypeEnum.Item:
                         if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                             ValidateItemTarget(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Items, ItemTargetKind.AnyItem, "Items Configs item/recipe/consumable registry");
                         break;
-                    case "Equipment":
+                    case RewardTypeEnum.Equipment:
                         if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                             ValidateItemTarget(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Items, ItemTargetKind.Equipment, "Items Configs equipment id");
                         break;
-                    case "Consumable":
+                    case RewardTypeEnum.Consumable:
                         if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                             ValidateItemTarget(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Items, ItemTargetKind.Consumable, "Items Configs consumables.id");
                         break;
-                    case "Recipe":
+                    case RewardTypeEnum.Recipe:
                         if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                             ValidateItemTarget(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Items, ItemTargetKind.Recipe, "Items Configs recipes.id");
                         break;
-                    case "SkillExp":
+                    case RewardTypeEnum.SkillExp:
                         ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", activity.SkillIds, "Activity Configs / Skills.skill_id");
                         break;
-                    case "Currency":
-                    case "Gold":
+                    case RewardTypeEnum.Currency:
+                    case RewardTypeEnum.Gold:
                         if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Items.CurrencyIds, "Items Configs / currencies.currency_id");
                         break;
-                    case "LootTable":
+                    case RewardTypeEnum.LootTable:
                         if (TryGetRequiredRegistry(report, registry.Loot, "Loot Configs"))
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Loot.LootTableIds, "Loot Configs / LootTables.loot_table_id");
                         break;
-                    case "Hero":
+                    case RewardTypeEnum.Hero:
                         if (TryGetRequiredRegistry(report, registry.Heroes, "Heroes Configs"))
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
                         break;
-                    case "BuildingUnlock":
-                    case "UnlockBuilding":
+                    case RewardTypeEnum.Building:
                         if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
                         break;
-                    case "MapAccess":
-                    case "UnlockLocation":
+                    case RewardTypeEnum.Location:
                         if (TryGetRequiredRegistry(report, registry.Map, "Map Configs"))
                             ValidateMapAccess(report, activity.Source.DisplayName, "QuestRewards", row, registry.Map);
                         break;

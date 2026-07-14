@@ -1,4 +1,5 @@
 using System;
+using GuildIdle.Core;
 
 namespace GuildIdle.Player
 {
@@ -67,23 +68,5 @@ namespace GuildIdle.Player
     {
         public string buildingId;
         public int level;
-    }
-
-    [Serializable]
-    public sealed class ActivityRuntimeSaveData
-    {
-        public ActivityExecutionSaveData[] executions = Array.Empty<ActivityExecutionSaveData>();
-    }
-
-    [Serializable]
-    public sealed class ActivityExecutionSaveData
-    {
-        public string executionId;
-        public string activityId;
-        public string heroId;
-        public GuildIdle.Activities.ActivityRuntimeStatus status;
-        public float elapsedSeconds;
-        public int completedCycles;
-        public long startedAtUnixSeconds;
     }
 }
