@@ -203,9 +203,19 @@ namespace GuildIdle.Core
             where TEnum : struct
         {
             result = default;
-            return !string.IsNullOrWhiteSpace(value) &&
-                Enum.TryParse(value.Trim(), true, out result) &&
-                Enum.IsDefined(typeof(TEnum), result);
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            var normalized = value.Trim();
+            foreach (var name in Enum.GetNames(typeof(TEnum)))
+            {
+                if (!string.Equals(normalized, name, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                return Enum.TryParse(name, false, out result);
+            }
+
+            return false;
         }
 
         private static bool MatchesAny(string value, params string[] candidates)

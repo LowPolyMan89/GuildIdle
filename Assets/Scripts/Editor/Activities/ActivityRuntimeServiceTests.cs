@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using GuildIdle.Activities;
 using GuildIdle.Configs;
+using GuildIdle.Editor.Configs;
 using GuildIdle.Player;
 using NUnit.Framework;
 using UnityEngine;
@@ -11,10 +12,14 @@ namespace GuildIdle.Editor.Activities
 {
     public sealed class ActivityRuntimeServiceTests
     {
+        private PlayerStateFactory _factory;
+
         [SetUp]
         public void SetUp()
         {
-            RuntimeConfigs.SetDatabaseForTests(CreateDatabase());
+            var database = CreateDatabase();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            _factory = TestPlayerComposition.CreatePlayerStateFactory(database);
         }
 
         [Test]
@@ -162,7 +167,7 @@ namespace GuildIdle.Editor.Activities
             Assert.That(runtime.Tick(3f).success, Is.True);
 
             Assert.That(SaveService.Save(state, storage), Is.True);
-            var restored = SaveService.Load(storage);
+            var restored = SaveService.Load(_factory, storage);
             var execution = restored.GetActivityExecutions()[0];
 
             Assert.That(execution.activityId, Is.EqualTo("work_pine_wood"));
@@ -194,9 +199,9 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.IsHeroBusy("aska"), Is.True);
         }
 
-        private static PlayerState NewState()
+        private PlayerState NewState()
         {
-            var state = new PlayerState(new SaveData());
+            var state = _factory.Create(new SaveData());
             state.AddHero("ren");
             return state;
         }
@@ -257,7 +262,7 @@ namespace GuildIdle.Editor.Activities
                         Reward("work_pine_wood", "SkillExp", "skill_gathering", 1, "OnCycle"),
                         Reward("bad_cycle", "Unsupported", "bad_reward", 1, "OnCycle"),
                         Reward("one_shot_new", "Resource", "resource_pine_wood", 1, "OnComplete"),
-                        Reward("one_shot_new", "Gold", "ignored", 2, "OnFirstComplete")
+                        Reward("one_shot_new", "Gold", "gold_id", 2, "OnFirstComplete")
                     }
                 },
                 new BuildingsRuntimeConfigDto

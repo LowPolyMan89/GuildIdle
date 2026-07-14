@@ -350,7 +350,7 @@ namespace GuildIdle.Activities
                 executionId = execution.executionId,
                 activityId = execution.activityId,
                 heroId = execution.heroId,
-                status = (ActivityRuntimeStatus)execution.status,
+                status = execution.status,
                 elapsedSeconds = execution.elapsedSeconds,
                 durationSeconds = duration,
                 progress = progress,

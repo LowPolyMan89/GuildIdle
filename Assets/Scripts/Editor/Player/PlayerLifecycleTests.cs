@@ -1,4 +1,5 @@
 using System;
+using GuildIdle.Configs;
 using GuildIdle.Player;
 using NUnit.Framework;
 
@@ -6,6 +7,8 @@ namespace GuildIdle.Editor.Player
 {
     public sealed class PlayerLifecycleTests
     {
+        private static readonly HeroStatsService HeroStats = new HeroStatsService(new EmptyHeroStatsConfigProvider());
+
         [Test]
         public void Start_WhenConfigsAreAlreadyLoaded_LoadsPlayerOnce()
         {
@@ -16,7 +19,7 @@ namespace GuildIdle.Editor.Player
             using var service = CreateService(lifecycle, () => state != null, () =>
             {
                 loadCount++;
-                state = new PlayerState(new SaveData());
+                state = new PlayerState(new SaveData(), HeroStats);
                 return true;
             });
 
@@ -37,7 +40,7 @@ namespace GuildIdle.Editor.Player
             using var service = CreateService(lifecycle, () => state != null, () =>
             {
                 loadCount++;
-                state = new PlayerState(new SaveData());
+                state = new PlayerState(new SaveData(), HeroStats);
                 return true;
             });
             service.Start();
@@ -64,7 +67,7 @@ namespace GuildIdle.Editor.Player
                 () =>
                 {
                     loadCount++;
-                    state = new PlayerState(new SaveData());
+                    state = new PlayerState(new SaveData(), HeroStats);
                     return true;
                 },
                 error =>
@@ -128,6 +131,24 @@ namespace GuildIdle.Editor.Player
             {
                 IsLoaded = false;
                 LoadFailed?.Invoke(error);
+            }
+        }
+
+        private sealed class EmptyHeroStatsConfigProvider : IHeroStatsConfigProvider
+        {
+            public HeroGrowthConfigDto[] HeroGrowth => Array.Empty<HeroGrowthConfigDto>();
+            public SkillProgressionConfigDto[] SkillProgression => Array.Empty<SkillProgressionConfigDto>();
+
+            public bool TryGetHero(string heroId, out HeroConfigDto hero)
+            {
+                hero = null;
+                return false;
+            }
+
+            public bool TryGetHeroDerivedStat(string formulaId, out HeroDerivedStatConfigDto formula)
+            {
+                formula = null;
+                return false;
             }
         }
     }

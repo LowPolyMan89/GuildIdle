@@ -13,27 +13,33 @@ namespace GuildIdle.Editor.Player
 {
     public sealed class PlayerStateTests
     {
+        private PlayerStateFactory _factory;
+
         [SetUp]
         public void SetUp()
         {
-            RuntimeConfigs.SetDatabaseForTests(CreateDatabase());
+            var database = CreateDatabase();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            _factory = TestPlayerComposition.CreatePlayerStateFactory(database);
         }
 
         [Test]
         public void CreateDefault_AppliesStarterHeroAndEquipment()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
 
             Assert.That(state.IsHeroUnlocked("ren"), Is.True);
             Assert.That(state.HasHero("ren"), Is.True);
             Assert.That(state.HasHeroState("ren"), Is.True);
-            Assert.That(state.GetHeroMaxFatigue("ren"), Is.GreaterThan(0));
+            Assert.That(state.GetHeroMaxFatigue("ren"), Is.EqualTo(121));
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(state.GetHeroMaxFatigue("ren")));
             Assert.That(state.GetItem("item_wooden_club"), Is.EqualTo(1));
             Assert.That(state.IsBuildingUnlocked("building_hall"), Is.True);
             Assert.That(state.GetBuildingLevel("building_hall"), Is.EqualTo(0));
             Assert.That(state.IsBuildingUnlocked("building_watchtower"), Is.True);
             Assert.That(state.GetBuildingLevel("building_watchtower"), Is.EqualTo(0));
+            Assert.That(state.IsBuildingUnlocked("building_tavern"), Is.True);
+            Assert.That(state.GetBuildingLevel("building_tavern"), Is.EqualTo(1));
 
             var saveData = state.ToSaveData();
             Assert.That(saveData.heroes, Has.Length.EqualTo(1));
@@ -43,7 +49,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void Items_AddAndSpendWithoutGoingNegative()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
 
             Assert.That(state.AddItem("resource_pine_wood", 3), Is.True);
             Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(3));
@@ -56,7 +62,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void Currency_IsSeparateFromItems()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
 
             Assert.That(state.AddCurrency("gold_id", 10), Is.True);
             Assert.That(state.GetCurrency("gold_id"), Is.EqualTo(10));
@@ -73,7 +79,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void AddHero_DoesNotDuplicate()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
 
             Assert.That(state.AddHero("ren"), Is.False);
 
@@ -85,7 +91,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void BuildingLevel_RequiresUnlockedBuilding()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
 
             using (var logs = new CapturingLogHandler())
             {
@@ -104,7 +110,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void BuildingClickability_UsesClickableRequirement()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
 
             Assert.That(state.CanClickBuilding("building_hall"), Is.True);
             Assert.That(state.CanClickBuilding("building_tavern"), Is.True);
@@ -118,7 +124,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void LocationAndActivity_CanBeUnlockedAndCompleted()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
 
             Assert.That(state.UnlockLocation("old_wolf_den_1_1"), Is.True);
             Assert.That(state.IsLocationUnlocked("old_wolf_den_1_1"), Is.True);
@@ -129,7 +135,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void UnknownId_DoesNotMutateState()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
             var before = state.GetItem("resource_pine_wood");
 
             using (var logs = new CapturingLogHandler())
@@ -144,7 +150,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void HeroState_SaveLoadRoundtripPreservesRuntimeState()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
             var maxFatigue = state.GetHeroMaxFatigue("ren");
 
             Assert.That(state.SpendHeroFatigue("ren", 5), Is.True);
@@ -159,7 +165,7 @@ namespace GuildIdle.Editor.Player
 
             var storage = new MemorySaveStorage();
             Assert.That(SaveService.Save(state, storage), Is.True);
-            var restored = SaveService.Load(storage);
+            var restored = SaveService.Load(_factory, storage);
 
             Assert.That(restored.GetHeroFatigue("ren"), Is.EqualTo(maxFatigue - 5));
             Assert.That(restored.GetHeroSkillExp("ren", "skill_gathering"), Is.EqualTo(150));
@@ -170,7 +176,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void Load_V1SaveWithoutHeroStatesHydratesAcquiredHeroes()
         {
-            var state = new PlayerState(
+            var state = _factory.Create(
                 new SaveData
                 {
                     saveVersion = 1,
@@ -193,7 +199,7 @@ namespace GuildIdle.Editor.Player
                 SaveService.SaveKey,
                 "{\"saveVersion\":3,\"heroSlots\":[{\"slotIndex\":0,\"heroId\":\"ren\"}],\"activityRuntime\":{\"executions\":[{\"executionId\":\"exec_legacy\",\"activityId\":\"combat_first_map_node\",\"heroId\":\"ren\",\"heroSlotIndex\":0,\"status\":1}]}}");
 
-            var state = SaveService.Load(storage);
+            var state = SaveService.Load(_factory, storage);
 
             Assert.That(state.HasHero("ren"), Is.True);
             Assert.That(state.IsHeroBusy("ren"), Is.True);
@@ -207,7 +213,7 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void HeroBusy_IsIdempotentForSameExecutionAndRejectsDifferentExecution()
         {
-            var state = PlayerState.CreateDefault();
+            var state = _factory.CreateDefault();
 
             Assert.That(state.SetHeroBusy("ren", "exec_1"), Is.True);
             Assert.That(state.SetHeroBusy("ren", "exec_1"), Is.True);
@@ -233,7 +239,7 @@ namespace GuildIdle.Editor.Player
             PlayerState state;
             using (var logs = new CapturingLogHandler())
             {
-                state = SaveService.Load(storage);
+                state = SaveService.Load(_factory, storage);
                 logs.AssertErrorContains("[SaveService] Failed to load player save JSON. Creating default save.");
             }
 
@@ -248,11 +254,82 @@ namespace GuildIdle.Editor.Player
         {
             var storage = new MemorySaveStorage();
 
-            var state = SaveService.Load(storage);
+            var state = SaveService.Load(_factory, storage);
 
             Assert.That(state.HasHero("ren"), Is.True);
             Assert.That(storage.HasKey(SaveService.SaveKey), Is.True);
             Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"heroId\":\"ren\""));
+        }
+
+        [Test]
+        public void SaveService_LoadsExistingV4ThroughProvidedFactoryWithoutChangingData()
+        {
+            var storage = new MemorySaveStorage();
+            storage.SetString(
+                SaveService.SaveKey,
+                "{\"saveVersion\":4,\"currencies\":[{\"currencyId\":\"gold_id\",\"amount\":7}],\"items\":[{\"itemId\":\"resource_pine_wood\",\"amount\":3}],\"unlockedHeroes\":[\"ren\"],\"acquiredHeroes\":[\"ren\"],\"heroes\":[{\"heroId\":\"ren\",\"level\":1,\"exp\":0,\"fatigue\":77,\"maxFatigue\":121,\"skills\":[{\"skillId\":\"skill_gathering\",\"level\":2,\"exp\":150}]}],\"unlockedBuildings\":[\"building_tavern\"],\"buildingLevels\":[{\"buildingId\":\"building_tavern\",\"level\":1}]}");
+
+            var state = SaveService.Load(_factory, storage);
+            var saveData = state.ToSaveData();
+
+            Assert.That(saveData.saveVersion, Is.EqualTo(4));
+            Assert.That(state.GetCurrency("gold_id"), Is.EqualTo(7));
+            Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(3));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(77));
+            Assert.That(state.GetHeroMaxFatigue("ren"), Is.EqualTo(121));
+            Assert.That(state.GetHeroSkillExp("ren", "skill_gathering"), Is.EqualTo(150));
+            Assert.That(state.GetHeroSkillLevel("ren", "skill_gathering"), Is.EqualTo(2));
+            Assert.That(state.IsBuildingUnlocked("building_tavern"), Is.True);
+            Assert.That(state.GetBuildingLevel("building_tavern"), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void PlayerState_PublicConstructorsRequireHeroStatsService()
+        {
+            var constructors = typeof(PlayerState).GetConstructors();
+
+            Assert.That(constructors, Has.Length.EqualTo(2));
+            foreach (var constructor in constructors)
+            {
+                var hasHeroStats = false;
+                foreach (var parameter in constructor.GetParameters())
+                {
+                    if (parameter.ParameterType == typeof(HeroStatsService))
+                        hasHeroStats = true;
+                }
+
+                Assert.That(hasHeroStats, Is.True, constructor.ToString());
+            }
+        }
+
+        [Test]
+        public void SaveService_LoadAndResetOverloadsRequirePlayerStateFactory()
+        {
+            foreach (var method in typeof(SaveService).GetMethods())
+            {
+                if (method.Name != nameof(SaveService.Load) && method.Name != nameof(SaveService.ResetSave))
+                    continue;
+
+                var parameters = method.GetParameters();
+                Assert.That(parameters, Is.Not.Empty, method.ToString());
+                Assert.That(parameters[0].ParameterType, Is.EqualTo(typeof(PlayerStateFactory)), method.ToString());
+            }
+        }
+
+        [Test]
+        public void SaveService_ResetUsesProvidedFactoryBootstrap()
+        {
+            var storage = new MemorySaveStorage();
+            var state = _factory.CreateDefault();
+            Assert.That(state.AddCurrency("gold_id", 10), Is.True);
+            Assert.That(SaveService.Save(state, storage), Is.True);
+
+            var reset = SaveService.ResetSave(_factory, storage);
+
+            Assert.That(reset.GetCurrency("gold_id"), Is.Zero);
+            Assert.That(reset.HasHero("ren"), Is.True);
+            Assert.That(reset.GetItem("item_wooden_club"), Is.EqualTo(1));
+            Assert.That(reset.GetHeroMaxFatigue("ren"), Is.EqualTo(121));
         }
 
         private static ConfigDatabase CreateDatabase()

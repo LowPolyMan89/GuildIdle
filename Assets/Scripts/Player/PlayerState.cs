@@ -9,6 +9,7 @@ namespace GuildIdle.Player
 {
     public sealed class PlayerState : IActivityRuntimeStore
     {
+        private readonly HeroStatsService _heroStats;
         private readonly Dictionary<string, long> _currencies = new Dictionary<string, long>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _items = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedHeroes = new HashSet<string>(StringComparer.Ordinal);
@@ -21,19 +22,16 @@ namespace GuildIdle.Player
         private readonly HashSet<string> _availableActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, ActivityExecutionSaveData> _activityExecutions = new Dictionary<string, ActivityExecutionSaveData>(StringComparer.Ordinal);
 
-        public PlayerState(SaveData saveData)
+        public PlayerState(SaveData saveData, HeroStatsService heroStats)
         {
+            _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
             Load(saveData, null);
         }
 
-        public PlayerState(SaveData saveData, HeroSlotSaveEntry[] legacyHeroSlots)
+        public PlayerState(SaveData saveData, HeroSlotSaveEntry[] legacyHeroSlots, HeroStatsService heroStats)
         {
+            _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
             Load(saveData, legacyHeroSlots);
-        }
-
-        public static PlayerState CreateDefault()
-        {
-            return PlayerStateFactory.CreateDefault();
         }
 
         public SaveData ToSaveData()
@@ -157,7 +155,7 @@ namespace GuildIdle.Player
             }
 
             skill.Exp = AddClamped(skill.Exp, amount);
-            skill.Level = ResolveSkillLevel(skill.Exp);
+            skill.Level = _heroStats.ResolveSkillLevel(skill.Exp);
             return true;
         }
 
@@ -580,7 +578,7 @@ namespace GuildIdle.Player
 
                 var hero = CreateHeroState(entry.heroId, Math.Max(1, entry.level));
                 hero.Exp = Math.Max(0L, entry.exp);
-                hero.MaxFatigue = entry.maxFatigue > 0 ? entry.maxFatigue : CalculateHeroMaxFatigue(hero.HeroId, hero.Level);
+                hero.MaxFatigue = entry.maxFatigue > 0 ? entry.maxFatigue : _heroStats.CalculateMaxFatigue(hero.HeroId, hero.Level);
                 hero.Fatigue = Math.Max(0, Math.Min(hero.MaxFatigue, entry.fatigue));
                 hero.CurrentActivityExecutionId = string.IsNullOrWhiteSpace(entry.currentActivityExecutionId) ? null : entry.currentActivityExecutionId;
                 LoadHeroSkills(hero, entry.skills);
@@ -602,7 +600,7 @@ namespace GuildIdle.Player
                 hero.Skills[entry.skillId] = new HeroSkillRuntimeState(entry.skillId)
                 {
                     Exp = exp,
-                    Level = Math.Max(1, entry.level > 0 ? entry.level : ResolveSkillLevel(exp))
+                    Level = Math.Max(1, entry.level > 0 ? entry.level : _heroStats.ResolveSkillLevel(exp))
                 };
             }
         }
@@ -872,10 +870,10 @@ namespace GuildIdle.Player
             return hero;
         }
 
-        private static HeroRuntimeState CreateHeroState(string heroId, int level)
+        private HeroRuntimeState CreateHeroState(string heroId, int level)
         {
             var resolvedLevel = Math.Max(1, level);
-            var maxFatigue = CalculateHeroMaxFatigue(heroId, resolvedLevel);
+            var maxFatigue = _heroStats.CalculateMaxFatigue(heroId, resolvedLevel);
             return new HeroRuntimeState(heroId)
             {
                 Level = resolvedLevel,
@@ -883,87 +881,6 @@ namespace GuildIdle.Player
                 MaxFatigue = maxFatigue,
                 Fatigue = maxFatigue
             };
-        }
-
-        private static int CalculateHeroMaxFatigue(string heroId, int level)
-        {
-            if (RuntimeConfigs.Formulas.TryGetHeroDerivedStat("hero_max_fatigue", out var formula) && formula != null && formula.enabled)
-            {
-                var stat = GetHeroStat(heroId, formula.primaryStat, level);
-                var value = formula.baseValue + stat * formula.primaryStatMultiplier + Math.Max(1, level) * formula.levelMultiplier;
-                return Math.Max(1, RoundFormulaValue(value, formula.rounding));
-            }
-
-            return 100;
-        }
-
-        private static int RoundFormulaValue(float value, string rounding)
-        {
-            if (string.Equals(rounding, "Floor", StringComparison.OrdinalIgnoreCase))
-                return (int)Math.Floor(value);
-
-            if (string.Equals(rounding, "Ceil", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(rounding, "Ceiling", StringComparison.OrdinalIgnoreCase))
-                return (int)Math.Ceiling(value);
-
-            return (int)Math.Round(value, MidpointRounding.AwayFromZero);
-        }
-
-        private static int GetHeroStat(string heroId, string statId, int level)
-        {
-            if (!RuntimeConfigs.Heroes.TryGet(heroId, out var hero) || hero == null)
-                return 0;
-
-            var value = GetBaseStat(hero.baseStats, statId);
-            foreach (var growth in RuntimeConfigs.Heroes.HeroGrowth)
-            {
-                if (growth == null || growth.level > level || !string.Equals(growth.heroId, heroId, StringComparison.Ordinal))
-                    continue;
-
-                value += GetGrowthStat(growth, statId);
-            }
-
-            return value;
-        }
-
-        private static int GetBaseStat(HeroBaseStatsDto stats, string statId)
-        {
-            if (stats == null)
-                return 0;
-
-            if (string.Equals(statId, "Strength", StringComparison.OrdinalIgnoreCase))
-                return stats.strength;
-            if (string.Equals(statId, "Agility", StringComparison.OrdinalIgnoreCase))
-                return stats.agility;
-            if (string.Equals(statId, "Intelligence", StringComparison.OrdinalIgnoreCase))
-                return stats.intelligence;
-            if (string.Equals(statId, "Luck", StringComparison.OrdinalIgnoreCase))
-                return stats.luck;
-            if (string.Equals(statId, "Endurance", StringComparison.OrdinalIgnoreCase))
-                return stats.endurance;
-
-            return 0;
-        }
-
-        private static int GetGrowthStat(HeroGrowthConfigDto growth, string statId)
-        {
-            if (string.Equals(statId, "Strength", StringComparison.OrdinalIgnoreCase))
-                return growth.addStrength;
-            if (string.Equals(statId, "Agility", StringComparison.OrdinalIgnoreCase))
-                return growth.addAgility;
-            if (string.Equals(statId, "Intelligence", StringComparison.OrdinalIgnoreCase))
-                return growth.addIntelligence;
-            if (string.Equals(statId, "Luck", StringComparison.OrdinalIgnoreCase))
-                return growth.addLuck;
-            if (string.Equals(statId, "Endurance", StringComparison.OrdinalIgnoreCase))
-                return growth.addEndurance;
-
-            return 0;
-        }
-
-        private static int ResolveSkillLevel(long exp)
-        {
-            return HeroStatsService.ResolveSkillLevel(exp);
         }
 
         private int GetItemAmount(string itemId)

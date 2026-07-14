@@ -159,6 +159,27 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(ActivityTypeParser.TryParseLootRollMode("Unknown", out _), Is.False);
         }
 
+        [TestCase("0")]
+        [TestCase("1")]
+        [TestCase("-1")]
+        [TestCase("+0")]
+        public void ActivityTypeParser_RejectsNumericRepresentations(string value)
+        {
+            Assert.That(ActivityTypeParser.TryParseRequirementType(value, out _), Is.False);
+            Assert.That(ActivityTypeParser.TryParseRewardType(value, out _), Is.False);
+            Assert.That(ActivityTypeParser.TryParseDropType(value, out _), Is.False);
+            Assert.That(ActivityTypeParser.TryParseLootRollMode(value, out _), Is.False);
+        }
+
+        [Test]
+        public void ActivityTypeParser_RejectsCombinedRepresentations()
+        {
+            Assert.That(ActivityTypeParser.TryParseRequirementType("Resource, Item", out _), Is.False);
+            Assert.That(ActivityTypeParser.TryParseRewardType("Hero, Equipment", out _), Is.False);
+            Assert.That(ActivityTypeParser.TryParseDropType("Resource, Gold", out _), Is.False);
+            Assert.That(ActivityTypeParser.TryParseLootRollMode("WeightedOne, WeightedMany", out _), Is.False);
+        }
+
         [Test]
         public void Validate_LootRollModesUsesSharedParserAndRejectsUnknownTypes()
         {

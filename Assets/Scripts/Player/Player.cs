@@ -30,7 +30,7 @@ namespace GuildIdle.Player
                 return false;
             }
 
-            _state = SaveService.Load();
+            _state = PlayerRuntimeComposition.LoadPlayerState();
             return true;
         }
 
@@ -47,7 +47,7 @@ namespace GuildIdle.Player
                 return false;
             }
 
-            _state = SaveService.ResetSave();
+            _state = PlayerRuntimeComposition.ResetPlayerState();
             return true;
         }
 
@@ -249,6 +249,7 @@ namespace GuildIdle.Player
         private static void HandleConfigLoadFailed(string error)
         {
             _state = null;
+            PlayerRuntimeComposition.InvalidatePlayerStateFactory();
             Debug.LogError($"[Player] Runtime configs failed to load; player state was not initialized. {error}");
         }
 

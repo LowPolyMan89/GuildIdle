@@ -18,21 +18,24 @@ namespace GuildIdle.Player
 
         private static readonly ISaveStorage DefaultStorage = new PlayerPrefsSaveStorage();
 
-        public static PlayerState Load()
+        public static PlayerState Load(PlayerStateFactory factory)
         {
-            return Load(DefaultStorage);
+            return Load(factory, DefaultStorage);
         }
 
-        public static PlayerState Load(ISaveStorage storage)
+        public static PlayerState Load(PlayerStateFactory factory, ISaveStorage storage)
         {
+            if (factory == null)
+                throw new ArgumentNullException(nameof(factory));
+
             storage ??= DefaultStorage;
 
             if (!storage.HasKey(SaveKey))
-                return CreateAndPersistDefault(storage);
+                return CreateAndPersistDefault(factory, storage);
 
             var json = storage.GetString(SaveKey, string.Empty);
             if (string.IsNullOrWhiteSpace(json))
-                return CreateAndPersistDefault(storage);
+                return CreateAndPersistDefault(factory, storage);
 
             try
             {
@@ -41,12 +44,12 @@ namespace GuildIdle.Player
                     throw new InvalidOperationException("JsonUtility returned null SaveData.");
 
                 var legacySaveData = JsonUtility.FromJson<LegacySaveData>(json);
-                return new PlayerState(saveData, legacySaveData?.heroSlots);
+                return factory.Create(saveData, legacySaveData?.heroSlots);
             }
             catch (Exception exception)
             {
                 Debug.LogError($"[SaveService] Failed to load player save JSON. Creating default save. {exception.Message}");
-                return CreateAndPersistDefault(storage);
+                return CreateAndPersistDefault(factory, storage);
             }
         }
 
@@ -71,22 +74,25 @@ namespace GuildIdle.Player
             return true;
         }
 
-        public static PlayerState ResetSave()
+        public static PlayerState ResetSave(PlayerStateFactory factory)
         {
-            return ResetSave(DefaultStorage);
+            return ResetSave(factory, DefaultStorage);
         }
 
-        public static PlayerState ResetSave(ISaveStorage storage)
+        public static PlayerState ResetSave(PlayerStateFactory factory, ISaveStorage storage)
         {
+            if (factory == null)
+                throw new ArgumentNullException(nameof(factory));
+
             storage ??= DefaultStorage;
             storage.DeleteKey(SaveKey);
             storage.Save();
-            return CreateAndPersistDefault(storage);
+            return CreateAndPersistDefault(factory, storage);
         }
 
-        private static PlayerState CreateAndPersistDefault(ISaveStorage storage)
+        private static PlayerState CreateAndPersistDefault(PlayerStateFactory factory, ISaveStorage storage)
         {
-            var state = PlayerState.CreateDefault();
+            var state = factory.CreateDefault();
             Save(state, storage);
             return state;
         }

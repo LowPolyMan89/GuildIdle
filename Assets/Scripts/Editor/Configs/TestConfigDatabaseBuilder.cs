@@ -138,7 +138,7 @@ namespace GuildIdle.Editor.Configs
                     Reward("direct_rewards", "Equipment", "item_wooden_club", 1, "OnComplete"),
                     Reward("direct_rewards", "Consumable", "consumable_hunting_potion", 1, "OnComplete"),
                     Reward("direct_rewards", "Recipe", "recipe_flax_thread", 1, "OnComplete"),
-                    Reward("direct_rewards", "Gold", "ignored", 7, "OnComplete"),
+                    Reward("direct_rewards", "Gold", "gold_id", 7, "OnComplete"),
                     Reward("direct_rewards", "Currency", "gem_id", 3, "OnComplete"),
                     Reward("direct_rewards", "Hero", "ren", 1, "OnComplete"),
                     Reward("direct_rewards", "BuildingUnlock", "building_underwood", 1, "OnComplete"),

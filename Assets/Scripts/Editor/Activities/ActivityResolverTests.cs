@@ -12,10 +12,14 @@ namespace GuildIdle.Editor.Activities
 {
     public sealed class ActivityResolverTests
     {
+        private PlayerStateFactory _factory;
+
         [SetUp]
         public void SetUp()
         {
-            RuntimeConfigs.SetDatabaseForTests(CreateDatabase());
+            var database = CreateDatabase();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            _factory = TestPlayerComposition.CreatePlayerStateFactory(database);
         }
 
         [Test]
@@ -206,13 +210,13 @@ namespace GuildIdle.Editor.Activities
 
             var storage = new MemorySaveStorage();
             Assert.That(SaveService.Save(state, storage), Is.True);
-            var restored = SaveService.Load(storage);
+            var restored = SaveService.Load(_factory, storage);
             Assert.That(restored.GetItem("resource_thin_hide"), Is.EqualTo(1));
         }
 
-        private static PlayerState NewState()
+        private PlayerState NewState()
         {
-            var state = new PlayerState(new SaveData());
+            var state = _factory.Create(new SaveData());
             state.AddHero("ren");
             return state;
         }

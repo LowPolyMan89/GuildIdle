@@ -7,6 +7,9 @@ namespace GuildIdle.Player
 {
     public static class PlayerRuntimeComposition
     {
+        private const string StageOneStarterActivityId = "starter_hero_available";
+        private static PlayerStateFactory _playerStateFactory;
+
         public static ActivityRuntimeService CreateRuntimeService()
         {
             var state = Player.State;
@@ -35,6 +38,41 @@ namespace GuildIdle.Player
                 isPlayerLoaded,
                 loadPlayer,
                 handleConfigLoadFailed);
+        }
+
+        internal static PlayerState LoadPlayerState()
+        {
+            return SaveService.Load(GetPlayerStateFactory());
+        }
+
+        internal static PlayerState ResetPlayerState()
+        {
+            return SaveService.ResetSave(GetPlayerStateFactory());
+        }
+
+        internal static void InvalidatePlayerStateFactory()
+        {
+            _playerStateFactory = null;
+        }
+
+        private static PlayerStateFactory GetPlayerStateFactory()
+        {
+            if (_playerStateFactory != null)
+                return _playerStateFactory;
+
+            var heroStatsConfigs = new RepositoryHeroStatsConfigAdapter(
+                RuntimeConfigs.Heroes,
+                RuntimeConfigs.Formulas,
+                RuntimeConfigs.Activities);
+            var bootstrapConfigs = new RepositoryPlayerBootstrapConfigAdapter(
+                RuntimeConfigs.Activities,
+                RuntimeConfigs.Buildings);
+            var heroStats = new HeroStatsService(heroStatsConfigs);
+            _playerStateFactory = new PlayerStateFactory(
+                bootstrapConfigs,
+                heroStats,
+                StageOneStarterActivityId);
+            return _playerStateFactory;
         }
 
         private sealed class RuntimeConfigLifecycleAdapter : IRuntimeConfigLifecycle

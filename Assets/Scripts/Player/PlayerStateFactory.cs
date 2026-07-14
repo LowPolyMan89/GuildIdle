@@ -1,61 +1,80 @@
-using GuildIdle.Configs;
+using System;
+using GuildIdle.Core;
 using UnityEngine;
-using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Player
 {
-    public static class PlayerStateFactory
+    public sealed class PlayerStateFactory
     {
-        public static PlayerState CreateDefault()
+        private readonly IPlayerBootstrapConfigProvider _configs;
+        private readonly HeroStatsService _heroStats;
+        private readonly string _starterActivityId;
+
+        public PlayerStateFactory(
+            IPlayerBootstrapConfigProvider configs,
+            HeroStatsService heroStats,
+            string starterActivityId)
         {
-            var state = new PlayerState(new SaveData());
-            ApplyDefaultBootstrap(state);
+            _configs = configs ?? throw new ArgumentNullException(nameof(configs));
+            _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
+            _starterActivityId = string.IsNullOrWhiteSpace(starterActivityId)
+                ? throw new ArgumentException("Starter activity id is required.", nameof(starterActivityId))
+                : starterActivityId;
+        }
+
+        public PlayerState Create(SaveData saveData, HeroSlotSaveEntry[] legacyHeroSlots = null)
+        {
+            return new PlayerState(saveData, legacyHeroSlots, _heroStats);
+        }
+
+        public PlayerState CreateDefault()
+        {
+            var state = Create(new SaveData());
+            ApplyDefaultBuildingsBootstrap(state);
+            ApplyStarterActivityBootstrap(state);
             return state;
         }
 
-        private static void ApplyDefaultBootstrap(PlayerState state)
+        private void ApplyStarterActivityBootstrap(PlayerState state)
         {
-            ApplyDefaultBuildingsBootstrap(state);
-
-            const string starterActivityId = "starter_hero_available";
-            const string starterHeroId = "ren";
-            const string starterEquipmentId = "item_wooden_club";
-
-            if (!ValidateActivityId(starterActivityId))
+            if (!_configs.TryGetActivity(_starterActivityId, out _))
+            {
+                Debug.LogError($"[PlayerStateFactory] Starter activity '{_starterActivityId}' not found in configs.");
                 return;
+            }
 
-            var rewards = RuntimeConfigs.Activities.GetRewards(starterActivityId);
             var grantedStarterHero = false;
-
-            foreach (var reward in rewards)
+            foreach (var reward in _configs.GetRewards(_starterActivityId))
             {
                 if (reward == null)
                     continue;
 
-                if (IsReward(reward, "Hero", starterHeroId))
+                if (!ActivityTypeParser.TryParseRewardType(reward.rewardType, out var rewardType))
                 {
-                    state.AddHero(starterHeroId);
+                    Debug.LogError(
+                        $"[PlayerStateFactory] Unsupported reward type '{reward.rewardType}' " +
+                        $"for starter activity '{_starterActivityId}'.");
+                    continue;
+                }
+
+                if (rewardType == RewardTypeEnum.Hero)
+                {
+                    state.AddHero(reward.targetId);
                     grantedStarterHero = true;
                     continue;
                 }
 
-                if (IsReward(reward, "Equipment", starterEquipmentId))
-                    state.AddItem(starterEquipmentId, Mathf.Max(1, reward.min));
+                if (rewardType == RewardTypeEnum.Equipment)
+                    state.AddItem(reward.targetId, Mathf.Max(1, reward.min));
             }
 
             if (!grantedStarterHero)
-                Debug.LogError($"[PlayerStateFactory] Starter bootstrap '{starterActivityId}' has no Hero reward for '{starterHeroId}'.");
+                Debug.LogError($"[PlayerStateFactory] Starter bootstrap '{_starterActivityId}' has no Hero reward.");
         }
 
-        private static void ApplyDefaultBuildingsBootstrap(PlayerState state)
+        private void ApplyDefaultBuildingsBootstrap(PlayerState state)
         {
-            if (!RuntimeConfigs.IsLoaded)
-            {
-                Debug.LogError("[PlayerStateFactory] Cannot bootstrap buildings before runtime configs are loaded.");
-                return;
-            }
-
-            foreach (var building in RuntimeConfigs.Buildings.Buildings)
+            foreach (var building in _configs.Buildings)
             {
                 if (building == null || !building.visibleAtStart)
                     continue;
@@ -63,29 +82,6 @@ namespace GuildIdle.Player
                 state.UnlockBuilding(building.buildingId);
                 state.SetBuildingLevel(building.buildingId, building.startLevel);
             }
-        }
-
-        private static bool ValidateActivityId(string activityId)
-        {
-            if (!RuntimeConfigs.IsLoaded)
-            {
-                Debug.LogError("[PlayerStateFactory] Cannot validate activity before runtime configs are loaded.");
-                return false;
-            }
-
-            if (!RuntimeConfigs.Activities.TryGet(activityId, out _))
-            {
-                Debug.LogError($"[PlayerStateFactory] Starter activity '{activityId}' not found in configs.");
-                return false;
-            }
-
-            return true;
-        }
-
-        private static bool IsReward(ActivityRewardConfigDto reward, string rewardType, string targetId)
-        {
-            return string.Equals(reward.rewardType, rewardType, System.StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(reward.targetId, targetId, System.StringComparison.Ordinal);
         }
     }
 }
