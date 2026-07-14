@@ -133,7 +133,7 @@ namespace GuildIdle.Activities
             var targetId = requirement.targetId;
             var amount = ActivityResolverUtilities.RequirementAmount(requirement.value);
 
-            if (!RequirementType.TryParse(type, out var parsedType))
+            if (!ActivityTypeParser.TryParseRequirementType(type, out var parsedType))
             {
                 ActivityResolverUtilities.AddIssue(issues, requirement.activityId, type, targetId, amount, 0, true, false, $"Unsupported consumable requirement type '{type}'.");
                 return;

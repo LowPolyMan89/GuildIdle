@@ -89,7 +89,7 @@ namespace GuildIdle.Activities
             var targetId = reward.targetId;
             var amount = ActivityResolverUtilities.PositiveAmount(reward.min, reward.max, random);
 
-            if (!RewardType.TryParse(type, out var parsedType))
+            if (!ActivityTypeParser.TryParseRewardType(type, out var parsedType))
             {
                 UnsupportedReward(issues, reward, type);
                 return;
@@ -258,16 +258,12 @@ namespace GuildIdle.Activities
 
         private static bool IsBuildingUnlock(RewardTypeEnum type)
         {
-            return type == RewardTypeEnum.UnlockBuilding ||
-                type == RewardTypeEnum.BuildingUnlock ||
-                type == RewardTypeEnum.Building;
+            return type == RewardTypeEnum.UnlockBuilding;
         }
 
         private static bool IsLocationUnlock(RewardTypeEnum type)
         {
-            return type == RewardTypeEnum.UnlockLocation ||
-                type == RewardTypeEnum.MapAccess ||
-                type == RewardTypeEnum.Location;
+            return type == RewardTypeEnum.UnlockLocation;
         }
 
         private static void UnsupportedReward(List<ActivityRequirementIssue> issues, ActivityRewardConfigDto reward, string type)

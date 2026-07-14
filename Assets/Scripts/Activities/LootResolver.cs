@@ -218,7 +218,7 @@ namespace GuildIdle.Activities
 
         private static void AddDrop(string dropType, string targetId, int amount, string sourceId, List<LootDropResult> drops, List<string> issues)
         {
-            if (!DropType.TryParse(dropType, out var parsedType))
+            if (!ActivityTypeParser.TryParseDropType(dropType, out var parsedType))
             {
                 AddDropIssue(issues, $"Unsupported drop type '{dropType}' from '{sourceId}'.");
                 return;

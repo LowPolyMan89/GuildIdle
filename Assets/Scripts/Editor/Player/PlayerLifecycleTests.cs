@@ -1,125 +1,134 @@
-using GuildIdle.Configs;
-using GuildIdle.Editor.Configs;
+using System;
 using GuildIdle.Player;
 using NUnit.Framework;
-using RuntimeConfigs = GuildIdle.Configs.Configs;
-using UnityEngine;
-using UnityEngine.TestTools;
 
 namespace GuildIdle.Editor.Player
 {
     public sealed class PlayerLifecycleTests
     {
-        [SetUp]
-        public void SetUp()
+        [Test]
+        public void Start_WhenConfigsAreAlreadyLoaded_LoadsPlayerOnce()
         {
-            // Clear PlayerPrefs to isolate from previous test runs that may have
-            // saved data with building/activity ids unknown to this test database.
-            PlayerPrefs.DeleteKey(SaveService.SaveKey);
-            PlayerPrefs.Save();
+            var lifecycle = new FakeRuntimeConfigLifecycle { IsLoaded = true };
+            PlayerState state = null;
+            var loadCount = 0;
 
-            RuntimeConfigs.SetDatabaseForTests(CreateDatabase());
+            using var service = CreateService(lifecycle, () => state != null, () =>
+            {
+                loadCount++;
+                state = new PlayerState(new SaveData());
+                return true;
+            });
+
+            service.Start();
+            service.Start();
+
+            Assert.That(loadCount, Is.EqualTo(1));
+            Assert.That(state, Is.Not.Null);
         }
 
         [Test]
-        public void LoadAfterConfigs_DoesNotReloadWhenStateAlreadyLoaded()
+        public void LoadedEvent_RepeatedWithoutFailure_DoesNotReloadPlayer()
         {
-            Assert.That(global::GuildIdle.Player.Player.Load(), Is.True,
-                "First load should succeed when configs are set.");
+            var lifecycle = new FakeRuntimeConfigLifecycle();
+            PlayerState state = null;
+            var loadCount = 0;
 
-            Assert.That(global::GuildIdle.Player.Player.IsLoaded, Is.True);
+            using var service = CreateService(lifecycle, () => state != null, () =>
+            {
+                loadCount++;
+                state = new PlayerState(new SaveData());
+                return true;
+            });
+            service.Start();
 
-            Assert.That(global::GuildIdle.Player.Player.AddItem("resource_pine_wood", 5), Is.True);
-            Assert.That(global::GuildIdle.Player.Player.GetItem("resource_pine_wood"), Is.EqualTo(5));
+            lifecycle.RaiseLoaded();
+            var firstState = state;
+            lifecycle.RaiseLoaded();
 
-            // Simulate OnLoaded firing again (e.g. after Configs.Reload without state reset)
-            global::GuildIdle.Player.Player.LoadAfterConfigs();
-
-            // State should still have the item — LoadAfterConfigs must not reload if _state != null
-            Assert.That(global::GuildIdle.Player.Player.GetItem("resource_pine_wood"), Is.EqualTo(5),
-                "LoadAfterConfigs should not reload player state when it is already loaded.");
+            Assert.That(loadCount, Is.EqualTo(1));
+            Assert.That(state, Is.SameAs(firstState));
         }
 
         [Test]
-        public void Bootstrap_SubscribesOnce_AndLoadsOnConfigLoad()
+        public void LoadFailedThenLoaded_ResetsAndLoadsFreshPlayerOnce()
         {
-            // Bootstrap is called via [RuntimeInitializeOnLoadMethod] before scene load.
-            // In edit-mode tests we simulate by calling LoadAfterConfigs directly.
-            // The key invariant: calling LoadAfterConfigs twice should not double-load.
+            var lifecycle = new FakeRuntimeConfigLifecycle();
+            PlayerState state = null;
+            var loadCount = 0;
+            string failure = null;
 
-            Assert.That(global::GuildIdle.Player.Player.Load(), Is.True);
-            Assert.That(global::GuildIdle.Player.Player.AddItem("resource_pine_wood", 3), Is.True);
+            using var service = new PlayerBootstrapService(
+                lifecycle,
+                () => state != null,
+                () =>
+                {
+                    loadCount++;
+                    state = new PlayerState(new SaveData());
+                    return true;
+                },
+                error =>
+                {
+                    failure = error;
+                    state = null;
+                });
+            service.Start();
 
-            // Simulate a second OnLoaded event
-            global::GuildIdle.Player.Player.LoadAfterConfigs();
+            lifecycle.RaiseLoaded();
+            var firstState = state;
+            lifecycle.RaiseLoadFailed("test error");
+            lifecycle.RaiseLoaded();
+            lifecycle.RaiseLoaded();
 
-            Assert.That(global::GuildIdle.Player.Player.GetItem("resource_pine_wood"), Is.EqualTo(3),
-                "Second OnLoaded must not reset player state.");
+            Assert.That(failure, Is.EqualTo("test error"));
+            Assert.That(loadCount, Is.EqualTo(2));
+            Assert.That(state, Is.Not.Null);
+            Assert.That(state, Is.Not.SameAs(firstState));
         }
 
         [Test]
-        public void Load_CanBeCalledMultipleTimes_WithoutDuplicatingState()
+        public void Dispose_UnsubscribesFromLifecycleEvents()
         {
-            Assert.That(global::GuildIdle.Player.Player.Load(), Is.True);
-            Assert.That(global::GuildIdle.Player.Player.AddItem("resource_pine_wood", 3), Is.True);
+            var lifecycle = new FakeRuntimeConfigLifecycle();
+            var loadCount = 0;
+            var service = CreateService(lifecycle, () => false, () =>
+            {
+                loadCount++;
+                return true;
+            });
+            service.Start();
 
-            // Second Load() should reload from SaveService, which returns the saved state
-            // Since we haven't saved, Load() will create a fresh default state
-            Assert.That(global::GuildIdle.Player.Player.Load(), Is.True);
+            service.Dispose();
+            lifecycle.RaiseLoaded();
 
-            // After reload, the item should be gone (fresh default state)
-            Assert.That(global::GuildIdle.Player.Player.GetItem("resource_pine_wood"), Is.EqualTo(0),
-                "Load() replaces _state with a fresh load from SaveService.");
+            Assert.That(loadCount, Is.Zero);
         }
 
-        [Test]
-        public void Bootstrap_DoesNotDoubleLoad_AfterConfigReload()
+        private static PlayerBootstrapService CreateService(
+            IRuntimeConfigLifecycle lifecycle,
+            Func<bool> isPlayerLoaded,
+            Func<bool> loadPlayer)
         {
-            // Bootstrap подписывается на OnLoaded
-            global::GuildIdle.Player.Player.Bootstrap();
-
-            // Симулируем OnLoaded → LoadAfterConfigs
-            global::GuildIdle.Player.Player.LoadAfterConfigs();
-            Assert.That(global::GuildIdle.Player.Player.IsLoaded, Is.True);
-            Assert.That(global::GuildIdle.Player.Player.AddItem("resource_pine_wood", 5), Is.True);
-
-            // Симулируем OnLoadFailed — _state сбрасывается
-            LogAssert.Expect(LogType.Error, "[Player] Runtime configs failed to load; player state was not initialized. test error");
-            global::GuildIdle.Player.Player.HandleConfigLoadFailed("test error");
-            Assert.That(global::GuildIdle.Player.Player.IsLoaded, Is.False);
-
-            // Симулируем Configs.Reload → OnLoaded
-            global::GuildIdle.Player.Player.LoadAfterConfigs();
-            Assert.That(global::GuildIdle.Player.Player.IsLoaded, Is.True);
-
-            // После reload состояние свежее — предмета нет
-            Assert.That(global::GuildIdle.Player.Player.GetItem("resource_pine_wood"), Is.EqualTo(0),
-                "After config fail + reload, LoadAfterConfigs must create fresh state.");
+            return new PlayerBootstrapService(lifecycle, isPlayerLoaded, loadPlayer, _ => { });
         }
 
-        [Test]
-        public void Bootstrap_SubscribesOnce_AfterConfigFailThenReload()
+        private sealed class FakeRuntimeConfigLifecycle : IRuntimeConfigLifecycle
         {
-            global::GuildIdle.Player.Player.Bootstrap();
-            global::GuildIdle.Player.Player.LoadAfterConfigs();
-            Assert.That(global::GuildIdle.Player.Player.AddItem("resource_pine_wood", 3), Is.True);
+            public bool IsLoaded { get; set; }
+            public event Action Loaded;
+            public event Action<string> LoadFailed;
 
-            // Второй OnLoaded — guard не даёт перезагрузить
-            global::GuildIdle.Player.Player.LoadAfterConfigs();
-            Assert.That(global::GuildIdle.Player.Player.GetItem("resource_pine_wood"), Is.EqualTo(3),
-                "Second LoadAfterConfigs must not reset state.");
-        }
+            public void RaiseLoaded()
+            {
+                IsLoaded = true;
+                Loaded?.Invoke();
+            }
 
-        private static ConfigDatabase CreateDatabase()
-        {
-            return new TestConfigDatabaseBuilder()
-                .WithMinimalItems()
-                .WithMinimalHeroes()
-                .WithMinimalActivities()
-                .WithMinimalBuildings()
-                .WithFatigueFormula()
-                .WithMinimalMap()
-                .Build();
+            public void RaiseLoadFailed(string error)
+            {
+                IsLoaded = false;
+                LoadFailed?.Invoke(error);
+            }
         }
     }
 }

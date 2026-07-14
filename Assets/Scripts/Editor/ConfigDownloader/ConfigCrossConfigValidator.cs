@@ -1145,7 +1145,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 foreach (var row in table.DataRows)
                 {
                     var rewardTypeRaw = row.Get("reward_type");
-                    if (!ActivityTypeParser.TryParseRewardTypeLegacy(rewardTypeRaw, out var rewardType))
+                    if (!ActivityTypeParser.TryParseRewardType(rewardTypeRaw, out var rewardType))
                     {
                         AddIssue(report, activity.Source.DisplayName, "ActivityRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Unknown reward_type '{rewardTypeRaw}'.");
                         continue;
@@ -1206,14 +1206,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
                             break;
                         case RewardTypeEnum.UnlockBuilding:
-                        case RewardTypeEnum.BuildingUnlock:
-                        case RewardTypeEnum.Building:
                             if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
                             break;
                         case RewardTypeEnum.UnlockLocation:
-                        case RewardTypeEnum.MapAccess:
-                        case RewardTypeEnum.Location:
                             if (TryGetRequiredRegistry(report, registry.Map, "Map Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Map.LocationIds, "Map Configs / MapLocations.location_id");
                             break;
@@ -1380,7 +1376,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private static void ValidateQuestRewardTarget(ActivityRegistry activity, ConfigRegistry registry, ConfigPipelineReport report, ConfigSheetDataRow row)
             {
                 var rewardTypeRaw = row.Get("reward_type");
-                if (!ActivityTypeParser.TryParseRewardTypeLegacy(rewardTypeRaw, out var rewardType))
+                if (!ActivityTypeParser.TryParseRewardType(rewardTypeRaw, out var rewardType))
                 {
                     AddIssue(report, activity.Source.DisplayName, "QuestRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Unknown reward_type '{rewardTypeRaw}'.");
                     return;
@@ -1431,14 +1427,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
                         break;
                     case RewardTypeEnum.UnlockBuilding:
-                    case RewardTypeEnum.BuildingUnlock:
-                    case RewardTypeEnum.Building:
                         if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
                         break;
                     case RewardTypeEnum.UnlockLocation:
-                    case RewardTypeEnum.MapAccess:
-                    case RewardTypeEnum.Location:
                         if (TryGetRequiredRegistry(report, registry.Map, "Map Configs"))
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Map.LocationIds, "Map Configs / MapLocations.location_id");
                         break;
@@ -1819,12 +1811,15 @@ namespace GuildIdle.Editor.ConfigDownloader
             public static void Validate(ConfigRegistry registry, ConfigPipelineReport report)
             {
                 var loot = registry.Loot;
-                if (loot == null ||
-                    !loot.Source.TryGetTable("LootTableEntries", out var table) ||
-                    !HasAnyValue(table, "target_id"))
-                {
+                if (loot == null)
                     return;
-                }
+
+                ValidateRollModes(loot, report, "LootTables");
+                ValidateRollModes(loot, report, "LootGroups");
+
+                if (!loot.Source.TryGetTable("LootTableEntries", out var table) ||
+                    !HasAnyValue(table, "target_id"))
+                    return;
 
                 var hasItemsRegistry = TryGetRequiredRegistry(report, registry.Items, "Items Configs");
 
@@ -1863,6 +1858,19 @@ namespace GuildIdle.Editor.ConfigDownloader
                     }
 
                     ValidateItemTarget(report, loot.Source.DisplayName, "LootTableEntries", row, "target_id", registry.Items, ItemTargetKind.AnyItem, "Items Configs item/recipe/consumable registry");
+                }
+            }
+
+            private static void ValidateRollModes(LootRegistry loot, ConfigPipelineReport report, string tableName)
+            {
+                if (!loot.Source.TryGetTable(tableName, out var table))
+                    return;
+
+                foreach (var row in table.DataRows)
+                {
+                    var rollMode = row.Get("roll_mode");
+                    if (!ActivityTypeParser.TryParseLootRollMode(rollMode, out _))
+                        AddIssue(report, loot.Source.DisplayName, tableName, row.RowNumber, "roll_mode", rollMode, $"Unknown roll_mode '{rollMode}'.");
                 }
             }
         }

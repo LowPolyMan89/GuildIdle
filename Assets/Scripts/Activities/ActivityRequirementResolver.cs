@@ -46,7 +46,7 @@ namespace GuildIdle.Activities
             var required = ActivityResolverUtilities.RequirementAmount(requirement.value);
             var type = requirement.reqType ?? string.Empty;
 
-            if (!RequirementType.TryParse(type, out var parsedType))
+            if (!ActivityTypeParser.TryParseRequirementType(type, out var parsedType))
             {
                 Unsupported(issues, activityId, type, targetId, required);
                 return;

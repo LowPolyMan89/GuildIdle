@@ -144,7 +144,7 @@ namespace GuildIdle.Activities
 
         public static bool IsAnyItemType(string type)
         {
-            return RequirementType.TryParse(type, out var parsedType) &&
+            return ActivityTypeParser.TryParseRequirementType(type, out var parsedType) &&
                 (parsedType == RequirementTypeEnum.Item ||
                  parsedType == RequirementTypeEnum.ItemCount ||
                  parsedType == RequirementTypeEnum.Resource);

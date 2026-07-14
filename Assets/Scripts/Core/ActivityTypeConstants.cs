@@ -17,7 +17,7 @@ namespace GuildIdle.Core
         BuildingLevel,
         HeroAvailable,
 
-        // Compatibility values used by the current MVP runtime/test data.
+        // Existing MVP values used by runtime and test data.
         ItemCount,
         Currency,
     }
@@ -35,15 +35,11 @@ namespace GuildIdle.Core
         UnlockBuilding,
         Hero,
         Equipment,
-        BuildingUnlock,
-        MapAccess,
         Consumable,
         Recipe,
 
-        // Compatibility values used by existing runtime data.
+        // Existing MVP value used by runtime data.
         Currency,
-        Building,
-        Location,
     }
 
     public enum DropTypeEnum
@@ -94,7 +90,7 @@ namespace GuildIdle.Core
         public const string BuildingLevel = "BuildingLevel";
         public const string HeroAvailable = "HeroAvailable";
 
-        // Compatibility values used by the current MVP runtime/test data.
+        // Existing MVP values used by runtime and test data.
         public const string ItemCount = "ItemCount";
         public const string Currency = "Currency";
     }
@@ -117,7 +113,7 @@ namespace GuildIdle.Core
         public const string Consumable = "Consumable";
         public const string Recipe = "Recipe";
 
-        // Compatibility values used by existing runtime data.
+        // Existing MVP aliases retained at the parser boundary.
         public const string Currency = "Currency";
         public const string Building = "Building";
         public const string Location = "Location";
@@ -168,13 +164,19 @@ namespace GuildIdle.Core
 
         public static bool TryParseRewardType(string value, out RewardTypeEnum result)
         {
-            return TryParseDefined(value, out result);
-        }
+            if (MatchesAny(value, RewardType.UnlockBuilding, RewardType.BuildingUnlock, RewardType.Building))
+            {
+                result = RewardTypeEnum.UnlockBuilding;
+                return true;
+            }
 
-        // Compatibility entry point retained for existing validator callers.
-        public static bool TryParseRewardTypeLegacy(string value, out RewardTypeEnum result)
-        {
-            return TryParseRewardType(value, out result);
+            if (MatchesAny(value, RewardType.UnlockLocation, RewardType.MapAccess, RewardType.Location))
+            {
+                result = RewardTypeEnum.UnlockLocation;
+                return true;
+            }
+
+            return TryParseDefined(value, out result);
         }
 
         public static bool TryParseDropType(string value, out DropTypeEnum result)
@@ -202,8 +204,23 @@ namespace GuildIdle.Core
         {
             result = default;
             return !string.IsNullOrWhiteSpace(value) &&
-                Enum.TryParse(value, true, out result) &&
+                Enum.TryParse(value.Trim(), true, out result) &&
                 Enum.IsDefined(typeof(TEnum), result);
+        }
+
+        private static bool MatchesAny(string value, params string[] candidates)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            var normalized = value.Trim();
+            foreach (var candidate in candidates)
+            {
+                if (string.Equals(normalized, candidate, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
     }
 }

@@ -8,19 +8,18 @@ namespace GuildIdle.Player
     {
         public static PlayerState State => _state;
         private static PlayerState _state;
+        private static PlayerBootstrapService _bootstrapService;
 
         public static bool IsLoaded => _state != null && RuntimeConfigs.IsLoaded;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         public static void Bootstrap()
         {
-            RuntimeConfigs.OnLoaded -= LoadAfterConfigs;
-            RuntimeConfigs.OnLoaded += LoadAfterConfigs;
-            RuntimeConfigs.OnLoadFailed -= HandleConfigLoadFailed;
-            RuntimeConfigs.OnLoadFailed += HandleConfigLoadFailed;
-
-            if (RuntimeConfigs.IsLoaded)
-                Load();
+            _bootstrapService ??= PlayerRuntimeComposition.CreateBootstrapService(
+                () => _state != null,
+                Load,
+                HandleConfigLoadFailed);
+            _bootstrapService.Start();
         }
 
         public static bool Load()
@@ -247,15 +246,7 @@ namespace GuildIdle.Player
             return EnsureLoaded("remove activity execution") && _state.RemoveActivityExecution(executionId);
         }
 
-        public static void LoadAfterConfigs()
-        {
-            if (_state != null)
-                return;
-
-            Load();
-        }
-
-        public static void HandleConfigLoadFailed(string error)
+        private static void HandleConfigLoadFailed(string error)
         {
             _state = null;
             Debug.LogError($"[Player] Runtime configs failed to load; player state was not initialized. {error}");
@@ -270,14 +261,12 @@ namespace GuildIdle.Player
                 return Load();
 
             if (!RuntimeConfigs.HasErrors)
-            {
-                RuntimeConfigs.OnLoaded -= LoadAfterConfigs;
-                RuntimeConfigs.OnLoaded += LoadAfterConfigs;
-            }
+                Bootstrap();
 
             var reason = RuntimeConfigs.HasErrors ? $"config load failed: {RuntimeConfigs.LastError}" : "runtime configs are not loaded";
             Debug.LogError($"[Player] Cannot {action}: {reason}.");
             return false;
         }
+
     }
 }

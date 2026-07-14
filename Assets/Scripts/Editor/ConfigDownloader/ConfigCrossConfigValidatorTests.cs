@@ -86,6 +86,19 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void Validate_ActivityRewardsRejectsUnknownTypes()
+        {
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityRewardsDownload(
+                    ("UnknownReward", "resource_pine_wood"))));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Unknown reward_type 'UnknownReward'."));
+        }
+
+        [Test]
         public void Validate_LootDropTypesUsesCaseInsensitiveCanonicalTypesAndRejectsUnknownTypes()
         {
             var validCollection = Collection(
@@ -125,14 +138,44 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(actual, Is.EqualTo(expected));
         }
 
-        [TestCase("BuildingUnlock", RewardTypeEnum.BuildingUnlock)]
+        [TestCase("BuildingUnlock", RewardTypeEnum.UnlockBuilding)]
         [TestCase("unlockbuilding", RewardTypeEnum.UnlockBuilding)]
-        [TestCase("MapAccess", RewardTypeEnum.MapAccess)]
+        [TestCase("Building", RewardTypeEnum.UnlockBuilding)]
+        [TestCase("MapAccess", RewardTypeEnum.UnlockLocation)]
         [TestCase("unlocklocation", RewardTypeEnum.UnlockLocation)]
+        [TestCase("Location", RewardTypeEnum.UnlockLocation)]
         public void ActivityTypeParser_UsesCanonicalRewardTypes(string value, RewardTypeEnum expected)
         {
             Assert.That(ActivityTypeParser.TryParseRewardType(value, out var actual), Is.True);
             Assert.That(actual, Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void ActivityTypeParser_RejectsUnknownValuesForAllRuntimeTypeFamilies()
+        {
+            Assert.That(ActivityTypeParser.TryParseRequirementType("Unknown", out _), Is.False);
+            Assert.That(ActivityTypeParser.TryParseRewardType("Unknown", out _), Is.False);
+            Assert.That(ActivityTypeParser.TryParseDropType("Unknown", out _), Is.False);
+            Assert.That(ActivityTypeParser.TryParseLootRollMode("Unknown", out _), Is.False);
+        }
+
+        [Test]
+        public void Validate_LootRollModesUsesSharedParserAndRejectsUnknownTypes()
+        {
+            var validCollection = Collection(
+                Source("loot_configs", "GuildIdle - Loot Configs", "loot.json", LootRollModesDownload("weightedmany", "GuaranteedAll")));
+
+            var validReport = ConfigCrossConfigValidator.Validate(validCollection);
+
+            Assert.That(validReport.Success, Is.True, validReport.ToDisplayMessage());
+
+            var unknownCollection = Collection(
+                Source("loot_configs", "GuildIdle - Loot Configs", "loot.json", LootRollModesDownload("UnknownMode", "WeightedOne")));
+
+            var unknownReport = ConfigCrossConfigValidator.Validate(unknownCollection);
+
+            Assert.That(unknownReport.Success, Is.False);
+            Assert.That(unknownReport.ToDisplayMessage(), Does.Contain("Unknown roll_mode 'UnknownMode'."));
         }
 
         [Test]
@@ -708,6 +751,17 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Sheet("LootTableEntries",
                     Row("loot_table_id", "entry_id", "drop_type", "target_id"),
                     Row("loot_test", "entry_test", dropType, targetId)));
+        }
+
+        private static ConfigSheetDownload LootRollModesDownload(string tableRollMode, string groupRollMode)
+        {
+            return Download(
+                Sheet("LootTables",
+                    Row("loot_table_id", "roll_mode"),
+                    Row("loot_test", tableRollMode)),
+                Sheet("LootGroups",
+                    Row("loot_table_id", "roll_group", "roll_mode"),
+                    Row("loot_test", "default", groupRollMode)));
         }
 
         private static ConfigSheetDownload ActivityIdsDownload(params string[] activityIds)
