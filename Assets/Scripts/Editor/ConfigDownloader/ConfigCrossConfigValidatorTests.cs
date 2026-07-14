@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using GuildIdle.Configs;
+using GuildIdle.Core;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -61,6 +62,77 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
             Assert.That(report.ToDisplayMessage(), Does.Contain("Warning: Cross-config validation skipped: Enemies Configs registry is not available yet."));
+        }
+
+        [Test]
+        public void Validate_ActivityRequirementsUsesCaseInsensitiveCanonicalTypesAndRejectsUnknownTypes()
+        {
+            var validCollection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityRequirementsDownload("resource", "resource_pine_wood")),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", EmptyDownload(), ItemsRuntimeJson()));
+
+            var validReport = ConfigCrossConfigValidator.Validate(validCollection);
+
+            Assert.That(validReport.Success, Is.True, validReport.ToDisplayMessage());
+
+            var unknownCollection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityRequirementsDownload("UnknownRequirement", "resource_pine_wood")),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", EmptyDownload(), ItemsRuntimeJson()));
+
+            var unknownReport = ConfigCrossConfigValidator.Validate(unknownCollection);
+
+            Assert.That(unknownReport.Success, Is.False);
+            Assert.That(unknownReport.ToDisplayMessage(), Does.Contain("Unknown req_type 'UnknownRequirement'."));
+        }
+
+        [Test]
+        public void Validate_LootDropTypesUsesCaseInsensitiveCanonicalTypesAndRejectsUnknownTypes()
+        {
+            var validCollection = Collection(
+                Source("loot_configs", "GuildIdle - Loot Configs", "loot.json", LootEntriesDownload("resource", "resource_pine_wood")),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", EmptyDownload(), ItemsRuntimeJson()));
+
+            var validReport = ConfigCrossConfigValidator.Validate(validCollection);
+
+            Assert.That(validReport.Success, Is.True, validReport.ToDisplayMessage());
+
+            var unknownCollection = Collection(
+                Source("loot_configs", "GuildIdle - Loot Configs", "loot.json", LootEntriesDownload("UnknownDrop", "resource_pine_wood")),
+                Source("items_configs", "GuildIdle - Items Configs", "items.json", EmptyDownload(), ItemsRuntimeJson()));
+
+            var unknownReport = ConfigCrossConfigValidator.Validate(unknownCollection);
+
+            Assert.That(unknownReport.Success, Is.False);
+            Assert.That(unknownReport.ToDisplayMessage(), Does.Contain("Unknown drop_type 'UnknownDrop'."));
+        }
+
+        [TestCase("GiveItem", TriggerTypeEnum.GiveItem)]
+        [TestCase("unlocklocation", TriggerTypeEnum.UnlockLocation)]
+        [TestCase("StartCombat", TriggerTypeEnum.StartCombat)]
+        public void ActivityTypeParser_UsesCanonicalTriggerTypes(string value, TriggerTypeEnum expected)
+        {
+            Assert.That(ActivityTypeParser.TryParseTriggerType(value, out var actual), Is.True);
+            Assert.That(actual, Is.EqualTo(expected));
+        }
+
+        [TestCase("Resource", RequirementTypeEnum.Resource)]
+        [TestCase("herolevel", RequirementTypeEnum.HeroLevel)]
+        [TestCase("HeroClass", RequirementTypeEnum.HeroClass)]
+        [TestCase("QuestCompleted", RequirementTypeEnum.QuestCompleted)]
+        public void ActivityTypeParser_UsesCanonicalRequirementTypes(string value, RequirementTypeEnum expected)
+        {
+            Assert.That(ActivityTypeParser.TryParseRequirementType(value, out var actual), Is.True);
+            Assert.That(actual, Is.EqualTo(expected));
+        }
+
+        [TestCase("BuildingUnlock", RewardTypeEnum.BuildingUnlock)]
+        [TestCase("unlockbuilding", RewardTypeEnum.UnlockBuilding)]
+        [TestCase("MapAccess", RewardTypeEnum.MapAccess)]
+        [TestCase("unlocklocation", RewardTypeEnum.UnlockLocation)]
+        public void ActivityTypeParser_UsesCanonicalRewardTypes(string value, RewardTypeEnum expected)
+        {
+            Assert.That(ActivityTypeParser.TryParseRewardType(value, out var actual), Is.True);
+            Assert.That(actual, Is.EqualTo(expected));
         }
 
         [Test]
@@ -620,6 +692,22 @@ namespace GuildIdle.Editor.ConfigDownloader
                 rows.Add(Row($"reward_{index}", "activity_test", rewards[index].RewardType, rewards[index].TargetId));
 
             return Download(Sheet("ActivityRewards", rows.ToArray()));
+        }
+
+        private static ConfigSheetDownload ActivityRequirementsDownload(string requirementType, string targetId)
+        {
+            return Download(
+                Sheet("ActivityRequirements",
+                    Row("activity_id", "req_type", "target_id", "value", "consume"),
+                    Row("activity_test", requirementType, targetId, "1", "FALSE")));
+        }
+
+        private static ConfigSheetDownload LootEntriesDownload(string dropType, string targetId)
+        {
+            return Download(
+                Sheet("LootTableEntries",
+                    Row("loot_table_id", "entry_id", "drop_type", "target_id"),
+                    Row("loot_test", "entry_test", dropType, targetId)));
         }
 
         private static ConfigSheetDownload ActivityIdsDownload(params string[] activityIds)

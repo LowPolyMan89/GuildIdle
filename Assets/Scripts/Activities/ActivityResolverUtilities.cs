@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
+using GuildIdle.Core;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
@@ -143,9 +144,10 @@ namespace GuildIdle.Activities
 
         public static bool IsAnyItemType(string type)
         {
-            return RewardType.Matches(type, RewardType.Item) ||
-                RequirementType.Matches(type, RequirementType.ItemCount) ||
-                RewardType.Matches(type, RewardType.Resource);
+            return RequirementType.TryParse(type, out var parsedType) &&
+                (parsedType == RequirementTypeEnum.Item ||
+                 parsedType == RequirementTypeEnum.ItemCount ||
+                 parsedType == RequirementTypeEnum.Resource);
         }
 
         public static bool IsEquipment(string id)

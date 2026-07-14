@@ -1076,38 +1076,62 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var row in table.DataRows)
                 {
+                    var requirementTypeRaw = row.Get("req_type");
+                    if (!ActivityTypeParser.TryParseRequirementType(requirementTypeRaw, out var requirementType))
+                    {
+                        AddIssue(report, activity.Source.DisplayName, "ActivityRequirements", row.RowNumber, "req_type", requirementTypeRaw, $"Unknown req_type '{requirementTypeRaw}'.");
+                        continue;
+                    }
+
+                    if (requirementType == RequirementTypeEnum.HeroLevel ||
+                        requirementType == RequirementTypeEnum.HeroClass ||
+                        requirementType == RequirementTypeEnum.ItemEquipped ||
+                        requirementType == RequirementTypeEnum.QuestCompleted)
+                    {
+                        AddIssue(report, activity.Source.DisplayName, "ActivityRequirements", row.RowNumber, "req_type", requirementTypeRaw, $"Requirement type '{requirementTypeRaw}' is recognized but not supported by activity runtime.");
+                        continue;
+                    }
+
                     var targetId = row.Get("target_id");
                     if (IsBlank(targetId))
                         continue;
 
-                    switch (row.Get("req_type"))
+                    switch (requirementType)
                     {
-                        case "SkillLevel":
+                        case RequirementTypeEnum.SkillLevel:
                             ValidateIdSet(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", activity.SkillIds, "Activity Configs / Skills.skill_id");
                             break;
-                        case "LocationUnlocked":
+                        case RequirementTypeEnum.Resource:
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
+                                ValidateItemTarget(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", registry.Items, ItemTargetKind.Resource, "Items Configs / Ресурсы.id");
+                            break;
+                        case RequirementTypeEnum.LocationUnlocked:
                             if (TryGetRequiredRegistry(report, registry.Map, "Map Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", registry.Map.LocationIds, "Map Configs / MapLocations.location_id");
                             break;
-                        case "BuildingLevel":
+                        case RequirementTypeEnum.BuildingLevel:
+                        case RequirementTypeEnum.Building:
                             if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
                             break;
-                        case "ItemCount":
-                        case "Item":
+                        case RequirementTypeEnum.ItemCount:
+                        case RequirementTypeEnum.Item:
                             if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                                 ValidateItemTarget(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", registry.Items, ItemTargetKind.AnyItem, "Items Configs item/resource/recipe/consumable registry");
                             break;
-                        case "Currency":
+                        case RequirementTypeEnum.Currency:
                             if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", registry.Items.CurrencyIds, "Items Configs / Валюты.currency_id");
                             break;
-                        case "ActivityCompleted":
+                        case RequirementTypeEnum.ActivityCompleted:
                             ValidateIdSet(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", activity.ActivityIds, "Activity Configs / Activities.id");
                             break;
-                        case "HeroAvailable":
+                        case RequirementTypeEnum.HeroAvailable:
                             if (TryGetRequiredRegistry(report, registry.Heroes, "Heroes Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRequirements", row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
+                            break;
+                        default:
+                            AddIssue(report, activity.Source.DisplayName, "ActivityRequirements", row.RowNumber, "req_type", requirementTypeRaw, $"Requirement type '{requirementTypeRaw}' is not supported by activity runtime.");
                             break;
                     }
                 }
@@ -1120,16 +1144,22 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var row in table.DataRows)
                 {
-                    var targetId = row.Get("target_id");
-                    if (IsBlank(targetId))
-                        continue;
-
                     var rewardTypeRaw = row.Get("reward_type");
                     if (!ActivityTypeParser.TryParseRewardTypeLegacy(rewardTypeRaw, out var rewardType))
                     {
                         AddIssue(report, activity.Source.DisplayName, "ActivityRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Unknown reward_type '{rewardTypeRaw}'.");
-                        break;
+                        continue;
                     }
+
+                    if (rewardType == RewardTypeEnum.HeroExp || rewardType == RewardTypeEnum.Reputation)
+                    {
+                        AddIssue(report, activity.Source.DisplayName, "ActivityRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Reward type '{rewardTypeRaw}' is recognized but not supported by activity runtime.");
+                        continue;
+                    }
+
+                    var targetId = row.Get("target_id");
+                    if (IsBlank(targetId) && rewardType != RewardTypeEnum.Gold)
+                        continue;
 
                     switch (rewardType)
                     {
@@ -1157,9 +1187,15 @@ namespace GuildIdle.Editor.ConfigDownloader
                             ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", activity.SkillIds, "Activity Configs / Skills.skill_id");
                             break;
                         case RewardTypeEnum.Currency:
-                        case RewardTypeEnum.Gold:
                             if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Items.CurrencyIds, "Items Configs / Валюты.currency_id");
+                            break;
+                        case RewardTypeEnum.Gold:
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs") &&
+                                !registry.Items.CurrencyIds.Contains(GoldCurrencyId))
+                            {
+                                AddIssue(report, activity.Source.DisplayName, "ActivityRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Gold reward requires '{GoldCurrencyId}' in Items Configs / Валюты.currency_id; target_id is ignored by runtime.");
+                            }
                             break;
                         case RewardTypeEnum.LootTable:
                             if (TryGetRequiredRegistry(report, registry.Loot, "Loot Configs"))
@@ -1169,13 +1205,20 @@ namespace GuildIdle.Editor.ConfigDownloader
                             if (TryGetRequiredRegistry(report, registry.Heroes, "Heroes Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
                             break;
+                        case RewardTypeEnum.UnlockBuilding:
+                        case RewardTypeEnum.BuildingUnlock:
                         case RewardTypeEnum.Building:
                             if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))
                                 ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
                             break;
+                        case RewardTypeEnum.UnlockLocation:
+                        case RewardTypeEnum.MapAccess:
                         case RewardTypeEnum.Location:
                             if (TryGetRequiredRegistry(report, registry.Map, "Map Configs"))
-                                ValidateMapAccess(report, activity.Source.DisplayName, "ActivityRewards", row, registry.Map);
+                                ValidateIdSet(report, activity.Source.DisplayName, "ActivityRewards", row, "target_id", registry.Map.LocationIds, "Map Configs / MapLocations.location_id");
+                            break;
+                        default:
+                            AddIssue(report, activity.Source.DisplayName, "ActivityRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Reward type '{rewardTypeRaw}' is not supported by activity runtime.");
                             break;
                     }
                 }
@@ -1369,9 +1412,15 @@ namespace GuildIdle.Editor.ConfigDownloader
                         ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", activity.SkillIds, "Activity Configs / Skills.skill_id");
                         break;
                     case RewardTypeEnum.Currency:
-                    case RewardTypeEnum.Gold:
                         if (TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Items.CurrencyIds, "Items Configs / currencies.currency_id");
+                        break;
+                    case RewardTypeEnum.Gold:
+                        if (TryGetRequiredRegistry(report, registry.Items, "Items Configs") &&
+                            !registry.Items.CurrencyIds.Contains(GoldCurrencyId))
+                        {
+                            AddIssue(report, activity.Source.DisplayName, "QuestRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Gold reward requires '{GoldCurrencyId}' in Items Configs / currencies.currency_id; target_id is ignored by runtime.");
+                        }
                         break;
                     case RewardTypeEnum.LootTable:
                         if (TryGetRequiredRegistry(report, registry.Loot, "Loot Configs"))
@@ -1381,13 +1430,24 @@ namespace GuildIdle.Editor.ConfigDownloader
                         if (TryGetRequiredRegistry(report, registry.Heroes, "Heroes Configs"))
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
                         break;
+                    case RewardTypeEnum.UnlockBuilding:
+                    case RewardTypeEnum.BuildingUnlock:
                     case RewardTypeEnum.Building:
                         if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs"))
                             ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
                         break;
+                    case RewardTypeEnum.UnlockLocation:
+                    case RewardTypeEnum.MapAccess:
                     case RewardTypeEnum.Location:
                         if (TryGetRequiredRegistry(report, registry.Map, "Map Configs"))
-                            ValidateMapAccess(report, activity.Source.DisplayName, "QuestRewards", row, registry.Map);
+                            ValidateIdSet(report, activity.Source.DisplayName, "QuestRewards", row, "target_id", registry.Map.LocationIds, "Map Configs / MapLocations.location_id");
+                        break;
+                    case RewardTypeEnum.HeroExp:
+                    case RewardTypeEnum.Reputation:
+                        AddIssue(report, activity.Source.DisplayName, "QuestRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Reward type '{rewardTypeRaw}' is recognized but not supported by runtime.");
+                        break;
+                    default:
+                        AddIssue(report, activity.Source.DisplayName, "QuestRewards", row.RowNumber, "reward_type", rewardTypeRaw, $"Reward type '{rewardTypeRaw}' is not supported by runtime.");
                         break;
                 }
             }
@@ -1766,24 +1826,38 @@ namespace GuildIdle.Editor.ConfigDownloader
                     return;
                 }
 
-                if (!TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
-                    return;
+                var hasItemsRegistry = TryGetRequiredRegistry(report, registry.Items, "Items Configs");
 
                 foreach (var row in table.DataRows)
                 {
+                    var dropTypeRaw = row.Get("drop_type");
+                    if (!ActivityTypeParser.TryParseDropType(dropTypeRaw, out var dropType))
+                    {
+                        AddIssue(report, loot.Source.DisplayName, "LootTableEntries", row.RowNumber, "drop_type", dropTypeRaw, $"Unknown drop_type '{dropTypeRaw}'.");
+                        continue;
+                    }
+
                     var targetId = row.Get("target_id");
                     if (IsBlank(targetId))
                         continue;
 
-                    if (string.Equals(row.Get("drop_type"), "Resource", StringComparison.OrdinalIgnoreCase))
+                    if (!hasItemsRegistry)
+                        continue;
+
+                    if (dropType == DropTypeEnum.Resource)
                     {
                         ValidateItemTarget(report, loot.Source.DisplayName, "LootTableEntries", row, "target_id", registry.Items, ItemTargetKind.Resource, "Items Configs / Ресурсы.id");
                         continue;
                     }
 
-                    if (string.Equals(row.Get("drop_type"), "Gold", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(row.Get("drop_type"), "Currency", StringComparison.OrdinalIgnoreCase))
+                    if (dropType == DropTypeEnum.Gold)
                     {
+                        if (!string.Equals(targetId, GoldCurrencyId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            AddIssue(report, loot.Source.DisplayName, "LootTableEntries", row.RowNumber, "target_id", targetId, $"Gold drop_type requires target_id '{GoldCurrencyId}'.");
+                            continue;
+                        }
+
                         ValidateIdSet(report, loot.Source.DisplayName, "LootTableEntries", row, "target_id", registry.Items.CurrencyIds, "Items Configs / Валюты.currency_id");
                         continue;
                     }

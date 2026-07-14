@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
+using GuildIdle.Core;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
@@ -45,114 +46,130 @@ namespace GuildIdle.Activities
             var required = ActivityResolverUtilities.RequirementAmount(requirement.value);
             var type = requirement.reqType ?? string.Empty;
 
-            if (RequirementType.Matches(type, RequirementType.BuildingLevel) ||
-                RequirementType.Matches(type, RequirementType.Building))
+            if (!RequirementType.TryParse(type, out var parsedType))
             {
-                if (!RuntimeConfigs.Buildings.TryGet(targetId, out _))
-                {
-                    Unknown(issues, activityId, type, targetId);
-                    return;
-                }
-
-                var current = state.GetBuildingLevel(targetId);
-                if (current < required)
-                    Missing(issues, activityId, type, targetId, required, current);
+                Unsupported(issues, activityId, type, targetId, required);
                 return;
             }
 
-            if (RequirementType.Matches(type, RequirementType.LocationUnlocked))
+            switch (parsedType)
             {
-                if (!RuntimeConfigs.Map.TryGetLocation(targetId, out _))
-                {
-                    Unknown(issues, activityId, type, targetId);
+                case RequirementTypeEnum.BuildingLevel:
+                case RequirementTypeEnum.Building:
+                    if (!RuntimeConfigs.Buildings.TryGet(targetId, out _))
+                    {
+                        Unknown(issues, activityId, type, targetId);
+                        return;
+                    }
+
+                    var buildingLevel = state.GetBuildingLevel(targetId);
+                    if (buildingLevel < required)
+                        Missing(issues, activityId, type, targetId, required, buildingLevel);
                     return;
-                }
 
-                if (!state.IsLocationUnlocked(targetId))
-                    Missing(issues, activityId, type, targetId, required, 0);
-                return;
-            }
+                case RequirementTypeEnum.LocationUnlocked:
+                    if (!RuntimeConfigs.Map.TryGetLocation(targetId, out _))
+                    {
+                        Unknown(issues, activityId, type, targetId);
+                        return;
+                    }
 
-            if (RequirementType.Matches(type, RequirementType.HeroAvailable))
-            {
-                if (!RuntimeConfigs.Heroes.TryGet(targetId, out _))
-                {
-                    Unknown(issues, activityId, type, targetId);
+                    if (!state.IsLocationUnlocked(targetId))
+                        Missing(issues, activityId, type, targetId, required, 0);
                     return;
-                }
 
-                if (!state.HasHero(targetId))
-                    Missing(issues, activityId, type, targetId, required, 0);
-                return;
-            }
+                case RequirementTypeEnum.HeroAvailable:
+                    if (!RuntimeConfigs.Heroes.TryGet(targetId, out _))
+                    {
+                        Unknown(issues, activityId, type, targetId);
+                        return;
+                    }
 
-            if (RequirementType.Matches(type, RequirementType.ActivityCompleted))
-            {
-                if (!RuntimeConfigs.Activities.TryGet(targetId, out _))
-                {
-                    Unknown(issues, activityId, type, targetId);
+                    if (!state.HasHero(targetId))
+                        Missing(issues, activityId, type, targetId, required, 0);
                     return;
-                }
 
-                if (!state.IsActivityCompleted(targetId))
-                    Missing(issues, activityId, type, targetId, required, 0);
-                return;
-            }
+                case RequirementTypeEnum.ActivityCompleted:
+                    if (!RuntimeConfigs.Activities.TryGet(targetId, out _))
+                    {
+                        Unknown(issues, activityId, type, targetId);
+                        return;
+                    }
 
-            if (ActivityResolverUtilities.IsAnyItemType(type))
-            {
-                if (!RuntimeConfigs.Items.TryGet(targetId, out _))
-                {
-                    Unknown(issues, activityId, type, targetId);
+                    if (!state.IsActivityCompleted(targetId))
+                        Missing(issues, activityId, type, targetId, required, 0);
                     return;
-                }
 
-                var current = state.GetItem(targetId);
-                if (current < required)
-                    Missing(issues, activityId, type, targetId, required, current);
-                return;
-            }
+                case RequirementTypeEnum.Resource:
+                    if (!RuntimeConfigs.Items.TryGetResource(targetId, out _))
+                    {
+                        Unknown(issues, activityId, type, targetId);
+                        return;
+                    }
 
-            if (RequirementType.Matches(type, RequirementType.Currency))
-            {
-                if (!RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
-                {
-                    Unknown(issues, activityId, type, targetId);
+                    var resourceCount = state.GetItem(targetId);
+                    if (resourceCount < required)
+                        Missing(issues, activityId, type, targetId, required, resourceCount);
                     return;
-                }
 
-                var current = state.GetCurrency(targetId);
-                if (current < required)
-                    Missing(issues, activityId, type, targetId, required, current);
-                return;
-            }
+                case RequirementTypeEnum.Item:
+                case RequirementTypeEnum.ItemCount:
+                    if (!RuntimeConfigs.Items.TryGet(targetId, out _))
+                    {
+                        Unknown(issues, activityId, type, targetId);
+                        return;
+                    }
 
-            if (RequirementType.Matches(type, RequirementType.SkillLevel))
-            {
-                if (!ActivityResolverUtilities.IsKnownSkill(targetId))
-                {
-                    Unknown(issues, activityId, type, targetId);
+                    var itemCount = state.GetItem(targetId);
+                    if (itemCount < required)
+                        Missing(issues, activityId, type, targetId, required, itemCount);
                     return;
-                }
 
-                if (context == null || string.IsNullOrWhiteSpace(context.heroId))
-                {
-                    ActivityResolverUtilities.AddIssue(issues, activityId, type, targetId, required, 0, true, false, $"[ActivityRequirementResolver] Requirement '{type}' needs an executor hero context.");
+                case RequirementTypeEnum.Currency:
+                    if (!RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
+                    {
+                        Unknown(issues, activityId, type, targetId);
+                        return;
+                    }
+
+                    var currency = state.GetCurrency(targetId);
+                    if (currency < required)
+                        Missing(issues, activityId, type, targetId, required, currency);
                     return;
-                }
 
-                var current = state.GetHeroSkillLevel(context.heroId, targetId);
-                if (current < required)
-                    Missing(issues, activityId, type, targetId, required, current);
-                return;
+                case RequirementTypeEnum.SkillLevel:
+                    if (!ActivityResolverUtilities.IsKnownSkill(targetId))
+                    {
+                        Unknown(issues, activityId, type, targetId);
+                        return;
+                    }
+
+                    if (context == null || string.IsNullOrWhiteSpace(context.heroId))
+                    {
+                        ActivityResolverUtilities.AddIssue(issues, activityId, type, targetId, required, 0, true, false, $"[ActivityRequirementResolver] Requirement '{type}' needs an executor hero context.");
+                        return;
+                    }
+
+                    var skillLevel = state.GetHeroSkillLevel(context.heroId, targetId);
+                    if (skillLevel < required)
+                        Missing(issues, activityId, type, targetId, required, skillLevel);
+                    return;
+
+                case RequirementTypeEnum.HeroLevel:
+                case RequirementTypeEnum.HeroClass:
+                case RequirementTypeEnum.ItemEquipped:
+                case RequirementTypeEnum.QuestCompleted:
+                    ActivityResolverUtilities.AddIssue(issues, activityId, type, targetId, required, 0, true, true, $"[ActivityRequirementResolver] Requirement '{type}' is recognized but not implemented in PlayerState yet.");
+                    return;
+
+                default:
+                    Unsupported(issues, activityId, type, targetId, required);
+                    return;
             }
+        }
 
-            if (RequirementType.Matches(type, RequirementType.ItemEquipped))
-            {
-                ActivityResolverUtilities.AddIssue(issues, activityId, type, targetId, required, 0, false, true, $"[ActivityRequirementResolver] Requirement '{type}' is not implemented in PlayerState yet.");
-                return;
-            }
-
+        private static void Unsupported(List<ActivityRequirementIssue> issues, string activityId, string type, string targetId, int required)
+        {
             ActivityResolverUtilities.AddIssue(issues, activityId, type, targetId, required, 0, true, false, $"[ActivityRequirementResolver] Unsupported requirement type '{type}'.");
             Debug.LogError($"[ActivityRequirementResolver] Unsupported requirement type '{type}' for activity '{activityId}'.");
         }

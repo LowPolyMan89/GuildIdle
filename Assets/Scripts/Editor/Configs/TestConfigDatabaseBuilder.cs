@@ -141,8 +141,10 @@ namespace GuildIdle.Editor.Configs
                     Reward("direct_rewards", "Gold", "ignored", 7, "OnComplete"),
                     Reward("direct_rewards", "Currency", "gem_id", 3, "OnComplete"),
                     Reward("direct_rewards", "Hero", "ren", 1, "OnComplete"),
-                    Reward("direct_rewards", "Building", "building_underwood", 1, "OnComplete"),
-                    Reward("direct_rewards", "Location", "fields_1", 1, "OnComplete"),
+                    Reward("direct_rewards", "BuildingUnlock", "building_underwood", 1, "OnComplete"),
+                    Reward("direct_rewards", "UnlockBuilding", "building_underwood", 1, "OnComplete"),
+                    Reward("direct_rewards", "MapAccess", "fields_1", 1, "OnComplete"),
+                    Reward("direct_rewards", "UnlockLocation", "fields_1", 1, "OnComplete"),
                     Reward("direct_rewards", "SkillExp", "skill_gathering", 5, "OnComplete"),
                     Reward("once_complete", "Resource", "resource_pine_wood", 1, "OnComplete"),
                     Reward("repeat_complete", "Resource", "resource_flax", 1, "OnComplete"),
@@ -303,7 +305,8 @@ namespace GuildIdle.Editor.Configs
                     new LootTableConfigDto { lootTableId = "weighted_one", rollMode = "WeightedOne", rollCountMin = 1, rollCountMax = 1, enabled = true },
                     new LootTableConfigDto { lootTableId = "weighted_many", rollMode = "WeightedMany", rollCountMin = 2, rollCountMax = 2, enabled = true },
                     new LootTableConfigDto { lootTableId = "guaranteed_all", rollMode = "GuaranteedAll", rollCountMin = 1, rollCountMax = 1, enabled = true },
-                    new LootTableConfigDto { lootTableId = "hunting_rabbits_resources", rollMode = "WeightedMany", rollCountMin = 1, rollCountMax = 1, enabled = true }
+                    new LootTableConfigDto { lootTableId = "hunting_rabbits_resources", rollMode = "WeightedMany", rollCountMin = 1, rollCountMax = 1, enabled = true },
+                    new LootTableConfigDto { lootTableId = "invalid_drop", rollMode = "GuaranteedAll", rollCountMin = 1, rollCountMax = 1, enabled = true }
                 },
                 lootGroups = new[]
                 {
@@ -313,11 +316,12 @@ namespace GuildIdle.Editor.Configs
                 },
                 lootTableEntries = new[]
                 {
-                    Entry("weighted_one", "weighted_one_wood", "Resource", "resource_pine_wood", string.Empty),
+                    Entry("weighted_one", "weighted_one_wood", "resource", "resource_pine_wood", string.Empty),
                     Entry("weighted_many", "weighted_many_wood", "Resource", "resource_pine_wood", "default"),
                     Entry("guaranteed_all", "guaranteed_wood", "Resource", "resource_pine_wood", "default"),
                     Entry("guaranteed_all", "guaranteed_gold", "Gold", "gold_id", "default"),
-                    Entry("hunting_rabbits_resources", "thin_hide", "Resource", "resource_thin_hide", "default")
+                    Entry("hunting_rabbits_resources", "thin_hide", "Resource", "resource_thin_hide", "default"),
+                    Entry("invalid_drop", "invalid_drop_entry", "UnknownDrop", "resource_pine_wood", string.Empty)
                 }
             };
             return this;

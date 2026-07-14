@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
+using GuildIdle.Core;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
@@ -88,7 +89,13 @@ namespace GuildIdle.Activities
             var targetId = reward.targetId;
             var amount = ActivityResolverUtilities.PositiveAmount(reward.min, reward.max, random);
 
-            if (RewardType.Matches(type, RewardType.SkillExp))
+            if (!RewardType.TryParse(type, out var parsedType))
+            {
+                UnsupportedReward(issues, reward, type);
+                return;
+            }
+
+            if (parsedType == RewardTypeEnum.SkillExp)
             {
                 if (!ActivityResolverUtilities.IsKnownSkill(targetId))
                 {
@@ -108,7 +115,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (RewardType.Matches(type, RewardType.LootTable))
+            if (parsedType == RewardTypeEnum.LootTable)
             {
                 if (!apply)
                 {
@@ -126,7 +133,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (TryResolveCurrencyReward(type, targetId, out var currencyId, out var normalizedType))
+            if (TryResolveCurrencyReward(parsedType, targetId, out var currencyId, out var normalizedType))
             {
                 if (!RuntimeConfigs.Items.TryGetCurrency(currencyId, out _))
                 {
@@ -139,7 +146,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (RewardType.Matches(type, RewardType.Hero))
+            if (parsedType == RewardTypeEnum.Hero)
             {
                 if (!RuntimeConfigs.Heroes.TryGet(targetId, out _))
                 {
@@ -152,7 +159,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (RewardType.Matches(type, RewardType.Building))
+            if (IsBuildingUnlock(parsedType))
             {
                 if (!RuntimeConfigs.Buildings.TryGet(targetId, out _))
                 {
@@ -165,7 +172,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (RewardType.Matches(type, RewardType.Location))
+            if (IsLocationUnlock(parsedType))
             {
                 if (!RuntimeConfigs.Map.TryGetLocation(targetId, out _))
                 {
@@ -178,9 +185,9 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (IsItemRewardType(type))
+            if (IsItemRewardType(parsedType))
             {
-                if (!TryValidateItemReward(type, targetId))
+                if (!TryValidateItemReward(parsedType, targetId))
                 {
                     AddRewardIssue(issues, reward, true, false, $"Unknown {type} reward target id '{targetId}'.");
                     return;
@@ -191,20 +198,25 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            AddRewardIssue(issues, reward, true, false, $"Unsupported reward type '{type}'.");
-            Debug.LogError($"[ActivityRewardResolver] Unsupported reward type '{type}' for activity '{reward.activityId}'.");
+            if (parsedType == RewardTypeEnum.HeroExp || parsedType == RewardTypeEnum.Reputation)
+            {
+                AddRewardIssue(issues, reward, true, true, $"Reward type '{type}' is recognized but not implemented in PlayerState yet.");
+                return;
+            }
+
+            UnsupportedReward(issues, reward, type);
         }
 
-        private static bool TryResolveCurrencyReward(string type, string targetId, out string currencyId, out string normalizedType)
+        private static bool TryResolveCurrencyReward(RewardTypeEnum type, string targetId, out string currencyId, out string normalizedType)
         {
-            if (RewardType.Matches(type, RewardType.Gold))
+            if (type == RewardTypeEnum.Gold)
             {
                 currencyId = ActivityResolverUtilities.GoldCurrencyId;
                 normalizedType = RewardType.Gold;
                 return true;
             }
 
-            if (RewardType.Matches(type, RewardType.Currency))
+            if (type == RewardTypeEnum.Currency)
             {
                 currencyId = targetId;
                 normalizedType = RewardType.Currency;
@@ -216,33 +228,52 @@ namespace GuildIdle.Activities
             return false;
         }
 
-        private static bool TryValidateItemReward(string type, string targetId)
+        private static bool TryValidateItemReward(RewardTypeEnum type, string targetId)
         {
-            if (RewardType.Matches(type, RewardType.Resource))
-                return RuntimeConfigs.Items.TryGetResource(targetId, out _);
-
-            if (RewardType.Matches(type, RewardType.Equipment))
-                return ActivityResolverUtilities.IsEquipment(targetId);
-
-            if (RewardType.Matches(type, RewardType.Consumable))
-                return RuntimeConfigs.Items.TryGetConsumable(targetId, out _);
-
-            if (RewardType.Matches(type, RewardType.Recipe))
-                return RuntimeConfigs.Items.TryGetRecipe(targetId, out _);
-
-            if (RewardType.Matches(type, RewardType.Item))
-                return RuntimeConfigs.Items.TryGet(targetId, out _);
-
-            return false;
+            switch (type)
+            {
+                case RewardTypeEnum.Resource:
+                    return RuntimeConfigs.Items.TryGetResource(targetId, out _);
+                case RewardTypeEnum.Equipment:
+                    return ActivityResolverUtilities.IsEquipment(targetId);
+                case RewardTypeEnum.Consumable:
+                    return RuntimeConfigs.Items.TryGetConsumable(targetId, out _);
+                case RewardTypeEnum.Recipe:
+                    return RuntimeConfigs.Items.TryGetRecipe(targetId, out _);
+                case RewardTypeEnum.Item:
+                    return RuntimeConfigs.Items.TryGet(targetId, out _);
+                default:
+                    return false;
+            }
         }
 
-        private static bool IsItemRewardType(string type)
+        private static bool IsItemRewardType(RewardTypeEnum type)
         {
-            return RewardType.Matches(type, RewardType.Resource) ||
-                RewardType.Matches(type, RewardType.Equipment) ||
-                RewardType.Matches(type, RewardType.Consumable) ||
-                RewardType.Matches(type, RewardType.Recipe) ||
-                RewardType.Matches(type, RewardType.Item);
+            return type == RewardTypeEnum.Resource ||
+                type == RewardTypeEnum.Equipment ||
+                type == RewardTypeEnum.Consumable ||
+                type == RewardTypeEnum.Recipe ||
+                type == RewardTypeEnum.Item;
+        }
+
+        private static bool IsBuildingUnlock(RewardTypeEnum type)
+        {
+            return type == RewardTypeEnum.UnlockBuilding ||
+                type == RewardTypeEnum.BuildingUnlock ||
+                type == RewardTypeEnum.Building;
+        }
+
+        private static bool IsLocationUnlock(RewardTypeEnum type)
+        {
+            return type == RewardTypeEnum.UnlockLocation ||
+                type == RewardTypeEnum.MapAccess ||
+                type == RewardTypeEnum.Location;
+        }
+
+        private static void UnsupportedReward(List<ActivityRequirementIssue> issues, ActivityRewardConfigDto reward, string type)
+        {
+            AddRewardIssue(issues, reward, true, false, $"Unsupported reward type '{type}'.");
+            Debug.LogError($"[ActivityRewardResolver] Unsupported reward type '{type}' for activity '{reward.activityId}'.");
         }
 
         private static void AddRewardIssue(List<ActivityRequirementIssue> issues, ActivityRewardConfigDto reward, bool isError, bool isNotImplemented, string message)

@@ -127,6 +127,10 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.IsBuildingUnlocked("building_underwood"), Is.True);
             Assert.That(state.IsLocationUnlocked("fields_1"), Is.True);
             Assert.That(state.GetHeroSkillExp("ren", "skill_gathering"), Is.EqualTo(5));
+            Assert.That(HasRewardType(result.rewards, "BuildingUnlock"), Is.True);
+            Assert.That(HasRewardType(result.rewards, "UnlockBuilding"), Is.True);
+            Assert.That(HasRewardType(result.rewards, "MapAccess"), Is.True);
+            Assert.That(HasRewardType(result.rewards, "UnlockLocation"), Is.True);
             Assert.That(HasHeroSkillExpReward(result.rewards), Is.True);
 
             var saveData = state.ToSaveData();
@@ -176,6 +180,18 @@ namespace GuildIdle.Editor.Activities
             Assert.That(enemyLoot.drops[0].isCurrency, Is.True);
             Assert.That(enemyLoot.drops[1].targetId, Is.EqualTo("gem_id"));
             Assert.That(enemyLoot.drops[1].isCurrency, Is.True);
+        }
+
+        [Test]
+        public void LootResolver_RejectsUnknownDropType()
+        {
+            LogAssert.Expect(LogType.Error, "[LootResolver] Unsupported drop type 'UnknownDrop' from 'invalid_drop_entry'.");
+
+            var result = LootResolver.RollLootTable("invalid_drop", new FixedRandom());
+
+            Assert.That(result.success, Is.False);
+            Assert.That(result.issues, Has.Length.EqualTo(1));
+            Assert.That(result.issues[0], Does.Contain("Unsupported drop type 'UnknownDrop'"));
         }
 
         [Test]
@@ -230,6 +246,17 @@ namespace GuildIdle.Editor.Activities
                 {
                     return true;
                 }
+            }
+
+            return false;
+        }
+
+        private static bool HasRewardType(ActivityAppliedReward[] rewards, string rewardType)
+        {
+            foreach (var reward in rewards)
+            {
+                if (reward.rewardType == rewardType)
+                    return true;
             }
 
             return false;

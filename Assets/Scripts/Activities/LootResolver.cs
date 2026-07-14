@@ -84,7 +84,7 @@ namespace GuildIdle.Activities
                 if (amount <= 0)
                     continue;
 
-                AddDrop("EnemyLoot", row.lootId, amount, row.lootId, drops, issues);
+                AddEnemyDrop(row.lootId, amount, drops, issues);
             }
 
             return new LootRollResult
@@ -157,7 +157,13 @@ namespace GuildIdle.Activities
             List<LootDropResult> drops,
             List<string> issues)
         {
-            if (LootRollMode.Matches(rollMode, LootRollMode.GuaranteedAll))
+            if (!ActivityTypeParser.TryParseLootRollMode(rollMode, out var parsedRollMode))
+            {
+                issues.Add($"Unsupported roll mode '{rollMode}' in loot table '{lootTableId}' group '{rollGroup}'.");
+                return;
+            }
+
+            if (parsedRollMode == LootRollModeEnum.GuaranteedAll)
             {
                 foreach (var entry in entries)
                 {
@@ -165,13 +171,6 @@ namespace GuildIdle.Activities
                         AddDrop(entry.dropType, entry.targetId, ActivityResolverUtilities.PositiveAmount(entry.min, entry.max, random), entry.entryId, drops, issues);
                 }
 
-                return;
-            }
-
-            if (!LootRollMode.Matches(rollMode, LootRollMode.WeightedOne) &&
-                !LootRollMode.Matches(rollMode, LootRollMode.WeightedMany))
-            {
-                issues.Add($"Unsupported roll mode '{rollMode}' in loot table '{lootTableId}' group '{rollGroup}'.");
                 return;
             }
 
@@ -184,7 +183,7 @@ namespace GuildIdle.Activities
 
                 AddDrop(selected.dropType, selected.targetId, ActivityResolverUtilities.PositiveAmount(selected.min, selected.max, random), selected.entryId, drops, issues);
 
-                if (LootRollMode.Matches(rollMode, LootRollMode.WeightedOne))
+                if (parsedRollMode == LootRollModeEnum.WeightedOne)
                     break;
             }
         }
@@ -219,52 +218,88 @@ namespace GuildIdle.Activities
 
         private static void AddDrop(string dropType, string targetId, int amount, string sourceId, List<LootDropResult> drops, List<string> issues)
         {
-            var resolvedType = dropType ?? string.Empty;
-            var resolvedTarget = targetId;
-            var isCurrency = false;
-
-            if (DropType.Matches(resolvedType, DropType.Gold) ||
-                string.Equals(targetId, ActivityResolverUtilities.GoldCurrencyId, StringComparison.Ordinal))
+            if (!DropType.TryParse(dropType, out var parsedType))
             {
-                resolvedType = DropType.Gold;
-                resolvedTarget = ActivityResolverUtilities.GoldCurrencyId;
-                isCurrency = true;
-            }
-            else if (DropType.Matches(resolvedType, DropType.Currency))
-            {
-                isCurrency = true;
-            }
-            else if (RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
-            {
-                resolvedType = DropType.Currency;
-                isCurrency = true;
-            }
-
-            if (isCurrency)
-            {
-                if (!RuntimeConfigs.Items.TryGetCurrency(resolvedTarget, out _))
-                {
-                    issues.Add($"Unknown currency loot target '{resolvedTarget}' from '{sourceId}'.");
-                    Debug.LogError($"[LootResolver] Unknown currency loot target '{resolvedTarget}' from '{sourceId}'.");
-                    return;
-                }
-            }
-            else if (!RuntimeConfigs.Items.TryGet(resolvedTarget, out _))
-            {
-                issues.Add($"Unknown item loot target '{resolvedTarget}' from '{sourceId}'.");
-                Debug.LogError($"[LootResolver] Unknown item loot target '{resolvedTarget}' from '{sourceId}'.");
+                AddDropIssue(issues, $"Unsupported drop type '{dropType}' from '{sourceId}'.");
                 return;
             }
 
+            switch (parsedType)
+            {
+                case DropTypeEnum.Gold:
+                    if (!string.Equals(targetId, ActivityResolverUtilities.GoldCurrencyId, StringComparison.OrdinalIgnoreCase) ||
+                        !RuntimeConfigs.Items.TryGetCurrency(ActivityResolverUtilities.GoldCurrencyId, out _))
+                    {
+                        AddDropIssue(issues, $"Unknown Gold loot target '{targetId}' from '{sourceId}'. Expected '{ActivityResolverUtilities.GoldCurrencyId}'.");
+                        return;
+                    }
+
+                    AddResolvedDrop(DropType.Gold, ActivityResolverUtilities.GoldCurrencyId, amount, true, drops);
+                    return;
+
+                case DropTypeEnum.Resource:
+                    if (!RuntimeConfigs.Items.TryGetResource(targetId, out _))
+                    {
+                        AddDropIssue(issues, $"Unknown Resource loot target '{targetId}' from '{sourceId}'.");
+                        return;
+                    }
+
+                    AddResolvedDrop(DropType.Resource, targetId, amount, false, drops);
+                    return;
+
+                case DropTypeEnum.Item:
+                    if (!RuntimeConfigs.Items.TryGet(targetId, out _))
+                    {
+                        AddDropIssue(issues, $"Unknown Item loot target '{targetId}' from '{sourceId}'.");
+                        return;
+                    }
+
+                    AddResolvedDrop(DropType.Item, targetId, amount, false, drops);
+                    return;
+
+                default:
+                    AddDropIssue(issues, $"Unsupported drop type '{dropType}' from '{sourceId}'.");
+                    return;
+            }
+        }
+
+        private static void AddEnemyDrop(string targetId, int amount, List<LootDropResult> drops, List<string> issues)
+        {
+            if (RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
+            {
+                var type = string.Equals(targetId, ActivityResolverUtilities.GoldCurrencyId, StringComparison.OrdinalIgnoreCase)
+                    ? DropType.Gold
+                    : "Currency";
+                AddResolvedDrop(type, targetId, amount, true, drops);
+                return;
+            }
+
+            if (!RuntimeConfigs.Items.TryGet(targetId, out _))
+            {
+                AddDropIssue(issues, $"Unknown enemy loot target '{targetId}'.");
+                return;
+            }
+
+            AddResolvedDrop(DropType.Item, targetId, amount, false, drops);
+        }
+
+        private static void AddResolvedDrop(string dropType, string targetId, int amount, bool isCurrency, List<LootDropResult> drops)
+        {
             drops.Add(new LootDropResult
             {
-                dropType = resolvedType,
-                targetId = resolvedTarget,
+                dropType = dropType,
+                targetId = targetId,
                 amount = amount,
                 isCurrency = isCurrency,
                 granted = false,
                 message = "Rolled loot drop."
             });
+        }
+
+        private static void AddDropIssue(List<string> issues, string issue)
+        {
+            issues.Add(issue);
+            Debug.LogError($"[LootResolver] {issue}");
         }
 
         private static LootRollResult FailedTable(string lootTableId, string issue)

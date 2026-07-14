@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
+using GuildIdle.Core;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Activities
@@ -132,31 +133,49 @@ namespace GuildIdle.Activities
             var targetId = requirement.targetId;
             var amount = ActivityResolverUtilities.RequirementAmount(requirement.value);
 
-            if (ActivityResolverUtilities.IsAnyItemType(type))
+            if (!RequirementType.TryParse(type, out var parsedType))
             {
-                if (!RuntimeConfigs.Items.TryGet(targetId, out _))
-                {
-                    AddUnknownCostIssue(requirement, issues);
-                    return;
-                }
-
-                AddAggregatedCost(itemCosts, targetId, amount);
+                ActivityResolverUtilities.AddIssue(issues, requirement.activityId, type, targetId, amount, 0, true, false, $"Unsupported consumable requirement type '{type}'.");
                 return;
             }
 
-            if (RequirementType.Matches(type, RequirementType.Currency))
+            switch (parsedType)
             {
-                if (!RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
-                {
-                    AddUnknownCostIssue(requirement, issues);
+                case RequirementTypeEnum.Resource:
+                    if (!RuntimeConfigs.Items.TryGetResource(targetId, out _))
+                    {
+                        AddUnknownCostIssue(requirement, issues);
+                        return;
+                    }
+
+                    AddAggregatedCost(itemCosts, targetId, amount);
                     return;
-                }
 
-                AddAggregatedCost(currencyCosts, targetId, amount);
-                return;
+                case RequirementTypeEnum.Item:
+                case RequirementTypeEnum.ItemCount:
+                    if (!RuntimeConfigs.Items.TryGet(targetId, out _))
+                    {
+                        AddUnknownCostIssue(requirement, issues);
+                        return;
+                    }
+
+                    AddAggregatedCost(itemCosts, targetId, amount);
+                    return;
+
+                case RequirementTypeEnum.Currency:
+                    if (!RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
+                    {
+                        AddUnknownCostIssue(requirement, issues);
+                        return;
+                    }
+
+                    AddAggregatedCost(currencyCosts, targetId, amount);
+                    return;
+
+                default:
+                    ActivityResolverUtilities.AddIssue(issues, requirement.activityId, type, targetId, amount, 0, false, true, $"Consumable requirement '{type}' is not implemented as a cost.");
+                    return;
             }
-
-            ActivityResolverUtilities.AddIssue(issues, requirement.activityId, type, targetId, amount, 0, false, true, $"Consumable requirement '{type}' is not implemented as a cost.");
         }
 
         private static void AddUnknownCostIssue(ActivityRequirementConfigDto requirement, List<ActivityRequirementIssue> issues)

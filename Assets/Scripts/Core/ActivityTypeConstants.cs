@@ -2,56 +2,66 @@ using System;
 
 namespace GuildIdle.Core
 {
-    // ===== Enums =====
-
     public enum RequirementTypeEnum
     {
+        HeroLevel,
         SkillLevel,
-        LocationUnlocked,
-        BuildingLevel,
+        Resource,
         Building,
-        ItemCount,
-        Item,
-        Currency,
-        ActivityCompleted,
-        HeroAvailable,
+        LocationUnlocked,
+        HeroClass,
         ItemEquipped,
+        QuestCompleted,
+        ActivityCompleted,
+        Item,
+        BuildingLevel,
+        HeroAvailable,
+
+        // Compatibility values used by the current MVP runtime/test data.
+        ItemCount,
+        Currency,
     }
 
     public enum RewardTypeEnum
     {
         Resource,
+        Gold,
         Item,
+        SkillExp,
+        HeroExp,
+        LootTable,
+        Reputation,
+        UnlockLocation,
+        UnlockBuilding,
+        Hero,
         Equipment,
+        BuildingUnlock,
+        MapAccess,
         Consumable,
         Recipe,
-        SkillExp,
+
+        // Compatibility values used by existing runtime data.
         Currency,
-        Gold,
-        Hero,
         Building,
         Location,
-        LootTable,
     }
 
     public enum DropTypeEnum
     {
-        Resource,
         Item,
-        Equipment,
-        Consumable,
-        Recipe,
-        Currency,
+        Resource,
         Gold,
     }
 
     public enum TriggerTypeEnum
     {
-        ActivityCompleted,
-        BuildingLevel,
-        HeroAvailable,
-        LocationUnlocked,
-        ItemCount,
+        StartCombat,
+        UnlockLocation,
+        UnlockBuilding,
+        AddReputation,
+        StartActivity,
+        CompleteQuest,
+        GiveItem,
     }
 
     public enum GrantMomentEnum
@@ -69,56 +79,66 @@ namespace GuildIdle.Core
         WeightedMany,
     }
 
-    // ===== String constants (for config data that is always strings) =====
-
     public static class RequirementType
     {
+        public const string HeroLevel = "HeroLevel";
         public const string SkillLevel = "SkillLevel";
-        public const string LocationUnlocked = "LocationUnlocked";
-        public const string BuildingLevel = "BuildingLevel";
+        public const string Resource = "Resource";
         public const string Building = "Building";
-        public const string ItemCount = "ItemCount";
-        public const string Item = "Item";
-        public const string Currency = "Currency";
-        public const string ActivityCompleted = "ActivityCompleted";
-        public const string HeroAvailable = "HeroAvailable";
+        public const string LocationUnlocked = "LocationUnlocked";
+        public const string HeroClass = "HeroClass";
         public const string ItemEquipped = "ItemEquipped";
+        public const string QuestCompleted = "QuestCompleted";
+        public const string ActivityCompleted = "ActivityCompleted";
+        public const string Item = "Item";
+        public const string BuildingLevel = "BuildingLevel";
+        public const string HeroAvailable = "HeroAvailable";
+
+        // Compatibility values used by the current MVP runtime/test data.
+        public const string ItemCount = "ItemCount";
+        public const string Currency = "Currency";
     }
 
     public static class RewardType
     {
         public const string Resource = "Resource";
+        public const string Gold = "Gold";
         public const string Item = "Item";
+        public const string SkillExp = "SkillExp";
+        public const string HeroExp = "HeroExp";
+        public const string LootTable = "LootTable";
+        public const string Reputation = "Reputation";
+        public const string UnlockLocation = "UnlockLocation";
+        public const string UnlockBuilding = "UnlockBuilding";
+        public const string Hero = "Hero";
         public const string Equipment = "Equipment";
+        public const string BuildingUnlock = "BuildingUnlock";
+        public const string MapAccess = "MapAccess";
         public const string Consumable = "Consumable";
         public const string Recipe = "Recipe";
-        public const string SkillExp = "SkillExp";
+
+        // Compatibility values used by existing runtime data.
         public const string Currency = "Currency";
-        public const string Gold = "Gold";
-        public const string Hero = "Hero";
         public const string Building = "Building";
         public const string Location = "Location";
-        public const string LootTable = "LootTable";
     }
 
     public static class DropType
     {
-        public const string Resource = "Resource";
         public const string Item = "Item";
-        public const string Equipment = "Equipment";
-        public const string Consumable = "Consumable";
-        public const string Recipe = "Recipe";
-        public const string Currency = "Currency";
+        public const string Resource = "Resource";
         public const string Gold = "Gold";
     }
 
     public static class TriggerType
     {
-        public const string ActivityCompleted = "ActivityCompleted";
-        public const string BuildingLevel = "BuildingLevel";
-        public const string HeroAvailable = "HeroAvailable";
-        public const string LocationUnlocked = "LocationUnlocked";
-        public const string ItemCount = "ItemCount";
+        public const string StartCombat = "StartCombat";
+        public const string UnlockLocation = "UnlockLocation";
+        public const string UnlockBuilding = "UnlockBuilding";
+        public const string AddReputation = "AddReputation";
+        public const string StartActivity = "StartActivity";
+        public const string CompleteQuest = "CompleteQuest";
+        public const string GiveItem = "GiveItem";
     }
 
     public static class GrantMoment
@@ -139,80 +159,51 @@ namespace GuildIdle.Core
             string.Equals(value, constant, StringComparison.OrdinalIgnoreCase);
     }
 
-    // ===== Parser =====
-
     public static class ActivityTypeParser
     {
-        // --- RequirementType ---
-
         public static bool TryParseRequirementType(string value, out RequirementTypeEnum result)
         {
-            return Enum.TryParse(value, ignoreCase: true, out result);
+            return TryParseDefined(value, out result);
         }
-
-        // --- RewardType ---
 
         public static bool TryParseRewardType(string value, out RewardTypeEnum result)
         {
-            return Enum.TryParse(value, ignoreCase: true, out result);
+            return TryParseDefined(value, out result);
         }
 
-        /// <summary>
-        /// Parses reward type with legacy name mapping.
-        /// "BuildingUnlock" → RewardTypeEnum.Building
-        /// "MapAccess" → RewardTypeEnum.Location
-        /// "UnlockBuilding" → RewardTypeEnum.Building
-        /// "UnlockLocation" → RewardTypeEnum.Location
-        /// </summary>
+        // Compatibility entry point retained for existing validator callers.
         public static bool TryParseRewardTypeLegacy(string value, out RewardTypeEnum result)
         {
-            if (string.IsNullOrEmpty(value))
-            {
-                result = default;
-                return false;
-            }
-
-            switch (value)
-            {
-                case "BuildingUnlock":
-                case "UnlockBuilding":
-                    result = RewardTypeEnum.Building;
-                    return true;
-                case "MapAccess":
-                case "UnlockLocation":
-                    result = RewardTypeEnum.Location;
-                    return true;
-                default:
-                    return Enum.TryParse(value, ignoreCase: true, out result);
-            }
+            return TryParseRewardType(value, out result);
         }
-
-        // --- DropType ---
 
         public static bool TryParseDropType(string value, out DropTypeEnum result)
         {
-            return Enum.TryParse(value, ignoreCase: true, out result);
+            return TryParseDefined(value, out result);
         }
-
-        // --- TriggerType ---
 
         public static bool TryParseTriggerType(string value, out TriggerTypeEnum result)
         {
-            return Enum.TryParse(value, ignoreCase: true, out result);
+            return TryParseDefined(value, out result);
         }
-
-        // --- GrantMoment ---
 
         public static bool TryParseGrantMoment(string value, out GrantMomentEnum result)
         {
-            return Enum.TryParse(value, ignoreCase: true, out result);
+            return TryParseDefined(value, out result);
         }
-
-        // --- LootRollMode ---
 
         public static bool TryParseLootRollMode(string value, out LootRollModeEnum result)
         {
-            return Enum.TryParse(value, ignoreCase: true, out result);
+            return TryParseDefined(value, out result);
+        }
+
+        private static bool TryParseDefined<TEnum>(string value, out TEnum result)
+            where TEnum : struct
+        {
+            result = default;
+            return !string.IsNullOrWhiteSpace(value) &&
+                Enum.TryParse(value, true, out result) &&
+                Enum.IsDefined(typeof(TEnum), result);
         }
     }
 }
