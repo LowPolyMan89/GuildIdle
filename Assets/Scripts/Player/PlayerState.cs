@@ -9,10 +9,6 @@ namespace GuildIdle.Player
 {
     public sealed class PlayerState
     {
-        private const string StarterActivityId = "starter_hero_available";
-        private const string StarterHeroId = "ren";
-        private const string StarterEquipmentId = "item_wooden_club";
-
         private readonly Dictionary<string, long> _currencies = new Dictionary<string, long>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _items = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedHeroes = new HashSet<string>(StringComparer.Ordinal);
@@ -37,9 +33,7 @@ namespace GuildIdle.Player
 
         public static PlayerState CreateDefault()
         {
-            var state = new PlayerState(new SaveData());
-            state.ApplyDefaultBootstrap();
-            return state;
+            return PlayerStateFactory.CreateDefault();
         }
 
         public SaveData ToSaveData()
@@ -512,64 +506,6 @@ namespace GuildIdle.Player
             LoadActivityRuntime(saveData.activityRuntime);
         }
 
-        private void ApplyDefaultBootstrap()
-        {
-            ApplyDefaultBuildingsBootstrap();
-
-            if (!ValidateActivityId(StarterActivityId))
-                return;
-
-            var rewards = RuntimeConfigs.Activities.GetRewards(StarterActivityId);
-            var grantedStarterHero = false;
-
-            foreach (var reward in rewards)
-            {
-                if (reward == null)
-                    continue;
-
-                if (IsReward(reward, "Hero", StarterHeroId))
-                {
-                    AddHero(StarterHeroId);
-                    grantedStarterHero = true;
-                    continue;
-                }
-
-                if (IsReward(reward, "Equipment", StarterEquipmentId))
-                    AddItem(StarterEquipmentId, RewardAmount(reward));
-            }
-
-            if (!grantedStarterHero)
-                Debug.LogError($"[PlayerState] Starter bootstrap '{StarterActivityId}' has no Hero reward for '{StarterHeroId}'.");
-        }
-
-        private void ApplyDefaultBuildingsBootstrap()
-        {
-            if (!ValidateConfigsReady("bootstrap buildings"))
-                return;
-
-            foreach (var building in RuntimeConfigs.Buildings.Buildings)
-            {
-                if (building == null || !building.visibleAtStart)
-                    continue;
-
-                if (!ValidateBuildingLevel(building.buildingId, building.startLevel))
-                    continue;
-
-                _unlockedBuildings.Add(building.buildingId);
-                _buildingLevels[building.buildingId] = building.startLevel;
-            }
-        }
-
-        private static bool IsReward(ActivityRewardConfigDto reward, string rewardType, string targetId)
-        {
-            return string.Equals(reward.rewardType, rewardType, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(reward.targetId, targetId, StringComparison.Ordinal);
-        }
-
-        private static int RewardAmount(ActivityRewardConfigDto reward)
-        {
-            return Math.Max(1, reward.min);
-        }
 
         private void LoadCurrencies(CurrencySaveEntry[] entries)
         {
@@ -1027,14 +963,7 @@ namespace GuildIdle.Player
 
         private static int ResolveSkillLevel(long exp)
         {
-            var level = 1;
-            foreach (var row in RuntimeConfigs.Activities.SkillsProgression)
-            {
-                if (row != null && exp >= row.totalExpRequired)
-                    level = Math.Max(level, row.level);
-            }
-
-            return level;
+            return HeroStatsService.ResolveSkillLevel(exp);
         }
 
         private int GetItemAmount(string itemId)

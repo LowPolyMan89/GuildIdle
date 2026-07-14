@@ -5,6 +5,7 @@ namespace GuildIdle.Player
 {
     public static class Player
     {
+        public static PlayerState State => _state;
         private static PlayerState _state;
 
         public static bool IsLoaded => _state != null && RuntimeConfigs.IsLoaded;
@@ -19,8 +20,6 @@ namespace GuildIdle.Player
 
             if (RuntimeConfigs.IsLoaded)
                 Load();
-            else if (!RuntimeConfigs.HasErrors)
-                RuntimeConfigs.WaitUntilLoaded(LoadAfterConfigs);
         }
 
         public static bool Load()
@@ -247,8 +246,11 @@ namespace GuildIdle.Player
             return EnsureLoaded("remove activity execution") && _state.RemoveActivityExecution(executionId);
         }
 
-        private static void LoadAfterConfigs()
+        public static void LoadAfterConfigs()
         {
+            if (_state != null)
+                return;
+
             Load();
         }
 
@@ -267,7 +269,10 @@ namespace GuildIdle.Player
                 return Load();
 
             if (!RuntimeConfigs.HasErrors)
-                RuntimeConfigs.WaitUntilLoaded(LoadAfterConfigs);
+            {
+                RuntimeConfigs.OnLoaded -= LoadAfterConfigs;
+                RuntimeConfigs.OnLoaded += LoadAfterConfigs;
+            }
 
             var reason = RuntimeConfigs.HasErrors ? $"config load failed: {RuntimeConfigs.LastError}" : "runtime configs are not loaded";
             Debug.LogError($"[Player] Cannot {action}: {reason}.");

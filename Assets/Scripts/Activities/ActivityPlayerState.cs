@@ -62,31 +62,4 @@ namespace GuildIdle.Activities
         public bool IsActivityCompleted(string activityId) => _state != null && _state.IsActivityCompleted(activityId);
         public bool CompleteActivity(string activityId) => _state != null && _state.CompleteActivity(activityId);
     }
-
-    public sealed class PlayerActivityAdapter : IActivityPlayerState
-    {
-        public bool HasHero(string heroId) => global::GuildIdle.Player.Player.HasHero(heroId);
-        public bool AddHero(string heroId) => global::GuildIdle.Player.Player.AddHero(heroId);
-        public bool HasHeroState(string heroId) => global::GuildIdle.Player.Player.HasHeroState(heroId);
-        public int GetHeroFatigue(string heroId) => global::GuildIdle.Player.Player.GetHeroFatigue(heroId);
-        public bool SpendHeroFatigue(string heroId, int amount) => global::GuildIdle.Player.Player.SpendHeroFatigue(heroId, amount);
-        public int GetHeroSkillLevel(string heroId, string skillId) => global::GuildIdle.Player.Player.GetHeroSkillLevel(heroId, skillId);
-        public bool AddHeroSkillExp(string heroId, string skillId, int amount) => global::GuildIdle.Player.Player.AddHeroSkillExp(heroId, skillId, amount);
-        public bool IsHeroBusy(string heroId) => global::GuildIdle.Player.Player.IsHeroBusy(heroId);
-        public string GetHeroCurrentActivityExecutionId(string heroId) => global::GuildIdle.Player.Player.GetHeroCurrentActivityExecutionId(heroId);
-        public int GetItem(string itemId) => global::GuildIdle.Player.Player.GetItem(itemId);
-        public bool HasItem(string itemId, int amount) => global::GuildIdle.Player.Player.HasItem(itemId, amount);
-        public bool AddItem(string itemId, int amount) => global::GuildIdle.Player.Player.AddItem(itemId, amount);
-        public bool SpendItem(string itemId, int amount) => global::GuildIdle.Player.Player.SpendItem(itemId, amount);
-        public long GetCurrency(string currencyId) => global::GuildIdle.Player.Player.GetCurrency(currencyId);
-        public bool AddCurrency(string currencyId, long amount) => global::GuildIdle.Player.Player.AddCurrency(currencyId, amount);
-        public bool SpendCurrency(string currencyId, long amount) => global::GuildIdle.Player.Player.SpendCurrency(currencyId, amount);
-        public bool IsBuildingUnlocked(string buildingId) => global::GuildIdle.Player.Player.IsBuildingUnlocked(buildingId);
-        public int GetBuildingLevel(string buildingId) => global::GuildIdle.Player.Player.GetBuildingLevel(buildingId);
-        public bool UnlockBuilding(string buildingId) => global::GuildIdle.Player.Player.UnlockBuilding(buildingId);
-        public bool IsLocationUnlocked(string locationId) => global::GuildIdle.Player.Player.IsLocationUnlocked(locationId);
-        public bool UnlockLocation(string locationId) => global::GuildIdle.Player.Player.UnlockLocation(locationId);
-        public bool IsActivityCompleted(string activityId) => global::GuildIdle.Player.Player.IsActivityCompleted(activityId);
-        public bool CompleteActivity(string activityId) => global::GuildIdle.Player.Player.CompleteActivity(activityId);
-    }
 }

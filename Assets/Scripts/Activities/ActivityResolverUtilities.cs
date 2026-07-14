@@ -12,8 +12,6 @@ namespace GuildIdle.Activities
         public const string OwnerHero = "Hero";
         public const string OwnerProfile = "Profile";
 
-        public static IActivityPlayerState DefaultState() => new PlayerActivityAdapter();
-
         public static IActivityRandom DefaultRandom() => new SystemActivityRandom();
 
         public static bool TryGetActivity(string activityId, List<ActivityRequirementIssue> issues, out ActivityConfigDto activity)
@@ -145,9 +143,9 @@ namespace GuildIdle.Activities
 
         public static bool IsAnyItemType(string type)
         {
-            return string.Equals(type, "Item", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "ItemCount", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Resource", StringComparison.OrdinalIgnoreCase);
+            return RewardType.Matches(type, RewardType.Item) ||
+                RequirementType.Matches(type, RequirementType.ItemCount) ||
+                RewardType.Matches(type, RewardType.Resource);
         }
 
         public static bool IsEquipment(string id)

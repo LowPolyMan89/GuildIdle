@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using GuildIdle.Activities;
 using GuildIdle.Configs;
+using GuildIdle.Editor.Configs;
 using GuildIdle.Player;
 using NUnit.Framework;
 using UnityEngine;
@@ -255,121 +256,9 @@ namespace GuildIdle.Editor.Player
 
         private static ConfigDatabase CreateDatabase()
         {
-            return new ConfigDatabase(
-                new ItemsRuntimeConfigDto
-                {
-                    resources = new[]
-                    {
-                        new ResourceConfigDto { id = "resource_pine_wood", kind = "resource" }
-                    },
-                    equipmentWeapons = new[]
-                    {
-                        new EquipmentWeaponConfigDto { id = "item_wooden_club", kind = "equipment" }
-                    },
-                    currencies = new[]
-                    {
-                        new CurrencyConfigDto { currencyId = "gold_id" }
-                    }
-                },
-                new HeroesRuntimeConfigDto
-                {
-                    heroes = new[]
-                    {
-                        new HeroConfigDto
-                        {
-                            heroId = "ren",
-                            enabled = true,
-                            baseStats = new HeroBaseStatsDto { endurance = 5 }
-                        }
-                    }
-                },
-                new ActivitiesRuntimeConfigDto
-                {
-                    activities = new[]
-                    {
-                        new ActivityConfigDto { id = "starter_hero_available" },
-                        new ActivityConfigDto { id = "combat_first_map_node" }
-                    },
-                    skills = new[]
-                    {
-                        new SkillConfigDto { skillId = "skill_gathering" }
-                    },
-                    skillsProgression = new[]
-                    {
-                        new SkillProgressionConfigDto { level = 1, totalExpRequired = 0 },
-                        new SkillProgressionConfigDto { level = 2, totalExpRequired = 100 }
-                    },
-                    rewards = new[]
-                    {
-                        new ActivityRewardConfigDto
-                        {
-                            activityId = "starter_hero_available",
-                            rewardType = "Hero",
-                            targetId = "ren",
-                            min = 1,
-                            max = 1,
-                            chance = 100
-                        },
-                        new ActivityRewardConfigDto
-                        {
-                            activityId = "starter_hero_available",
-                            rewardType = "Equipment",
-                            targetId = "item_wooden_club",
-                            min = 1,
-                            max = 1,
-                            chance = 100
-                        }
-                    }
-                },
-                new BuildingsRuntimeConfigDto
-                {
-                    buildings = new[]
-                    {
-                        new BuildingConfigDto { buildingId = "building_hall", levels = 1, startLevel = 0, visibleAtStart = true },
-                        new BuildingConfigDto { buildingId = "building_tavern", levels = 1, startLevel = 1, visibleAtStart = true },
-                        new BuildingConfigDto { buildingId = "building_watchtower", levels = 1, startLevel = 0, visibleAtStart = true, clickableRequirement = "building_hall:1" },
-                        new BuildingConfigDto { buildingId = "building_hidden", levels = 1, startLevel = 0, visibleAtStart = false }
-                    },
-                    buildingLevels = new[]
-                    {
-                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 0, activeHeroLimit = 1 },
-                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 1, activeHeroLimit = 1 },
-                        new BuildingLevelConfigDto { buildingId = "building_tavern", level = 0 },
-                        new BuildingLevelConfigDto { buildingId = "building_tavern", level = 1 },
-                        new BuildingLevelConfigDto { buildingId = "building_watchtower", level = 0 },
-                        new BuildingLevelConfigDto { buildingId = "building_watchtower", level = 1 },
-                        new BuildingLevelConfigDto { buildingId = "building_hidden", level = 0 },
-                        new BuildingLevelConfigDto { buildingId = "building_hidden", level = 1 }
-                    }
-                },
-                null,
-                new FormulaRuntimeConfigDto
-                {
-                    heroDerivedStats = new[]
-                    {
-                        new HeroDerivedStatConfigDto
-                        {
-                            formulaId = "hero_max_fatigue",
-                            derivedStatId = "max_fatigue",
-                            baseValue = 100,
-                            primaryStat = "Endurance",
-                            primaryStatMultiplier = 4,
-                            levelMultiplier = 1,
-                            rounding = "Round",
-                            enabled = true
-                        }
-                    }
-                },
-                null,
-                new MapRuntimeConfigDto
-                {
-                    mapLocations = new[]
-                    {
-                        new MapLocationConfigDto { locationId = "old_wolf_den_1_1" }
-                    }
-                },
-                null,
-                null);
+            return new TestConfigDatabaseBuilder()
+                .WithFullPlayerStateTestData()
+                .Build();
         }
 
         private sealed class MemorySaveStorage : ISaveStorage

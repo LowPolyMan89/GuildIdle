@@ -8,52 +8,9 @@ namespace GuildIdle.Activities
 {
     public static class ActivityRewardResolver
     {
-        public static ActivityRewardResult PreviewRewards(string activityId, string grantMoment)
-        {
-            return PreviewRewards(activityId, grantMoment, ActivityResolverUtilities.DefaultState());
-        }
-
-        public static ActivityRewardResult PreviewRewards(string activityId, string grantMoment, IActivityPlayerState state)
-        {
-            return ResolveRewards(activityId, null, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: false, markCompletion: false);
-        }
-
-        public static ActivityRewardResult PreviewRewards(ActivityExecutionContext context, string grantMoment)
-        {
-            return PreviewRewards(context, grantMoment, ActivityResolverUtilities.DefaultState());
-        }
-
         public static ActivityRewardResult PreviewRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state)
         {
             return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: false, markCompletion: false);
-        }
-
-        [Obsolete("Use ApplyRewards(ActivityExecutionContext, string) so hero-bound rewards have an executor context.")]
-        public static ActivityRewardResult ApplyRewards(string activityId, string grantMoment)
-        {
-            return ApplyRewards(activityId, grantMoment, ActivityResolverUtilities.DefaultState());
-        }
-
-        [Obsolete("Use ApplyRewards(ActivityExecutionContext, string, IActivityPlayerState) so hero-bound rewards have an executor context.")]
-        public static ActivityRewardResult ApplyRewards(string activityId, string grantMoment, IActivityPlayerState state)
-        {
-            return ResolveRewards(activityId, null, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: true, markCompletion: true);
-        }
-
-        [Obsolete("Use ApplyRewards(ActivityExecutionContext, string, IActivityPlayerState, IActivityRandom) so hero-bound rewards have an executor context.")]
-        public static ActivityRewardResult ApplyRewards(string activityId, string grantMoment, IActivityPlayerState state, IActivityRandom random)
-        {
-            return ResolveRewards(activityId, null, grantMoment, state, random, apply: true, markCompletion: true);
-        }
-
-        public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment)
-        {
-            return ApplyRewards(context, grantMoment, ActivityResolverUtilities.DefaultState());
-        }
-
-        public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state)
-        {
-            return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), apply: true, markCompletion: true);
         }
 
         public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random)
@@ -106,16 +63,16 @@ namespace GuildIdle.Activities
             if (!wasCompleted)
                 return false;
 
-            if (ActivityResolverUtilities.MomentMatches(grantMoment, "OnFirstComplete"))
+            if (ActivityResolverUtilities.MomentMatches(grantMoment, GrantMoment.OnFirstComplete))
                 return true;
 
-            return ActivityResolverUtilities.MomentMatches(grantMoment, "OnComplete") && !activity.isRepeatable;
+            return ActivityResolverUtilities.MomentMatches(grantMoment, GrantMoment.OnComplete) && !activity.isRepeatable;
         }
 
         private static bool IsCompletionMoment(string grantMoment)
         {
-            return ActivityResolverUtilities.MomentMatches(grantMoment, "OnComplete") ||
-                ActivityResolverUtilities.MomentMatches(grantMoment, "OnFirstComplete");
+            return ActivityResolverUtilities.MomentMatches(grantMoment, GrantMoment.OnComplete) ||
+                ActivityResolverUtilities.MomentMatches(grantMoment, GrantMoment.OnFirstComplete);
         }
 
         private static void ApplyOrPreviewReward(
@@ -131,7 +88,7 @@ namespace GuildIdle.Activities
             var targetId = reward.targetId;
             var amount = ActivityResolverUtilities.PositiveAmount(reward.min, reward.max, random);
 
-            if (string.Equals(type, "SkillExp", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.SkillExp))
             {
                 if (!ActivityResolverUtilities.IsKnownSkill(targetId))
                 {
@@ -151,7 +108,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "LootTable", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.LootTable))
             {
                 if (!apply)
                 {
@@ -182,7 +139,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "Hero", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Hero))
             {
                 if (!RuntimeConfigs.Heroes.TryGet(targetId, out _))
                 {
@@ -195,8 +152,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "BuildingUnlock", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "UnlockBuilding", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Building))
             {
                 if (!RuntimeConfigs.Buildings.TryGet(targetId, out _))
                 {
@@ -209,8 +165,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "MapAccess", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "UnlockLocation", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Location))
             {
                 if (!RuntimeConfigs.Map.TryGetLocation(targetId, out _))
                 {
@@ -242,17 +197,17 @@ namespace GuildIdle.Activities
 
         private static bool TryResolveCurrencyReward(string type, string targetId, out string currencyId, out string normalizedType)
         {
-            if (string.Equals(type, "Gold", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Gold))
             {
                 currencyId = ActivityResolverUtilities.GoldCurrencyId;
-                normalizedType = "Gold";
+                normalizedType = RewardType.Gold;
                 return true;
             }
 
-            if (string.Equals(type, "Currency", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Currency))
             {
                 currencyId = targetId;
-                normalizedType = "Currency";
+                normalizedType = RewardType.Currency;
                 return true;
             }
 
@@ -263,19 +218,19 @@ namespace GuildIdle.Activities
 
         private static bool TryValidateItemReward(string type, string targetId)
         {
-            if (string.Equals(type, "Resource", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Resource))
                 return RuntimeConfigs.Items.TryGetResource(targetId, out _);
 
-            if (string.Equals(type, "Equipment", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Equipment))
                 return ActivityResolverUtilities.IsEquipment(targetId);
 
-            if (string.Equals(type, "Consumable", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Consumable))
                 return RuntimeConfigs.Items.TryGetConsumable(targetId, out _);
 
-            if (string.Equals(type, "Recipe", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Recipe))
                 return RuntimeConfigs.Items.TryGetRecipe(targetId, out _);
 
-            if (string.Equals(type, "Item", StringComparison.OrdinalIgnoreCase))
+            if (RewardType.Matches(type, RewardType.Item))
                 return RuntimeConfigs.Items.TryGet(targetId, out _);
 
             return false;
@@ -283,11 +238,11 @@ namespace GuildIdle.Activities
 
         private static bool IsItemRewardType(string type)
         {
-            return string.Equals(type, "Resource", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Equipment", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Consumable", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Recipe", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Item", StringComparison.OrdinalIgnoreCase);
+            return RewardType.Matches(type, RewardType.Resource) ||
+                RewardType.Matches(type, RewardType.Equipment) ||
+                RewardType.Matches(type, RewardType.Consumable) ||
+                RewardType.Matches(type, RewardType.Recipe) ||
+                RewardType.Matches(type, RewardType.Item);
         }
 
         private static void AddRewardIssue(List<ActivityRequirementIssue> issues, ActivityRewardConfigDto reward, bool isError, bool isNotImplemented, string message)

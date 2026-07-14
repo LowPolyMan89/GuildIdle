@@ -7,41 +7,9 @@ namespace GuildIdle.Activities
 {
     public static class ActivityCostResolver
     {
-        public static ActivityCostResult CanPayCost(string activityId)
-        {
-            return CanPayCost(activityId, ActivityResolverUtilities.DefaultState());
-        }
-
-        public static ActivityCostResult CanPayCost(string activityId, IActivityPlayerState state)
-        {
-            return BuildCostResult(activityId, state, apply: false);
-        }
-
-        public static ActivityCostResult CanPayCost(ActivityExecutionContext context)
-        {
-            return CanPayCost(context, ActivityResolverUtilities.DefaultState());
-        }
-
         public static ActivityCostResult CanPayCost(ActivityExecutionContext context, IActivityPlayerState state)
         {
             return BuildCostResult(context, state, apply: false);
-        }
-
-        [Obsolete("Use ApplyCost(ActivityExecutionContext) so hero-bound costs have an executor context.")]
-        public static ActivityCostResult ApplyCost(string activityId)
-        {
-            return MissingContextApplyResult(activityId);
-        }
-
-        [Obsolete("Use ApplyCost(ActivityExecutionContext, IActivityPlayerState) so hero-bound costs have an executor context.")]
-        public static ActivityCostResult ApplyCost(string activityId, IActivityPlayerState state)
-        {
-            return MissingContextApplyResult(activityId);
-        }
-
-        public static ActivityCostResult ApplyCost(ActivityExecutionContext context)
-        {
-            return ApplyCost(context, ActivityResolverUtilities.DefaultState());
         }
 
         public static ActivityCostResult ApplyCost(ActivityExecutionContext context, IActivityPlayerState state)
@@ -176,7 +144,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "Currency", StringComparison.OrdinalIgnoreCase))
+            if (RequirementType.Matches(type, RequirementType.Currency))
             {
                 if (!RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
                 {

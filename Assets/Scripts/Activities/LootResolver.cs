@@ -222,20 +222,20 @@ namespace GuildIdle.Activities
             var resolvedTarget = targetId;
             var isCurrency = false;
 
-            if (string.Equals(resolvedType, "Gold", StringComparison.OrdinalIgnoreCase) ||
+            if (DropType.Matches(resolvedType, DropType.Gold) ||
                 string.Equals(targetId, ActivityResolverUtilities.GoldCurrencyId, StringComparison.Ordinal))
             {
-                resolvedType = "Gold";
+                resolvedType = DropType.Gold;
                 resolvedTarget = ActivityResolverUtilities.GoldCurrencyId;
                 isCurrency = true;
             }
-            else if (string.Equals(resolvedType, "Currency", StringComparison.OrdinalIgnoreCase))
+            else if (DropType.Matches(resolvedType, DropType.Currency))
             {
                 isCurrency = true;
             }
             else if (RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
             {
-                resolvedType = "Currency";
+                resolvedType = DropType.Currency;
                 isCurrency = true;
             }
 

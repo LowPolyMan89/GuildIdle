@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using GuildIdle.Configs;
 using GuildIdle.Player;
 using UnityEngine;
-using RuntimePlayer = GuildIdle.Player.Player;
 
 namespace GuildIdle.Activities
 {
@@ -15,14 +14,9 @@ namespace GuildIdle.Activities
         private readonly ISaveStorage _storage;
         private readonly IActivityPlayerState _activityState;
 
-        public ActivityRuntimeService()
-        {
-            _activityState = new PlayerActivityAdapter();
-        }
-
         public ActivityRuntimeService(PlayerState state, ISaveStorage storage = null)
         {
-            _state = state;
+            _state = state ?? throw new ArgumentNullException(nameof(state));
             _storage = storage;
             _activityState = new PlayerStateActivityAdapter(state);
         }
@@ -444,35 +438,32 @@ namespace GuildIdle.Activities
 
         private ActivityExecutionSaveData[] GetExecutions()
         {
-            return _state != null ? _state.GetActivityExecutions() : RuntimePlayer.GetActivityExecutions();
+            return _state.GetActivityExecutions();
         }
 
         private ActivityExecutionSaveData GetExecution(string executionId)
         {
-            return _state != null ? _state.GetActivityExecution(executionId) : RuntimePlayer.GetActivityExecution(executionId);
+            return _state.GetActivityExecution(executionId);
         }
 
         private bool AddExecution(ActivityExecutionSaveData execution)
         {
-            return _state != null ? _state.AddActivityExecution(execution) : RuntimePlayer.AddActivityExecution(execution);
+            return _state.AddActivityExecution(execution);
         }
 
         private bool UpdateExecution(ActivityExecutionSaveData execution)
         {
-            return _state != null ? _state.UpdateActivityExecution(execution) : RuntimePlayer.UpdateActivityExecution(execution);
+            return _state.UpdateActivityExecution(execution);
         }
 
         private bool RemoveExecution(string executionId)
         {
-            return _state != null ? _state.RemoveActivityExecution(executionId) : RuntimePlayer.RemoveActivityExecution(executionId);
+            return _state.RemoveActivityExecution(executionId);
         }
 
         private bool Save()
         {
-            if (_state != null)
-                return _storage != null ? SaveService.Save(_state, _storage) : SaveService.Save(_state);
-
-            return RuntimePlayer.Save();
+            return _storage != null ? SaveService.Save(_state, _storage) : SaveService.Save(_state);
         }
 
         private ActivityStartResult FinishStart(ActivityStartResult result, List<ActivityRequirementIssue> issues, bool success)

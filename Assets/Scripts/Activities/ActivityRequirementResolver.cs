@@ -8,21 +8,6 @@ namespace GuildIdle.Activities
 {
     public static class ActivityRequirementResolver
     {
-        public static ActivityRequirementIssue[] GetMissingRequirements(string activityId)
-        {
-            return GetMissingRequirements(activityId, ActivityResolverUtilities.DefaultState());
-        }
-
-        public static ActivityRequirementIssue[] GetMissingRequirements(string activityId, IActivityPlayerState state)
-        {
-            return GetMissingRequirements(activityId, null, state);
-        }
-
-        public static ActivityRequirementIssue[] GetMissingRequirements(ActivityExecutionContext context)
-        {
-            return GetMissingRequirements(context, ActivityResolverUtilities.DefaultState());
-        }
-
         public static ActivityRequirementIssue[] GetMissingRequirements(ActivityExecutionContext context, IActivityPlayerState state)
         {
             var issues = new List<ActivityRequirementIssue>();
@@ -60,8 +45,8 @@ namespace GuildIdle.Activities
             var required = ActivityResolverUtilities.RequirementAmount(requirement.value);
             var type = requirement.reqType ?? string.Empty;
 
-            if (string.Equals(type, "BuildingLevel", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Building", StringComparison.OrdinalIgnoreCase))
+            if (RequirementType.Matches(type, RequirementType.BuildingLevel) ||
+                RequirementType.Matches(type, RequirementType.Building))
             {
                 if (!RuntimeConfigs.Buildings.TryGet(targetId, out _))
                 {
@@ -75,7 +60,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "LocationUnlocked", StringComparison.OrdinalIgnoreCase))
+            if (RequirementType.Matches(type, RequirementType.LocationUnlocked))
             {
                 if (!RuntimeConfigs.Map.TryGetLocation(targetId, out _))
                 {
@@ -88,7 +73,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "HeroAvailable", StringComparison.OrdinalIgnoreCase))
+            if (RequirementType.Matches(type, RequirementType.HeroAvailable))
             {
                 if (!RuntimeConfigs.Heroes.TryGet(targetId, out _))
                 {
@@ -101,7 +86,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "ActivityCompleted", StringComparison.OrdinalIgnoreCase))
+            if (RequirementType.Matches(type, RequirementType.ActivityCompleted))
             {
                 if (!RuntimeConfigs.Activities.TryGet(targetId, out _))
                 {
@@ -128,7 +113,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "Currency", StringComparison.OrdinalIgnoreCase))
+            if (RequirementType.Matches(type, RequirementType.Currency))
             {
                 if (!RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
                 {
@@ -142,7 +127,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "SkillLevel", StringComparison.OrdinalIgnoreCase))
+            if (RequirementType.Matches(type, RequirementType.SkillLevel))
             {
                 if (!ActivityResolverUtilities.IsKnownSkill(targetId))
                 {
@@ -162,7 +147,7 @@ namespace GuildIdle.Activities
                 return;
             }
 
-            if (string.Equals(type, "ItemEquipped", StringComparison.OrdinalIgnoreCase))
+            if (RequirementType.Matches(type, RequirementType.ItemEquipped))
             {
                 ActivityResolverUtilities.AddIssue(issues, activityId, type, targetId, required, 0, false, true, $"[ActivityRequirementResolver] Requirement '{type}' is not implemented in PlayerState yet.");
                 return;

@@ -8,7 +8,7 @@ namespace GuildIdle.Editor.Activities
 {
     public sealed class ActivityRuntimeDebugWindow : EditorWindow
     {
-        private readonly ActivityRuntimeService _runtime = new ActivityRuntimeService();
+        private ActivityRuntimeService _runtime;
         private string _activityId = "work_pine_wood";
         private string _heroId = "ren";
         private float _tickSeconds = 1f;
@@ -63,9 +63,15 @@ namespace GuildIdle.Editor.Activities
             DrawExecutions();
         }
 
-        private static bool CanUseRuntime()
+        private bool CanUseRuntime()
         {
-            return Application.isPlaying && RuntimeConfigs.IsLoaded && RuntimePlayer.IsLoaded;
+            if (!Application.isPlaying || !RuntimeConfigs.IsLoaded || !RuntimePlayer.IsLoaded)
+                return false;
+
+            if (_runtime == null)
+                _runtime = new ActivityRuntimeService(RuntimePlayer.State);
+
+            return true;
         }
 
         private void DrawHeroState()

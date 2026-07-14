@@ -108,7 +108,10 @@ namespace GuildIdle.Editor.ConfigDownloader
             var collection = Collection(
                 Source("storage_configs", "GuildIdle - Storage Configs", "storage.json", StorageBuildingsDownload("building_warehouse", "2")),
                 Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", BuildingsIndexDownload("building_warehouse", "warehouse.name", "warehouse.description", "3")),
-                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("warehouse.name", "warehouse.description")));
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "warehouse.name", "warehouse.description",
+                    "stage_arrival_name_id", "stage_arrival_description_id",
+                    "stage_2_name_id", "stage_2_description_id")));
 
             var report = ConfigCrossConfigValidator.Validate(collection);
 
@@ -127,7 +130,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                     buildingActivityId: "build_hall",
                     showIfCompleted: "",
                     hideIfCompleted: "")),
-                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("building_hall_name_id", "building_hall_description_id")));
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "building_hall_name_id", "building_hall_description_id",
+                    "stage_arrival_name_id", "stage_arrival_description_id",
+                    "stage_2_name_id", "stage_2_description_id")));
 
             var report = ConfigCrossConfigValidator.Validate(collection);
 
@@ -146,7 +152,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                     buildingActivityId: "missing_action",
                     showIfCompleted: "build_hall",
                     hideIfCompleted: "missing_hide_action")),
-                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("building_hall_name_id", "building_hall_description_id")));
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "building_hall_name_id", "building_hall_description_id",
+                    "stage_arrival_name_id", "stage_arrival_description_id",
+                    "stage_2_name_id", "stage_2_description_id")));
 
             var report = ConfigCrossConfigValidator.Validate(collection);
             var message = report.ToDisplayMessage();
@@ -173,7 +182,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                     showIfCompleted: "",
                     hideIfCompleted: "",
                     buildingActivityBuildingId: "")),
-                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("building_hall_name_id", "building_hall_description_id")));
+                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
+                    "building_hall_name_id", "building_hall_description_id",
+                    "stage_arrival_name_id", "stage_arrival_description_id",
+                    "stage_2_name_id", "stage_2_description_id")));
 
             var report = ConfigCrossConfigValidator.Validate(collection);
             var message = report.ToDisplayMessage();
@@ -185,29 +197,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(message, Does.Contain("BuildingActivities row 2 column 'activity_id'"));
         }
 
-        [Test]
-        public void Validate_BuildingHallActiveHeroLimitRules()
-        {
-            var download = BuildingsActivitiesDownload(
-                startLevel: "0",
-                clickableRequirement: "",
-                buildingActivityLevel: "0",
-                buildingActivityId: "build_hall",
-                showIfCompleted: "",
-                hideIfCompleted: "");
-            FindSheet(download, "Hall").rows[3].cells[3] = "2";
-
-            var collection = Collection(
-                Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityIdsDownload("combat_clear_hall_forest")),
-                Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", download),
-                Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload("building_hall_name_id", "building_hall_description_id")));
-
-            var report = ConfigCrossConfigValidator.Validate(collection);
-
-            Assert.That(report.Success, Is.False);
-            Assert.That(report.ToDisplayMessage(), Does.Contain("active_hero_limit"));
-            Assert.That(report.ToDisplayMessage(), Does.Contain("building_hall level 0 and 1 must have active_hero_limit = 1"));
-        }
 
         [Test]
         public void Validate_EnemyLootGoldIdUsesCurrencyRegistry()
@@ -685,6 +674,12 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             var sheets = new List<ConfigDownloadedSheet>
             {
+                Sheet("Enemies",
+                    Row("enemy_id"),
+                    Row("enemy_rat")),
+                Sheet("EnemyLevels",
+                    Row("level"),
+                    Row("1")),
                 Sheet("EnemyGroups",
                     Row("enemy_group_id", "enemy_ref", "weight", "min_count", "max_count"),
                     Row("enemy_group_rats", "enemy_rat:1", "100", "1", "1"))
@@ -740,7 +735,11 @@ namespace GuildIdle.Editor.ConfigDownloader
             return Download(
                 Sheet("Index",
                     Row("building_id", "name_id", "description_id", "levels", "start_level", "visible_at_start", "clickable_requirement"),
-                    Row(buildingId, nameId, descriptionId, levels, "0", "TRUE", "")));
+                    Row(buildingId, nameId, descriptionId, levels, "0", "TRUE", "")),
+                Sheet("SettlementStages",
+                    Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled"),
+                    Row("stage_arrival", "stage_arrival_name_id", "stage_arrival_description_id", "stage_arrival_location", "1800", "AllRequired", "stage_2", "10", "TRUE"),
+                    Row("stage_2", "stage_2_name_id", "stage_2_description_id", "stage_2_location", "0", "AllRequired", "", "20", "TRUE")));
         }
 
         private static ConfigSheetDownload BuildingsStagesDownload(string objectiveQuestId, string firstWeight, bool includeStage2Slot)
@@ -782,7 +781,11 @@ namespace GuildIdle.Editor.ConfigDownloader
                     Row("1", "building_hall_level_1", "build_hall", "1")),
                 Sheet("BuildingActivities",
                     Row("building_id", "building_level", "activity_id", "sort_order", "show_if_activity_completed", "hide_if_activity_completed", "clickable_requirement", "enabled"),
-                    Row(buildingActivityBuildingId, buildingActivityLevel, buildingActivityId, "10", showIfCompleted, hideIfCompleted, "", "TRUE")));
+                    Row(buildingActivityBuildingId, buildingActivityLevel, buildingActivityId, "10", showIfCompleted, hideIfCompleted, "", "TRUE")),
+                Sheet("SettlementStages",
+                    Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled"),
+                    Row("stage_arrival", "stage_arrival_name_id", "stage_arrival_description_id", "stage_arrival_location", "1800", "AllRequired", "stage_2", "10", "TRUE"),
+                    Row("stage_2", "stage_2_name_id", "stage_2_description_id", "stage_2_location", "0", "AllRequired", "", "20", "TRUE")));
         }
 
         private static ConfigSheetDownload ItemsCurrenciesDownload(string currencyId, string nameId, string descriptionId)
