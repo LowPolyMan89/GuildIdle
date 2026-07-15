@@ -1,6 +1,8 @@
+using GuildIdle.Core;
+
 namespace GuildIdle.Activities
 {
-    public interface IActivityPlayerState
+    public interface IActivityPlayerState : IRewardBatchStore
     {
         bool HasHero(string heroId);
         bool AddHero(string heroId);

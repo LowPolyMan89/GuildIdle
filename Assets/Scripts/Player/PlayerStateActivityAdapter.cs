@@ -4,7 +4,7 @@ using GuildIdle.Core;
 
 namespace GuildIdle.Player
 {
-    public sealed class PlayerStateActivityAdapter : IActivityPlayerState, IRewardBatchStore
+    public sealed class PlayerStateActivityAdapter : IActivityPlayerState
     {
         private readonly PlayerState _state;
 

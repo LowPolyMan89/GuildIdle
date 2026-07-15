@@ -1,4 +1,6 @@
 using System.Reflection;
+using GuildIdle.Activities;
+using GuildIdle.Core;
 using GuildIdle.Editor.Configs;
 using GuildIdle.Player;
 using NUnit.Framework;
@@ -57,6 +59,13 @@ namespace GuildIdle.Editor.Player
             var runtime = PlayerRuntimeComposition.CreateStageQuestRuntimeService(state);
 
             Assert.That(runtime.GetSnapshot().CurrentStage.StageId, Is.EqualTo("stage_arrival"));
+        }
+
+        [Test]
+        public void ActivityRewardBatchDependency_IsExplicitInContracts()
+        {
+            Assert.That(typeof(IRewardBatchStore).IsAssignableFrom(typeof(IActivityPlayerState)), Is.True);
+            Assert.That(typeof(IRewardBatchStore).IsAssignableFrom(typeof(PlayerState)), Is.True);
         }
     }
 }

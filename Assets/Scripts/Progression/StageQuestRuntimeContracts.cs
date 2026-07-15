@@ -20,6 +20,37 @@ namespace GuildIdle.Progression
         public const string ActivityCompleted = "ActivityCompleted";
     }
 
+    public static class QuestStartConditionMatcher
+    {
+        public static bool IsSupported(string conditionType) =>
+            Matches(conditionType, QuestConditionType.NewGame) ||
+            Matches(conditionType, QuestConditionType.ActivityFailed) ||
+            Matches(conditionType, QuestConditionType.StageEntered) ||
+            Matches(conditionType, QuestConditionType.BuildingLevel);
+
+        public static bool MatchesEvent(QuestStartConditionConfigDto condition, ProgressionEvent progressionEvent)
+        {
+            if (condition == null || progressionEvent == null || !IsSupported(condition.conditionType))
+                return false;
+            if (Matches(condition.conditionType, QuestConditionType.NewGame))
+                return progressionEvent.Kind == ProgressionEventKind.NewGame && condition.value <= 1;
+            if (!(progressionEvent is TargetValueProgressionEvent targetEvent))
+                return false;
+            if (Matches(condition.conditionType, QuestConditionType.ActivityFailed))
+                return progressionEvent.Kind == ProgressionEventKind.ActivityFailed && TargetMatches(condition, targetEvent);
+            if (Matches(condition.conditionType, QuestConditionType.StageEntered))
+                return progressionEvent.Kind == ProgressionEventKind.StageEntered && TargetMatches(condition, targetEvent);
+            return progressionEvent.Kind == ProgressionEventKind.BuildingLevelChanged && TargetMatches(condition, targetEvent);
+        }
+
+        private static bool TargetMatches(QuestStartConditionConfigDto condition, TargetValueProgressionEvent progressionEvent) =>
+            string.Equals(condition.targetId, progressionEvent.TargetId, System.StringComparison.Ordinal) &&
+            progressionEvent.CurrentValue >= condition.value;
+
+        private static bool Matches(string value, string expected) =>
+            string.Equals(value, expected, System.StringComparison.OrdinalIgnoreCase);
+    }
+
     public interface IStageQuestConfigProvider
     {
         QuestConfigDto[] Quests { get; }

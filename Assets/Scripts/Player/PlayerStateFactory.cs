@@ -14,8 +14,6 @@ namespace GuildIdle.Player
 
     public sealed class PlayerStateFactory
     {
-        private const string NewGameConditionType = "NewGame";
-
         private readonly IPlayerBootstrapConfigProvider _configs;
         private readonly HeroStatsService _heroStats;
         private readonly PlayerBootstrapDefinition _bootstrap;
@@ -127,17 +125,19 @@ namespace GuildIdle.Player
 
         private bool StartsOnNewGame(string questId)
         {
-            foreach (var condition in _configs.GetQuestStartConditions(questId))
+            var conditions = _configs.GetQuestStartConditions(questId) ?? Array.Empty<QuestStartConditionConfigDto>();
+            foreach (var condition in conditions)
             {
-                if (condition != null && string.Equals(
-                        condition.conditionType,
-                        NewGameConditionType,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                if (condition == null || !QuestStartConditionMatcher.IsSupported(condition.conditionType))
+                    return false;
             }
 
+            var newGame = new NewGame();
+            foreach (var condition in conditions)
+            {
+                if (QuestStartConditionMatcher.MatchesEvent(condition, newGame))
+                    return true;
+            }
             return false;
         }
 

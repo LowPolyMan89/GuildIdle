@@ -80,12 +80,7 @@ namespace GuildIdle.Activities
 
             if (apply)
             {
-                if (!(state is IRewardBatchStore batchStore))
-                {
-                    ActivityResolverUtilities.AddIssue(issues, activityId, "RewardBatch", activityId, 0, 0, true, true, "Player state does not support atomic reward batches.");
-                    return Finish(activityId, grantMoment, false, false, issues, prepared.rewards);
-                }
-                if (!batchStore.TryApplyRewardBatch(prepared.mutations, out var mutationResults, out var error))
+                if (!state.TryApplyRewardBatch(prepared.mutations, out var mutationResults, out var error))
                 {
                     ActivityResolverUtilities.AddIssue(issues, activityId, "RewardBatch", activityId, 0, 0, true, false, error ?? "Failed to apply reward batch.");
                     return Finish(activityId, grantMoment, false, false, issues, prepared.rewards);

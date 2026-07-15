@@ -236,6 +236,13 @@ namespace GuildIdle.Editor.Configs
         //  Buildings
         // ──────────────────────────────────────────────
 
+        public TestConfigDatabaseBuilder WithQuestStartConditions(params QuestStartConditionConfigDto[] conditions)
+        {
+            _activities ??= new ActivitiesRuntimeConfigDto();
+            _activities.questStartConditions = conditions ?? Array.Empty<QuestStartConditionConfigDto>();
+            return this;
+        }
+
         public TestConfigDatabaseBuilder WithMinimalBuildings()
         {
             _buildings = new BuildingsRuntimeConfigDto

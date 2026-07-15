@@ -115,9 +115,12 @@ namespace GuildIdle.Progression.Editor
 
             var store = new TestStore(state);
             var runtime = NewRuntime(store);
-            var levelQuest = FindQuest(runtime.GetSnapshot().CompletedQuests, "quest_level");
+            var levelQuest = state.GetQuestState("quest_level");
 
             Assert.That(levelQuest, Is.Not.Null);
+            Assert.That(levelQuest.completed, Is.True);
+            Assert.That(FindQuest(runtime.GetSnapshot().CompletedQuests, "quest_level"), Is.Null,
+                "HUD snapshot must contain only quests owned by the current stage.");
             Assert.That(store.SaveCount, Is.EqualTo(1));
             Assert.That(state.GetQuestState("quest_build"), Is.Null, "Initialization must not emulate NewGame.");
             Assert.That(state.GetQuestState("quest_tutorial"), Is.Null, "Initialization must not restore ActivityFailed.");
@@ -133,6 +136,34 @@ namespace GuildIdle.Progression.Editor
 
             Assert.That(state.GetQuestState("quest_entered"), Is.Null);
             Assert.That(runtime.GetSnapshot().CurrentStage.RequiredProgressPercent, Is.Zero);
+        }
+
+        [Test]
+        public void Bootstrap_UsesRuntimeNewGameMatcherAndLeavesInvalidQuestForRuntimeIssue()
+        {
+            var database = new TestConfigDatabaseBuilder()
+                .WithFullPlayerStateTestData()
+                .WithQuestStartConditions(
+                    new QuestStartConditionConfigDto { questId = "quest_build_hut", conditionType = "NewGame", value = 2 },
+                    new QuestStartConditionConfigDto { questId = "quest_clear_underwood", conditionType = "NewGame", value = 1 },
+                    new QuestStartConditionConfigDto { questId = "quest_clear_underwood", conditionType = "UnknownCondition", value = 1 },
+                    new QuestStartConditionConfigDto { questId = "quest_disabled_new_game", conditionType = "NewGame", value = 1 })
+                .Build();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
+
+            Assert.That(state.GetQuestState("quest_build_hut"), Is.Null);
+            Assert.That(state.GetQuestState("quest_clear_underwood"), Is.Null);
+
+            var runtime = new StageQuestRuntimeService(
+                new RepositoryStageQuestConfigAdapter(database.Activities, database.Buildings),
+                new TestStore(state),
+                new FixedRandom());
+            var update = runtime.Handle(new NewGame());
+
+            Assert.That(HasIssue(update, "UnsupportedCondition", "quest_clear_underwood"), Is.True);
+            Assert.That(state.GetQuestState("quest_build_hut"), Is.Null);
+            Assert.That(state.GetQuestState("quest_clear_underwood"), Is.Null);
         }
 
         [Test]
@@ -153,6 +184,26 @@ namespace GuildIdle.Progression.Editor
             Assert.That(completed.Transition.Occurred, Is.True);
             Assert.That(state.GetQuestState("quest_unknown").completed, Is.False);
             Assert.That(state.GetQuestState("quest_unknown").rewardsGranted, Is.False);
+        }
+
+        [Test]
+        public void UnsupportedOptionalStep_DoesNotBlockItsQuestRewardsOrTransition()
+        {
+            _database = CreateDatabase(addRequiredQuestReward: true, addUnsupportedOptionalStep: true);
+            RuntimeConfigs.SetDatabaseForTests(_database);
+            var state = NewState();
+            var runtime = NewRuntime(state);
+            runtime.Handle(new NewGame());
+            runtime.Handle(new ActivityCompleted("activity_combat"));
+            runtime.Handle(new ResourceQuantityChanged("resource_wood", 2));
+
+            var completed = runtime.Handle(new BuildingLevelChanged("building_hall", 1));
+
+            Assert.That(HasIssue(completed, "UnsupportedObjective", "quest_build"), Is.True);
+            Assert.That(completed.Transition.Occurred, Is.True);
+            Assert.That(state.GetQuestState("quest_build").completed, Is.True);
+            Assert.That(state.GetQuestState("quest_build").rewardsGranted, Is.True);
+            Assert.That(state.GetItem("resource_wood"), Is.EqualTo(2));
         }
 
         [Test]
@@ -230,6 +281,8 @@ namespace GuildIdle.Progression.Editor
 
             Assert.That(transitioned.Transition.Occurred, Is.True);
             Assert.That(runtime.GetSnapshot().CurrentStage.StageId, Is.EqualTo("stage_beta"));
+            Assert.That(runtime.GetSnapshot().ActiveQuests, Is.Empty);
+            Assert.That(runtime.GetSnapshot().CompletedQuests, Is.Empty);
             Assert.That(runtime.Handle(new ItemQuantityChanged("consumable_meat", 0)).Transition.Occurred, Is.False);
 
             var restored = TestPlayerComposition.CreatePlayerStateFactory(_database).Create(state.ToSaveData());
@@ -320,7 +373,10 @@ namespace GuildIdle.Progression.Editor
             return false;
         }
 
-        private static ConfigDatabase CreateDatabase(bool includeUnknownQuest = false, bool addRequiredQuestReward = false)
+        private static ConfigDatabase CreateDatabase(
+            bool includeUnknownQuest = false,
+            bool addRequiredQuestReward = false,
+            bool addUnsupportedOptionalStep = false)
         {
             var quests = new List<QuestConfigDto>
             {
@@ -353,6 +409,8 @@ namespace GuildIdle.Progression.Editor
                 conditions.Add(Condition("quest_unknown", "NewGame", null, 1));
                 steps.Add(Step("quest_unknown", "unknown", 10, "UnknownObjective", "unknown", 1));
             }
+            if (addUnsupportedOptionalStep)
+                steps.Add(Step("quest_build", "optional_unknown", 30, "UnknownObjective", "unknown", 1, false));
 
             var rewards = addRequiredQuestReward
                 ? new[]
@@ -417,8 +475,15 @@ namespace GuildIdle.Progression.Editor
         private static QuestStartConditionConfigDto Condition(string questId, string type, string target, int value) =>
             new QuestStartConditionConfigDto { questId = questId, conditionType = type, targetId = target, value = value };
 
-        private static QuestStepConfigDto Step(string questId, string stepId, int order, string type, string target, int value) =>
-            new QuestStepConfigDto { questId = questId, stepId = stepId, stepOrder = order, objectiveType = type, targetId = target, targetValue = value, required = true };
+        private static QuestStepConfigDto Step(
+            string questId,
+            string stepId,
+            int order,
+            string type,
+            string target,
+            int value,
+            bool required = true) =>
+            new QuestStepConfigDto { questId = questId, stepId = stepId, stepOrder = order, objectiveType = type, targetId = target, targetValue = value, required = required };
 
         private sealed class TestStore : IStageQuestRuntimeStore
         {

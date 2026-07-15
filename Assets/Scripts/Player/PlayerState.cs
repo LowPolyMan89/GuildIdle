@@ -7,7 +7,7 @@ using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Player
 {
-    public sealed class PlayerState : IActivityRuntimeStore
+    public sealed class PlayerState : IActivityRuntimeStore, IRewardBatchStore
     {
         public const string EquippedItemStateId = "equipped";
         public const string OnStorageItemStateId = "on_storage";

@@ -62,13 +62,16 @@ namespace GuildIdle.Progression
 
             var objectives = OrderedObjectives(stage.stageId);
             var objectiveSnapshots = new List<StageObjectiveSnapshot>();
+            var currentStageQuestIds = new HashSet<string>(StringComparer.Ordinal);
             var progress = 0;
             foreach (var objective in objectives)
             {
                 if (objective == null)
                     continue;
+                if (!string.IsNullOrWhiteSpace(objective.questId))
+                    currentStageQuestIds.Add(objective.questId);
                 var state = _store.GetQuestState(objective.questId);
-                var isCompleted = state?.completed == true && AreQuestObjectivesSupported(objective.questId);
+                var isCompleted = state?.completed == true && AreRequiredQuestObjectivesSupported(objective.questId);
                 if (objective.required && isCompleted)
                     progress += Math.Max(0, objective.weightPercent);
                 objectiveSnapshots.Add(new StageObjectiveSnapshot(
@@ -85,6 +88,8 @@ namespace GuildIdle.Progression
             var completed = new List<QuestSnapshot>();
             foreach (var state in OrderedQuestStates())
             {
+                if (!currentStageQuestIds.Contains(state.questId))
+                    continue;
                 if (!_configs.TryGetQuest(state.questId, out var quest) || quest == null)
                     continue;
                 var snapshot = BuildQuestSnapshot(quest, state, objectives);
@@ -187,7 +192,7 @@ namespace GuildIdle.Progression
                 var matches = false;
                 foreach (var condition in conditions ?? Array.Empty<QuestStartConditionConfigDto>())
                 {
-                    if (ConditionMatchesEvent(condition, progressionEvent))
+                    if (QuestStartConditionMatcher.MatchesEvent(condition, progressionEvent))
                     {
                         matches = true;
                         break;
@@ -256,7 +261,6 @@ namespace GuildIdle.Progression
                 if (state == null || state.completed)
                     continue;
                 var stateChanged = false;
-                var invalidObjective = false;
                 var stepsById = IndexSteps(state);
                 foreach (var config in _configs.GetQuestSteps(state.questId) ?? Array.Empty<QuestStepConfigDto>())
                 {
@@ -265,7 +269,6 @@ namespace GuildIdle.Progression
                     if (!IsObjectiveSupported(config.objectiveType))
                     {
                         AddUnsupportedObjective(state.questId, config, issues);
-                        invalidObjective = true;
                         continue;
                     }
                     if (step.completed || !ObjectiveMatchesEvent(config, progressionEvent, out var currentValue))
@@ -276,8 +279,7 @@ namespace GuildIdle.Progression
                     stateChanged |= beforeValue != step.currentValue || beforeCompleted != step.completed;
                 }
 
-                if (!invalidObjective)
-                    stateChanged |= TryMarkQuestCompleted(state.questId, state, issues, completedQuestIds);
+                stateChanged |= TryMarkQuestCompleted(state.questId, state, issues, completedQuestIds);
                 if (!stateChanged)
                     continue;
                 if (_store.SetQuestState(state))
@@ -318,7 +320,9 @@ namespace GuildIdle.Progression
                 if (!IsObjectiveSupported(config.objectiveType))
                 {
                     AddUnsupportedObjective(questId, config, issues);
-                    return false;
+                    if (config.required)
+                        return false;
+                    continue;
                 }
                 if (!config.required)
                     continue;
@@ -340,7 +344,7 @@ namespace GuildIdle.Progression
             {
                 if (state == null || !state.completed || state.rewardsGranted)
                     continue;
-                if (!AddObjectiveIssuesAndCheckSupported(state.questId, issues))
+                if (!AddObjectiveIssuesAndCheckRequiredSupported(state.questId, issues))
                     continue;
                 var definitions = new List<RewardDefinition>();
                 var invalidGrantMoment = false;
@@ -410,7 +414,7 @@ namespace GuildIdle.Progression
             {
                 var quest = _store.GetQuestState(objective.questId);
                 if (quest == null || !quest.completed || !quest.rewardsGranted ||
-                    !AddObjectiveIssuesAndCheckSupported(objective.questId, issues))
+                    !AddObjectiveIssuesAndCheckRequiredSupported(objective.questId, issues))
                     return TransitionResult.None;
             }
             if (string.IsNullOrWhiteSpace(stage.nextStageId))
@@ -542,7 +546,7 @@ namespace GuildIdle.Progression
             var supported = true;
             foreach (var condition in conditions ?? Array.Empty<QuestStartConditionConfigDto>())
             {
-                if (condition != null && IsConditionSupported(condition.conditionType))
+                if (condition != null && QuestStartConditionMatcher.IsSupported(condition.conditionType))
                     continue;
                 supported = false;
                 issues.Add(new StageQuestIssue("UnsupportedCondition", questId, null, $"Unsupported quest condition '{condition?.conditionType}'."));
@@ -550,57 +554,38 @@ namespace GuildIdle.Progression
             return supported;
         }
 
-        private static bool IsConditionSupported(string value) =>
-            Matches(value, QuestConditionType.NewGame) || Matches(value, QuestConditionType.ActivityFailed) ||
-            Matches(value, QuestConditionType.StageEntered) || Matches(value, QuestConditionType.BuildingLevel);
-
         private static bool IsObjectiveSupported(string value) =>
             Matches(value, QuestObjectiveType.ResourceCount) || Matches(value, QuestObjectiveType.ItemCount) ||
             Matches(value, QuestObjectiveType.BuildingLevel) || Matches(value, QuestObjectiveType.ActivityCompleted);
 
-        private bool AreQuestObjectivesSupported(string questId)
+        private bool AreRequiredQuestObjectivesSupported(string questId)
         {
             foreach (var objective in _configs.GetQuestSteps(questId) ?? Array.Empty<QuestStepConfigDto>())
             {
-                if (objective == null || !IsObjectiveSupported(objective.objectiveType))
+                if (objective == null || objective.required && !IsObjectiveSupported(objective.objectiveType))
                     return false;
             }
             return true;
         }
 
-        private bool AddObjectiveIssuesAndCheckSupported(string questId, List<StageQuestIssue> issues)
+        private bool AddObjectiveIssuesAndCheckRequiredSupported(string questId, List<StageQuestIssue> issues)
         {
             var supported = true;
             foreach (var objective in _configs.GetQuestSteps(questId) ?? Array.Empty<QuestStepConfigDto>())
             {
                 if (objective != null && IsObjectiveSupported(objective.objectiveType))
                     continue;
-                supported = false;
-                if (objective != null)
-                    AddUnsupportedObjective(questId, objective, issues);
+                if (objective == null)
+                {
+                    supported = false;
+                    continue;
+                }
+                AddUnsupportedObjective(questId, objective, issues);
+                if (objective.required)
+                    supported = false;
             }
             return supported;
         }
-
-        private static bool ConditionMatchesEvent(QuestStartConditionConfigDto condition, ProgressionEvent progressionEvent)
-        {
-            if (condition == null)
-                return false;
-            if (Matches(condition.conditionType, QuestConditionType.NewGame))
-                return progressionEvent.Kind == ProgressionEventKind.NewGame && condition.value <= 1;
-            if (!(progressionEvent is TargetValueProgressionEvent targetEvent))
-                return false;
-            if (Matches(condition.conditionType, QuestConditionType.ActivityFailed))
-                return progressionEvent.Kind == ProgressionEventKind.ActivityFailed && TargetMatches(condition, targetEvent);
-            if (Matches(condition.conditionType, QuestConditionType.StageEntered))
-                return progressionEvent.Kind == ProgressionEventKind.StageEntered && TargetMatches(condition, targetEvent);
-            if (Matches(condition.conditionType, QuestConditionType.BuildingLevel))
-                return progressionEvent.Kind == ProgressionEventKind.BuildingLevelChanged && TargetMatches(condition, targetEvent);
-            return false;
-        }
-
-        private static bool TargetMatches(QuestStartConditionConfigDto condition, TargetValueProgressionEvent targetEvent) =>
-            string.Equals(condition.targetId, targetEvent.TargetId, StringComparison.Ordinal) && targetEvent.CurrentValue >= condition.value;
 
         private static bool ObjectiveMatchesEvent(
             QuestStepConfigDto config,
