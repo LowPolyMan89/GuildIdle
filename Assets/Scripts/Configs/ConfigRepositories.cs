@@ -357,6 +357,7 @@ namespace GuildIdle.Configs
         private readonly Dictionary<string, BuildingConfigDto> _buildingsById = ItemsConfigRepository.NewIndex<BuildingConfigDto>();
         private readonly Dictionary<string, BuildingLevelConfigDto> _buildingLevelsByIdAndLevel = ItemsConfigRepository.NewIndex<BuildingLevelConfigDto>();
         private readonly Dictionary<string, SettlementStageConfigDto> _settlementStagesById = ItemsConfigRepository.NewIndex<SettlementStageConfigDto>();
+        private readonly Dictionary<string, List<SettlementStageObjectiveConfigDto>> _objectivesByStageId = new Dictionary<string, List<SettlementStageObjectiveConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<SettlementStageStarterHeroConfigDto>> _starterHeroesByStageId = new Dictionary<string, List<SettlementStageStarterHeroConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<SettlementStageStarterEquipmentConfigDto>> _starterEquipmentByStageId = new Dictionary<string, List<SettlementStageStarterEquipmentConfigDto>>(StringComparer.Ordinal);
 
@@ -392,11 +393,14 @@ namespace GuildIdle.Configs
                 ItemsConfigRepository.AddUnique(_buildingLevelsByIdAndLevel, BuildingLevelKey(level.buildingId, level.level), level, "Buildings/buildingLevels");
             foreach (var stage in SettlementStages)
                 ItemsConfigRepository.AddUnique(_settlementStagesById, stage.stageId, stage, "Buildings/settlementStages");
+            foreach (var objective in SettlementStageObjectives)
+                AddStageValue(_objectivesByStageId, objective?.stageId, objective);
             foreach (var starterHero in SettlementStageStarterHeroes)
                 AddStageValue(_starterHeroesByStageId, starterHero?.stageId, starterHero);
             foreach (var starterEquipment in SettlementStageStarterEquipment)
                 AddStageValue(_starterEquipmentByStageId, starterEquipment?.stageId, starterEquipment);
 
+            SortStageValues(_objectivesByStageId, value => value.sortOrder);
             SortStageValues(_starterHeroesByStageId, value => value.sortOrder);
             SortStageValues(_starterEquipmentByStageId, value => value.sortOrder);
         }
@@ -451,6 +455,11 @@ namespace GuildIdle.Configs
         public SettlementStageStarterHeroConfigDto[] GetSettlementStageStarterHeroes(string stageId)
         {
             return GetStageValues(_starterHeroesByStageId, stageId);
+        }
+
+        public SettlementStageObjectiveConfigDto[] GetSettlementStageObjectives(string stageId)
+        {
+            return GetStageValues(_objectivesByStageId, stageId);
         }
 
         public SettlementStageStarterEquipmentConfigDto[] GetSettlementStageStarterEquipment(string stageId)

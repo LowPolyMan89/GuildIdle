@@ -104,6 +104,64 @@ namespace GuildIdle.Player
             return true;
         }
 
+        public bool TryApplyRewardBatch(
+            RewardMutation[] mutations,
+            out RewardMutationResult[] results,
+            out string error)
+        {
+            mutations ??= Array.Empty<RewardMutation>();
+            var before = ToSaveData();
+            var wasNormalized = WasNormalized;
+            var applied = new RewardMutationResult[mutations.Length];
+
+            for (var i = 0; i < mutations.Length; i++)
+            {
+                var mutation = mutations[i];
+                if (!TryApplyRewardMutation(mutation, out var changed, out error))
+                {
+                    Restore(before, wasNormalized);
+                    results = Array.Empty<RewardMutationResult>();
+                    return false;
+                }
+
+                applied[i] = new RewardMutationResult(mutation, changed);
+            }
+
+            results = applied;
+            error = null;
+            return true;
+        }
+
+        public bool TryCommitQuestRewardBatch(
+            QuestSaveData quest,
+            RewardMutation[] mutations,
+            out RewardMutationResult[] results,
+            out string error)
+        {
+            var before = ToSaveData();
+            var wasNormalized = WasNormalized;
+            if (!TryApplyRewardBatch(mutations, out results, out error))
+                return false;
+
+            if (quest == null)
+            {
+                Restore(before, wasNormalized);
+                results = Array.Empty<RewardMutationResult>();
+                error = "Quest reward commit requires quest state.";
+                return false;
+            }
+
+            var committedQuest = CloneQuest(quest);
+            committedQuest.rewardsGranted = true;
+            if (SetQuestState(committedQuest))
+                return true;
+
+            Restore(before, wasNormalized);
+            results = Array.Empty<RewardMutationResult>();
+            error = $"Failed to persist reward state for quest '{quest.questId}'.";
+            return false;
+        }
+
         public bool HasHero(string heroId)
         {
             if (!ValidateHeroId(heroId))
@@ -677,6 +735,27 @@ namespace GuildIdle.Player
             LoadEquipmentSlots(saveData.equipmentSlots);
             NormalizeOrphanEquippedInstances();
             LoadActivityRuntime(saveData.activityRuntime);
+        }
+
+        private void Restore(SaveData saveData, bool wasNormalized)
+        {
+            _currencies.Clear();
+            _items.Clear();
+            _itemInstances.Clear();
+            _equipmentSlots.Clear();
+            _unlockedHeroes.Clear();
+            _acquiredHeroes.Clear();
+            _heroes.Clear();
+            _unlockedBuildings.Clear();
+            _buildingLevels.Clear();
+            _unlockedLocations.Clear();
+            _completedActivities.Clear();
+            _availableActivities.Clear();
+            _activityExecutions.Clear();
+            _quests.Clear();
+            WasNormalized = false;
+            Load(saveData);
+            WasNormalized = wasNormalized;
         }
 
 
@@ -1267,6 +1346,92 @@ namespace GuildIdle.Player
         public bool Save()
         {
             return SaveService.Save(this);
+        }
+
+        private bool TryApplyRewardMutation(RewardMutation mutation, out bool changed, out string error)
+        {
+            changed = false;
+            error = null;
+            if (mutation == null || string.IsNullOrWhiteSpace(mutation.TargetId) || mutation.Amount <= 0)
+            {
+                error = "Reward mutation has an invalid target or amount.";
+                return false;
+            }
+
+            switch (mutation.Kind)
+            {
+                case RewardMutationKind.Item:
+                    if (mutation.Amount > int.MaxValue || !AddItem(mutation.TargetId, (int)mutation.Amount))
+                    {
+                        error = $"Failed to add item reward '{mutation.TargetId}'.";
+                        return false;
+                    }
+
+                    changed = true;
+                    return true;
+
+                case RewardMutationKind.Currency:
+                    if (!AddCurrency(mutation.TargetId, mutation.Amount))
+                    {
+                        error = $"Failed to add currency reward '{mutation.TargetId}'.";
+                        return false;
+                    }
+
+                    changed = true;
+                    return true;
+
+                case RewardMutationKind.Hero:
+                    if (HasHero(mutation.TargetId))
+                        return true;
+                    if (!AddHero(mutation.TargetId))
+                    {
+                        error = $"Failed to add hero reward '{mutation.TargetId}'.";
+                        return false;
+                    }
+
+                    changed = true;
+                    return true;
+
+                case RewardMutationKind.HeroSkillExp:
+                    if (mutation.Amount > int.MaxValue ||
+                        string.IsNullOrWhiteSpace(mutation.OwnerId) ||
+                        !AddHeroSkillExp(mutation.OwnerId, mutation.TargetId, (int)mutation.Amount))
+                    {
+                        error = $"Failed to add skill EXP reward '{mutation.TargetId}' to hero '{mutation.OwnerId}'.";
+                        return false;
+                    }
+
+                    changed = true;
+                    return true;
+
+                case RewardMutationKind.UnlockBuilding:
+                    if (IsBuildingUnlocked(mutation.TargetId))
+                        return true;
+                    if (!UnlockBuilding(mutation.TargetId))
+                    {
+                        error = $"Failed to unlock building reward '{mutation.TargetId}'.";
+                        return false;
+                    }
+
+                    changed = true;
+                    return true;
+
+                case RewardMutationKind.UnlockLocation:
+                    if (IsLocationUnlocked(mutation.TargetId))
+                        return true;
+                    if (!UnlockLocation(mutation.TargetId))
+                    {
+                        error = $"Failed to unlock location reward '{mutation.TargetId}'.";
+                        return false;
+                    }
+
+                    changed = true;
+                    return true;
+
+                default:
+                    error = $"Unsupported reward mutation kind '{mutation.Kind}'.";
+                    return false;
+            }
         }
 
         private static string[] BuildSortedArray(HashSet<string> values)

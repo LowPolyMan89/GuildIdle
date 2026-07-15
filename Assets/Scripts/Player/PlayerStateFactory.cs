@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
+using GuildIdle.Progression;
 
 namespace GuildIdle.Player
 {
@@ -107,49 +108,12 @@ namespace GuildIdle.Player
                 var existing = state.GetQuestState(quest.questId);
                 if (existing == null)
                 {
-                    var steps = new QuestStepSaveData[configuredSteps.Length];
-                    for (var i = 0; i < configuredSteps.Length; i++)
-                    {
-                        steps[i] = NewQuestStep(configuredSteps[i]);
-                    }
-
-                    state.SetQuestState(new QuestSaveData
-                    {
-                        questId = quest.questId,
-                        completed = false,
-                        rewardsGranted = false,
-                        steps = steps
-                    });
+                    state.SetQuestState(QuestStateBuilder.Create(quest.questId, configuredSteps));
                     continue;
                 }
 
-                var mergedSteps = new List<QuestStepSaveData>(existing.steps ?? Array.Empty<QuestStepSaveData>());
-                var knownSteps = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var step in mergedSteps)
-                {
-                    if (step != null)
-                        knownSteps.Add(step.stepId);
-                }
-
-                foreach (var configuredStep in configuredSteps)
-                {
-                    if (configuredStep != null && knownSteps.Add(configuredStep.stepId))
-                        mergedSteps.Add(NewQuestStep(configuredStep));
-                }
-
-                existing.steps = mergedSteps.ToArray();
-                state.SetQuestState(existing);
+                state.SetQuestState(QuestStateBuilder.Reconcile(existing, configuredSteps, out _));
             }
-        }
-
-        private static QuestStepSaveData NewQuestStep(QuestStepConfigDto configuredStep)
-        {
-            return new QuestStepSaveData
-            {
-                stepId = configuredStep?.stepId,
-                currentValue = 0,
-                completed = false
-            };
         }
 
         private void ApplyStarterEquipment(PlayerState state, string stageId)

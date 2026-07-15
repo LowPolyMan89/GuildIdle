@@ -44,5 +44,19 @@ namespace GuildIdle.Editor.Player
                 invalidateFactory.Invoke(null, null);
             }
         }
+
+        [Test]
+        public void StageQuestRuntimeFactory_UsesProvidedPlayerState()
+        {
+            var database = new TestConfigDatabaseBuilder()
+                .WithFullPlayerStateTestData()
+                .Build();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
+
+            var runtime = PlayerRuntimeComposition.CreateStageQuestRuntimeService(state);
+
+            Assert.That(runtime.GetSnapshot().CurrentStage.StageId, Is.EqualTo("stage_arrival"));
+        }
     }
 }

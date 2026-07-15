@@ -1,6 +1,7 @@
 using System;
 using GuildIdle.Activities;
 using GuildIdle.Core;
+using GuildIdle.Progression;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Player
@@ -26,6 +27,24 @@ namespace GuildIdle.Player
             return new ActivityRuntimeService(
                 state ?? throw new System.ArgumentNullException(nameof(state)),
                 new PlayerStateActivityAdapter(state));
+        }
+
+        public static StageQuestRuntimeService CreateStageQuestRuntimeService()
+        {
+            var state = Player.State;
+            if (state == null)
+                throw new InvalidOperationException("Player state is not loaded yet. Call Player.Load() or wait for config load.");
+
+            return CreateStageQuestRuntimeService(state);
+        }
+
+        public static StageQuestRuntimeService CreateStageQuestRuntimeService(PlayerState state)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+            return new StageQuestRuntimeService(
+                new RepositoryStageQuestConfigAdapter(RuntimeConfigs.Activities, RuntimeConfigs.Buildings),
+                new PlayerStateStageQuestAdapter(state));
         }
 
         internal static PlayerBootstrapService CreateBootstrapService(

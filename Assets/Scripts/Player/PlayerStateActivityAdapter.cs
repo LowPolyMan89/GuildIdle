@@ -1,9 +1,10 @@
 using System;
 using GuildIdle.Activities;
+using GuildIdle.Core;
 
 namespace GuildIdle.Player
 {
-    public sealed class PlayerStateActivityAdapter : IActivityPlayerState
+    public sealed class PlayerStateActivityAdapter : IActivityPlayerState, IRewardBatchStore
     {
         private readonly PlayerState _state;
 
@@ -35,5 +36,7 @@ namespace GuildIdle.Player
         public bool UnlockLocation(string locationId) => _state.UnlockLocation(locationId);
         public bool IsActivityCompleted(string activityId) => _state.IsActivityCompleted(activityId);
         public bool CompleteActivity(string activityId) => _state.CompleteActivity(activityId);
+        public bool TryApplyRewardBatch(RewardMutation[] mutations, out RewardMutationResult[] results, out string error) =>
+            _state.TryApplyRewardBatch(mutations, out results, out error);
     }
 }
