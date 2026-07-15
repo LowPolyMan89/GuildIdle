@@ -742,11 +742,18 @@ namespace GuildIdle.Player
                     WasNormalized = true;
                 }
 
+                var stateId = entry.stateId;
+                if (!_configs.IsKnownItemState(stateId))
+                {
+                    stateId = OnStorageItemStateId;
+                    WasNormalized = true;
+                }
+
                 _itemInstances.Add(instanceId, new ItemInstanceSaveData
                 {
                     instanceId = instanceId,
                     itemId = entry.itemId,
-                    stateId = entry.stateId
+                    stateId = stateId
                 });
             }
         }
@@ -1358,11 +1365,11 @@ namespace GuildIdle.Player
                 return false;
 
             var configuredSteps = _configs.GetQuestSteps(source.questId);
-            var configuredStepIds = new HashSet<string>(StringComparer.Ordinal);
+            var configuredStepOrders = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var configuredStep in configuredSteps)
             {
                 if (configuredStep != null && !string.IsNullOrWhiteSpace(configuredStep.stepId))
-                    configuredStepIds.Add(configuredStep.stepId);
+                    configuredStepOrders[configuredStep.stepId] = configuredStep.stepOrder;
             }
 
             var steps = new List<QuestStepSaveData>();
@@ -1372,7 +1379,7 @@ namespace GuildIdle.Player
                 foreach (var step in source.steps)
                 {
                     if (step == null || string.IsNullOrWhiteSpace(step.stepId) ||
-                        !configuredStepIds.Contains(step.stepId) || !seen.Add(step.stepId))
+                        !configuredStepOrders.ContainsKey(step.stepId) || !seen.Add(step.stepId))
                     {
                         continue;
                     }
@@ -1386,7 +1393,11 @@ namespace GuildIdle.Player
                 }
             }
 
-            steps.Sort((left, right) => string.CompareOrdinal(left.stepId, right.stepId));
+            steps.Sort((left, right) =>
+            {
+                var order = configuredStepOrders[left.stepId].CompareTo(configuredStepOrders[right.stepId]);
+                return order != 0 ? order : string.CompareOrdinal(left.stepId, right.stepId);
+            });
             quest = new QuestSaveData
             {
                 questId = source.questId,

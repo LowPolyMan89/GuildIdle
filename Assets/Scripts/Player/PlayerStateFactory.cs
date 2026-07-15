@@ -42,7 +42,10 @@ namespace GuildIdle.Player
             var state = new PlayerState(saveData, legacyHeroSlots, _heroStats, _configs);
             if (saveData.saveVersion < SaveData.CurrentSaveVersion)
             {
-                ValidateBootstrapDefinition();
+                var bootstrapStageId = string.IsNullOrWhiteSpace(state.CurrentStageId)
+                    ? _bootstrap.InitialStageId
+                    : state.CurrentStageId;
+                ValidateStageBootstrap(bootstrapStageId);
                 ApplyLegacyBootstrap(state);
                 state.MarkNormalized();
             }
@@ -52,15 +55,15 @@ namespace GuildIdle.Player
 
         public PlayerState CreateDefault()
         {
-            ValidateBootstrapDefinition();
+            ValidateStageBootstrap(_bootstrap.InitialStageId);
             var state = new PlayerState(
                 new SaveData { currentStageId = _bootstrap.InitialStageId },
                 _heroStats,
                 _configs);
-            ApplyStarterHeroes(state);
+            ApplyStarterHeroes(state, _bootstrap.InitialStageId);
             ApplyDefaultBuildings(state);
             ApplyNewGameQuests(state);
-            ApplyStarterEquipment(state);
+            ApplyStarterEquipment(state, _bootstrap.InitialStageId);
             return state;
         }
 
@@ -69,16 +72,17 @@ namespace GuildIdle.Player
             if (string.IsNullOrWhiteSpace(state.CurrentStageId))
                 state.SetCurrentStage(_bootstrap.InitialStageId);
 
-            ApplyStarterHeroes(state);
+            ApplyStarterHeroes(state, state.CurrentStageId);
             ApplyDefaultBuildings(state);
             ApplyNewGameQuests(state);
-            ApplyStarterEquipment(state);
+            ApplyStarterEquipment(state, state.CurrentStageId);
         }
 
-        private void ApplyStarterHeroes(PlayerState state)
+        private void ApplyStarterHeroes(PlayerState state, string stageId)
         {
-            foreach (var heroId in _bootstrap.StarterHeroIds)
+            foreach (var starterHero in _configs.GetSettlementStageStarterHeroes(stageId))
             {
+                var heroId = starterHero.heroId;
                 state.AddHero(heroId);
                 foreach (var skill in _configs.Skills)
                 {
@@ -123,7 +127,7 @@ namespace GuildIdle.Player
         {
             foreach (var quest in _configs.Quests)
             {
-                if (quest == null || !StartsOnNewGame(quest.questId))
+                if (quest == null || !quest.enabled || !StartsOnNewGame(quest.questId))
                     continue;
 
                 var configuredSteps = _configs.GetQuestSteps(quest.questId);
@@ -175,27 +179,27 @@ namespace GuildIdle.Player
             };
         }
 
-        private void ApplyStarterEquipment(PlayerState state)
+        private void ApplyStarterEquipment(PlayerState state, string stageId)
         {
-            foreach (var loadout in _bootstrap.StarterEquipment)
+            foreach (var loadout in _configs.GetSettlementStageStarterEquipment(stageId))
             {
-                if (state.GetEquippedItem(loadout.HeroId, loadout.EquipmentSlot) == null)
+                if (state.GetEquippedItem(loadout.heroId, loadout.equipmentSlot) == null)
                 {
-                    var instanceId = FindFreeInstance(state, loadout.ItemId);
-                    if (instanceId == null && state.GetItem(loadout.ItemId) > 0)
+                    var instanceId = FindFreeInstance(state, loadout.itemId);
+                    if (instanceId == null && state.GetItem(loadout.itemId) > 0)
                     {
-                        state.SpendItem(loadout.ItemId, 1);
-                        instanceId = state.AddItemInstance(loadout.ItemId, PlayerState.OnStorageItemStateId);
+                        state.SpendItem(loadout.itemId, 1);
+                        instanceId = state.AddItemInstance(loadout.itemId, PlayerState.OnStorageItemStateId);
                     }
 
-                    instanceId ??= state.AddItemInstance(loadout.ItemId, PlayerState.OnStorageItemStateId);
-                    state.EquipItemInstance(loadout.HeroId, loadout.EquipmentSlot, instanceId);
+                    instanceId ??= state.AddItemInstance(loadout.itemId, PlayerState.OnStorageItemStateId);
+                    state.EquipItemInstance(loadout.heroId, loadout.equipmentSlot, instanceId);
                 }
 
-                while (state.GetItem(loadout.ItemId) > 0)
+                while (state.GetItem(loadout.itemId) > 0)
                 {
-                    state.SpendItem(loadout.ItemId, 1);
-                    state.AddItemInstance(loadout.ItemId, PlayerState.OnStorageItemStateId);
+                    state.SpendItem(loadout.itemId, 1);
+                    state.AddItemInstance(loadout.itemId, PlayerState.OnStorageItemStateId);
                 }
             }
         }
@@ -235,13 +239,14 @@ namespace GuildIdle.Player
             return false;
         }
 
-        private void ValidateBootstrapDefinition()
+        private void ValidateStageBootstrap(string stageId)
         {
-            ValidateLoadedStage(_bootstrap.InitialStageId);
+            ValidateLoadedStage(stageId);
 
             var starterHeroes = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var heroId in _bootstrap.StarterHeroIds)
+            foreach (var starterHero in _configs.GetSettlementStageStarterHeroes(stageId))
             {
+                var heroId = starterHero?.heroId;
                 if (string.IsNullOrWhiteSpace(heroId) || !starterHeroes.Add(heroId) ||
                     !_configs.TryGetHero(heroId, out var hero) || hero == null || !hero.enabled)
                 {
@@ -249,11 +254,13 @@ namespace GuildIdle.Player
                 }
             }
 
-            foreach (var loadout in _bootstrap.StarterEquipment)
+            var occupiedSlots = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var loadout in _configs.GetSettlementStageStarterEquipment(stageId))
             {
-                if (loadout == null || !starterHeroes.Contains(loadout.HeroId) ||
-                    !_configs.TryGetEquipmentSlot(loadout.ItemId, out var configuredSlot) ||
-                    !string.Equals(configuredSlot, loadout.EquipmentSlot, StringComparison.Ordinal))
+                var slotKey = loadout == null ? null : $"{loadout.heroId}\n{loadout.equipmentSlot}";
+                if (loadout == null || !starterHeroes.Contains(loadout.heroId) || !occupiedSlots.Add(slotKey) ||
+                    !_configs.TryGetEquipmentSlot(loadout.itemId, out var configuredSlot) ||
+                    !string.Equals(configuredSlot, loadout.equipmentSlot, StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException("Invalid starter equipment definition.");
                 }

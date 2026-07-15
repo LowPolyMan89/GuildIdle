@@ -7,10 +7,7 @@ namespace GuildIdle.Player
 {
     public static class PlayerRuntimeComposition
     {
-        private static readonly PlayerBootstrapDefinition BootstrapDefinition = new PlayerBootstrapDefinition(
-            "stage_arrival",
-            new[] { "ren" },
-            new[] { new StarterEquipmentDefinition("ren", "item_wooden_club", "weapon") });
+        private static readonly PlayerBootstrapDefinition BootstrapDefinition = new PlayerBootstrapDefinition("stage_arrival");
         private static PlayerStateFactory _playerStateFactory;
 
         public static ActivityRuntimeService CreateRuntimeService()

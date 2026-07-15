@@ -184,6 +184,12 @@ namespace GuildIdle.Editor.Player
                 return false;
             }
 
+            public SettlementStageStarterHeroConfigDto[] GetSettlementStageStarterHeroes(string stageId) =>
+                Array.Empty<SettlementStageStarterHeroConfigDto>();
+
+            public SettlementStageStarterEquipmentConfigDto[] GetSettlementStageStarterEquipment(string stageId) =>
+                Array.Empty<SettlementStageStarterEquipmentConfigDto>();
+
             public bool TryGetQuest(string questId, out QuestConfigDto quest)
             {
                 quest = null;

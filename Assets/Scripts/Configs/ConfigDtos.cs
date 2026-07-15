@@ -477,6 +477,7 @@ namespace GuildIdle.Configs
         public string category;
         public int sortOrder;
         public bool isTutorial;
+        public bool enabled = true;
     }
 
     [Serializable]
@@ -523,6 +524,8 @@ namespace GuildIdle.Configs
         public SettlementStageConfigDto[] settlementStages = Array.Empty<SettlementStageConfigDto>();
         public SettlementStageSlotConfigDto[] settlementStageSlots = Array.Empty<SettlementStageSlotConfigDto>();
         public SettlementStageObjectiveConfigDto[] settlementStageObjectives = Array.Empty<SettlementStageObjectiveConfigDto>();
+        public SettlementStageStarterHeroConfigDto[] settlementStageStarterHeroes = Array.Empty<SettlementStageStarterHeroConfigDto>();
+        public SettlementStageStarterEquipmentConfigDto[] settlementStageStarterEquipment = Array.Empty<SettlementStageStarterEquipmentConfigDto>();
     }
 
     [Serializable]
@@ -631,6 +634,24 @@ namespace GuildIdle.Configs
         public string questId;
         public int weightPercent;
         public bool required;
+        public int sortOrder;
+    }
+
+    [Serializable]
+    public sealed class SettlementStageStarterHeroConfigDto
+    {
+        public string stageId;
+        public string heroId;
+        public int sortOrder;
+    }
+
+    [Serializable]
+    public sealed class SettlementStageStarterEquipmentConfigDto
+    {
+        public string stageId;
+        public string heroId;
+        public string itemId;
+        public string equipmentSlot;
         public int sortOrder;
     }
 

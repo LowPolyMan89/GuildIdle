@@ -5,41 +5,14 @@ namespace GuildIdle.Player
 {
     public sealed class PlayerBootstrapDefinition
     {
-        public PlayerBootstrapDefinition(
-            string initialStageId,
-            string[] starterHeroIds,
-            StarterEquipmentDefinition[] starterEquipment)
+        public PlayerBootstrapDefinition(string initialStageId)
         {
             InitialStageId = string.IsNullOrWhiteSpace(initialStageId)
                 ? throw new ArgumentException("Initial stage id is required.", nameof(initialStageId))
                 : initialStageId;
-            StarterHeroIds = starterHeroIds ?? Array.Empty<string>();
-            StarterEquipment = starterEquipment ?? Array.Empty<StarterEquipmentDefinition>();
         }
 
         public string InitialStageId { get; }
-        public string[] StarterHeroIds { get; }
-        public StarterEquipmentDefinition[] StarterEquipment { get; }
-    }
-
-    public sealed class StarterEquipmentDefinition
-    {
-        public StarterEquipmentDefinition(string heroId, string itemId, string equipmentSlot)
-        {
-            HeroId = string.IsNullOrWhiteSpace(heroId)
-                ? throw new ArgumentException("Hero id is required.", nameof(heroId))
-                : heroId;
-            ItemId = string.IsNullOrWhiteSpace(itemId)
-                ? throw new ArgumentException("Item id is required.", nameof(itemId))
-                : itemId;
-            EquipmentSlot = string.IsNullOrWhiteSpace(equipmentSlot)
-                ? throw new ArgumentException("Equipment slot is required.", nameof(equipmentSlot))
-                : equipmentSlot;
-        }
-
-        public string HeroId { get; }
-        public string ItemId { get; }
-        public string EquipmentSlot { get; }
     }
 
     public interface IPlayerBootstrapConfigProvider
@@ -52,6 +25,8 @@ namespace GuildIdle.Player
         bool TryGetItem(string itemId, out IItemConfig item);
         bool TryGetEquipmentSlot(string itemId, out string equipmentSlot);
         bool TryGetSettlementStage(string stageId, out SettlementStageConfigDto stage);
+        SettlementStageStarterHeroConfigDto[] GetSettlementStageStarterHeroes(string stageId);
+        SettlementStageStarterEquipmentConfigDto[] GetSettlementStageStarterEquipment(string stageId);
         bool TryGetQuest(string questId, out QuestConfigDto quest);
         QuestStartConditionConfigDto[] GetQuestStartConditions(string questId);
         QuestStepConfigDto[] GetQuestSteps(string questId);
@@ -111,6 +86,10 @@ namespace GuildIdle.Player
         public bool TryGetItem(string itemId, out IItemConfig item) => _items.TryGet(itemId, out item);
         public bool TryGetSettlementStage(string stageId, out SettlementStageConfigDto stage) =>
             _buildings.TryGetSettlementStage(stageId, out stage);
+        public SettlementStageStarterHeroConfigDto[] GetSettlementStageStarterHeroes(string stageId) =>
+            _buildings.GetSettlementStageStarterHeroes(stageId);
+        public SettlementStageStarterEquipmentConfigDto[] GetSettlementStageStarterEquipment(string stageId) =>
+            _buildings.GetSettlementStageStarterEquipment(stageId);
         public bool TryGetQuest(string questId, out QuestConfigDto quest) => _activities.TryGetQuest(questId, out quest);
         public QuestStartConditionConfigDto[] GetQuestStartConditions(string questId) =>
             _activities.GetQuestStartConditions(questId);

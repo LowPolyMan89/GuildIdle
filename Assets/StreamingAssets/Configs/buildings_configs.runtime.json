@@ -424,5 +424,21 @@
       "required": true,
       "sortOrder": 20
     }
+  ],
+  "settlementStageStarterHeroes": [
+    {
+      "stageId": "stage_arrival",
+      "heroId": "ren",
+      "sortOrder": 10
+    }
+  ],
+  "settlementStageStarterEquipment": [
+    {
+      "stageId": "stage_arrival",
+      "heroId": "ren",
+      "itemId": "item_wooden_club",
+      "equipmentSlot": "weapon",
+      "sortOrder": 10
+    }
   ]
 }

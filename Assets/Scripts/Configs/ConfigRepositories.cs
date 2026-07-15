@@ -357,6 +357,8 @@ namespace GuildIdle.Configs
         private readonly Dictionary<string, BuildingConfigDto> _buildingsById = ItemsConfigRepository.NewIndex<BuildingConfigDto>();
         private readonly Dictionary<string, BuildingLevelConfigDto> _buildingLevelsByIdAndLevel = ItemsConfigRepository.NewIndex<BuildingLevelConfigDto>();
         private readonly Dictionary<string, SettlementStageConfigDto> _settlementStagesById = ItemsConfigRepository.NewIndex<SettlementStageConfigDto>();
+        private readonly Dictionary<string, List<SettlementStageStarterHeroConfigDto>> _starterHeroesByStageId = new Dictionary<string, List<SettlementStageStarterHeroConfigDto>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<SettlementStageStarterEquipmentConfigDto>> _starterEquipmentByStageId = new Dictionary<string, List<SettlementStageStarterEquipmentConfigDto>>(StringComparer.Ordinal);
 
         public BuildingConfigDto[] Buildings { get; }
         public BuildingLevelConfigDto[] BuildingLevels { get; }
@@ -366,6 +368,8 @@ namespace GuildIdle.Configs
         public SettlementStageConfigDto[] SettlementStages { get; }
         public SettlementStageSlotConfigDto[] SettlementStageSlots { get; }
         public SettlementStageObjectiveConfigDto[] SettlementStageObjectives { get; }
+        public SettlementStageStarterHeroConfigDto[] SettlementStageStarterHeroes { get; }
+        public SettlementStageStarterEquipmentConfigDto[] SettlementStageStarterEquipment { get; }
         public int Count => _buildingsById.Count;
 
         public BuildingsConfigRepository(BuildingsRuntimeConfigDto dto)
@@ -379,6 +383,8 @@ namespace GuildIdle.Configs
             SettlementStages = dto.settlementStages ?? Array.Empty<SettlementStageConfigDto>();
             SettlementStageSlots = dto.settlementStageSlots ?? Array.Empty<SettlementStageSlotConfigDto>();
             SettlementStageObjectives = dto.settlementStageObjectives ?? Array.Empty<SettlementStageObjectiveConfigDto>();
+            SettlementStageStarterHeroes = dto.settlementStageStarterHeroes ?? Array.Empty<SettlementStageStarterHeroConfigDto>();
+            SettlementStageStarterEquipment = dto.settlementStageStarterEquipment ?? Array.Empty<SettlementStageStarterEquipmentConfigDto>();
 
             foreach (var building in Buildings)
                 ItemsConfigRepository.AddUnique(_buildingsById, building.buildingId, building, "Buildings/buildings");
@@ -386,6 +392,13 @@ namespace GuildIdle.Configs
                 ItemsConfigRepository.AddUnique(_buildingLevelsByIdAndLevel, BuildingLevelKey(level.buildingId, level.level), level, "Buildings/buildingLevels");
             foreach (var stage in SettlementStages)
                 ItemsConfigRepository.AddUnique(_settlementStagesById, stage.stageId, stage, "Buildings/settlementStages");
+            foreach (var starterHero in SettlementStageStarterHeroes)
+                AddStageValue(_starterHeroesByStageId, starterHero?.stageId, starterHero);
+            foreach (var starterEquipment in SettlementStageStarterEquipment)
+                AddStageValue(_starterEquipmentByStageId, starterEquipment?.stageId, starterEquipment);
+
+            SortStageValues(_starterHeroesByStageId, value => value.sortOrder);
+            SortStageValues(_starterEquipmentByStageId, value => value.sortOrder);
         }
 
         public BuildingConfigDto Get(string id)
@@ -433,6 +446,45 @@ namespace GuildIdle.Configs
         {
             stage = null;
             return !string.IsNullOrWhiteSpace(stageId) && _settlementStagesById.TryGetValue(stageId, out stage);
+        }
+
+        public SettlementStageStarterHeroConfigDto[] GetSettlementStageStarterHeroes(string stageId)
+        {
+            return GetStageValues(_starterHeroesByStageId, stageId);
+        }
+
+        public SettlementStageStarterEquipmentConfigDto[] GetSettlementStageStarterEquipment(string stageId)
+        {
+            return GetStageValues(_starterEquipmentByStageId, stageId);
+        }
+
+        private static void AddStageValue<T>(Dictionary<string, List<T>> index, string stageId, T value)
+            where T : class
+        {
+            if (value == null || string.IsNullOrWhiteSpace(stageId))
+                return;
+
+            if (!index.TryGetValue(stageId, out var values))
+            {
+                values = new List<T>();
+                index[stageId] = values;
+            }
+
+            values.Add(value);
+        }
+
+        private static void SortStageValues<T>(Dictionary<string, List<T>> index, Func<T, int> getSortOrder)
+        {
+            foreach (var values in index.Values)
+                values.Sort((left, right) => getSortOrder(left).CompareTo(getSortOrder(right)));
+        }
+
+        private static T[] GetStageValues<T>(Dictionary<string, List<T>> index, string stageId)
+        {
+            if (string.IsNullOrWhiteSpace(stageId) || !index.TryGetValue(stageId, out var values))
+                return Array.Empty<T>();
+
+            return values.ToArray();
         }
 
         private static string BuildingLevelKey(string buildingId, int level)

@@ -868,13 +868,54 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             var buildings = JsonUtility.FromJson<BuildingsRuntimeConfigDto>(
                 "{\"buildingLevels\":[{\"buildingId\":\"building_hall\",\"level\":0,\"activeHeroLimit\":1}]," +
-                "\"settlementStages\":[{\"stageId\":\"stage_runtime\",\"nameId\":\"stage.name\",\"descriptionId\":\"stage.desc\",\"stagePrefabId\":\"stage_prefab\",\"targetDurationSec\":0,\"completionRule\":\"AllRequired\",\"nextStageId\":\"\",\"sortOrder\":10,\"enabled\":true}]}");
+                "\"settlementStages\":[{\"stageId\":\"stage_runtime\",\"nameId\":\"stage.name\",\"descriptionId\":\"stage.desc\",\"stagePrefabId\":\"stage_prefab\",\"targetDurationSec\":0,\"completionRule\":\"AllRequired\",\"nextStageId\":\"\",\"sortOrder\":10,\"enabled\":true}]," +
+                "\"settlementStageStarterHeroes\":[{\"stageId\":\"stage_runtime\",\"heroId\":\"ren\",\"sortOrder\":10}]," +
+                "\"settlementStageStarterEquipment\":[{\"stageId\":\"stage_runtime\",\"heroId\":\"ren\",\"itemId\":\"item_wooden_club\",\"equipmentSlot\":\"weapon\",\"sortOrder\":10}]}");
             var buildingsRepository = new BuildingsConfigRepository(buildings);
 
             Assert.That(buildingsRepository.TryGetSettlementStage("stage_runtime", out var stage), Is.True);
             Assert.That(stage.completionRule, Is.EqualTo("AllRequired"));
             Assert.That(buildingsRepository.TryGetBuildingLevel("building_hall", 0, out var hallLevel), Is.True);
             Assert.That(hallLevel.activeHeroLimit, Is.EqualTo(1));
+            Assert.That(buildingsRepository.GetSettlementStageStarterHeroes("stage_runtime")[0].heroId, Is.EqualTo("ren"));
+            Assert.That(buildingsRepository.GetSettlementStageStarterEquipment("stage_runtime")[0].itemId, Is.EqualTo("item_wooden_club"));
+        }
+
+        [Test]
+        public void Validate_StageBootstrapRequiresEnabledHeroEquipmentAndMatchingSlot()
+        {
+            var buildings = Download(
+                Sheet("SettlementStages",
+                    Row("stage_id", "enabled"),
+                    Row("stage_arrival", "TRUE"),
+                    Row("stage_2", "TRUE")),
+                Sheet("SettlementStageStarterHeroes",
+                    Row("stage_id", "hero_id", "sort_order", "enabled"),
+                    Row("stage_arrival", "ren", "10", "TRUE")),
+                Sheet("SettlementStageStarterEquipment",
+                    Row("stage_id", "hero_id", "item_id", "equipment_slot", "sort_order", "enabled"),
+                    Row("stage_arrival", "ren", "item_wooden_club", "weapon", "10", "TRUE")));
+            var heroes = Download(Sheet("Heroes", Row("HeroId", "Enabled"), Row("ren", "TRUE"), Row("disabled_hero", "FALSE")));
+            var collection = Collection(
+                Source("buildings_configs", "Buildings Configs", "stage-bootstrap.json", buildings),
+                Source("heroes_configs", "Heroes Configs", "heroes.json", heroes),
+                Source("items_configs", "Items Configs", "items.json", EmptyDownload(), ItemsRuntimeJson()));
+
+            var validReport = ConfigCrossConfigValidator.Validate(collection);
+            Assert.That(validReport.Success, Is.True, validReport.ToDisplayMessage());
+
+            FindSheet(buildings, "SettlementStageStarterHeroes").rows[1].cells[1] = "disabled_hero";
+            FindSheet(buildings, "SettlementStageStarterEquipment").rows[1].cells[3] = "armor";
+            var invalidCollection = Collection(
+                Source("buildings_configs", "Buildings Configs", "stage-bootstrap-invalid.json", buildings),
+                Source("heroes_configs", "Heroes Configs", "heroes-invalid.json", heroes),
+                Source("items_configs", "Items Configs", "items-invalid.json", EmptyDownload(), ItemsRuntimeJson()));
+            var invalidReport = ConfigCrossConfigValidator.Validate(invalidCollection);
+            var message = invalidReport.ToDisplayMessage();
+
+            Assert.That(invalidReport.Success, Is.False);
+            Assert.That(message, Does.Contain("disabled_hero").And.Contain("enabled Heroes.HeroId"));
+            Assert.That(message, Does.Contain("equipment_slot").And.Contain("slot 'weapon'"));
         }
 
         [Test]
@@ -1179,8 +1220,8 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             return "{\n" +
                    "  \"resources\": [{ \"id\": \"resource_pine_wood\", \"kind\": \"resource\" }],\n" +
-                   "  \"equipmentWeapons\": [{ \"id\": \"item_wooden_club\", \"kind\": \"equipment\" }],\n" +
-                   "  \"equipmentArmor\": [{ \"id\": \"item_simple_shield\", \"kind\": \"equipment\" }],\n" +
+                   "  \"equipmentWeapons\": [{ \"id\": \"item_wooden_club\", \"kind\": \"equipment\", \"equipmentSlot\": \"weapon\" }],\n" +
+                   "  \"equipmentArmor\": [{ \"id\": \"item_simple_shield\", \"kind\": \"equipment\", \"equipmentSlot\": \"armor\" }],\n" +
                    "  \"recipes\": [{ \"id\": \"recipe_aska_bow\", \"kind\": \"recipe\" }],\n" +
                    "  \"consumables\": [{ \"id\": \"consumable_hunting_potion\", \"kind\": \"consumable\" }],\n" +
                    $"  \"currencies\": [{{ \"currencyId\": \"{currencyId}\" }}]\n" +

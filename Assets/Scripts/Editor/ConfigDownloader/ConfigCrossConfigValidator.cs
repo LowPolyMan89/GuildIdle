@@ -411,6 +411,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             public LoadedConfig Source { get; }
             public HashSet<string> HeroIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> EnabledHeroIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             private HeroesRegistry(LoadedConfig source)
             {
@@ -429,13 +430,18 @@ namespace GuildIdle.Editor.ConfigDownloader
                 var heroIdColumn = FindColumn(heroes, "HeroId", out var headerRow);
                 if (heroIdColumn < 0)
                     return registry;
+                var enabledColumn = FindColumn(heroes, "Enabled", out _);
 
                 var rows = heroes.rows ?? Array.Empty<ConfigSheetRow>();
                 for (var rowIndex = headerRow + 1; rowIndex < rows.Length; rowIndex++)
                 {
                     var heroId = Cell(rows[rowIndex], heroIdColumn);
                     if (!IsBlank(heroId))
+                    {
                         registry.HeroIds.Add(heroId);
+                        if (enabledColumn < 0 || IsTrue(Cell(rows[rowIndex], enabledColumn)))
+                            registry.EnabledHeroIds.Add(heroId);
+                    }
                 }
 
                 return registry;
@@ -604,6 +610,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             public HashSet<string> ItemKinds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> EnabledCraftDefinitionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> EnabledItemIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> EquipmentSlotsById { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             private ItemsRegistry(LoadedConfig source)
             {
@@ -619,6 +626,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                 CollectItemSheet(source, ResourcesSheet, registry.ResourceIds, registry);
                 CollectItemSheet(source, EquipmentWeaponsSheet, registry.EquipmentIds, registry);
                 CollectItemSheet(source, EquipmentArmorSheet, registry.EquipmentIds, registry);
+                CollectEquipmentSlots(source, EquipmentWeaponsSheet, registry);
+                CollectEquipmentSlots(source, EquipmentArmorSheet, registry);
                 CollectItemSheet(source, RecipesSheet, registry.EnabledRecipeIds, registry);
                 CollectItemSheet(source, ConsumablesSheet, registry.ConsumableIds, registry);
                 CollectDeclaredItemKinds(source, registry);
@@ -677,6 +686,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             public string id;
             public string kind;
+            public string equipmentSlot;
         }
 
         [Serializable]
@@ -825,6 +835,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     string.Equals(sheet.sheet_name, "SettlementStages", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(sheet.sheet_name, "SettlementStageSlots", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(sheet.sheet_name, "SettlementStageObjectives", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(sheet.sheet_name, "SettlementStageStarterHeroes", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(sheet.sheet_name, "SettlementStageStarterEquipment", StringComparison.OrdinalIgnoreCase) ||
                     sheet.sheet_name.StartsWith("Craftables -", StringComparison.OrdinalIgnoreCase))
                 {
                     return;
@@ -990,6 +1002,26 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
         }
 
+        private static void CollectEquipmentSlots(LoadedConfig source, string sheetName, ItemsRegistry registry)
+        {
+            if (!source.TryGetTable(sheetName, out var table) ||
+                !table.HasColumn("id") || !table.HasColumn("equipment_slot"))
+            {
+                return;
+            }
+
+            foreach (var row in table.DataRows)
+            {
+                if (table.HasColumn("enabled") && !IsTrue(row.Get("enabled")))
+                    continue;
+
+                var itemId = row.Get("id");
+                var equipmentSlot = row.Get("equipment_slot");
+                if (!IsBlank(itemId) && !IsBlank(equipmentSlot))
+                    registry.EquipmentSlotsById[itemId] = equipmentSlot;
+            }
+        }
+
         private static void CollectEnabledIds(LoadedConfig source, string sheetName, string column, HashSet<string> ids)
         {
             if (!source.TryGetTable(sheetName, out var table) || !table.HasColumn(column))
@@ -1063,6 +1095,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                 {
                     ids.Add(row.id);
                     registry.EnabledItemIds.Add(row.id);
+                    if (!IsBlank(row.equipmentSlot))
+                        registry.EquipmentSlotsById[row.id] = row.equipmentSlot;
                 }
 
                 if (!IsBlank(row.kind))
@@ -2118,6 +2152,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                 ValidateStageRows(buildings, registry, report);
                 ValidateStageSlots(buildings, report);
                 ValidateStageObjectives(buildings, registry, report);
+                ValidateStageStarterHeroes(buildings, registry, report);
+                ValidateStageStarterEquipment(buildings, registry, report);
                 ValidateStage2IsEmpty(buildings, report);
             }
 
@@ -2212,6 +2248,46 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
             }
 
+            private static void ValidateStageStarterHeroes(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!buildings.Source.TryGetTable("SettlementStageStarterHeroes", out var table) ||
+                    !TryGetRequiredRegistry(report, registry.Heroes, "Heroes Configs / enabled Heroes"))
+                {
+                    return;
+                }
+
+                foreach (var row in table.DataRows)
+                {
+                    if (IsDisabled(row.Get("enabled")))
+                        continue;
+
+                    ValidateIdSet(report, buildings.Source.DisplayName, "SettlementStageStarterHeroes", row, "hero_id", registry.Heroes.EnabledHeroIds, "Heroes Configs / enabled Heroes.HeroId");
+                }
+            }
+
+            private static void ValidateStageStarterEquipment(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!buildings.Source.TryGetTable("SettlementStageStarterEquipment", out var table) ||
+                    !TryGetRequiredRegistry(report, registry.Items, "Items Configs / enabled equipment"))
+                {
+                    return;
+                }
+
+                foreach (var row in table.DataRows)
+                {
+                    if (IsDisabled(row.Get("enabled")))
+                        continue;
+
+                    var itemId = row.Get("item_id");
+                    ValidateIdSet(report, buildings.Source.DisplayName, "SettlementStageStarterEquipment", row, "item_id", registry.Items.EquipmentIds, "Items Configs / enabled equipment.id");
+                    if (!IsBlank(itemId) && registry.Items.EquipmentSlotsById.TryGetValue(itemId, out var expectedSlot) &&
+                        !string.Equals(row.Get("equipment_slot"), expectedSlot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageStarterEquipment", row.RowNumber, "equipment_slot", row.Get("equipment_slot"), $"equipment_slot must match item '{itemId}' slot '{expectedSlot}'.");
+                    }
+                }
+            }
+
             private static void ValidateStage2IsEmpty(BuildingsRegistry buildings, ConfigPipelineReport report)
             {
                 if (!buildings.StageIds.Contains("stage_2"))
@@ -2245,6 +2321,21 @@ namespace GuildIdle.Editor.ConfigDownloader
                         if (string.Equals(row.Get("stage_id"), "stage_2", StringComparison.OrdinalIgnoreCase))
                             AddIssue(report, buildings.Source.DisplayName, "SettlementStageObjectives", row.RowNumber, "stage_id", "stage_2", "stage_2 must not have objectives.");
                     }
+                }
+
+                ValidateStage2HasNoRows(buildings, report, "SettlementStageStarterHeroes", "stage_2 must not have starter heroes.");
+                ValidateStage2HasNoRows(buildings, report, "SettlementStageStarterEquipment", "stage_2 must not have starter equipment.");
+            }
+
+            private static void ValidateStage2HasNoRows(BuildingsRegistry buildings, ConfigPipelineReport report, string sheetName, string message)
+            {
+                if (!buildings.Source.TryGetTable(sheetName, out var table))
+                    return;
+
+                foreach (var row in table.DataRows)
+                {
+                    if (!IsDisabled(row.Get("enabled")) && string.Equals(row.Get("stage_id"), "stage_2", StringComparison.OrdinalIgnoreCase))
+                        AddIssue(report, buildings.Source.DisplayName, sheetName, row.RowNumber, "stage_id", "stage_2", message);
                 }
             }
 

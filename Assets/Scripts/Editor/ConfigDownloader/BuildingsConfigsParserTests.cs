@@ -38,6 +38,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"settlementStages\""));
             Assert.That(runtimeJson, Does.Contain("\"settlementStageSlots\""));
             Assert.That(runtimeJson, Does.Contain("\"settlementStageObjectives\""));
+            Assert.That(runtimeJson, Does.Contain("\"settlementStageStarterHeroes\""));
+            Assert.That(runtimeJson, Does.Contain("\"settlementStageStarterEquipment\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingId\": \"building_hall\""));
             Assert.That(runtimeJson, Does.Contain("\"stageId\": \"stage_arrival\""));
             Assert.That(runtimeJson, Does.Contain("\"levels\": 1"));
@@ -61,6 +63,53 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Not.Contain("Title"));
             Assert.That(runtimeJson, Does.Not.Contain("notes"));
             Assert.That(runtimeJson, Does.Not.Contain("cells"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_ExportsOnlyExplicitEnabledStageBootstrapRows()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "SettlementStageStarterHeroes").rows = Append(
+                FindSheet(download, "SettlementStageStarterHeroes").rows,
+                Row("stage_arrival", "aska", "20", "FALSE", "disabled draft"));
+            FindSheet(download, "SettlementStageStarterEquipment").rows = Append(
+                FindSheet(download, "SettlementStageStarterEquipment").rows,
+                Row("stage_arrival", "aska", "item_unused_sword", "weapon", "20", "FALSE", "disabled draft"));
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+            var runtime = JsonUtility.FromJson<BuildingsRuntimeConfigDto>(runtimeJson);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(runtime.settlementStageStarterHeroes, Has.Length.EqualTo(1));
+            Assert.That(runtime.settlementStageStarterHeroes[0].heroId, Is.EqualTo("ren"));
+            Assert.That(runtime.settlementStageStarterEquipment, Has.Length.EqualTo(1));
+            Assert.That(runtime.settlementStageStarterEquipment[0].itemId, Is.EqualTo("item_wooden_club"));
+            Assert.That(runtimeJson, Does.Not.Contain("item_unused_sword"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsInvalidStageBootstrapRows()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "SettlementStageStarterHeroes").rows = Append(
+                FindSheet(download, "SettlementStageStarterHeroes").rows,
+                Row("stage_arrival", "ren", "20", "TRUE", "duplicate"),
+                Row("stage_2", "aska", "10", "TRUE", "stage 2 must stay empty"));
+            FindSheet(download, "SettlementStageStarterEquipment").rows = Append(
+                FindSheet(download, "SettlementStageStarterEquipment").rows,
+                Row("stage_arrival", "aska", "item_unused_sword", "weapon", "20", "TRUE", "hero is not a starter"),
+                Row("stage_2", "aska", "item_unused_sword", "weapon", "10", "TRUE", "stage 2 must stay empty"));
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("Duplicate stage_id + hero_id"));
+            Assert.That(message, Does.Contain("hero_id must be enabled in SettlementStageStarterHeroes"));
+            Assert.That(message, Does.Contain("stage_2 must not have starter heroes"));
+            Assert.That(message, Does.Contain("stage_2 must not have starter equipment"));
         }
 
         [Test]
@@ -431,6 +480,12 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("stage_id", "quest_id", "weight_percent", "required", "sort_order", "notes"),
                         Row("stage_arrival", "quest_build_hall", "50", "TRUE", "10", "note"),
                         Row("stage_arrival", "quest_clear_underwood", "50", "TRUE", "20", "note")),
+                    Sheet("SettlementStageStarterHeroes",
+                        Row("stage_id", "hero_id", "sort_order", "enabled", "notes"),
+                        Row("stage_arrival", "ren", "10", "TRUE", "note")),
+                    Sheet("SettlementStageStarterEquipment",
+                        Row("stage_id", "hero_id", "item_id", "equipment_slot", "sort_order", "enabled", "notes"),
+                        Row("stage_arrival", "ren", "item_wooden_club", "weapon", "10", "TRUE", "note")),
                     Sheet("Craftables - Carpentry",
                         Row("building_id", "building_level", "craft_id", "sort_order", "ui_category", "enabled", "notes"),
                         Row("building_carpentry", "1", "process_pine_plank", "10", "Materials", "TRUE", "note")),

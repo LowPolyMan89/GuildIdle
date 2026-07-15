@@ -68,7 +68,86 @@ namespace GuildIdle.Editor.Player
                     Assert.That(step.completed, Is.False);
                 }
             }
+            Assert.That(Array.Exists(saveData.quests, quest => quest.questId == "quest_disabled_new_game"), Is.False);
+            var buildHutQuest = Array.Find(saveData.quests, quest => quest.questId == "quest_build_hut");
+            Assert.That(buildHutQuest, Is.Not.Null);
+            Assert.That(
+                Array.ConvertAll(buildHutQuest.steps, step => step.stepId),
+                Is.EqualTo(new[] { "step_collect_wood", "step_collect_stone", "step_build_hut" }));
             Assert.That(Array.Exists(saveData.itemInstances, instance => instance.itemId == "item_unused_sword"), Is.False);
+        }
+
+        [Test]
+        public void Bootstrap_SkipsDisabledNewGameQuestOnDefaultAndMigration()
+        {
+            Assert.That(_factory.CreateDefault().GetQuestState("quest_disabled_new_game"), Is.Null);
+
+            var migrated = _factory.Create(new SaveData { saveVersion = 4 });
+
+            Assert.That(migrated.GetQuestState("quest_disabled_new_game"), Is.Null);
+        }
+
+        [Test]
+        public void CreateDefault_DerivesStarterHeroAndLoadoutFromInitialStageConfig()
+        {
+            var database = new TestConfigDatabaseBuilder()
+                .WithFullPlayerStateTestData()
+                .WithStageBootstrap(
+                    new[]
+                    {
+                        new SettlementStageStarterHeroConfigDto { stageId = "stage_arrival", heroId = "aska", sortOrder = 10 }
+                    },
+                    new[]
+                    {
+                        new SettlementStageStarterEquipmentConfigDto
+                        {
+                            stageId = "stage_arrival",
+                            heroId = "aska",
+                            itemId = "item_unused_sword",
+                            equipmentSlot = "weapon",
+                            sortOrder = 10
+                        }
+                    })
+                .Build();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            var factory = TestPlayerComposition.CreatePlayerStateFactory(database);
+
+            var state = factory.CreateDefault();
+
+            Assert.That(state.HasHero("aska"), Is.True);
+            Assert.That(state.HasHero("ren"), Is.False);
+            Assert.That(state.GetEquippedItem("aska", "weapon").itemId, Is.EqualTo("item_unused_sword"));
+            Assert.That(Array.Exists(state.GetItemInstances(), instance => instance.itemId == "item_wooden_club"), Is.False);
+        }
+
+        [Test]
+        public void QuestState_NormalizesStepsByConfiguredOrder()
+        {
+            var state = _factory.Create(new SaveData
+            {
+                saveVersion = 5,
+                currentStageId = "stage_arrival",
+                quests = new[]
+                {
+                    new QuestSaveData
+                    {
+                        questId = "quest_build_hut",
+                        steps = new[]
+                        {
+                            new QuestStepSaveData { stepId = "step_build_hut", currentValue = 3, completed = true },
+                            new QuestStepSaveData { stepId = "step_collect_stone", currentValue = 2 },
+                            new QuestStepSaveData { stepId = "step_collect_wood", currentValue = 1 }
+                        }
+                    }
+                }
+            });
+
+            var quest = state.GetQuestState("quest_build_hut");
+            Assert.That(
+                Array.ConvertAll(quest.steps, step => step.stepId),
+                Is.EqualTo(new[] { "step_collect_wood", "step_collect_stone", "step_build_hut" }));
+            Assert.That(Array.ConvertAll(quest.steps, step => step.currentValue), Is.EqualTo(new[] { 1, 2, 3 }));
+            Assert.That(quest.steps[2].completed, Is.True);
         }
 
         [Test]
@@ -446,6 +525,26 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
+        public void SaveService_NormalizesUnknownItemStatesAndPersistsRepair()
+        {
+            var storage = new MemorySaveStorage();
+            storage.SetString(
+                SaveService.SaveKey,
+                "{\"saveVersion\":5,\"currentStageId\":\"stage_arrival\",\"unlockedHeroes\":[\"ren\"],\"acquiredHeroes\":[\"ren\"],\"heroes\":[{\"heroId\":\"ren\",\"level\":1}],\"itemInstances\":[{\"instanceId\":\"broken\",\"itemId\":\"item_wooden_club\",\"stateId\":\"broken_state\"},{\"instanceId\":\"missing\",\"itemId\":\"item_wooden_club\"}],\"equipmentSlots\":[{\"heroId\":\"ren\",\"equipmentSlot\":\"weapon\",\"itemInstanceId\":\"broken\"}]}");
+
+            var repaired = SaveService.Load(_factory, storage);
+
+            Assert.That(repaired.GetItemInstance("broken").stateId, Is.EqualTo(PlayerState.EquippedItemStateId));
+            Assert.That(repaired.GetItemInstance("missing").stateId, Is.EqualTo(PlayerState.OnStorageItemStateId));
+            Assert.That(repaired.GetEquippedItem("ren", "weapon").instanceId, Is.EqualTo("broken"));
+
+            var reloaded = SaveService.Load(_factory, storage);
+            Assert.That(reloaded.GetItemInstance("broken").stateId, Is.EqualTo(PlayerState.EquippedItemStateId));
+            Assert.That(reloaded.GetItemInstance("missing").stateId, Is.EqualTo(PlayerState.OnStorageItemStateId));
+            Assert.That(InstanceIds(reloaded.GetItemInstances()), Is.EqualTo(new[] { "broken", "missing" }));
+        }
+
+        [Test]
         public void Migration_DoesNotReplaceValidExistingWeapon()
         {
             var state = _factory.Create(new SaveData
@@ -507,6 +606,8 @@ namespace GuildIdle.Editor.Player
             });
 
             Assert.That(state.CurrentStageId, Is.EqualTo("stage_2"));
+            Assert.That(state.HasHero("ren"), Is.False);
+            Assert.That(state.GetItemInstances(), Is.Empty);
         }
 
         private static ConfigDatabase CreateDatabase()

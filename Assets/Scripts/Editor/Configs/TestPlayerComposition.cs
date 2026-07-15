@@ -5,10 +5,7 @@ namespace GuildIdle.Editor.Configs
 {
     public static class TestPlayerComposition
     {
-        public static readonly PlayerBootstrapDefinition BootstrapDefinition = new PlayerBootstrapDefinition(
-            "stage_arrival",
-            new[] { "ren" },
-            new[] { new StarterEquipmentDefinition("ren", "item_wooden_club", "weapon") });
+        public static readonly PlayerBootstrapDefinition BootstrapDefinition = new PlayerBootstrapDefinition("stage_arrival");
 
         public static HeroStatsService CreateHeroStats(ConfigDatabase database)
         {

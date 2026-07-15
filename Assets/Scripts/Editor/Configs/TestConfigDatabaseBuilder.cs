@@ -1,3 +1,4 @@
+using System;
 using GuildIdle.Configs;
 
 namespace GuildIdle.Editor.Configs
@@ -209,20 +210,23 @@ namespace GuildIdle.Editor.Configs
                 },
                 quests = new[]
                 {
-                    new QuestConfigDto { questId = "quest_build_hut" },
-                    new QuestConfigDto { questId = "quest_clear_underwood" }
+                    new QuestConfigDto { questId = "quest_build_hut", enabled = true },
+                    new QuestConfigDto { questId = "quest_clear_underwood", enabled = true },
+                    new QuestConfigDto { questId = "quest_disabled_new_game", enabled = false }
                 },
                 questStartConditions = new[]
                 {
                     new QuestStartConditionConfigDto { questId = "quest_build_hut", conditionType = "NewGame" },
-                    new QuestStartConditionConfigDto { questId = "quest_clear_underwood", conditionType = "NewGame" }
+                    new QuestStartConditionConfigDto { questId = "quest_clear_underwood", conditionType = "NewGame" },
+                    new QuestStartConditionConfigDto { questId = "quest_disabled_new_game", conditionType = "NewGame" }
                 },
                 questSteps = new[]
                 {
-                    new QuestStepConfigDto { questId = "quest_build_hut", stepId = "step_collect_wood" },
-                    new QuestStepConfigDto { questId = "quest_build_hut", stepId = "step_collect_stone" },
-                    new QuestStepConfigDto { questId = "quest_build_hut", stepId = "step_build_hut" },
-                    new QuestStepConfigDto { questId = "quest_clear_underwood", stepId = "step_clear_underwood" }
+                    new QuestStepConfigDto { questId = "quest_build_hut", stepId = "step_collect_wood", stepOrder = 10 },
+                    new QuestStepConfigDto { questId = "quest_build_hut", stepId = "step_collect_stone", stepOrder = 20 },
+                    new QuestStepConfigDto { questId = "quest_build_hut", stepId = "step_build_hut", stepOrder = 30 },
+                    new QuestStepConfigDto { questId = "quest_clear_underwood", stepId = "step_clear_underwood", stepOrder = 10 },
+                    new QuestStepConfigDto { questId = "quest_disabled_new_game", stepId = "step_disabled", stepOrder = 10 }
                 }
             };
             return this;
@@ -269,6 +273,21 @@ namespace GuildIdle.Editor.Configs
                 {
                     new SettlementStageConfigDto { stageId = "stage_arrival", enabled = true, nextStageId = "stage_2" },
                     new SettlementStageConfigDto { stageId = "stage_2", enabled = true }
+                },
+                settlementStageStarterHeroes = new[]
+                {
+                    new SettlementStageStarterHeroConfigDto { stageId = "stage_arrival", heroId = "ren", sortOrder = 10 }
+                },
+                settlementStageStarterEquipment = new[]
+                {
+                    new SettlementStageStarterEquipmentConfigDto
+                    {
+                        stageId = "stage_arrival",
+                        heroId = "ren",
+                        itemId = "item_wooden_club",
+                        equipmentSlot = "weapon",
+                        sortOrder = 10
+                    }
                 }
             };
             return this;
@@ -284,6 +303,18 @@ namespace GuildIdle.Editor.Configs
                     new ItemStateConfigDto { stateId = "equipped" }
                 }
             };
+            return this;
+        }
+
+        public TestConfigDatabaseBuilder WithStageBootstrap(
+            SettlementStageStarterHeroConfigDto[] starterHeroes,
+            SettlementStageStarterEquipmentConfigDto[] starterEquipment)
+        {
+            if (_buildings == null)
+                throw new InvalidOperationException("Buildings must be configured before stage bootstrap.");
+
+            _buildings.settlementStageStarterHeroes = starterHeroes ?? Array.Empty<SettlementStageStarterHeroConfigDto>();
+            _buildings.settlementStageStarterEquipment = starterEquipment ?? Array.Empty<SettlementStageStarterEquipmentConfigDto>();
             return this;
         }
 
