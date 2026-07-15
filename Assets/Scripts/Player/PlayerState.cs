@@ -37,27 +37,11 @@ namespace GuildIdle.Player
         {
             _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
             _configs = configs ?? throw new ArgumentNullException(nameof(configs));
-            Load(saveData, null);
-        }
-
-        public PlayerState(
-            SaveData saveData,
-            HeroSlotSaveEntry[] legacyHeroSlots,
-            HeroStatsService heroStats,
-            IPlayerBootstrapConfigProvider configs)
-        {
-            _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
-            _configs = configs ?? throw new ArgumentNullException(nameof(configs));
-            Load(saveData, legacyHeroSlots);
+            Load(saveData);
         }
 
         internal bool WasNormalized { get; private set; }
         public string CurrentStageId => _currentStageId;
-
-        internal void MarkNormalized()
-        {
-            WasNormalized = true;
-        }
 
         public SaveData ToSaveData()
         {
@@ -672,7 +656,7 @@ namespace GuildIdle.Player
             return true;
         }
 
-        private void Load(SaveData saveData, HeroSlotSaveEntry[] legacyHeroSlots)
+        private void Load(SaveData saveData)
         {
             saveData ??= new SaveData();
 
@@ -682,7 +666,6 @@ namespace GuildIdle.Player
             LoadItemInstances(saveData.itemInstances);
             LoadHeroes(saveData.unlockedHeroes, _unlockedHeroes);
             LoadHeroes(saveData.acquiredHeroes, _acquiredHeroes);
-            LoadLegacyHeroSlots(legacyHeroSlots);
             LoadHeroStates(saveData.heroes);
             LoadQuests(saveData.quests);
             LoadBuildings(saveData.unlockedBuildings);
@@ -767,22 +750,6 @@ namespace GuildIdle.Player
             {
                 if (ValidateHeroId(heroId))
                     target.Add(heroId);
-            }
-        }
-
-        private void LoadLegacyHeroSlots(HeroSlotSaveEntry[] entries)
-        {
-            if (entries == null)
-                return;
-
-            foreach (var entry in entries)
-            {
-                if (entry == null || entry.slotIndex < 0 || !ValidateHeroId(entry.heroId))
-                    continue;
-
-                _unlockedHeroes.Add(entry.heroId);
-                _acquiredHeroes.Add(entry.heroId);
-                WasNormalized = true;
             }
         }
 

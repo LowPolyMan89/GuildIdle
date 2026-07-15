@@ -29,28 +29,12 @@ namespace GuildIdle.Player
             _bootstrap = bootstrap ?? throw new ArgumentNullException(nameof(bootstrap));
         }
 
-        public PlayerState Create(SaveData saveData, HeroSlotSaveEntry[] legacyHeroSlots = null)
+        public PlayerState Create(SaveData saveData)
         {
             saveData ??= new SaveData();
             ValidateSaveVersion(saveData.saveVersion);
-
-            if (saveData.saveVersion >= SaveData.CurrentSaveVersion)
-                ValidateLoadedStage(saveData.currentStageId);
-            else if (!string.IsNullOrWhiteSpace(saveData.currentStageId))
-                ValidateLoadedStage(saveData.currentStageId);
-
-            var state = new PlayerState(saveData, legacyHeroSlots, _heroStats, _configs);
-            if (saveData.saveVersion < SaveData.CurrentSaveVersion)
-            {
-                var bootstrapStageId = string.IsNullOrWhiteSpace(state.CurrentStageId)
-                    ? _bootstrap.InitialStageId
-                    : state.CurrentStageId;
-                ValidateStageBootstrap(bootstrapStageId);
-                ApplyLegacyBootstrap(state);
-                state.MarkNormalized();
-            }
-
-            return state;
+            ValidateLoadedStage(saveData.currentStageId);
+            return new PlayerState(saveData, _heroStats, _configs);
         }
 
         public PlayerState CreateDefault()
@@ -65,17 +49,6 @@ namespace GuildIdle.Player
             ApplyNewGameQuests(state);
             ApplyStarterEquipment(state, _bootstrap.InitialStageId);
             return state;
-        }
-
-        private void ApplyLegacyBootstrap(PlayerState state)
-        {
-            if (string.IsNullOrWhiteSpace(state.CurrentStageId))
-                state.SetCurrentStage(_bootstrap.InitialStageId);
-
-            ApplyStarterHeroes(state, state.CurrentStageId);
-            ApplyDefaultBuildings(state);
-            ApplyNewGameQuests(state);
-            ApplyStarterEquipment(state, state.CurrentStageId);
         }
 
         private void ApplyStarterHeroes(PlayerState state, string stageId)
@@ -183,44 +156,9 @@ namespace GuildIdle.Player
         {
             foreach (var loadout in _configs.GetSettlementStageStarterEquipment(stageId))
             {
-                if (state.GetEquippedItem(loadout.heroId, loadout.equipmentSlot) == null)
-                {
-                    var instanceId = FindFreeInstance(state, loadout.itemId);
-                    if (instanceId == null && state.GetItem(loadout.itemId) > 0)
-                    {
-                        state.SpendItem(loadout.itemId, 1);
-                        instanceId = state.AddItemInstance(loadout.itemId, PlayerState.OnStorageItemStateId);
-                    }
-
-                    instanceId ??= state.AddItemInstance(loadout.itemId, PlayerState.OnStorageItemStateId);
-                    state.EquipItemInstance(loadout.heroId, loadout.equipmentSlot, instanceId);
-                }
-
-                while (state.GetItem(loadout.itemId) > 0)
-                {
-                    state.SpendItem(loadout.itemId, 1);
-                    state.AddItemInstance(loadout.itemId, PlayerState.OnStorageItemStateId);
-                }
+                var instanceId = state.AddItemInstance(loadout.itemId, PlayerState.OnStorageItemStateId);
+                state.EquipItemInstance(loadout.heroId, loadout.equipmentSlot, instanceId);
             }
-        }
-
-        private static string FindFreeInstance(PlayerState state, string itemId)
-        {
-            var equipped = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var slot in state.GetEquipmentSlots())
-                equipped.Add(slot.itemInstanceId);
-
-            foreach (var instance in state.GetItemInstances())
-            {
-                if (string.Equals(instance.itemId, itemId, StringComparison.Ordinal) &&
-                    string.Equals(instance.stateId, PlayerState.OnStorageItemStateId, StringComparison.Ordinal) &&
-                    !equipped.Contains(instance.instanceId))
-                {
-                    return instance.instanceId;
-                }
-            }
-
-            return null;
         }
 
         private bool StartsOnNewGame(string questId)
@@ -284,8 +222,8 @@ namespace GuildIdle.Player
 
         private static void ValidateSaveVersion(int version)
         {
-            if (version > SaveData.CurrentSaveVersion)
-                throw new SaveCompatibilityException($"Save version '{version}' is newer than supported version '{SaveData.CurrentSaveVersion}'.");
+            if (version != SaveData.CurrentSaveVersion)
+                throw new SaveCompatibilityException($"Save version '{version}' does not match supported version '{SaveData.CurrentSaveVersion}'.");
         }
 
         private static bool HasPersistentInterval(string interval)

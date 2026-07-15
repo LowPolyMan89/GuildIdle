@@ -57,13 +57,6 @@ namespace GuildIdle.Player
     }
 
     [Serializable]
-    public sealed class HeroSlotSaveEntry
-    {
-        public int slotIndex;
-        public string heroId;
-    }
-
-    [Serializable]
     public sealed class HeroSaveData
     {
         public string heroId;

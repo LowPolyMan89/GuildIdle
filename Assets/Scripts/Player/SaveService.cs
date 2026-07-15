@@ -43,9 +43,14 @@ namespace GuildIdle.Player
                 if (saveData == null)
                     throw new InvalidOperationException("JsonUtility returned null SaveData.");
 
-                var legacySaveData = JsonUtility.FromJson<LegacySaveData>(json);
-                var state = factory.Create(saveData, legacySaveData?.heroSlots);
-                if (saveData.saveVersion < SaveData.CurrentSaveVersion || state.WasNormalized)
+                if (saveData.saveVersion < SaveData.CurrentSaveVersion)
+                {
+                    Debug.LogWarning($"[SaveService] Player save version '{saveData.saveVersion}' is older than supported version '{SaveData.CurrentSaveVersion}'. Creating default save.");
+                    return CreateAndPersistDefault(factory, storage);
+                }
+
+                var state = factory.Create(saveData);
+                if (state.WasNormalized)
                     Save(state, storage);
 
                 return state;
@@ -104,12 +109,6 @@ namespace GuildIdle.Player
             var state = factory.CreateDefault();
             Save(state, storage);
             return state;
-        }
-
-        [Serializable]
-        private sealed class LegacySaveData
-        {
-            public HeroSlotSaveEntry[] heroSlots = Array.Empty<HeroSlotSaveEntry>();
         }
 
         private sealed class PlayerPrefsSaveStorage : ISaveStorage
