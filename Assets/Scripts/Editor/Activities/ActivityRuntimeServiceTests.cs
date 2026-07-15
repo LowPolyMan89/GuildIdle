@@ -201,7 +201,7 @@ namespace GuildIdle.Editor.Activities
 
         private PlayerState NewState()
         {
-            var state = _factory.Create(new SaveData());
+            var state = _factory.Create(new SaveData { currentStageId = "stage_arrival" });
             state.AddHero("ren");
             return state;
         }
@@ -275,6 +275,10 @@ namespace GuildIdle.Editor.Activities
                     {
                         new BuildingLevelConfigDto { buildingId = "building_hall", level = 0, activeHeroLimit = 1 },
                         new BuildingLevelConfigDto { buildingId = "building_hall", level = 1, activeHeroLimit = 1 }
+                    },
+                    settlementStages = new[]
+                    {
+                        new SettlementStageConfigDto { stageId = "stage_arrival", enabled = true }
                     }
                 },
                 null,

@@ -216,7 +216,7 @@ namespace GuildIdle.Editor.Activities
 
         private PlayerState NewState()
         {
-            var state = _factory.Create(new SaveData());
+            var state = _factory.Create(new SaveData { currentStageId = "stage_arrival" });
             state.AddHero("ren");
             return state;
         }

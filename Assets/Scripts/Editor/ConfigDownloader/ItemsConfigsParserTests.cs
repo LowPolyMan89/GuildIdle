@@ -321,7 +321,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             string requiredRecipeItemId,
             string craftEnabled)
         {
-            var recipes = FindSheet(download, "Р РµС†РµРїС‚С‹");
+            var recipes = FindSheet(download, "Рецепты");
             recipes.rows = Append(
                 recipes.rows,
                 Row("recipe_old", "Old recipe", "item.recipe_old.name", "item.recipe_old.description", "icon_recipe_old", "recipe", "Common", "1", "FALSE", "disabled"));

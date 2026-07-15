@@ -44,7 +44,16 @@ namespace GuildIdle.Player
                     throw new InvalidOperationException("JsonUtility returned null SaveData.");
 
                 var legacySaveData = JsonUtility.FromJson<LegacySaveData>(json);
-                return factory.Create(saveData, legacySaveData?.heroSlots);
+                var state = factory.Create(saveData, legacySaveData?.heroSlots);
+                if (saveData.saveVersion < SaveData.CurrentSaveVersion || state.WasNormalized)
+                    Save(state, storage);
+
+                return state;
+            }
+            catch (SaveCompatibilityException exception)
+            {
+                Debug.LogError($"[SaveService] Player save is incompatible and was not modified. {exception.Message}");
+                return null;
             }
             catch (Exception exception)
             {

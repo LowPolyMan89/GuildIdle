@@ -3,11 +3,59 @@ using GuildIdle.Configs;
 
 namespace GuildIdle.Player
 {
+    public sealed class PlayerBootstrapDefinition
+    {
+        public PlayerBootstrapDefinition(
+            string initialStageId,
+            string[] starterHeroIds,
+            StarterEquipmentDefinition[] starterEquipment)
+        {
+            InitialStageId = string.IsNullOrWhiteSpace(initialStageId)
+                ? throw new ArgumentException("Initial stage id is required.", nameof(initialStageId))
+                : initialStageId;
+            StarterHeroIds = starterHeroIds ?? Array.Empty<string>();
+            StarterEquipment = starterEquipment ?? Array.Empty<StarterEquipmentDefinition>();
+        }
+
+        public string InitialStageId { get; }
+        public string[] StarterHeroIds { get; }
+        public StarterEquipmentDefinition[] StarterEquipment { get; }
+    }
+
+    public sealed class StarterEquipmentDefinition
+    {
+        public StarterEquipmentDefinition(string heroId, string itemId, string equipmentSlot)
+        {
+            HeroId = string.IsNullOrWhiteSpace(heroId)
+                ? throw new ArgumentException("Hero id is required.", nameof(heroId))
+                : heroId;
+            ItemId = string.IsNullOrWhiteSpace(itemId)
+                ? throw new ArgumentException("Item id is required.", nameof(itemId))
+                : itemId;
+            EquipmentSlot = string.IsNullOrWhiteSpace(equipmentSlot)
+                ? throw new ArgumentException("Equipment slot is required.", nameof(equipmentSlot))
+                : equipmentSlot;
+        }
+
+        public string HeroId { get; }
+        public string ItemId { get; }
+        public string EquipmentSlot { get; }
+    }
+
     public interface IPlayerBootstrapConfigProvider
     {
         BuildingConfigDto[] Buildings { get; }
-        bool TryGetActivity(string activityId, out ActivityConfigDto activity);
-        ActivityRewardConfigDto[] GetRewards(string activityId);
+        SkillConfigDto[] Skills { get; }
+        QuestConfigDto[] Quests { get; }
+        HeroSkillEffectConfigDto[] HeroSkillEffects { get; }
+        bool TryGetHero(string heroId, out HeroConfigDto hero);
+        bool TryGetItem(string itemId, out IItemConfig item);
+        bool TryGetEquipmentSlot(string itemId, out string equipmentSlot);
+        bool TryGetSettlementStage(string stageId, out SettlementStageConfigDto stage);
+        bool TryGetQuest(string questId, out QuestConfigDto quest);
+        QuestStartConditionConfigDto[] GetQuestStartConditions(string questId);
+        QuestStepConfigDto[] GetQuestSteps(string questId);
+        bool IsKnownItemState(string stateId);
     }
 
     public sealed class RepositoryHeroStatsConfigAdapter : IHeroStatsConfigProvider
@@ -35,20 +83,56 @@ namespace GuildIdle.Player
 
     public sealed class RepositoryPlayerBootstrapConfigAdapter : IPlayerBootstrapConfigProvider
     {
+        private readonly ItemsConfigRepository _items;
+        private readonly HeroesConfigRepository _heroes;
         private readonly ActivitiesConfigRepository _activities;
         private readonly BuildingsConfigRepository _buildings;
+        private readonly StorageConfigRepository _storage;
 
         public RepositoryPlayerBootstrapConfigAdapter(
+            ItemsConfigRepository items,
+            HeroesConfigRepository heroes,
             ActivitiesConfigRepository activities,
-            BuildingsConfigRepository buildings)
+            BuildingsConfigRepository buildings,
+            StorageConfigRepository storage)
         {
+            _items = items ?? throw new ArgumentNullException(nameof(items));
+            _heroes = heroes ?? throw new ArgumentNullException(nameof(heroes));
             _activities = activities ?? throw new ArgumentNullException(nameof(activities));
             _buildings = buildings ?? throw new ArgumentNullException(nameof(buildings));
+            _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         }
 
         public BuildingConfigDto[] Buildings => _buildings.Buildings;
-        public bool TryGetActivity(string activityId, out ActivityConfigDto activity) =>
-            _activities.TryGet(activityId, out activity);
-        public ActivityRewardConfigDto[] GetRewards(string activityId) => _activities.GetRewards(activityId);
+        public SkillConfigDto[] Skills => _activities.Skills;
+        public QuestConfigDto[] Quests => _activities.Quests;
+        public HeroSkillEffectConfigDto[] HeroSkillEffects => _heroes.HeroSkillEffects;
+        public bool TryGetHero(string heroId, out HeroConfigDto hero) => _heroes.TryGet(heroId, out hero);
+        public bool TryGetItem(string itemId, out IItemConfig item) => _items.TryGet(itemId, out item);
+        public bool TryGetSettlementStage(string stageId, out SettlementStageConfigDto stage) =>
+            _buildings.TryGetSettlementStage(stageId, out stage);
+        public bool TryGetQuest(string questId, out QuestConfigDto quest) => _activities.TryGetQuest(questId, out quest);
+        public QuestStartConditionConfigDto[] GetQuestStartConditions(string questId) =>
+            _activities.GetQuestStartConditions(questId);
+        public QuestStepConfigDto[] GetQuestSteps(string questId) => _activities.GetQuestSteps(questId);
+        public bool IsKnownItemState(string stateId) => _storage.TryGetItemState(stateId, out _);
+
+        public bool TryGetEquipmentSlot(string itemId, out string equipmentSlot)
+        {
+            equipmentSlot = null;
+            if (_items.TryGetEquipmentWeapon(itemId, out var weapon))
+            {
+                equipmentSlot = weapon.equipmentSlot;
+                return true;
+            }
+
+            if (_items.TryGetEquipmentArmor(itemId, out var armor))
+            {
+                equipmentSlot = armor.equipmentSlot;
+                return true;
+            }
+
+            return false;
+        }
     }
 }

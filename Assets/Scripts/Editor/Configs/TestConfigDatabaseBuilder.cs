@@ -50,12 +50,14 @@ namespace GuildIdle.Editor.Configs
                 resources = new[]
                 {
                     new ResourceConfigDto { id = "resource_pine_wood", kind = "resource" },
+                    new ResourceConfigDto { id = "resource_stone", kind = "resource" },
                     new ResourceConfigDto { id = "resource_flax", kind = "resource" },
                     new ResourceConfigDto { id = "resource_thin_hide", kind = "resource" }
                 },
                 equipmentWeapons = new[]
                 {
-                    new EquipmentWeaponConfigDto { id = "item_wooden_club", kind = "equipment" }
+                    new EquipmentWeaponConfigDto { id = "item_wooden_club", kind = "equipment", equipmentSlot = "weapon" },
+                    new EquipmentWeaponConfigDto { id = "item_unused_sword", kind = "equipment", equipmentSlot = "weapon" }
                 },
                 recipes = new[]
                 {
@@ -88,12 +90,28 @@ namespace GuildIdle.Editor.Configs
                     {
                         heroId = "ren",
                         enabled = true,
+                        uniqueSkillIds = new[] { "reliable_hands", "will_to_live" },
                         baseStats = new HeroBaseStatsDto { endurance = 5 }
                     },
                     new HeroConfigDto
                     {
                         heroId = "aska",
                         enabled = true
+                    }
+                },
+                heroSkillEffects = new[]
+                {
+                    new HeroSkillEffectConfigDto
+                    {
+                        skillId = "reliable_hands",
+                        effectId = "reliable_hands_extra_resource",
+                        interval = "5"
+                    },
+                    new HeroSkillEffectConfigDto
+                    {
+                        skillId = "will_to_live",
+                        effectId = "will_to_live_prevent_death",
+                        interval = "0"
                     }
                 }
             };
@@ -170,38 +188,41 @@ namespace GuildIdle.Editor.Configs
             {
                 activities = new[]
                 {
-                    new ActivityConfigDto { id = "starter_hero_available" },
-                    new ActivityConfigDto { id = "combat_first_map_node" }
+                    new ActivityConfigDto { id = "combat_first_map_node" },
+                    new ActivityConfigDto { id = "combat_clear_hall_forest" }
                 },
                 skills = new[]
                 {
-                    new SkillConfigDto { skillId = "skill_gathering" }
+                    new SkillConfigDto { skillId = "skill_gathering" },
+                    new SkillConfigDto { skillId = "skill_processing" },
+                    new SkillConfigDto { skillId = "skill_crafting" },
+                    new SkillConfigDto { skillId = "skill_hunting" },
+                    new SkillConfigDto { skillId = "skill_production" },
+                    new SkillConfigDto { skillId = "skill_exploration" },
+                    new SkillConfigDto { skillId = "skill_construction" },
+                    new SkillConfigDto { skillId = "skill_combat" }
                 },
                 skillsProgression = new[]
                 {
                     new SkillProgressionConfigDto { level = 1, totalExpRequired = 0 },
                     new SkillProgressionConfigDto { level = 2, totalExpRequired = 100 }
                 },
-                rewards = new[]
+                quests = new[]
                 {
-                    new ActivityRewardConfigDto
-                    {
-                        activityId = "starter_hero_available",
-                        rewardType = "Hero",
-                        targetId = "ren",
-                        min = 1,
-                        max = 1,
-                        chance = 100
-                    },
-                    new ActivityRewardConfigDto
-                    {
-                        activityId = "starter_hero_available",
-                        rewardType = "Equipment",
-                        targetId = "item_wooden_club",
-                        min = 1,
-                        max = 1,
-                        chance = 100
-                    }
+                    new QuestConfigDto { questId = "quest_build_hut" },
+                    new QuestConfigDto { questId = "quest_clear_underwood" }
+                },
+                questStartConditions = new[]
+                {
+                    new QuestStartConditionConfigDto { questId = "quest_build_hut", conditionType = "NewGame" },
+                    new QuestStartConditionConfigDto { questId = "quest_clear_underwood", conditionType = "NewGame" }
+                },
+                questSteps = new[]
+                {
+                    new QuestStepConfigDto { questId = "quest_build_hut", stepId = "step_collect_wood" },
+                    new QuestStepConfigDto { questId = "quest_build_hut", stepId = "step_collect_stone" },
+                    new QuestStepConfigDto { questId = "quest_build_hut", stepId = "step_build_hut" },
+                    new QuestStepConfigDto { questId = "quest_clear_underwood", stepId = "step_clear_underwood" }
                 }
             };
             return this;
@@ -218,20 +239,49 @@ namespace GuildIdle.Editor.Configs
                 buildings = new[]
                 {
                     new BuildingConfigDto { buildingId = "building_hall", levels = 1, startLevel = 0, visibleAtStart = true },
-                    new BuildingConfigDto { buildingId = "building_tavern", levels = 1, startLevel = 1, visibleAtStart = true },
-                    new BuildingConfigDto { buildingId = "building_watchtower", levels = 1, startLevel = 0, visibleAtStart = true, clickableRequirement = "building_hall:1" },
+                    new BuildingConfigDto { buildingId = "building_underwood", levels = 1, startLevel = 0, visibleAtStart = true },
+                    new BuildingConfigDto { buildingId = "building_stone_pile", levels = 1, startLevel = 1, visibleAtStart = true },
+                    new BuildingConfigDto { buildingId = "building_campfire", levels = 1, startLevel = 0, visibleAtStart = true },
+                    new BuildingConfigDto { buildingId = "building_warehouse", levels = 0, startLevel = 0, visibleAtStart = true },
+                    new BuildingConfigDto { buildingId = "building_tavern", levels = 1, startLevel = 1, visibleAtStart = false },
+                    new BuildingConfigDto { buildingId = "building_watchtower", levels = 1, startLevel = 0, visibleAtStart = false, clickableRequirement = "building_hall:1" },
                     new BuildingConfigDto { buildingId = "building_hidden", levels = 1, startLevel = 0, visibleAtStart = false }
                 },
                 buildingLevels = new[]
                 {
                     new BuildingLevelConfigDto { buildingId = "building_hall", level = 0, activeHeroLimit = 1 },
                     new BuildingLevelConfigDto { buildingId = "building_hall", level = 1, activeHeroLimit = 1 },
+                    new BuildingLevelConfigDto { buildingId = "building_underwood", level = 0 },
+                    new BuildingLevelConfigDto { buildingId = "building_underwood", level = 1 },
+                    new BuildingLevelConfigDto { buildingId = "building_stone_pile", level = 0 },
+                    new BuildingLevelConfigDto { buildingId = "building_stone_pile", level = 1 },
+                    new BuildingLevelConfigDto { buildingId = "building_campfire", level = 0 },
+                    new BuildingLevelConfigDto { buildingId = "building_campfire", level = 1 },
+                    new BuildingLevelConfigDto { buildingId = "building_warehouse", level = 0 },
                     new BuildingLevelConfigDto { buildingId = "building_tavern", level = 0 },
                     new BuildingLevelConfigDto { buildingId = "building_tavern", level = 1 },
                     new BuildingLevelConfigDto { buildingId = "building_watchtower", level = 0 },
                     new BuildingLevelConfigDto { buildingId = "building_watchtower", level = 1 },
                     new BuildingLevelConfigDto { buildingId = "building_hidden", level = 0 },
                     new BuildingLevelConfigDto { buildingId = "building_hidden", level = 1 }
+                },
+                settlementStages = new[]
+                {
+                    new SettlementStageConfigDto { stageId = "stage_arrival", enabled = true, nextStageId = "stage_2" },
+                    new SettlementStageConfigDto { stageId = "stage_2", enabled = true }
+                }
+            };
+            return this;
+        }
+
+        public TestConfigDatabaseBuilder WithMinimalStorage()
+        {
+            _storage = new StorageRuntimeConfigDto
+            {
+                itemStates = new[]
+                {
+                    new ItemStateConfigDto { stateId = "on_storage" },
+                    new ItemStateConfigDto { stateId = "equipped" }
                 }
             };
             return this;
@@ -244,6 +294,10 @@ namespace GuildIdle.Editor.Configs
                 buildings = new[]
                 {
                     new BuildingConfigDto { buildingId = "building_underwood", levels = 2 }
+                },
+                settlementStages = new[]
+                {
+                    new SettlementStageConfigDto { stageId = "stage_arrival", enabled = true }
                 }
             };
             return this;
@@ -368,7 +422,8 @@ namespace GuildIdle.Editor.Configs
                 .WithResolverEnemies()
                 .WithFatigueFormula()
                 .WithResolverLoot()
-                .WithResolverMap();
+                .WithResolverMap()
+                .WithMinimalStorage();
         }
 
         public TestConfigDatabaseBuilder WithFullPlayerStateTestData()
@@ -378,7 +433,8 @@ namespace GuildIdle.Editor.Configs
                 .WithMinimalActivities()
                 .WithMinimalBuildings()
                 .WithFatigueFormula()
-                .WithMinimalMap();
+                .WithMinimalMap()
+                .WithMinimalStorage();
         }
 
         // ──────────────────────────────────────────────

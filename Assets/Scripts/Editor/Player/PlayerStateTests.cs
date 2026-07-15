@@ -28,22 +28,47 @@ namespace GuildIdle.Editor.Player
         {
             var state = _factory.CreateDefault();
 
+            Assert.That(state.CurrentStageId, Is.EqualTo("stage_arrival"));
             Assert.That(state.IsHeroUnlocked("ren"), Is.True);
             Assert.That(state.HasHero("ren"), Is.True);
+            Assert.That(state.HasHero("aska"), Is.False);
             Assert.That(state.HasHeroState("ren"), Is.True);
             Assert.That(state.GetHeroMaxFatigue("ren"), Is.EqualTo(121));
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(state.GetHeroMaxFatigue("ren")));
-            Assert.That(state.GetItem("item_wooden_club"), Is.EqualTo(1));
+            Assert.That(state.GetHeroEffectCounter("ren", "reliable_hands_extra_resource"), Is.Zero);
+            Assert.That(state.GetItem("item_wooden_club"), Is.Zero);
+            Assert.That(state.GetEquippedItem("ren", "weapon").itemId, Is.EqualTo("item_wooden_club"));
+            Assert.That(state.GetItemInstances(), Has.Length.EqualTo(1));
             Assert.That(state.IsBuildingUnlocked("building_hall"), Is.True);
             Assert.That(state.GetBuildingLevel("building_hall"), Is.EqualTo(0));
-            Assert.That(state.IsBuildingUnlocked("building_watchtower"), Is.True);
-            Assert.That(state.GetBuildingLevel("building_watchtower"), Is.EqualTo(0));
-            Assert.That(state.IsBuildingUnlocked("building_tavern"), Is.True);
-            Assert.That(state.GetBuildingLevel("building_tavern"), Is.EqualTo(1));
+            Assert.That(state.GetBuildingLevel("building_underwood"), Is.EqualTo(0));
+            Assert.That(state.GetBuildingLevel("building_stone_pile"), Is.EqualTo(1));
+            Assert.That(state.GetBuildingLevel("building_campfire"), Is.EqualTo(0));
+            Assert.That(state.GetBuildingLevel("building_warehouse"), Is.EqualTo(0));
+            Assert.That(ActiveHeroLimitResolver.GetCurrentLimit(new PlayerStateActivityAdapter(state)), Is.EqualTo(1));
 
             var saveData = state.ToSaveData();
             Assert.That(saveData.heroes, Has.Length.EqualTo(1));
             Assert.That(saveData.heroes[0].heroId, Is.EqualTo("ren"));
+            Assert.That(saveData.heroes[0].level, Is.EqualTo(1));
+            Assert.That(saveData.heroes[0].skills, Has.Length.EqualTo(8));
+            foreach (var skill in saveData.heroes[0].skills)
+            {
+                Assert.That(skill.level, Is.EqualTo(1));
+                Assert.That(skill.exp, Is.Zero);
+            }
+            Assert.That(saveData.quests, Has.Length.EqualTo(2));
+            foreach (var quest in saveData.quests)
+            {
+                Assert.That(quest.completed, Is.False);
+                Assert.That(quest.rewardsGranted, Is.False);
+                foreach (var step in quest.steps)
+                {
+                    Assert.That(step.currentValue, Is.Zero);
+                    Assert.That(step.completed, Is.False);
+                }
+            }
+            Assert.That(Array.Exists(saveData.itemInstances, instance => instance.itemId == "item_unused_sword"), Is.False);
         }
 
         [Test]
@@ -113,9 +138,12 @@ namespace GuildIdle.Editor.Player
             var state = _factory.CreateDefault();
 
             Assert.That(state.CanClickBuilding("building_hall"), Is.True);
-            Assert.That(state.CanClickBuilding("building_tavern"), Is.True);
+            Assert.That(state.CanClickBuilding("building_tavern"), Is.False);
             Assert.That(state.CanClickBuilding("building_watchtower"), Is.False);
 
+            Assert.That(state.UnlockBuilding("building_tavern"), Is.True);
+            Assert.That(state.CanClickBuilding("building_tavern"), Is.True);
+            Assert.That(state.UnlockBuilding("building_watchtower"), Is.True);
             Assert.That(state.SetBuildingLevel("building_hall", 1), Is.True);
 
             Assert.That(state.CanClickBuilding("building_watchtower"), Is.True);
@@ -152,9 +180,17 @@ namespace GuildIdle.Editor.Player
         {
             var state = _factory.CreateDefault();
             var maxFatigue = state.GetHeroMaxFatigue("ren");
+            var equippedInstanceId = state.GetEquippedItem("ren", "weapon").instanceId;
 
             Assert.That(state.SpendHeroFatigue("ren", 5), Is.True);
             Assert.That(state.AddHeroSkillExp("ren", "skill_gathering", 150), Is.True);
+            Assert.That(state.SetHeroEffectCounter("ren", "reliable_hands_extra_resource", 4), Is.True);
+            var quest = state.GetQuestState("quest_build_hut");
+            quest.completed = true;
+            quest.rewardsGranted = false;
+            quest.steps[0].completed = true;
+            quest.steps[0].currentValue = 8;
+            Assert.That(state.SetQuestState(quest), Is.True);
             Assert.That(state.AddActivityExecution(new ActivityExecutionSaveData
             {
                 executionId = "exec_1",
@@ -170,7 +206,12 @@ namespace GuildIdle.Editor.Player
             Assert.That(restored.GetHeroFatigue("ren"), Is.EqualTo(maxFatigue - 5));
             Assert.That(restored.GetHeroSkillExp("ren", "skill_gathering"), Is.EqualTo(150));
             Assert.That(restored.GetHeroSkillLevel("ren", "skill_gathering"), Is.EqualTo(2));
+            Assert.That(restored.GetHeroEffectCounter("ren", "reliable_hands_extra_resource"), Is.EqualTo(4));
             Assert.That(restored.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo("exec_1"));
+            Assert.That(restored.GetEquippedItem("ren", "weapon").instanceId, Is.EqualTo(equippedInstanceId));
+            Assert.That(restored.GetQuestState("quest_build_hut").completed, Is.True);
+            Assert.That(restored.GetQuestState("quest_build_hut").rewardsGranted, Is.False);
+            Assert.That(restored.GetQuestState("quest_build_hut").steps[0].completed, Is.True);
         }
 
         [Test]
@@ -272,7 +313,8 @@ namespace GuildIdle.Editor.Player
             var state = SaveService.Load(_factory, storage);
             var saveData = state.ToSaveData();
 
-            Assert.That(saveData.saveVersion, Is.EqualTo(4));
+            Assert.That(saveData.saveVersion, Is.EqualTo(5));
+            Assert.That(saveData.currentStageId, Is.EqualTo("stage_arrival"));
             Assert.That(state.GetCurrency("gold_id"), Is.EqualTo(7));
             Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(3));
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(77));
@@ -292,13 +334,17 @@ namespace GuildIdle.Editor.Player
             foreach (var constructor in constructors)
             {
                 var hasHeroStats = false;
+                var hasBootstrapConfigs = false;
                 foreach (var parameter in constructor.GetParameters())
                 {
                     if (parameter.ParameterType == typeof(HeroStatsService))
                         hasHeroStats = true;
+                    if (parameter.ParameterType == typeof(IPlayerBootstrapConfigProvider))
+                        hasBootstrapConfigs = true;
                 }
 
                 Assert.That(hasHeroStats, Is.True, constructor.ToString());
+                Assert.That(hasBootstrapConfigs, Is.True, constructor.ToString());
             }
         }
 
@@ -328,8 +374,139 @@ namespace GuildIdle.Editor.Player
 
             Assert.That(reset.GetCurrency("gold_id"), Is.Zero);
             Assert.That(reset.HasHero("ren"), Is.True);
-            Assert.That(reset.GetItem("item_wooden_club"), Is.EqualTo(1));
+            Assert.That(reset.GetItem("item_wooden_club"), Is.Zero);
+            Assert.That(reset.GetEquippedItem("ren", "weapon").itemId, Is.EqualTo("item_wooden_club"));
             Assert.That(reset.GetHeroMaxFatigue("ren"), Is.EqualTo(121));
+        }
+
+        [Test]
+        public void SaveService_MigratesLegacyClubStackOnceAndPersistsStableInstances()
+        {
+            var storage = new MemorySaveStorage();
+            storage.SetString(
+                SaveService.SaveKey,
+                "{\"saveVersion\":4,\"items\":[{\"itemId\":\"item_wooden_club\",\"amount\":2}],\"unlockedHeroes\":[\"ren\"],\"acquiredHeroes\":[\"ren\"],\"heroes\":[{\"heroId\":\"ren\",\"level\":2,\"fatigue\":50,\"maxFatigue\":130}]}");
+
+            var migrated = SaveService.Load(_factory, storage);
+            var firstIds = InstanceIds(migrated.GetItemInstances());
+
+            Assert.That(migrated.GetItem("item_wooden_club"), Is.Zero);
+            Assert.That(migrated.GetItemInstances(), Has.Length.EqualTo(2));
+            Assert.That(migrated.GetEquippedItem("ren", "weapon").itemId, Is.EqualTo("item_wooden_club"));
+            Assert.That(migrated.GetHeroState("ren").level, Is.EqualTo(2));
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"saveVersion\":5"));
+
+            var reloaded = SaveService.Load(_factory, storage);
+
+            Assert.That(InstanceIds(reloaded.GetItemInstances()), Is.EqualTo(firstIds));
+            Assert.That(reloaded.GetItemInstances(), Has.Length.EqualTo(2));
+            Assert.That(reloaded.GetEquipmentSlots(), Has.Length.EqualTo(1));
+        }
+
+        [Test]
+        public void Load_NormalizesCorruptEquipmentLinksWithoutDeletingItems()
+        {
+            var state = _factory.Create(new SaveData
+            {
+                saveVersion = 5,
+                currentStageId = "stage_arrival",
+                unlockedHeroes = new[] { "ren", "aska" },
+                acquiredHeroes = new[] { "ren", "aska" },
+                heroes = new[]
+                {
+                    new HeroSaveData { heroId = "ren", level = 1 },
+                    new HeroSaveData { heroId = "aska", level = 1 }
+                },
+                itemInstances = new[]
+                {
+                    Instance("duplicate", "item_wooden_club", PlayerState.OnStorageItemStateId),
+                    Instance("duplicate", "item_wooden_club", PlayerState.OnStorageItemStateId),
+                    Instance("resource", "resource_pine_wood", PlayerState.EquippedItemStateId),
+                    Instance("orphan", "item_wooden_club", PlayerState.EquippedItemStateId)
+                },
+                equipmentSlots = new[]
+                {
+                    Slot("ren", "weapon", "duplicate"),
+                    Slot("ren", "weapon", "orphan"),
+                    Slot("aska", "weapon", "duplicate"),
+                    Slot("ren", "helmet", "resource"),
+                    Slot("ren", "unknown", "orphan"),
+                    Slot("missing", "weapon", "orphan"),
+                    Slot("ren", "weapon", "missing-instance")
+                }
+            });
+
+            Assert.That(state.GetItemInstances(), Has.Length.EqualTo(4));
+            Assert.That(InstanceIds(state.GetItemInstances()), Is.Unique);
+            Assert.That(state.GetEquipmentSlots(), Has.Length.EqualTo(1));
+            Assert.That(state.GetEquippedItem("ren", "weapon").instanceId, Is.EqualTo("duplicate"));
+            Assert.That(state.GetEquippedItem("aska", "weapon"), Is.Null);
+            Assert.That(state.GetItemInstance("resource").stateId, Is.EqualTo(PlayerState.OnStorageItemStateId));
+            Assert.That(state.GetItemInstance("orphan").stateId, Is.EqualTo(PlayerState.OnStorageItemStateId));
+        }
+
+        [Test]
+        public void Migration_DoesNotReplaceValidExistingWeapon()
+        {
+            var state = _factory.Create(new SaveData
+            {
+                saveVersion = 4,
+                items = new[] { new ItemSaveEntry { itemId = "item_wooden_club", amount = 1 } },
+                unlockedHeroes = new[] { "ren" },
+                acquiredHeroes = new[] { "ren" },
+                heroes = new[] { new HeroSaveData { heroId = "ren", level = 1 } },
+                itemInstances = new[] { Instance("sword", "item_unused_sword", PlayerState.EquippedItemStateId) },
+                equipmentSlots = new[] { Slot("ren", "weapon", "sword") }
+            });
+
+            Assert.That(state.GetEquippedItem("ren", "weapon").itemId, Is.EqualTo("item_unused_sword"));
+            Assert.That(state.GetItem("item_wooden_club"), Is.Zero);
+            Assert.That(state.GetItemInstances(), Has.Length.EqualTo(2));
+        }
+
+        [Test]
+        public void SaveService_IncompatibleV5StageDoesNotOverwriteRawSave()
+        {
+            var storage = new MemorySaveStorage();
+            const string json = "{\"saveVersion\":5,\"currentStageId\":\"stage_missing\"}";
+            storage.SetString(SaveService.SaveKey, json);
+
+            PlayerState state;
+            using (var logs = new CapturingLogHandler())
+            {
+                state = SaveService.Load(_factory, storage);
+                logs.AssertErrorContains("[SaveService] Player save is incompatible and was not modified.");
+            }
+
+            Assert.That(state, Is.Null);
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Is.EqualTo(json));
+        }
+
+        [Test]
+        public void SaveService_LoadsEnabledEmptyStageTwoWithoutBootstrap()
+        {
+            var storage = new MemorySaveStorage();
+            storage.SetString(SaveService.SaveKey, "{\"saveVersion\":5,\"currentStageId\":\"stage_2\"}");
+
+            var state = SaveService.Load(_factory, storage);
+
+            Assert.That(state, Is.Not.Null);
+            Assert.That(state.CurrentStageId, Is.EqualTo("stage_2"));
+            Assert.That(state.HasHero("ren"), Is.False);
+            Assert.That(state.GetQuestStates(), Is.Empty);
+            Assert.That(state.GetItemInstances(), Is.Empty);
+        }
+
+        [Test]
+        public void Migration_PreservesExistingEnabledStage()
+        {
+            var state = _factory.Create(new SaveData
+            {
+                saveVersion = 4,
+                currentStageId = "stage_2"
+            });
+
+            Assert.That(state.CurrentStageId, Is.EqualTo("stage_2"));
         }
 
         private static ConfigDatabase CreateDatabase()
@@ -337,6 +514,30 @@ namespace GuildIdle.Editor.Player
             return new TestConfigDatabaseBuilder()
                 .WithFullPlayerStateTestData()
                 .Build();
+        }
+
+        private static ItemInstanceSaveData Instance(string instanceId, string itemId, string stateId)
+        {
+            return new ItemInstanceSaveData { instanceId = instanceId, itemId = itemId, stateId = stateId };
+        }
+
+        private static EquipmentSlotSaveData Slot(string heroId, string equipmentSlot, string instanceId)
+        {
+            return new EquipmentSlotSaveData
+            {
+                heroId = heroId,
+                equipmentSlot = equipmentSlot,
+                itemInstanceId = instanceId
+            };
+        }
+
+        private static string[] InstanceIds(ItemInstanceSaveData[] instances)
+        {
+            var ids = new string[instances.Length];
+            for (var i = 0; i < instances.Length; i++)
+                ids[i] = instances[i].instanceId;
+
+            return ids;
         }
 
         private sealed class MemorySaveStorage : ISaveStorage

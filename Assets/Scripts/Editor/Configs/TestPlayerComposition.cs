@@ -5,7 +5,10 @@ namespace GuildIdle.Editor.Configs
 {
     public static class TestPlayerComposition
     {
-        public const string StarterActivityId = "starter_hero_available";
+        public static readonly PlayerBootstrapDefinition BootstrapDefinition = new PlayerBootstrapDefinition(
+            "stage_arrival",
+            new[] { "ren" },
+            new[] { new StarterEquipmentDefinition("ren", "item_wooden_club", "weapon") });
 
         public static HeroStatsService CreateHeroStats(ConfigDatabase database)
         {
@@ -19,9 +22,12 @@ namespace GuildIdle.Editor.Configs
         {
             var heroStats = CreateHeroStats(database);
             var bootstrapConfigs = new RepositoryPlayerBootstrapConfigAdapter(
+                database.Items,
+                database.Heroes,
                 database.Activities,
-                database.Buildings);
-            return new PlayerStateFactory(bootstrapConfigs, heroStats, StarterActivityId);
+                database.Buildings,
+                database.Storage);
+            return new PlayerStateFactory(bootstrapConfigs, heroStats, BootstrapDefinition);
         }
     }
 }

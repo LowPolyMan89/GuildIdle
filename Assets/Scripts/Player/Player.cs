@@ -30,7 +30,14 @@ namespace GuildIdle.Player
                 return false;
             }
 
-            _state = PlayerRuntimeComposition.LoadPlayerState();
+            var loadedState = PlayerRuntimeComposition.LoadPlayerState();
+            if (loadedState == null)
+            {
+                _state = null;
+                return false;
+            }
+
+            _state = loadedState;
             return true;
         }
 

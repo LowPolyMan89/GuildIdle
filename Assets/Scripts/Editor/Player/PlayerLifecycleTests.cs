@@ -8,6 +8,7 @@ namespace GuildIdle.Editor.Player
     public sealed class PlayerLifecycleTests
     {
         private static readonly HeroStatsService HeroStats = new HeroStatsService(new EmptyHeroStatsConfigProvider());
+        private static readonly IPlayerBootstrapConfigProvider BootstrapConfigs = new EmptyBootstrapConfigProvider();
 
         [Test]
         public void Start_WhenConfigsAreAlreadyLoaded_LoadsPlayerOnce()
@@ -19,7 +20,7 @@ namespace GuildIdle.Editor.Player
             using var service = CreateService(lifecycle, () => state != null, () =>
             {
                 loadCount++;
-                state = new PlayerState(new SaveData(), HeroStats);
+                state = new PlayerState(new SaveData(), HeroStats, BootstrapConfigs);
                 return true;
             });
 
@@ -40,7 +41,7 @@ namespace GuildIdle.Editor.Player
             using var service = CreateService(lifecycle, () => state != null, () =>
             {
                 loadCount++;
-                state = new PlayerState(new SaveData(), HeroStats);
+                state = new PlayerState(new SaveData(), HeroStats, BootstrapConfigs);
                 return true;
             });
             service.Start();
@@ -67,7 +68,7 @@ namespace GuildIdle.Editor.Player
                 () =>
                 {
                     loadCount++;
-                    state = new PlayerState(new SaveData(), HeroStats);
+                    state = new PlayerState(new SaveData(), HeroStats, BootstrapConfigs);
                     return true;
                 },
                 error =>
@@ -150,6 +151,50 @@ namespace GuildIdle.Editor.Player
                 formula = null;
                 return false;
             }
+        }
+
+        private sealed class EmptyBootstrapConfigProvider : IPlayerBootstrapConfigProvider
+        {
+            public BuildingConfigDto[] Buildings => Array.Empty<BuildingConfigDto>();
+            public SkillConfigDto[] Skills => Array.Empty<SkillConfigDto>();
+            public QuestConfigDto[] Quests => Array.Empty<QuestConfigDto>();
+            public HeroSkillEffectConfigDto[] HeroSkillEffects => Array.Empty<HeroSkillEffectConfigDto>();
+
+            public bool TryGetHero(string heroId, out HeroConfigDto hero)
+            {
+                hero = null;
+                return false;
+            }
+
+            public bool TryGetItem(string itemId, out IItemConfig item)
+            {
+                item = null;
+                return false;
+            }
+
+            public bool TryGetEquipmentSlot(string itemId, out string equipmentSlot)
+            {
+                equipmentSlot = null;
+                return false;
+            }
+
+            public bool TryGetSettlementStage(string stageId, out SettlementStageConfigDto stage)
+            {
+                stage = null;
+                return false;
+            }
+
+            public bool TryGetQuest(string questId, out QuestConfigDto quest)
+            {
+                quest = null;
+                return false;
+            }
+
+            public QuestStartConditionConfigDto[] GetQuestStartConditions(string questId) =>
+                Array.Empty<QuestStartConditionConfigDto>();
+
+            public QuestStepConfigDto[] GetQuestSteps(string questId) => Array.Empty<QuestStepConfigDto>();
+            public bool IsKnownItemState(string stateId) => false;
         }
     }
 }

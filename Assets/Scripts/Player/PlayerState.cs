@@ -9,9 +9,15 @@ namespace GuildIdle.Player
 {
     public sealed class PlayerState : IActivityRuntimeStore
     {
+        public const string EquippedItemStateId = "equipped";
+        public const string OnStorageItemStateId = "on_storage";
+
         private readonly HeroStatsService _heroStats;
+        private readonly IPlayerBootstrapConfigProvider _configs;
         private readonly Dictionary<string, long> _currencies = new Dictionary<string, long>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _items = new Dictionary<string, int>(StringComparer.Ordinal);
+        private readonly Dictionary<string, ItemInstanceSaveData> _itemInstances = new Dictionary<string, ItemInstanceSaveData>(StringComparer.Ordinal);
+        private readonly Dictionary<string, EquipmentSlotSaveData> _equipmentSlots = new Dictionary<string, EquipmentSlotSaveData>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedHeroes = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _acquiredHeroes = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, HeroRuntimeState> _heroes = new Dictionary<string, HeroRuntimeState>(StringComparer.Ordinal);
@@ -21,17 +27,36 @@ namespace GuildIdle.Player
         private readonly HashSet<string> _completedActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _availableActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, ActivityExecutionSaveData> _activityExecutions = new Dictionary<string, ActivityExecutionSaveData>(StringComparer.Ordinal);
+        private readonly Dictionary<string, QuestSaveData> _quests = new Dictionary<string, QuestSaveData>(StringComparer.Ordinal);
+        private string _currentStageId;
 
-        public PlayerState(SaveData saveData, HeroStatsService heroStats)
+        public PlayerState(
+            SaveData saveData,
+            HeroStatsService heroStats,
+            IPlayerBootstrapConfigProvider configs)
         {
             _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
+            _configs = configs ?? throw new ArgumentNullException(nameof(configs));
             Load(saveData, null);
         }
 
-        public PlayerState(SaveData saveData, HeroSlotSaveEntry[] legacyHeroSlots, HeroStatsService heroStats)
+        public PlayerState(
+            SaveData saveData,
+            HeroSlotSaveEntry[] legacyHeroSlots,
+            HeroStatsService heroStats,
+            IPlayerBootstrapConfigProvider configs)
         {
             _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
+            _configs = configs ?? throw new ArgumentNullException(nameof(configs));
             Load(saveData, legacyHeroSlots);
+        }
+
+        internal bool WasNormalized { get; private set; }
+        public string CurrentStageId => _currentStageId;
+
+        internal void MarkNormalized()
+        {
+            WasNormalized = true;
         }
 
         public SaveData ToSaveData()
@@ -39,11 +64,15 @@ namespace GuildIdle.Player
             return new SaveData
             {
                 saveVersion = SaveData.CurrentSaveVersion,
+                currentStageId = _currentStageId,
                 currencies = BuildCurrencyEntries(),
                 items = BuildItemEntries(),
+                itemInstances = GetItemInstances(),
+                equipmentSlots = GetEquipmentSlots(),
                 unlockedHeroes = BuildSortedArray(_unlockedHeroes),
                 acquiredHeroes = BuildSortedArray(_acquiredHeroes),
                 heroes = BuildHeroEntries(),
+                quests = GetQuestStates(),
                 unlockedBuildings = BuildSortedArray(_unlockedBuildings),
                 buildingLevels = BuildBuildingLevelEntries(),
                 unlockedLocations = BuildSortedArray(_unlockedLocations),
@@ -51,6 +80,44 @@ namespace GuildIdle.Player
                 availableActivities = BuildSortedArray(_availableActivities),
                 activityRuntime = BuildActivityRuntimeSaveData()
             };
+        }
+
+        public bool SetCurrentStage(string stageId)
+        {
+            if (!_configs.TryGetSettlementStage(stageId, out var stage) || stage == null || !stage.enabled)
+            {
+                Debug.LogError($"[PlayerState] Unknown or disabled stage id '{stageId}'.");
+                return false;
+            }
+
+            _currentStageId = stageId;
+            return true;
+        }
+
+        public QuestSaveData GetQuestState(string questId)
+        {
+            return !string.IsNullOrWhiteSpace(questId) && _quests.TryGetValue(questId, out var quest)
+                ? CloneQuest(quest)
+                : null;
+        }
+
+        public QuestSaveData[] GetQuestStates()
+        {
+            var keys = SortedKeys(_quests);
+            var entries = new QuestSaveData[keys.Count];
+            for (var i = 0; i < keys.Count; i++)
+                entries[i] = CloneQuest(_quests[keys[i]]);
+
+            return entries;
+        }
+
+        public bool SetQuestState(QuestSaveData quest)
+        {
+            if (!TryNormalizeQuest(quest, out var normalized))
+                return false;
+
+            _quests[normalized.questId] = normalized;
+            return true;
         }
 
         public bool HasHero(string heroId)
@@ -159,6 +226,37 @@ namespace GuildIdle.Player
             return true;
         }
 
+        public bool EnsureHeroSkill(string heroId, string skillId)
+        {
+            if (!ValidateSkillId(skillId) || !TryGetHeroState(heroId, out var hero))
+                return false;
+
+            if (!hero.Skills.ContainsKey(skillId))
+                hero.Skills.Add(skillId, new HeroSkillRuntimeState(skillId));
+
+            return true;
+        }
+
+        public long GetHeroEffectCounter(string heroId, string effectId)
+        {
+            if (string.IsNullOrWhiteSpace(effectId) || !TryGetHeroState(heroId, out var hero))
+                return 0L;
+
+            return hero.EffectCounters.TryGetValue(effectId, out var value) ? value : 0L;
+        }
+
+        public bool SetHeroEffectCounter(string heroId, string effectId, long value)
+        {
+            if (string.IsNullOrWhiteSpace(effectId) || value < 0 || !TryGetHeroState(heroId, out var hero))
+            {
+                Debug.LogError($"[PlayerState] Invalid hero effect counter '{heroId}:{effectId}' value '{value}'.");
+                return false;
+            }
+
+            hero.EffectCounters[effectId] = value;
+            return true;
+        }
+
         public bool IsHeroBusy(string heroId)
         {
             return TryGetHeroState(heroId, out var hero) && !string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId);
@@ -249,6 +347,95 @@ namespace GuildIdle.Player
             else
                 _items[itemId] = next;
 
+            return true;
+        }
+
+        public ItemInstanceSaveData GetItemInstance(string instanceId)
+        {
+            return !string.IsNullOrWhiteSpace(instanceId) && _itemInstances.TryGetValue(instanceId, out var instance)
+                ? CloneItemInstance(instance)
+                : null;
+        }
+
+        public ItemInstanceSaveData[] GetItemInstances()
+        {
+            var keys = SortedKeys(_itemInstances);
+            var entries = new ItemInstanceSaveData[keys.Count];
+            for (var i = 0; i < keys.Count; i++)
+                entries[i] = CloneItemInstance(_itemInstances[keys[i]]);
+
+            return entries;
+        }
+
+        public EquipmentSlotSaveData[] GetEquipmentSlots()
+        {
+            var keys = SortedKeys(_equipmentSlots);
+            var entries = new EquipmentSlotSaveData[keys.Count];
+            for (var i = 0; i < keys.Count; i++)
+                entries[i] = CloneEquipmentSlot(_equipmentSlots[keys[i]]);
+
+            return entries;
+        }
+
+        public ItemInstanceSaveData GetEquippedItem(string heroId, string equipmentSlot)
+        {
+            var key = EquipmentSlotKey(heroId, equipmentSlot);
+            if (!_equipmentSlots.TryGetValue(key, out var slot) ||
+                !_itemInstances.TryGetValue(slot.itemInstanceId, out var instance))
+            {
+                return null;
+            }
+
+            return CloneItemInstance(instance);
+        }
+
+        public string AddItemInstance(string itemId, string stateId)
+        {
+            if (!_configs.TryGetItem(itemId, out _) || !_configs.IsKnownItemState(stateId))
+            {
+                Debug.LogError($"[PlayerState] Cannot create item instance '{itemId}' with state '{stateId}'.");
+                return null;
+            }
+
+            var instanceId = NewUniqueInstanceId();
+            _itemInstances.Add(instanceId, new ItemInstanceSaveData
+            {
+                instanceId = instanceId,
+                itemId = itemId,
+                stateId = stateId
+            });
+            return instanceId;
+        }
+
+        public bool EquipItemInstance(string heroId, string equipmentSlot, string instanceId)
+        {
+            if (!_acquiredHeroes.Contains(heroId) || !_heroes.ContainsKey(heroId))
+                return false;
+
+            if (!_itemInstances.TryGetValue(instanceId, out var instance) ||
+                !_configs.TryGetEquipmentSlot(instance.itemId, out var configuredSlot) ||
+                !string.Equals(configuredSlot, equipmentSlot, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var slotKey = EquipmentSlotKey(heroId, equipmentSlot);
+            if (_equipmentSlots.ContainsKey(slotKey) || IsInstanceEquipped(instanceId))
+                return false;
+
+            if (!string.Equals(instance.stateId, OnStorageItemStateId, StringComparison.Ordinal) &&
+                !string.Equals(instance.stateId, EquippedItemStateId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            instance.stateId = EquippedItemStateId;
+            _equipmentSlots.Add(slotKey, new EquipmentSlotSaveData
+            {
+                heroId = heroId,
+                equipmentSlot = equipmentSlot,
+                itemInstanceId = instanceId
+            });
             return true;
         }
 
@@ -489,18 +676,23 @@ namespace GuildIdle.Player
         {
             saveData ??= new SaveData();
 
+            _currentStageId = string.IsNullOrWhiteSpace(saveData.currentStageId) ? null : saveData.currentStageId;
             LoadCurrencies(saveData.currencies);
             LoadItems(saveData.items);
+            LoadItemInstances(saveData.itemInstances);
             LoadHeroes(saveData.unlockedHeroes, _unlockedHeroes);
             LoadHeroes(saveData.acquiredHeroes, _acquiredHeroes);
             LoadLegacyHeroSlots(legacyHeroSlots);
             LoadHeroStates(saveData.heroes);
+            LoadQuests(saveData.quests);
             LoadBuildings(saveData.unlockedBuildings);
             LoadBuildingLevels(saveData.buildingLevels);
             LoadLocations(saveData.unlockedLocations);
             LoadActivities(saveData.completedActivities, _completedActivities);
             LoadActivities(saveData.availableActivities, _availableActivities);
             EnsureHeroStatesForAcquiredHeroes();
+            LoadEquipmentSlots(saveData.equipmentSlots);
+            NormalizeOrphanEquippedInstances();
             LoadActivityRuntime(saveData.activityRuntime);
         }
 
@@ -533,6 +725,32 @@ namespace GuildIdle.Player
             }
         }
 
+        private void LoadItemInstances(ItemInstanceSaveData[] entries)
+        {
+            if (entries == null)
+                return;
+
+            foreach (var entry in entries)
+            {
+                if (entry == null || !_configs.TryGetItem(entry.itemId, out _))
+                    continue;
+
+                var instanceId = entry.instanceId;
+                if (string.IsNullOrWhiteSpace(instanceId) || _itemInstances.ContainsKey(instanceId))
+                {
+                    instanceId = NewUniqueInstanceId();
+                    WasNormalized = true;
+                }
+
+                _itemInstances.Add(instanceId, new ItemInstanceSaveData
+                {
+                    instanceId = instanceId,
+                    itemId = entry.itemId,
+                    stateId = entry.stateId
+                });
+            }
+        }
+
         private void LoadHeroes(string[] heroIds, HashSet<string> target)
         {
             if (heroIds == null)
@@ -557,6 +775,7 @@ namespace GuildIdle.Player
 
                 _unlockedHeroes.Add(entry.heroId);
                 _acquiredHeroes.Add(entry.heroId);
+                WasNormalized = true;
             }
         }
 
@@ -582,6 +801,7 @@ namespace GuildIdle.Player
                 hero.Fatigue = Math.Max(0, Math.Min(hero.MaxFatigue, entry.fatigue));
                 hero.CurrentActivityExecutionId = string.IsNullOrWhiteSpace(entry.currentActivityExecutionId) ? null : entry.currentActivityExecutionId;
                 LoadHeroSkills(hero, entry.skills);
+                LoadHeroEffectCounters(hero, entry.effectCounters);
                 _heroes[hero.HeroId] = hero;
             }
         }
@@ -602,6 +822,110 @@ namespace GuildIdle.Player
                     Exp = exp,
                     Level = Math.Max(1, entry.level > 0 ? entry.level : _heroStats.ResolveSkillLevel(exp))
                 };
+            }
+        }
+
+        private static void LoadHeroEffectCounters(HeroRuntimeState hero, HeroEffectCounterSaveData[] entries)
+        {
+            if (entries == null)
+                return;
+
+            foreach (var entry in entries)
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.effectId))
+                    continue;
+
+                hero.EffectCounters[entry.effectId] = Math.Max(0L, entry.value);
+            }
+        }
+
+        private void LoadQuests(QuestSaveData[] entries)
+        {
+            if (entries == null)
+                return;
+
+            foreach (var entry in entries)
+            {
+                if (!TryNormalizeQuest(entry, out var quest) || _quests.ContainsKey(quest.questId))
+                    continue;
+
+                _quests.Add(quest.questId, quest);
+            }
+        }
+
+        private void LoadEquipmentSlots(EquipmentSlotSaveData[] entries)
+        {
+            if (entries == null)
+                return;
+
+            var assignedInstances = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in entries)
+            {
+                if (!TryNormalizeEquipmentSlot(entry, assignedInstances, out var slot))
+                {
+                    WasNormalized = true;
+                    continue;
+                }
+
+                var key = EquipmentSlotKey(slot.heroId, slot.equipmentSlot);
+                if (_equipmentSlots.ContainsKey(key))
+                {
+                    WasNormalized = true;
+                    continue;
+                }
+
+                var instance = _itemInstances[slot.itemInstanceId];
+                if (string.Equals(instance.stateId, OnStorageItemStateId, StringComparison.Ordinal))
+                {
+                    instance.stateId = EquippedItemStateId;
+                    WasNormalized = true;
+                }
+                else if (!string.Equals(instance.stateId, EquippedItemStateId, StringComparison.Ordinal))
+                {
+                    WasNormalized = true;
+                    continue;
+                }
+
+                _equipmentSlots.Add(key, slot);
+                assignedInstances.Add(slot.itemInstanceId);
+            }
+        }
+
+        private bool TryNormalizeEquipmentSlot(
+            EquipmentSlotSaveData entry,
+            HashSet<string> assignedInstances,
+            out EquipmentSlotSaveData slot)
+        {
+            slot = null;
+            if (entry == null || string.IsNullOrWhiteSpace(entry.heroId) ||
+                string.IsNullOrWhiteSpace(entry.equipmentSlot) || string.IsNullOrWhiteSpace(entry.itemInstanceId) ||
+                !_acquiredHeroes.Contains(entry.heroId) || !_heroes.ContainsKey(entry.heroId) ||
+                !_itemInstances.TryGetValue(entry.itemInstanceId, out var instance) ||
+                assignedInstances.Contains(entry.itemInstanceId) ||
+                !_configs.TryGetEquipmentSlot(instance.itemId, out var configuredSlot) ||
+                !string.Equals(configuredSlot, entry.equipmentSlot, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            slot = CloneEquipmentSlot(entry);
+            return true;
+        }
+
+        private void NormalizeOrphanEquippedInstances()
+        {
+            var assigned = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var slot in _equipmentSlots.Values)
+                assigned.Add(slot.itemInstanceId);
+
+            foreach (var instance in _itemInstances.Values)
+            {
+                if (string.Equals(instance.stateId, EquippedItemStateId, StringComparison.Ordinal) &&
+                    !assigned.Contains(instance.instanceId))
+                {
+                    instance.stateId = OnStorageItemStateId;
+                    WasNormalized = true;
+                }
             }
         }
 
@@ -1027,6 +1351,135 @@ namespace GuildIdle.Player
             };
         }
 
+        private bool TryNormalizeQuest(QuestSaveData source, out QuestSaveData quest)
+        {
+            quest = null;
+            if (source == null || !_configs.TryGetQuest(source.questId, out _))
+                return false;
+
+            var configuredSteps = _configs.GetQuestSteps(source.questId);
+            var configuredStepIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var configuredStep in configuredSteps)
+            {
+                if (configuredStep != null && !string.IsNullOrWhiteSpace(configuredStep.stepId))
+                    configuredStepIds.Add(configuredStep.stepId);
+            }
+
+            var steps = new List<QuestStepSaveData>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            if (source.steps != null)
+            {
+                foreach (var step in source.steps)
+                {
+                    if (step == null || string.IsNullOrWhiteSpace(step.stepId) ||
+                        !configuredStepIds.Contains(step.stepId) || !seen.Add(step.stepId))
+                    {
+                        continue;
+                    }
+
+                    steps.Add(new QuestStepSaveData
+                    {
+                        stepId = step.stepId,
+                        currentValue = Math.Max(0, step.currentValue),
+                        completed = step.completed
+                    });
+                }
+            }
+
+            steps.Sort((left, right) => string.CompareOrdinal(left.stepId, right.stepId));
+            quest = new QuestSaveData
+            {
+                questId = source.questId,
+                completed = source.completed,
+                rewardsGranted = source.rewardsGranted,
+                steps = steps.ToArray()
+            };
+            return true;
+        }
+
+        private static QuestSaveData CloneQuest(QuestSaveData source)
+        {
+            if (source == null)
+                return null;
+
+            var sourceSteps = source.steps ?? Array.Empty<QuestStepSaveData>();
+            var steps = new QuestStepSaveData[sourceSteps.Length];
+            for (var i = 0; i < sourceSteps.Length; i++)
+            {
+                var step = sourceSteps[i];
+                steps[i] = step == null
+                    ? null
+                    : new QuestStepSaveData
+                    {
+                        stepId = step.stepId,
+                        currentValue = step.currentValue,
+                        completed = step.completed
+                    };
+            }
+
+            return new QuestSaveData
+            {
+                questId = source.questId,
+                completed = source.completed,
+                rewardsGranted = source.rewardsGranted,
+                steps = steps
+            };
+        }
+
+        private static ItemInstanceSaveData CloneItemInstance(ItemInstanceSaveData source)
+        {
+            if (source == null)
+                return null;
+
+            return new ItemInstanceSaveData
+            {
+                instanceId = source.instanceId,
+                itemId = source.itemId,
+                stateId = source.stateId
+            };
+        }
+
+        private static EquipmentSlotSaveData CloneEquipmentSlot(EquipmentSlotSaveData source)
+        {
+            if (source == null)
+                return null;
+
+            return new EquipmentSlotSaveData
+            {
+                heroId = source.heroId,
+                equipmentSlot = source.equipmentSlot,
+                itemInstanceId = source.itemInstanceId
+            };
+        }
+
+        private static string EquipmentSlotKey(string heroId, string equipmentSlot)
+        {
+            return $"{heroId}\n{equipmentSlot}";
+        }
+
+        private bool IsInstanceEquipped(string instanceId)
+        {
+            foreach (var slot in _equipmentSlots.Values)
+            {
+                if (string.Equals(slot.itemInstanceId, instanceId, StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private string NewUniqueInstanceId()
+        {
+            string instanceId;
+            do
+            {
+                instanceId = Guid.NewGuid().ToString("N");
+            }
+            while (_itemInstances.ContainsKey(instanceId));
+
+            return instanceId;
+        }
+
         private static List<string> SortedKeys<T>(Dictionary<string, T> dictionary)
         {
             var keys = new List<string>(dictionary.Keys);
@@ -1048,6 +1501,7 @@ namespace GuildIdle.Player
             public int MaxFatigue { get; set; }
             public string CurrentActivityExecutionId { get; set; }
             public Dictionary<string, HeroSkillRuntimeState> Skills { get; } = new Dictionary<string, HeroSkillRuntimeState>(StringComparer.Ordinal);
+            public Dictionary<string, long> EffectCounters { get; } = new Dictionary<string, long>(StringComparer.Ordinal);
 
             public HeroSaveData ToSaveData()
             {
@@ -1059,7 +1513,8 @@ namespace GuildIdle.Player
                     fatigue = Fatigue,
                     maxFatigue = MaxFatigue,
                     currentActivityExecutionId = CurrentActivityExecutionId,
-                    skills = BuildSkillEntries()
+                    skills = BuildSkillEntries(),
+                    effectCounters = BuildEffectCounterEntries()
                 };
             }
 
@@ -1069,6 +1524,19 @@ namespace GuildIdle.Player
                 var entries = new HeroSkillSaveData[keys.Count];
                 for (var i = 0; i < keys.Count; i++)
                     entries[i] = Skills[keys[i]].ToSaveData();
+
+                return entries;
+            }
+
+            private HeroEffectCounterSaveData[] BuildEffectCounterEntries()
+            {
+                var keys = SortedKeys(EffectCounters);
+                var entries = new HeroEffectCounterSaveData[keys.Count];
+                for (var i = 0; i < keys.Count; i++)
+                {
+                    var key = keys[i];
+                    entries[i] = new HeroEffectCounterSaveData { effectId = key, value = EffectCounters[key] };
+                }
 
                 return entries;
             }

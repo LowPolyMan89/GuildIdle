@@ -7,7 +7,10 @@ namespace GuildIdle.Player
 {
     public static class PlayerRuntimeComposition
     {
-        private const string StageOneStarterActivityId = "starter_hero_available";
+        private static readonly PlayerBootstrapDefinition BootstrapDefinition = new PlayerBootstrapDefinition(
+            "stage_arrival",
+            new[] { "ren" },
+            new[] { new StarterEquipmentDefinition("ren", "item_wooden_club", "weapon") });
         private static PlayerStateFactory _playerStateFactory;
 
         public static ActivityRuntimeService CreateRuntimeService()
@@ -65,13 +68,16 @@ namespace GuildIdle.Player
                 RuntimeConfigs.Formulas,
                 RuntimeConfigs.Activities);
             var bootstrapConfigs = new RepositoryPlayerBootstrapConfigAdapter(
+                RuntimeConfigs.Items,
+                RuntimeConfigs.Heroes,
                 RuntimeConfigs.Activities,
-                RuntimeConfigs.Buildings);
+                RuntimeConfigs.Buildings,
+                RuntimeConfigs.Storage);
             var heroStats = new HeroStatsService(heroStatsConfigs);
             _playerStateFactory = new PlayerStateFactory(
                 bootstrapConfigs,
                 heroStats,
-                StageOneStarterActivityId);
+                BootstrapDefinition);
             return _playerStateFactory;
         }
 
