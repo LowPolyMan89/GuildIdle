@@ -24,12 +24,13 @@ namespace GuildIdle.Editor.ConfigDownloader
         private const string GoldCurrencyId = "gold_id";
         private const string ForbiddenLegacyItemId = "item_gold";
 
-        private const string ResourcesSheet = "Р РµСЃСѓСЂСЃС‹";
-        private const string EquipmentWeaponsSheet = "РЎРЅР°СЂСЏР¶РµРЅРёРµ - РѕСЂСѓР¶РёРµ";
-        private const string EquipmentArmorSheet = "РЎРЅР°СЂСЏР¶РµРЅРёРµ - Р±СЂРѕРЅСЏ";
-        private const string RecipesSheet = "Р РµС†РµРїС‚С‹";
-        private const string ConsumablesSheet = "Р Р°СЃС…РѕРґРЅРёРєРё";
-        private const string CurrenciesSheet = "Р’Р°Р»СЋС‚С‹";
+        private const string ResourcesSheet = "Ресурсы";
+        private const string EquipmentWeaponsSheet = "Снаряжение - оружие";
+        private const string EquipmentArmorSheet = "Снаряжение - броня";
+        private const string RecipesSheet = "Рецепты";
+        private const string ConsumablesSheet = "Расходники";
+        private const string CraftDefinitionsSheet = "CraftDefinitions";
+        private const string CurrenciesSheet = "Валюты";
 
         private static readonly HashSet<string> HeroStatIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -212,6 +213,20 @@ namespace GuildIdle.Editor.ConfigDownloader
             return false;
         }
 
+        private static bool HasAnyValue(LoadedConfig source, string sheetName, params string[] columns)
+        {
+            if (source == null || !source.TryGetTable(sheetName, out var table))
+                return false;
+
+            foreach (var column in columns)
+            {
+                if (HasAnyValue(table, column))
+                    return true;
+            }
+
+            return false;
+        }
+
         private static IEnumerable<PackedRef> ParsePackedRefs(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
@@ -232,17 +247,29 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
         }
 
+        private static IEnumerable<PackedRef> ParseActivityRequirementRefs(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                yield break;
+
+            var refs = raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var activityRef in refs)
+            {
+                var trimmed = activityRef.Trim();
+                var parts = trimmed.Split(':');
+                if (parts.Length < 1 || parts.Length > 2)
+                    continue;
+
+                var id = parts[0].Trim();
+                if (!string.IsNullOrWhiteSpace(id))
+                    yield return new PackedRef(id, parts.Length == 2 ? parts[1].Trim() : "1", trimmed);
+            }
+        }
+
         private static bool IsBuildActionId(string value)
         {
             return !string.IsNullOrWhiteSpace(value) &&
                    value.StartsWith("build_", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool IsCraftOrProcessActionId(string value)
-        {
-            return !string.IsNullOrWhiteSpace(value) &&
-                   (value.StartsWith("craft_", StringComparison.OrdinalIgnoreCase) ||
-                    value.StartsWith("process_", StringComparison.OrdinalIgnoreCase));
         }
 
         private readonly struct PackedRef
@@ -571,12 +598,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             public LoadedConfig Source { get; }
             public HashSet<string> ResourceIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> EquipmentIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            public HashSet<string> RecipeIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> EnabledRecipeIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> ConsumableIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> CurrencyIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> ItemKinds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            public HashSet<string> ItemActionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            public HashSet<string> AllItemIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> EnabledCraftDefinitionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> EnabledItemIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             private ItemsRegistry(LoadedConfig source)
             {
@@ -592,8 +619,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                 CollectItemSheet(source, ResourcesSheet, registry.ResourceIds, registry);
                 CollectItemSheet(source, EquipmentWeaponsSheet, registry.EquipmentIds, registry);
                 CollectItemSheet(source, EquipmentArmorSheet, registry.EquipmentIds, registry);
-                CollectItemSheet(source, RecipesSheet, registry.RecipeIds, registry);
+                CollectItemSheet(source, RecipesSheet, registry.EnabledRecipeIds, registry);
                 CollectItemSheet(source, ConsumablesSheet, registry.ConsumableIds, registry);
+                CollectDeclaredItemKinds(source, registry);
+                CollectEnabledIds(source, CraftDefinitionsSheet, "craft_id", registry.EnabledCraftDefinitionIds);
                 CollectIds(source, CurrenciesSheet, "currency_id", registry.CurrencyIds);
                 CollectIds(source, CurrenciesSheet, "currencyId", registry.CurrencyIds);
                 CollectRuntimeItems(source, registry);
@@ -602,7 +631,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             public bool ContainsAnyItem(string id)
             {
-                return AllItemIds.Contains(id);
+                return EnabledItemIds.Contains(id);
             }
 
             public bool ContainsResource(string id)
@@ -622,7 +651,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             public bool ContainsRecipe(string id)
             {
-                return RecipeIds.Contains(id);
+                return EnabledRecipeIds.Contains(id);
             }
 
             public bool ContainsConsumable(string id)
@@ -639,6 +668,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             public RuntimeItem[] equipmentArmor;
             public RuntimeItem[] recipes;
             public RuntimeItem[] consumables;
+            public RuntimeCraftDefinition[] craftDefinitions;
             public RuntimeCurrency[] currencies;
         }
 
@@ -647,8 +677,6 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             public string id;
             public string kind;
-            public string sourceActivityId;
-            public string craftStationId;
         }
 
         [Serializable]
@@ -657,10 +685,17 @@ namespace GuildIdle.Editor.ConfigDownloader
             public string currencyId;
         }
 
+        [Serializable]
+        private sealed class RuntimeCraftDefinition
+        {
+            public string craftId;
+        }
+
         private sealed class FormulaRegistry
         {
             public LoadedConfig Source { get; }
             public HashSet<string> ProfileIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> FormulaIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             private FormulaRegistry(LoadedConfig source)
             {
@@ -674,6 +709,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 var registry = new FormulaRegistry(source);
                 CollectIds(source, "SkillStatWeights", "profile_id", registry.ProfileIds);
+                CollectIds(source, "HeroDerivedStats", "formula_id", registry.FormulaIds);
                 return registry;
             }
         }
@@ -706,6 +742,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             public Dictionary<string, long> BuildingMaxLevels { get; } = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, HashSet<long>> BuildingLevels { get; } = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, string> BuildingIdsBySheetName { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public List<ConfigSheetTable> BuildingLevelTables { get; } = new List<ConfigSheetTable>();
             public HashSet<string> BuildActionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> StageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> EnabledStageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -803,6 +840,16 @@ namespace GuildIdle.Editor.ConfigDownloader
                 var headerRow = FindHeaderRow(rows, "level");
                 if (headerRow < 0)
                     return;
+
+                var levelRows = new ConfigSheetRow[rows.Length - headerRow];
+                Array.Copy(rows, headerRow, levelRows, 0, levelRows.Length);
+                BuildingLevelTables.Add(new ConfigSheetTable(
+                    new ConfigDownloadedSheet
+                    {
+                        sheet_name = sheet.sheet_name,
+                        rows = levelRows
+                    },
+                    headerRow));
 
                 var levelColumn = FindColumn(rows[headerRow], "level");
                 var sourceActivityColumn = FindColumn(rows[headerRow], "source_activity_id");
@@ -927,22 +974,48 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             foreach (var row in table.DataRows)
             {
-                var id = row.Get("id");
-                if (!IsBlank(id))
-                {
-                    ids.Add(id);
-                    registry.AllItemIds.Add(id);
-                }
-
                 var kind = row.Get("kind");
                 if (!IsBlank(kind))
                     registry.ItemKinds.Add(kind);
 
-                var sourceActivityId = row.Get("source_activity_id");
-                var craftStationId = row.Get("craft_station_id");
-                if (!IsBlank(sourceActivityId) && !IsBlank(craftStationId) && IsCraftOrProcessActionId(sourceActivityId))
-                    registry.ItemActionIds.Add(sourceActivityId);
+                if (table.HasColumn("enabled") && !IsTrue(row.Get("enabled")))
+                    continue;
+
+                var id = row.Get("id");
+                if (!IsBlank(id))
+                {
+                    ids.Add(id);
+                    registry.EnabledItemIds.Add(id);
+                }
             }
+        }
+
+        private static void CollectEnabledIds(LoadedConfig source, string sheetName, string column, HashSet<string> ids)
+        {
+            if (!source.TryGetTable(sheetName, out var table) || !table.HasColumn(column))
+                return;
+
+            foreach (var row in table.DataRows)
+            {
+                if (table.HasColumn("enabled") && !IsTrue(row.Get("enabled")))
+                    continue;
+
+                var id = row.Get(column);
+                if (!IsBlank(id))
+                    ids.Add(id);
+            }
+        }
+
+        private static void CollectDeclaredItemKinds(LoadedConfig source, ItemsRegistry registry)
+        {
+            if (source.TryGetTable(ResourcesSheet, out _))
+                registry.ItemKinds.Add("resource");
+            if (source.TryGetTable(EquipmentWeaponsSheet, out _) || source.TryGetTable(EquipmentArmorSheet, out _))
+                registry.ItemKinds.Add("equipment");
+            if (source.TryGetTable(RecipesSheet, out _))
+                registry.ItemKinds.Add("recipe");
+            if (source.TryGetTable(ConsumablesSheet, out _))
+                registry.ItemKinds.Add("consumable");
         }
 
         private static void CollectRuntimeItems(LoadedConfig source, ItemsRegistry registry)
@@ -963,12 +1036,20 @@ namespace GuildIdle.Editor.ConfigDownloader
             if (runtime == null)
                 return;
 
-            CollectRuntimeItemIds(runtime.resources, registry.ResourceIds, registry);
-            CollectRuntimeItemIds(runtime.equipmentWeapons, registry.EquipmentIds, registry);
-            CollectRuntimeItemIds(runtime.equipmentArmor, registry.EquipmentIds, registry);
-            CollectRuntimeItemIds(runtime.recipes, registry.RecipeIds, registry);
-            CollectRuntimeItemIds(runtime.consumables, registry.ConsumableIds, registry);
-            CollectRuntimeCurrencyIds(runtime.currencies, registry.CurrencyIds);
+            if (!source.TryGetTable(ResourcesSheet, out _))
+                CollectRuntimeItemIds(runtime.resources, registry.ResourceIds, registry);
+            if (!source.TryGetTable(EquipmentWeaponsSheet, out _))
+                CollectRuntimeItemIds(runtime.equipmentWeapons, registry.EquipmentIds, registry);
+            if (!source.TryGetTable(EquipmentArmorSheet, out _))
+                CollectRuntimeItemIds(runtime.equipmentArmor, registry.EquipmentIds, registry);
+            if (!source.TryGetTable(RecipesSheet, out _))
+                CollectRuntimeItemIds(runtime.recipes, registry.EnabledRecipeIds, registry);
+            if (!source.TryGetTable(ConsumablesSheet, out _))
+                CollectRuntimeItemIds(runtime.consumables, registry.ConsumableIds, registry);
+            if (!source.TryGetTable(CraftDefinitionsSheet, out _))
+                CollectRuntimeCraftDefinitionIds(runtime.craftDefinitions, registry.EnabledCraftDefinitionIds);
+            if (!source.TryGetTable(CurrenciesSheet, out _))
+                CollectRuntimeCurrencyIds(runtime.currencies, registry.CurrencyIds);
         }
 
         private static void CollectRuntimeItemIds(RuntimeItem[] rows, HashSet<string> ids, ItemsRegistry registry)
@@ -981,18 +1062,21 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (!IsBlank(row.id))
                 {
                     ids.Add(row.id);
-                    registry.AllItemIds.Add(row.id);
+                    registry.EnabledItemIds.Add(row.id);
                 }
 
                 if (!IsBlank(row.kind))
                     registry.ItemKinds.Add(row.kind);
 
-                if (!IsBlank(row.sourceActivityId) &&
-                    !IsBlank(row.craftStationId) &&
-                    IsCraftOrProcessActionId(row.sourceActivityId))
-                {
-                    registry.ItemActionIds.Add(row.sourceActivityId);
-                }
+            }
+        }
+
+        private static void CollectRuntimeCraftDefinitionIds(RuntimeCraftDefinition[] rows, HashSet<string> ids)
+        {
+            foreach (var row in rows ?? Array.Empty<RuntimeCraftDefinition>())
+            {
+                if (row != null && !IsBlank(row.craftId))
+                    ids.Add(row.craftId);
             }
         }
 
@@ -1017,19 +1101,25 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static void ValidateLocalisation(ConfigRegistry registry, ConfigPipelineReport report)
             {
-                if (!registry.Heroes.Source.TryGetTable("HeroUniqueSkills", out var table))
+                if (!HasAnyValue(registry.Heroes.Source, "Heroes", "NameId", "DescriptionId") &&
+                    !HasAnyValue(registry.Heroes.Source, "HeroUniqueSkills", "NameId", "DescriptionId"))
+                {
                     return;
-
-                if (!HasAnyValue(table, "NameId") && !HasAnyValue(table, "DescriptionId"))
-                    return;
+                }
 
                 if (!TryGetRequiredRegistry(report, registry.Localisation, "Localisation"))
                     return;
 
-                foreach (var row in table.DataRows)
+                foreach (var sheetName in new[] { "Heroes", "HeroUniqueSkills" })
                 {
-                    ValidateIdSet(report, registry.Heroes.Source.DisplayName, "HeroUniqueSkills", row, "NameId", registry.Localisation.LocalisationIds, "Localisation.id");
-                    ValidateIdSet(report, registry.Heroes.Source.DisplayName, "HeroUniqueSkills", row, "DescriptionId", registry.Localisation.LocalisationIds, "Localisation.id");
+                    if (!registry.Heroes.Source.TryGetTable(sheetName, out var table))
+                        continue;
+
+                    foreach (var row in table.DataRows)
+                    {
+                        ValidateIdSet(report, registry.Heroes.Source.DisplayName, sheetName, row, "NameId", registry.Localisation.LocalisationIds, "Localisation.id");
+                        ValidateIdSet(report, registry.Heroes.Source.DisplayName, sheetName, row, "DescriptionId", registry.Localisation.LocalisationIds, "Localisation.id");
+                    }
                 }
             }
         }
@@ -1046,6 +1136,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                 ValidateRequirements(activity, registry, report);
                 ValidateRewards(activity, registry, report);
                 ValidateCombatDetails(activity, registry, report);
+                ValidateDangerEncounters(activity, registry, report);
+                ValidateLocalisation(activity, registry, report);
                 ValidateQuests(activity, registry, report);
             }
 
@@ -1066,6 +1158,57 @@ namespace GuildIdle.Editor.ConfigDownloader
                 {
                     foreach (var row in table.DataRows)
                         ValidateIdSet(report, activity.Source.DisplayName, "Activities", row, "location_id", registry.Map.LocationIds, "Map Configs / MapLocations.location_id");
+                }
+            }
+
+            private static void ValidateLocalisation(ActivityRegistry activity, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!HasAnyValue(activity.Source, "Activities", "name_id", "description_id") &&
+                    !HasAnyValue(activity.Source, "Rarities", "name_id", "description_id") &&
+                    !HasAnyValue(activity.Source, "Skills", "skill_name_id", "skill_description_id"))
+                {
+                    return;
+                }
+
+                if (!TryGetRequiredRegistry(report, registry.Localisation, "Localisation"))
+                    return;
+
+                foreach (var sheetName in new[] { "Activities", "Rarities", "Skills" })
+                {
+                    if (!activity.Source.TryGetTable(sheetName, out var table))
+                        continue;
+
+                    foreach (var row in table.DataRows)
+                    {
+                        if (string.Equals(sheetName, "Skills", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ValidateIdSet(report, activity.Source.DisplayName, sheetName, row, "skill_name_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                            ValidateIdSet(report, activity.Source.DisplayName, sheetName, row, "skill_description_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                        }
+                        else
+                        {
+                            ValidateIdSet(report, activity.Source.DisplayName, sheetName, row, "name_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                            ValidateIdSet(report, activity.Source.DisplayName, sheetName, row, "description_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                        }
+                    }
+                }
+            }
+
+            private static void ValidateDangerEncounters(ActivityRegistry activity, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!activity.Source.TryGetTable("DangerEncounters", out var table))
+                    return;
+
+                foreach (var row in table.DataRows)
+                {
+                    if (TryGetRequiredRegistry(report, registry.Activity, "Activity Configs"))
+                        ValidateIdSet(report, activity.Source.DisplayName, "DangerEncounters", row, "activity_id", activity.ActivityIds, "Activity Configs / Activities.id");
+
+                    if (TryGetRequiredRegistry(report, registry.Enemies, "Enemies Configs"))
+                        ValidateIdSet(report, activity.Source.DisplayName, "DangerEncounters", row, "enemy_group_id", registry.Enemies.EnemyGroupIds, "Enemies Configs / EnemyGroups.enemy_group_id");
+
+                    if (TryGetRequiredRegistry(report, registry.Formula, "Formula Configs"))
+                        ValidateIdSet(report, activity.Source.DisplayName, "DangerEncounters", row, "risk_formula_id", registry.Formula.FormulaIds, "Formula Configs / HeroDerivedStats.formula_id");
                 }
             }
 
@@ -1455,6 +1598,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 ValidateEnemyGroups(enemies, report);
                 ValidateEnemyLoot(enemies, registry, report);
+                ValidateLocalisation(enemies, registry, report);
             }
 
             private static void ValidateEnemyGroups(EnemiesRegistry enemies, ConfigPipelineReport report)
@@ -1488,6 +1632,31 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var row in table.DataRows)
                     ValidateLootLikeItemReference(report, enemies.Source.DisplayName, "EnemyLoot", row, "loot_id", registry.Items);
+            }
+
+            private static void ValidateLocalisation(EnemiesRegistry enemies, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!HasAnyValue(enemies.Source, "Enemies", "name_id", "description_id") &&
+                    !HasAnyValue(enemies.Source, "EnemyAbilities", "name_id", "description_id") &&
+                    !HasAnyValue(enemies.Source, "CombatStatuses", "name_id", "description_id"))
+                {
+                    return;
+                }
+
+                if (!TryGetRequiredRegistry(report, registry.Localisation, "Localisation"))
+                    return;
+
+                foreach (var sheetName in new[] { "Enemies", "EnemyAbilities", "CombatStatuses" })
+                {
+                    if (!enemies.Source.TryGetTable(sheetName, out var table))
+                        continue;
+
+                    foreach (var row in table.DataRows)
+                    {
+                        ValidateIdSet(report, enemies.Source.DisplayName, sheetName, row, "name_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                        ValidateIdSet(report, enemies.Source.DisplayName, sheetName, row, "description_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                    }
+                }
             }
         }
 
@@ -1632,7 +1801,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var table in ItemTables(items.Source, includeCurrencies: true))
                 {
-                    foreach (var row in table.DataRows)
+                    foreach (var row in RuntimeRows(table))
                     {
                         ValidateIdSet(report, items.Source.DisplayName, table.Name, row, "name_id", registry.Localisation.LocalisationIds, "Localisation.id");
                         ValidateIdSet(report, items.Source.DisplayName, table.Name, row, "description_id", registry.Localisation.LocalisationIds, "Localisation.id");
@@ -1647,7 +1816,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var table in ItemTables(items.Source, includeCurrencies: false))
                 {
-                    foreach (var row in table.DataRows)
+                    foreach (var row in RuntimeRows(table))
                         ValidateIdSet(report, items.Source.DisplayName, table.Name, row, "rarity_id", registry.Activity.RarityIds, "Activity Configs / Rarities.rarity_id");
                 }
             }
@@ -1659,7 +1828,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var table in ItemTables(items.Source, includeCurrencies: false))
                 {
-                    foreach (var row in table.DataRows)
+                    foreach (var row in RuntimeRows(table))
                     {
                         ValidateIdSet(report, items.Source.DisplayName, table.Name, row, "craft_station_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
                         foreach (var packedRef in ParsePackedRefs(row.Get("required_buildings")))
@@ -1678,7 +1847,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var table in ItemTables(items.Source, includeCurrencies: false))
                 {
-                    foreach (var row in table.DataRows)
+                    foreach (var row in RuntimeRows(table))
                     {
                         ValidateIdSet(report, items.Source.DisplayName, table.Name, row, "craft_skill_id", registry.Activity.SkillIds, "Activity Configs / Skills.skill_id");
                         foreach (var packedRef in ParsePackedRefs(row.Get("required_skills")))
@@ -1694,7 +1863,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 foreach (var table in ItemTables(items.Source, includeCurrencies: false))
                 {
-                    foreach (var row in table.DataRows)
+                    foreach (var row in RuntimeRows(table))
                     {
                         foreach (var packedRef in ParsePackedRefs(row.Get("materials")))
                         {
@@ -1715,7 +1884,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 foreach (var table in ItemTables(items.Source, includeCurrencies: false))
                 {
-                    foreach (var row in table.DataRows)
+                    foreach (var row in RuntimeRows(table))
                     {
                         var visibilityItemId = row.Get("visibility_item_id");
                         if (!IsBlank(visibilityItemId) && !items.ContainsAnyItem(visibilityItemId))
@@ -1724,6 +1893,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                         var targetItemId = row.Get("target_item_id");
                         if (!IsBlank(targetItemId) && !items.ContainsAnyItem(targetItemId))
                             AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "target_item_id", targetItemId, "target_item_id does not exist in Items Configs item registry.");
+
+                        var recipeItemId = row.Get("required_recipe_item_id");
+                        if (!IsBlank(recipeItemId) && !items.ContainsRecipe(recipeItemId))
+                            AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "required_recipe_item_id", recipeItemId, "required_recipe_item_id does not exist in Items Configs / Recipes.id registry.");
                     }
                 }
             }
@@ -1759,20 +1932,29 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 if (registry.Activity != null)
                 {
-                    foreach (var actionId in items.ItemActionIds)
+                    foreach (var actionId in items.EnabledCraftDefinitionIds)
                     {
                         if (registry.Activity.ActivityIds.Contains(actionId))
-                            AddIssue(report, items.Source.DisplayName, "itemActions", 0, "id", actionId, "Generated item action id conflicts with Activity Configs / Activities.id.");
+                            AddIssue(report, items.Source.DisplayName, CraftDefinitionsSheet, 0, "craft_id", actionId, "craft_id conflicts with Activity Configs / Activities.id.");
                     }
                 }
 
                 if (registry.Buildings != null)
                 {
-                    foreach (var actionId in items.ItemActionIds)
+                    foreach (var actionId in items.EnabledCraftDefinitionIds)
                     {
                         if (registry.Buildings.BuildActionIds.Contains(actionId))
-                            AddIssue(report, items.Source.DisplayName, "itemActions", 0, "id", actionId, "Generated item action id conflicts with Buildings Configs build action id.");
+                            AddIssue(report, items.Source.DisplayName, CraftDefinitionsSheet, 0, "craft_id", actionId, "craft_id conflicts with Buildings Configs build action id.");
                     }
+                }
+            }
+
+            private static IEnumerable<ConfigSheetDataRow> RuntimeRows(ConfigSheetTable table)
+            {
+                foreach (var row in table.DataRows)
+                {
+                    if (!table.HasColumn("enabled") || IsTrue(row.Get("enabled")))
+                        yield return row;
                 }
             }
         }
@@ -2068,12 +2250,9 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static void ValidateBuildingLevelRows(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
             {
-                foreach (var table in buildings.Source.Tables.Values)
+                foreach (var table in buildings.BuildingLevelTables)
                 {
-                    if (string.Equals(table.Name, "Index", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(table.Name, "README", StringComparison.OrdinalIgnoreCase) ||
-                        table.Name.StartsWith("Craftables -", StringComparison.OrdinalIgnoreCase) ||
-                        !table.HasColumn("source_activity_id"))
+                    if (!table.HasColumn("source_activity_id"))
                     {
                         continue;
                     }
@@ -2085,6 +2264,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                         ValidateMaterials(buildings, registry, report, table, row);
                         ValidateRequirementActivities(buildings, registry, report, table, row);
                         ValidateRequirementSkills(buildings, registry, report, table, row);
+                        ValidateBuildFormula(buildings, registry, report, table, row);
                     }
                 }
             }
@@ -2102,7 +2282,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     return;
 
                 if (!registry.Activity.ActivityIds.Contains(sourceActivityId) &&
-                    (registry.Items == null || !registry.Items.ItemActionIds.Contains(sourceActivityId)))
+                    (registry.Items == null || !registry.Items.EnabledCraftDefinitionIds.Contains(sourceActivityId)))
                 {
                     AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "source_activity_id", sourceActivityId, "source_activity_id does not exist in Activity Configs / Activities.id or unified action registry.");
                 }
@@ -2179,11 +2359,11 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (!TryGetRequiredRegistry(report, registry.Activity, "Activity Configs"))
                     return;
 
-                foreach (var packedRef in ParsePackedRefs(row.Get("requirements_activities")))
+                foreach (var packedRef in ParseActivityRequirementRefs(row.Get("requirements_activities")))
                 {
                     var exists = registry.Activity.ActivityIds.Contains(packedRef.Id) ||
                                  buildings.BuildActionIds.Contains(packedRef.Id) ||
-                                 (registry.Items != null && registry.Items.ItemActionIds.Contains(packedRef.Id));
+                                 (registry.Items != null && registry.Items.EnabledCraftDefinitionIds.Contains(packedRef.Id));
                     if (!exists)
                         AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "requirements_activities", packedRef.Raw, "requirements_activities references missing Activity Configs / Activities.id or generated action id.");
                 }
@@ -2191,7 +2371,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static void ValidateRequirementSkills(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report, ConfigSheetTable table, ConfigSheetDataRow row)
             {
-                if (!HasAnyValue(table, "requirements_skills") && !HasAnyValue(table, "craft_skill_id"))
+                if (!HasAnyValue(table, "requirements_skills") && !HasAnyValue(table, "skill_id"))
                     return;
 
                 if (!TryGetRequiredRegistry(report, registry.Activity, "Activity Configs / Skills"))
@@ -2203,7 +2383,19 @@ namespace GuildIdle.Editor.ConfigDownloader
                         AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "requirements_skills", packedRef.Raw, "requirements_skills references missing Activity Configs / Skills.skill_id.");
                 }
 
-                ValidateIdSet(report, buildings.Source.DisplayName, table.Name, row, "craft_skill_id", registry.Activity.SkillIds, "Activity Configs / Skills.skill_id");
+                ValidateIdSet(report, buildings.Source.DisplayName, table.Name, row, "skill_id", registry.Activity.SkillIds, "Activity Configs / Skills.skill_id");
+            }
+
+            private static void ValidateBuildFormula(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report, ConfigSheetTable table, ConfigSheetDataRow row)
+            {
+                var formulaId = row.Get("build_formula_id");
+                if (IsBlank(formulaId))
+                    return;
+
+                if (!TryGetRequiredRegistry(report, registry.Formula, "Formula Configs"))
+                    return;
+
+                ValidateIdSet(report, buildings.Source.DisplayName, table.Name, row, "build_formula_id", registry.Formula.FormulaIds, "Formula Configs / HeroDerivedStats.formula_id");
             }
 
             private static void ValidateBuildingActivities(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
@@ -2295,15 +2487,9 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                     foreach (var row in table.DataRows)
                     {
-                        var itemId = row.Get("item_id");
-                        if (string.Equals(itemId, GoldCurrencyId, StringComparison.OrdinalIgnoreCase))
-                        {
-                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "item_id", itemId, "gold_id is a currency_id and must not be used as a BuildingCraftables item.");
-                            continue;
-                        }
-
-                        if (!IsBlank(itemId) && !registry.Items.ContainsAnyItem(itemId))
-                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "item_id", itemId, "item_id does not exist in Items Configs item/resource/recipe/consumable registry.");
+                        var craftId = row.Get("craft_id");
+                        if (!IsBlank(craftId) && !registry.Items.EnabledCraftDefinitionIds.Contains(craftId))
+                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "craft_id", craftId, "craft_id does not exist in Items Configs / CraftDefinitions.craft_id registry.");
                     }
                 }
             }
@@ -2323,8 +2509,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                 {
                     foreach (var actionId in buildings.BuildActionIds)
                     {
-                        if (registry.Items.ItemActionIds.Contains(actionId))
-                            AddIssue(report, buildings.Source.DisplayName, "buildActions", 0, "id", actionId, "Generated Build action id conflicts with Items Configs itemActions.");
+                        if (registry.Items.EnabledCraftDefinitionIds.Contains(actionId))
+                            AddIssue(report, buildings.Source.DisplayName, "buildActions", 0, "id", actionId, "Generated Build action id conflicts with Items Configs / CraftDefinitions.craft_id.");
                     }
                 }
             }
@@ -2338,26 +2524,25 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (map == null)
                     return;
 
-                ValidateDangerEncounters(map, registry, report);
-            }
-
-            private static void ValidateDangerEncounters(MapRegistry map, ConfigRegistry registry, ConfigPipelineReport report)
-            {
-                if (!map.Source.TryGetTable("DangerEncounters", out var table))
-                    return;
-
-                if (HasAnyValue(table, "activity_id") &&
-                    TryGetRequiredRegistry(report, registry.Activity, "Activity Configs"))
+                if (!HasAnyValue(map.Source, "MapCells", "map_cell_name_id") &&
+                    !HasAnyValue(map.Source, "MapLocations", "map_location_name_id"))
                 {
-                    foreach (var row in table.DataRows)
-                        ValidateIdSet(report, map.Source.DisplayName, "DangerEncounters", row, "activity_id", registry.Activity.ActivityIds, "Activity Configs / Activities.id");
+                    return;
                 }
 
-                if (HasAnyValue(table, "enemy_group_id") &&
-                    TryGetRequiredRegistry(report, registry.Enemies, "Enemies Configs"))
+                if (!TryGetRequiredRegistry(report, registry.Localisation, "Localisation"))
+                    return;
+
+                if (map.Source.TryGetTable("MapCells", out var cells))
                 {
-                    foreach (var row in table.DataRows)
-                        ValidateIdSet(report, map.Source.DisplayName, "DangerEncounters", row, "enemy_group_id", registry.Enemies.EnemyGroupIds, "Enemies Configs / EnemyGroups.enemy_group_id");
+                    foreach (var row in cells.DataRows)
+                        ValidateIdSet(report, map.Source.DisplayName, "MapCells", row, "map_cell_name_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                }
+
+                if (map.Source.TryGetTable("MapLocations", out var locations))
+                {
+                    foreach (var row in locations.DataRows)
+                        ValidateIdSet(report, map.Source.DisplayName, "MapLocations", row, "map_location_name_id", registry.Localisation.LocalisationIds, "Localisation.id");
                 }
             }
         }
@@ -2484,7 +2669,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         private static IEnumerable<ConfigSheetTable> ItemTables(LoadedConfig source, bool includeCurrencies)
         {
-            foreach (var sheetName in new[] { ResourcesSheet, EquipmentWeaponsSheet, EquipmentArmorSheet, RecipesSheet, ConsumablesSheet })
+            foreach (var sheetName in new[] { ResourcesSheet, EquipmentWeaponsSheet, EquipmentArmorSheet, RecipesSheet, ConsumablesSheet, CraftDefinitionsSheet })
             {
                 if (source.TryGetTable(sheetName, out var table))
                     yield return table;

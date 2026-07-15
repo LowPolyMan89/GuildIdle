@@ -9,16 +9,17 @@
       "enemyType": "animal",
       "combatExp": 5,
       "hp": 35,
-      "damageMin": 3,
-      "damageMax": 6,
-      "attackSpeed": 1.1,
+      "damageMin": 2,
+      "damageMax": 5,
+      "attacksPerSecond": 1.1,
       "attackRange": "Melee",
       "damageType": "Physical",
       "critChancePercent": 3,
+      "critDamageMultiplier": 1.5,
       "physicalResistPercent": 0,
       "magicResistPercent": 0,
       "dodgeChancePercent": 5,
-      "combatAbilityIds": ["enemy_ability_bleeding_claws"],
+      "combatAbilityIds": [],
       "lootGroupId": "loot_enemy_lean_wolf"
     },
     {
@@ -31,11 +32,12 @@
       "combatExp": 15,
       "hp": 80,
       "damageMin": 6,
-      "damageMax": 10,
-      "attackSpeed": 0.95,
+      "damageMax": 9,
+      "attacksPerSecond": 0.9,
       "attackRange": "Melee",
       "damageType": "Physical",
       "critChancePercent": 5,
+      "critDamageMultiplier": 1.5,
       "physicalResistPercent": 5,
       "magicResistPercent": 0,
       "dodgeChancePercent": 4,
@@ -53,14 +55,15 @@
       "hp": 14,
       "damageMin": 1,
       "damageMax": 2,
-      "attackSpeed": 1.4,
+      "attacksPerSecond": 1.4,
       "attackRange": "Melee",
       "damageType": "Physical",
       "critChancePercent": 0,
+      "critDamageMultiplier": 1.5,
       "physicalResistPercent": 0,
       "magicResistPercent": 0,
       "dodgeChancePercent": 12,
-      "combatAbilityIds": ["enemy_ability_quick_jump"],
+      "combatAbilityIds": [],
       "lootGroupId": "loot_enemy_rabbit"
     }
   ],
@@ -343,29 +346,19 @@
       "abilityId": "enemy_ability_bleeding_claws",
       "nameId": "enemy_ability_bleeding_claws_name",
       "trigger": "OnAttackHit",
-      "chancePercent": 20,
+      "chancePercent": 10,
       "effects": "ApplyStatus: bleed_weak",
       "target": "enemy",
-      "cooldownSec": 8
+      "cooldownSec": 10
     },
     {
       "abilityId": "enemy_ability_intimidating_howl",
       "nameId": "enemy_ability_intimidating_howl_name",
       "trigger": "OnBattleStart",
-      "chancePercent": 100,
-      "effects": "ModifyStat: hero_damage_percent -5, duration 10 sec",
+      "chancePercent": 40,
+      "effects": "ModifyStat: hero_damage_percent -3, duration 5 sec",
       "target": "enemy",
       "cooldownSec": 0
-    },
-    {
-      "abilityId": "enemy_ability_quick_jump",
-      "nameId": "enemy_ability_quick_jump_name",
-      "trigger": "OnIncomingAttack",
-      "conditions": "attack_range=Melee",
-      "chancePercent": 10,
-      "effects": "DodgeAttack",
-      "target": "self",
-      "cooldownSec": 4
     }
   ],
   "combatStatuses": [
@@ -373,25 +366,27 @@
       "statusId": "bleed_weak",
       "nameId": "status_bleed_weak_name",
       "type": "bleed",
-      "durationSec": 8,
-      "tickIntervalSec": 2,
-      "maxStacks": 3,
+      "durationSec": 6,
+      "tickIntervalSec": 3,
+      "maxStacks": 1,
       "effectType": "DamageOverTime",
       "damageType": "Bleed",
-      "damageValue": 2
+      "damageValue": 1
     }
   ],
   "enemyGroups": [
     {
-      "enemyGroupId": "enemy_group_underwood_first_wolves",
+      "enemyGroupId": "enemy_group_underwood_wolves",
       "enemyRef": "enemy_lean_wolf:1",
+      "sortOrder": 10,
       "weight": 100,
       "minCount": 4,
       "maxCount": 4
     },
     {
-      "enemyGroupId": "enemy_group_underwood_wolf_leader",
+      "enemyGroupId": "enemy_group_underwood_wolves",
       "enemyRef": "enemy_wolf_leader:1",
+      "sortOrder": 20,
       "weight": 100,
       "minCount": 1,
       "maxCount": 1
@@ -399,6 +394,7 @@
     {
       "enemyGroupId": "enemy_group_hunting_rabbits",
       "enemyRef": "enemy_rabbit:1",
+      "sortOrder": 10,
       "weight": 100,
       "minCount": 1,
       "maxCount": 3
@@ -459,6 +455,16 @@
       "enumGroup": "damage_type",
       "value": "Bleed",
       "description": "Кровотечение."
+    },
+    {
+      "enumGroup": "ability_target",
+      "value": "enemy",
+      "description": "Противник владельца способности, независимо от того, герой это или враг."
+    },
+    {
+      "enumGroup": "ability_target",
+      "value": "self",
+      "description": "Владелец способности."
     }
   ]
 }

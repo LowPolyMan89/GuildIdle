@@ -84,8 +84,18 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         public static bool TryParseNumber(string value, out double number)
         {
-            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number) ||
-                   double.TryParse((value ?? string.Empty).Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+            return TryParseFiniteNumber(value, out number);
+        }
+
+        public static bool TryParseFiniteNumber(string value, out double number)
+        {
+            var parsed = double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number) ||
+                         double.TryParse((value ?? string.Empty).Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+            if (parsed && !double.IsNaN(number) && !double.IsInfinity(number))
+                return true;
+
+            number = 0d;
+            return false;
         }
 
         public static string ToCamelCase(string snakeCase)
@@ -133,7 +143,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         public IReadOnlyList<ConfigSheetDataRow> DataRows => _dataRows;
         public int Rows { get; }
 
-        public ConfigSheetTable(ConfigDownloadedSheet sheet)
+        public ConfigSheetTable(ConfigDownloadedSheet sheet, int rowNumberOffset = 0)
         {
             Name = sheet.sheet_name;
             var rows = sheet.rows ?? Array.Empty<ConfigSheetRow>();
@@ -161,7 +171,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (rows[index]?.cells == null || IsEmpty(rows[index].cells))
                     continue;
 
-                _dataRows.Add(new ConfigSheetDataRow(this, rows[index].cells, index + 1));
+                _dataRows.Add(new ConfigSheetDataRow(this, rows[index].cells, index + 1 + rowNumberOffset));
             }
         }
 
@@ -290,9 +300,13 @@ namespace GuildIdle.Editor.ConfigDownloader
                     builder.Append(longValue.ToString(CultureInfo.InvariantCulture));
                     break;
                 case float floatValue:
+                    if (float.IsNaN(floatValue) || float.IsInfinity(floatValue))
+                        throw new InvalidOperationException("Runtime JSON cannot contain a non-finite float value.");
                     builder.Append(floatValue.ToString(CultureInfo.InvariantCulture));
                     break;
                 case double doubleValue:
+                    if (double.IsNaN(doubleValue) || double.IsInfinity(doubleValue))
+                        throw new InvalidOperationException("Runtime JSON cannot contain a non-finite double value.");
                     builder.Append(doubleValue.ToString(CultureInfo.InvariantCulture));
                     break;
                 case List<string> stringList:

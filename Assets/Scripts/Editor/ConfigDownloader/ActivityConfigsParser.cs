@@ -30,7 +30,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             "Quests",
             "QuestStartConditions",
             "QuestSteps",
-            "QuestRewards"
+            "QuestRewards",
+            "DangerEncounters"
         };
 
         private static readonly Dictionary<string, string[]> RequiredColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
@@ -45,18 +46,23 @@ namespace GuildIdle.Editor.ConfigDownloader
             ["OrderDetails"] = new[] { "activity_id", "order_source", "reputation_id", "can_repeat", "repeat_cooldown_sec", "consume_requirements_on_start" },
             ["EventDetails"] = new[] { "activity_id", "event_kind", "discover_condition_id", "starts_combat", "encounter_id", "one_time", "hidden_until_discovered" },
             ["ExploreDetails"] = new[] { "activity_id", "unlock_location_id", "discovery_points_required", "danger_level" },
-            ["CombatDetails"] = new[] { "activity_id", "enemy_group_id", "combat_mode", "intended_first_result", "completion_reward_rule" },
+            ["CombatDetails"] = new[] { "activity_id", "enemy_group_id", "combat_mode", "balance_intent", "completion_reward_rule" },
             ["ActivityRequirements"] = new[] { "activity_id", "req_type", "target_id", "value", "consume", "hidden", "check_moment" },
             ["ActivityRewards"] = new[] { "activity_id", "reward_type", "target_id", "min", "max", "chance", "grant_moment" },
             ["ActivityTriggers"] = new[] { "activity_id", "trigger_moment", "trigger_type", "target_id", "value", "chance", "once_only" },
-            ["Rarities"] = new[] { "id", "name_id", "description_id", "icon_id", "color_hex", "reward_mult", "duration_mult", "fatigue_mult", "weight" },
+            ["Rarities"] = new[] { "id", "name_id", "description_id", "icon_id", "reward_mult", "duration_mult", "fatigue_mult", "weight" },
             ["Skills"] = new[] { "skill_id", "skill_name_id", "skill_description_id", "skill_icon_id" },
             ["SkillsProgression"] = new[] { "level", "exp_to_next_level", "total_exp_required" },
             ["EnumValues"] = new[] { "enum_group", "value", "description" },
             ["Quests"] = new[] { "quest_id", "name_id", "description_id", "category", "sort_order", "is_tutorial", "enabled" },
             ["QuestStartConditions"] = new[] { "quest_id", "condition_type", "target_id", "value" },
             ["QuestSteps"] = new[] { "quest_id", "step_id", "step_order", "objective_type", "target_id", "target_value", "description_id", "required" },
-            ["QuestRewards"] = new[] { "quest_id", "reward_type", "target_id", "min", "max", "grant_moment" }
+            ["QuestRewards"] = new[] { "quest_id", "reward_type", "target_id", "min", "max", "grant_moment" },
+            ["DangerEncounters"] = new[]
+            {
+                "danger_encounter_id", "activity_id", "risk_percent", "roll_moment", "enemy_group_id",
+                "combat_mode", "loot_source", "defeat_loss_rule", "notes", "risk_formula_id"
+            }
         };
 
         private static readonly Dictionary<string, string> RuntimeArrayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -77,7 +83,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             ["Quests"] = "quests",
             ["QuestStartConditions"] = "questStartConditions",
             ["QuestSteps"] = "questSteps",
-            ["QuestRewards"] = "questRewards"
+            ["QuestRewards"] = "questRewards",
+            ["DangerEncounters"] = "dangerEncounters"
         };
 
         private static readonly HashSet<string> DesignerColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -90,7 +97,9 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             "Название",
             "notes",
-            "enabled"
+            "enabled",
+            "color_hex",
+            "intended_first_result"
         };
 
         private static readonly HashSet<string> IntegerFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -125,7 +134,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             FieldKey("ActivityTriggers", "chance"),
             FieldKey("Rarities", "reward_mult"),
             FieldKey("Rarities", "duration_mult"),
-            FieldKey("Rarities", "fatigue_mult")
+            FieldKey("Rarities", "fatigue_mult"),
+            FieldKey("DangerEncounters", "risk_percent")
         };
 
         private static readonly HashSet<string> RequiredNumberFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -186,7 +196,11 @@ namespace GuildIdle.Editor.ConfigDownloader
             ["trigger_moment"] = "Moment",
             ["objective_type"] = "QuestObjective",
             ["id"] = "RarityId",
-            ["skill_id"] = "SkillId"
+            ["skill_id"] = "SkillId",
+            ["roll_moment"] = "DangerRollMoment",
+            ["combat_mode"] = "CombatMode",
+            ["loot_source"] = "DangerLootSource",
+            ["defeat_loss_rule"] = "DangerDefeatLossRule"
         };
 
         public bool Supports(ConfigSourceSettings source)
@@ -338,6 +352,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly HashSet<string> _skillIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _allQuestIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _enabledQuestIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            private readonly HashSet<string> _dangerEncounterIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             public ActivityConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
             {
@@ -491,6 +506,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                         ValidateTypedFields(table, row);
                         ValidateSheetReferences(table, row);
+                        ValidateDangerEncounterRow(table, row);
                     }
                 }
             }
@@ -582,8 +598,13 @@ namespace GuildIdle.Editor.ConfigDownloader
                     if (IsIntegerField(table.Name, column) && !long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
                         AddIssue(table.Name, row.RowNumber, column, value, "Expected an integer number.");
 
-                    if (IsNumberField(table.Name, column) && !TryParseNumber(value, out _))
-                        AddIssue(table.Name, row.RowNumber, column, value, "Expected a number.");
+                    if (IsNumberField(table.Name, column))
+                    {
+                        if (IsRarityMultiplierField(table.Name, column) && LooksLikeSpreadsheetDate(value))
+                            AddIssue(table.Name, row.RowNumber, column, value, "Expected a numeric multiplier, not a spreadsheet date.");
+                        else if (!TryParseNumber(value, out _))
+                            AddIssue(table.Name, row.RowNumber, column, value, "Expected a number.");
+                    }
 
                     ValidateEnum(table.Name, row, column, value);
                 }
@@ -638,7 +659,38 @@ namespace GuildIdle.Editor.ConfigDownloader
                         AddIssue(table.Name, row.RowNumber, "main_skill_id", mainSkillId, "Referenced main_skill_id does not exist in Skills.skill_id.");
                 }
 
+                if (string.Equals(table.Name, "DangerEncounters", StringComparison.OrdinalIgnoreCase))
+                {
+                    var encounterId = row.Get("danger_encounter_id");
+                    if (string.IsNullOrWhiteSpace(encounterId))
+                    {
+                        AddIssue(table.Name, row.RowNumber, "danger_encounter_id", encounterId, "danger_encounter_id is required.");
+                    }
+                    else if (!_dangerEncounterIds.Add(encounterId))
+                    {
+                        AddIssue(table.Name, row.RowNumber, "danger_encounter_id", encounterId, "Duplicate danger_encounter_id.");
+                    }
+                }
+
                 ValidateDetailSheetActivityType(table, row);
+            }
+
+            private void ValidateDangerEncounterRow(SheetTable table, SheetDataRow row)
+            {
+                if (!string.Equals(table.Name, "DangerEncounters", StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                foreach (var column in RequiredColumns["DangerEncounters"])
+                {
+                    if (string.Equals(column, "notes", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (string.IsNullOrWhiteSpace(row.Get(column)))
+                        AddIssue(table.Name, row.RowNumber, column, row.Get(column), "Required value is missing.");
+                }
+
+                if (TryParseNumber(row.Get("risk_percent"), out var riskPercent) && (riskPercent < 0d || riskPercent > 100d))
+                    AddIssue(table.Name, row.RowNumber, "risk_percent", row.Get("risk_percent"), "risk_percent must be in range 0..100.");
             }
 
             private void ValidateActivityType(SheetDataRow row)
@@ -1004,6 +1056,35 @@ namespace GuildIdle.Editor.ConfigDownloader
             return NumberFields.Contains(FieldKey(sheetName, column));
         }
 
+        private static bool IsRarityMultiplierField(string sheetName, string column)
+        {
+            return string.Equals(sheetName, "Rarities", StringComparison.OrdinalIgnoreCase) &&
+                   (string.Equals(column, "reward_mult", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(column, "duration_mult", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(column, "fatigue_mult", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool LooksLikeSpreadsheetDate(string value)
+        {
+            var trimmed = (value ?? string.Empty).Trim();
+            var dateFormats = new[]
+            {
+                "yyyy-MM-dd",
+                "yyyy/MM/dd",
+                "dd.MM.yyyy",
+                "d.M.yyyy"
+            };
+            if (DateTime.TryParseExact(trimmed, dateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                return true;
+
+            var parts = trimmed.Split('.');
+            return parts.Length == 2 &&
+                   int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var day) &&
+                   int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var month) &&
+                   day >= 13 && day <= 31 &&
+                   month >= 1 && month <= 12;
+        }
+
         private static bool IsRequiredNumberField(string sheetName, string column)
         {
             return RequiredNumberFields.Contains(FieldKey(sheetName, column));
@@ -1016,8 +1097,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         private static bool TryParseNumber(string value, out double number)
         {
-            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number) ||
-                   double.TryParse(value.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+            return ConfigPipelineUtilities.TryParseFiniteNumber(value, out number);
         }
 
         private static string ToCamelCase(string snakeCase)

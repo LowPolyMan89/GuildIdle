@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using GuildIdle.Configs;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -79,6 +80,51 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void BuildRuntimeJson_AllowsEmptyBuildFormulaWithZeroPointsForNonBuildLevel()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "Underwood").rows[9].cells[3] = "";
+            FindSheet(download, "Underwood").rows[9].cells[4] = "0";
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(runtimeJson, Does.Not.Contain("\"id\": \"combat_clear_hall_forest\""));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsLiteralZeroFatigueForNonBuildLevel()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "Underwood").rows[9].cells[6] = "0";
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("fatigue_cost must be empty for a non-build level."));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_AcceptsPlainActivityRequirementAndDefaultsCountToOne()
+        {
+            WriteRaw(CreateValidDownload());
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+
+            var runtime = JsonUtility.FromJson<BuildingsRuntimeConfigDto>(runtimeJson);
+            var underwoodLevel = Array.Find(runtime.buildingLevels, row =>
+                row.buildingId == "building_underwood" && row.level == 1);
+
+            Assert.That(underwoodLevel, Is.Not.Null);
+            Assert.That(underwoodLevel.requirementsActivities, Has.Length.EqualTo(1));
+            Assert.That(underwoodLevel.requirementsActivities[0].activityId, Is.EqualTo("combat_clear_hall_forest"));
+            Assert.That(underwoodLevel.requirementsActivities[0].count, Is.EqualTo(1));
+        }
+
+        [Test]
         public void BuildRuntimeJson_CraftablesDoNotCreateCraftActions()
         {
             WriteRaw(CreateValidDownload());
@@ -86,42 +132,46 @@ namespace GuildIdle.Editor.ConfigDownloader
             var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
-            Assert.That(runtimeJson, Does.Contain("\"itemId\": \"resource_pine_plank\""));
+            Assert.That(runtimeJson, Does.Contain("\"craftId\": \"process_pine_plank\""));
             Assert.That(runtimeJson, Does.Not.Contain("\"type\": \"Craft\""));
             Assert.That(runtimeJson, Does.Not.Contain("\"type\": \"Process\""));
         }
 
         [Test]
-        public void BuildRuntimeJson_SupportsDecimalComma()
+        public void BuildRuntimeJson_ExportsCanonicalBuildFields()
         {
-            var download = CreateValidDownload();
-            FindSheet(download, "Hall").rows[10].cells[4] = "30,5";
-            WriteRaw(download);
+            WriteRaw(CreateValidDownload());
 
             var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
-            Assert.That(runtimeJson, Does.Contain("\"durationSec\": 30.5"));
+            Assert.That(runtimeJson, Does.Contain("\"buildFormulaId\": \"formula_build_default\""));
+            Assert.That(runtimeJson, Does.Contain("\"skillId\": \"skill_construction\""));
+            Assert.That(runtimeJson, Does.Contain("\"fatigueCost\": 0"));
+            Assert.That(runtimeJson, Does.Not.Contain("\"durationSec\""));
+            Assert.That(runtimeJson, Does.Not.Contain("\"craftSkillId\""));
+            Assert.That(runtimeJson, Does.Not.Contain("\"mainStatId\""));
         }
 
         [Test]
-        public void BuildRuntimeJson_RejectsGoldIdAndItemGoldInCraftables()
+        public void BuildRuntimeJson_RejectsPartialBuildFieldsAndFormulaZero()
         {
-            var goldDownload = CreateValidDownload();
-            FindSheet(goldDownload, "Craftables - Carpentry").rows[1].cells[2] = "gold_id";
-            WriteRaw(goldDownload);
+            var partial = CreateValidDownload();
+            FindSheet(partial, "Underwood").rows[9].cells[5] = "skill_construction";
+            WriteRaw(partial);
 
-            var goldReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
-            Assert.That(goldReport.Success, Is.False);
-            Assert.That(goldReport.ToDisplayMessage(), Does.Contain("gold_id is a currency_id and is forbidden in BuildingCraftables."));
+            var partialReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            Assert.That(partialReport.Success, Is.False);
+            Assert.That(partialReport.ToDisplayMessage(), Does.Contain("build_formula_id is required for a declared build action."));
 
-            var itemGoldDownload = CreateValidDownload();
-            FindSheet(itemGoldDownload, "Craftables - Carpentry").rows[1].cells[2] = "item_gold";
-            WriteRaw(itemGoldDownload);
+            var zeroFormula = CreateValidDownload();
+            FindSheet(zeroFormula, "Underwood").rows[9].cells[3] = "0";
+            WriteRaw(zeroFormula);
 
-            var itemGoldReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
-            Assert.That(itemGoldReport.Success, Is.False);
-            Assert.That(itemGoldReport.ToDisplayMessage(), Does.Contain("item_gold is a forbidden legacy id."));
+            var zeroReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            Assert.That(zeroReport.Success, Is.False);
+            Assert.That(zeroReport.ToDisplayMessage(), Does.Contain("build_formula_id value 0 is not a valid formula reference."));
+            Assert.That(zeroReport.ToDisplayMessage(), Does.Contain("source_activity_id must start with build_ for a declared build action."));
         }
 
         [Test]
@@ -174,11 +224,11 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             var download = CreateValidDownload();
             FindSheet(download, "Index").rows[1].cells[5] = "-1";
-            FindSheet(download, "Hall").rows[10].cells[7] = "BadStat";
-            FindSheet(download, "Hall").rows[10].cells[8] = "badpacked";
+            FindSheet(download, "Hall").rows[10].cells[6] = "-1";
+            FindSheet(download, "Hall").rows[10].cells[7] = "badpacked";
             FindSheet(download, "Craftables - Carpentry").rows = Append(
                 FindSheet(download, "Craftables - Carpentry").rows,
-                Row("building_carpentry", "2", "item_missing_level", "-1", "", "MAYBE", "bad row"));
+                Row("building_carpentry", "2", "craft_missing_level", "-1", "", "MAYBE", "bad row"));
             WriteRaw(download);
 
             var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
@@ -186,7 +236,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.False);
             Assert.That(message, Does.Contain("levels must be greater than or equal to 0."));
-            Assert.That(message, Does.Contain("main_stat_id must be one of Strength, Agility, Intelligence, Endurance, Luck"));
+            Assert.That(message, Does.Contain("fatigue_cost must be greater than or equal to 0"));
             Assert.That(message, Does.Contain("Expected materials format id:count; id:count."));
             Assert.That(message, Does.Contain("building_level does not exist in BuildingLevels for this building_id."));
             Assert.That(message, Does.Contain("sort_order must be greater than or equal to 0."));
@@ -303,7 +353,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         public void ParseAndWrite_DoesNotOverwriteExistingRuntimeWhenValidationFails()
         {
             var download = CreateValidDownload();
-            FindSheet(download, "Craftables - Carpentry").rows[1].cells[2] = "item_gold";
+            FindSheet(download, "Underwood").rows[9].cells[3] = "0";
             WriteRaw(download);
             WriteProjectFile(TestRuntimePath, "{\"previous\":true}\n");
 
@@ -352,17 +402,17 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("building_warehouse", "Warehouse", "building_warehouse_name_id", "building_warehouse_description_id", "building_warehouse_small_icon_id", "1", "1", "TRUE", "note", "0", "TRUE", "building_hall:1"),
                         Row("building_carpentry", "Carpentry", "building_carpentry_name_id", "building_carpentry_description_id", "building_carpentry_small_icon_id", "1", "1", "TRUE", "note", "0", "TRUE", "building_hall:1")),
                     BuildingSheet("Hall", "building_hall", "building_hall_name_id", "building_hall_description_id", "building_hall_small_icon_id", "build_hall", "",
-                        Row("0", "building_hall_level_0", "", "Ruined Hall", "0", "0", "", "", "", "", "", "", "note", "", "1"),
-                        Row("1", "building_hall_level_1", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5", "1")),
+                        Row("0", "building_hall_level_0", "", "", "0", "", "0", "", "", "", "", "", "Ruined Hall", "note", "1"),
+                        Row("1", "building_hall_level_1", "build_hall", "formula_build_default", "100", "skill_construction", "0", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "5", "Repair Hall", "note", "1")),
                     BuildingSheet("Underwood", "building_underwood", "building_underwood_name_id", "building_underwood_description_id", "building_underwood_small_icon_id", "combat_clear_hall_forest", "",
-                        Row("0", "building_underwood_level_0", "", "Overgrown forest", "0", "0", "", "", "", "", "", "", "note", "", ""),
-                        Row("1", "building_underwood_level_1", "combat_clear_hall_forest", "Clear forest", "0", "0", "skill_combat", "Strength", "", "", "", "", "note", "", "")),
+                        Row("0", "building_underwood_level_0", "", "", "0", "", "0", "", "", "", "", "", "Overgrown forest", "note", ""),
+                        Row("1", "building_underwood_level_1", "combat_clear_hall_forest", "", "0", "", "", "", "combat_clear_hall_forest", "", "", "", "Clear forest", "note", "")),
                     BuildingSheet("Warehouse", "building_warehouse", "building_warehouse_name_id", "building_warehouse_description_id", "building_warehouse_small_icon_id", "build_warehouse", "",
-                        Row("0", "building_warehouse_level_0", "", "Ruined Warehouse", "0", "0", "", "", "", "", "building_hall:1", "", "note", "", ""),
-                        Row("1", "building_warehouse_level_1", "build_warehouse", "Repair Warehouse", "30", "80", "skill_construction", "Intelligence", "resource_pine_wood:3", "", "building_hall:1", "", "note", "5", "")),
+                        Row("0", "building_warehouse_level_0", "", "", "0", "", "0", "", "", "building_hall:1", "", "", "Ruined Warehouse", "note", ""),
+                        Row("1", "building_warehouse_level_1", "build_warehouse", "formula_build_default", "80", "skill_construction", "0", "resource_pine_wood:3", "", "building_hall:1", "", "5", "Repair Warehouse", "note", "")),
                     BuildingSheet("Carpentry", "building_carpentry", "building_carpentry_name_id", "building_carpentry_description_id", "building_carpentry_small_icon_id", "build_carpentry", "Craftables - Carpentry",
-                        Row("0", "building_carpentry_level_0", "", "Ruined Carpentry", "0", "0", "", "", "", "", "building_hall:1", "", "note", "", ""),
-                        Row("1", "building_carpentry_level_1", "build_carpentry", "Repair Carpentry", "30", "80", "skill_construction", "Intelligence", "resource_pine_wood:3", "", "building_hall:1", "", "note", "5", "")),
+                        Row("0", "building_carpentry_level_0", "", "", "0", "", "0", "", "", "building_hall:1", "", "", "Ruined Carpentry", "note", ""),
+                        Row("1", "building_carpentry_level_1", "build_carpentry", "formula_build_default", "80", "skill_construction", "0", "resource_pine_wood:3", "", "building_hall:1", "", "5", "Repair Carpentry", "note", "")),
                     Sheet("BuildingActivities",
                         Row("building_id", "building_level", "activity_id", "sort_order", "show_if_activity_completed", "hide_if_activity_completed", "clickable_requirement", "enabled", "notes"),
                         Row("building_underwood", "0", "combat_clear_hall_forest", "10", "", "combat_clear_hall_forest", "", "TRUE", "note"),
@@ -382,8 +432,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("stage_arrival", "quest_build_hall", "50", "TRUE", "10", "note"),
                         Row("stage_arrival", "quest_clear_underwood", "50", "TRUE", "20", "note")),
                     Sheet("Craftables - Carpentry",
-                        Row("building_id", "building_level", "item_id", "sort_order", "ui_category", "enabled", "notes"),
-                        Row("building_carpentry", "1", "resource_pine_plank", "10", "Materials", "TRUE", "note")),
+                        Row("building_id", "building_level", "craft_id", "sort_order", "ui_category", "enabled", "notes"),
+                        Row("building_carpentry", "1", "process_pine_plank", "10", "Materials", "TRUE", "note")),
                     Sheet("README", Row("Section", "Description"), Row("README", "This sheet must not be emitted."))
                 }
             };
@@ -409,7 +459,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Row("source_activity_id", sourceActivityId),
                 Row("craftables_sheet", craftablesSheet),
                 Row("", ""),
-                Row("level", "level_prefab_id", "source_activity_id", "Title", "duration_sec", "build_points_required", "craft_skill_id", "main_stat_id", "materials", "requirements_activities", "requirements_buildings", "requirements_skills", "notes", "skill_exp", "active_hero_limit")
+                Row("level", "level_prefab_id", "source_activity_id", "build_formula_id", "build_points_required", "skill_id", "fatigue_cost", "materials", "requirements_activities", "requirements_buildings", "requirements_skills", "skill_exp", "Title", "notes", "active_hero_limit")
             };
             rows.AddRange(levelRows);
             return Sheet(name, rows.ToArray());
@@ -422,20 +472,20 @@ namespace GuildIdle.Editor.ConfigDownloader
                     "field building_id Title name_id description_id small_icon_id source_activity_id craftables_sheet level",
                     "value building_hall Hall building_hall_name_id building_hall_description_id building_hall_small_icon_id build_hall level_prefab_id",
                     "source_activity_id",
-                    "Title",
-                    "duration_sec",
+                    "build_formula_id",
                     "build_points_required",
-                    "craft_skill_id",
-                    "main_stat_id",
+                    "skill_id",
+                    "fatigue_cost",
                     "materials",
                     "requirements_activities",
                     "requirements_buildings",
                     "requirements_skills",
-                    "notes",
                     "skill_exp",
+                    "Title",
+                    "notes",
                     "active_hero_limit"),
-                Row("0", "building_hall_level_0", "", "Ruined Hall", "0", "0", "", "", "", "", "", "", "note", "", "1"),
-                Row("1", "building_hall_level_1", "build_hall", "Repair Hall", "30", "100", "skill_construction", "Intelligence", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "note", "5", "1"));
+                Row("0", "building_hall_level_0", "", "", "0", "", "0", "", "", "", "", "", "Ruined Hall", "note", "1"),
+                Row("1", "building_hall_level_1", "build_hall", "formula_build_default", "100", "skill_construction", "0", "resource_pine_wood:5", "combat_clear_hall_forest:1", "", "", "5", "Repair Hall", "note", "1"));
         }
 
         private static ConfigDownloadedSheet Sheet(string name, params ConfigSheetRow[] rows)

@@ -40,10 +40,10 @@ namespace GuildIdle.Editor.ConfigDownloader
             "level",
             LevelPrefabColumn,
             "source_activity_id",
-            "duration_sec",
+            "build_formula_id",
             "build_points_required",
-            "craft_skill_id",
-            "main_stat_id",
+            "skill_id",
+            "fatigue_cost",
             "materials",
             "requirements_activities",
             "requirements_buildings",
@@ -55,7 +55,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             "building_id",
             "building_level",
-            "item_id",
+            "craft_id",
             "sort_order",
             "ui_category",
             "enabled"
@@ -102,15 +102,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             "weight_percent",
             "required",
             "sort_order"
-        };
-
-        private static readonly HashSet<string> HeroStatIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Strength",
-            "Agility",
-            "Intelligence",
-            "Endurance",
-            "Luck"
         };
 
         public bool Supports(ConfigSourceSettings source)
@@ -362,11 +353,11 @@ namespace GuildIdle.Editor.ConfigDownloader
                     }
 
                     ValidatePrefabId(row, LevelPrefabColumn);
-                    ValidateNumberGreaterThanOrEqual(row, "duration_sec", 0d, "duration_sec must be greater than or equal to 0.");
                     ValidateNumberGreaterThanOrEqual(row, "build_points_required", 0d, "build_points_required must be greater than or equal to 0.");
+                    ValidateOptionalNumberGreaterThanOrEqual(row, "fatigue_cost", 0d, "fatigue_cost must be greater than or equal to 0.");
                     ValidateOptionalNumberGreaterThanOrEqual(row, "skill_exp", 0d, "skill_exp must be greater than or equal to 0.");
                     ValidatePackedRefs(row, "materials", "id", "count");
-                    ValidatePackedRefs(row, "requirements_activities", "activity_id", "count");
+                    ValidateActivityRequirements(row);
                     ValidatePackedRefs(row, "requirements_buildings", "building_id", "level");
                     ValidatePackedRefs(row, "requirements_skills", "skill_id", "level");
                     ValidateActiveHeroLimit(level);
@@ -403,7 +394,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     foreach (var row in table.DataRows)
                     {
                         ValidateRequired(row, "building_id");
-                        ValidateRequired(row, "item_id");
+                        ValidateRequired(row, "craft_id");
                         ValidateRequired(row, "ui_category");
                         ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
                         TryParseBool(row, "enabled", required: true, out _);
@@ -424,16 +415,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                             }
                         }
 
-                        var itemId = row.Get("item_id");
-                        if (string.Equals(itemId, GoldCurrencyId, StringComparison.OrdinalIgnoreCase))
-                            AddIssue(table.Name, row.RowNumber, "item_id", itemId, "gold_id is a currency_id and is forbidden in BuildingCraftables.");
-
-                        if (string.Equals(itemId, ForbiddenLegacyItemId, StringComparison.OrdinalIgnoreCase))
-                            AddIssue(table.Name, row.RowNumber, "item_id", itemId, "item_gold is a forbidden legacy id.");
-
-                        var key = $"{buildingId}\n{row.Get("building_level")}\n{itemId}";
+                        var craftId = row.Get("craft_id");
+                        var key = $"{buildingId}\n{row.Get("building_level")}\n{craftId}";
                         if (seen.TryGetValue(key, out var firstRow))
-                            AddIssue(table.Name, row.RowNumber, "item_id", itemId, $"Duplicate building_id + building_level + item_id; first declared at row {firstRow}.");
+                            AddIssue(table.Name, row.RowNumber, "craft_id", craftId, $"Duplicate building_id + building_level + craft_id; first declared at row {firstRow}.");
                         else
                             seen[key] = row.RowNumber;
                     }
@@ -785,10 +770,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                         ["level"] = GetNumber(row, "level"),
                         ["levelPrefabId"] = row.Get(LevelPrefabColumn),
                         ["sourceActivityId"] = row.Get("source_activity_id"),
-                        ["durationSec"] = GetNumber(row, "duration_sec"),
+                        ["buildFormulaId"] = row.Get("build_formula_id"),
                         ["buildPointsRequired"] = GetNumber(row, "build_points_required"),
-                        ["craftSkillId"] = row.Get("craft_skill_id"),
-                        ["mainStatId"] = row.Get("main_stat_id"),
+                        ["skillId"] = row.Get("skill_id"),
+                        ["fatigueCost"] = GetNumber(row, "fatigue_cost"),
                         ["materials"] = ParseMaterials(row.Get("materials")),
                         ["requirementsActivities"] = ParseActivityRequirements(row.Get("requirements_activities")),
                         ["requirementsBuildings"] = ParseBuildingRequirements(row.Get("requirements_buildings")),
@@ -816,10 +801,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                         ["type"] = "Build",
                         ["targetBuildingId"] = level.BuildingId,
                         ["targetLevel"] = GetNumber(row, "level"),
-                        ["durationSec"] = GetNumber(row, "duration_sec"),
+                        ["buildFormulaId"] = row.Get("build_formula_id"),
                         ["buildPointsRequired"] = GetNumber(row, "build_points_required"),
-                        ["skillId"] = row.Get("craft_skill_id"),
-                        ["mainStatId"] = row.Get("main_stat_id"),
+                        ["skillId"] = row.Get("skill_id"),
+                        ["fatigueCost"] = GetNumber(row, "fatigue_cost"),
                         ["materials"] = ParseMaterials(row.Get("materials")),
                         ["requirementsActivities"] = ParseActivityRequirements(row.Get("requirements_activities")),
                         ["requirementsBuildings"] = ParseBuildingRequirements(row.Get("requirements_buildings")),
@@ -862,7 +847,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                         {
                             ["buildingId"] = row.Get("building_id"),
                             ["buildingLevel"] = GetNumber(row, "building_level"),
-                            ["itemId"] = row.Get("item_id"),
+                            ["craftId"] = row.Get("craft_id"),
                             ["sortOrder"] = GetNumber(row, "sort_order"),
                             ["uiCategory"] = row.Get("ui_category"),
                             ["enabled"] = GetBool(row, "enabled")
@@ -893,21 +878,39 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 var row = level.Row;
                 var sourceActivityId = row.Get("source_activity_id");
-                if (!IsBuildSource(sourceActivityId))
+                if (!HasBuildIntent(row))
+                {
+                    ValidateNonBuildFields(row);
                     return;
+                }
 
-                if (!TryParseNumber(row, "duration_sec", out var durationSec) || durationSec <= 0d)
-                    AddIssue(row.Table.Name, row.RowNumber, "duration_sec", row.Get("duration_sec"), "duration_sec must be greater than 0 when source_activity_id starts with build_.");
+                if (!IsBuildSource(sourceActivityId))
+                    AddIssue(row.Table.Name, row.RowNumber, "source_activity_id", sourceActivityId, "source_activity_id must start with build_ for a declared build action.");
+
+                var buildFormulaId = row.Get("build_formula_id");
+                if (string.IsNullOrWhiteSpace(buildFormulaId))
+                    AddIssue(row.Table.Name, row.RowNumber, "build_formula_id", buildFormulaId, "build_formula_id is required for a declared build action.");
+                else if (ConfigPipelineUtilities.TryParseNumber(buildFormulaId, out var numericFormulaId) && Math.Abs(numericFormulaId) < 0.0000001d)
+                    AddIssue(row.Table.Name, row.RowNumber, "build_formula_id", buildFormulaId, "build_formula_id value 0 is not a valid formula reference.");
 
                 if (!TryParseNumber(row, "build_points_required", out var buildPoints) || buildPoints <= 0d)
-                    AddIssue(row.Table.Name, row.RowNumber, "build_points_required", row.Get("build_points_required"), "build_points_required must be greater than 0 when source_activity_id starts with build_.");
+                    AddIssue(row.Table.Name, row.RowNumber, "build_points_required", row.Get("build_points_required"), "build_points_required must be greater than 0 for a declared build action.");
 
-                if (string.IsNullOrWhiteSpace(row.Get("craft_skill_id")))
-                    AddIssue(row.Table.Name, row.RowNumber, "craft_skill_id", row.Get("craft_skill_id"), "craft_skill_id is required when source_activity_id starts with build_.");
+                if (string.IsNullOrWhiteSpace(row.Get("skill_id")))
+                    AddIssue(row.Table.Name, row.RowNumber, "skill_id", row.Get("skill_id"), "skill_id is required for a declared build action.");
 
-                var mainStatId = row.Get("main_stat_id");
-                if (string.IsNullOrWhiteSpace(mainStatId) || !HeroStatIds.Contains(mainStatId))
-                    AddIssue(row.Table.Name, row.RowNumber, "main_stat_id", mainStatId, "main_stat_id must be one of Strength, Agility, Intelligence, Endurance, Luck when source_activity_id starts with build_.");
+                if (!TryParseNumber(row, "fatigue_cost", out var fatigueCost) || fatigueCost < 0d)
+                    AddIssue(row.Table.Name, row.RowNumber, "fatigue_cost", row.Get("fatigue_cost"), "fatigue_cost must be a number greater than or equal to 0 for a declared build action.");
+            }
+
+            private void ValidateNonBuildFields(ConfigSheetDataRow row)
+            {
+                foreach (var column in new[] { "build_formula_id", "materials", "fatigue_cost" })
+                {
+                    var value = row.Get(column);
+                    if (!string.IsNullOrWhiteSpace(value))
+                        AddIssue(row.Table.Name, row.RowNumber, column, value, $"{column} must be empty for a non-build level.");
+                }
             }
 
             private void ValidateActiveHeroLimit(BuildingLevelRow level)
@@ -945,12 +948,26 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private bool CreatesBuildAction(BuildingLevelRow level)
             {
-                var row = level.Row;
-                return IsBuildSource(row.Get("source_activity_id")) &&
-                       TryParseNumber(row, "duration_sec", out var durationSec) &&
-                       TryParseNumber(row, "build_points_required", out var buildPoints) &&
-                       durationSec > 0d &&
-                       buildPoints > 0d;
+                return HasBuildIntent(level.Row);
+            }
+
+            private bool HasBuildIntent(ConfigSheetDataRow row)
+            {
+                if (IsBuildSource(row.Get("source_activity_id")) ||
+                    !string.IsNullOrWhiteSpace(row.Get("build_formula_id")) ||
+                    !string.IsNullOrWhiteSpace(row.Get("skill_id")) ||
+                    !string.IsNullOrWhiteSpace(row.Get("materials")))
+                {
+                    return true;
+                }
+
+                if (TryParseNumber(row, "build_points_required", out var buildPoints) && buildPoints > 0d)
+                    return true;
+
+                if (TryParseNumber(row, "fatigue_cost", out var fatigueCost) && fatigueCost > 0d)
+                    return true;
+
+                return TryParseNumber(row, "skill_exp", out var skillExp) && skillExp > 0d;
             }
 
             private void ValidatePackedRefs(ConfigSheetDataRow row, string column, string idName, string countName)
@@ -993,6 +1010,33 @@ namespace GuildIdle.Editor.ConfigDownloader
                             ? $"{countName} in packed reference must be an integer greater than or equal to 0."
                             : $"{countName} in packed reference must be an integer greater than 0.";
                         AddIssue(row.Table.Name, row.RowNumber, column, packedRef.Trim(), message);
+                    }
+                }
+            }
+
+            private void ValidateActivityRequirements(ConfigSheetDataRow row)
+            {
+                var raw = row.Get("requirements_activities");
+                if (string.IsNullOrWhiteSpace(raw))
+                    return;
+
+                var refs = raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var activityRef in refs)
+                {
+                    var trimmed = activityRef.Trim();
+                    var parts = trimmed.Split(':');
+                    if (parts.Length == 1 && !string.IsNullOrWhiteSpace(parts[0]))
+                        continue;
+
+                    if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+                    {
+                        AddIssue(row.Table.Name, row.RowNumber, "requirements_activities", trimmed, "Expected requirements_activities format activity_id or activity_id:count; separate multiple values with semicolons.");
+                        continue;
+                    }
+
+                    if (!long.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) || count <= 0L)
+                    {
+                        AddIssue(row.Table.Name, row.RowNumber, "requirements_activities", trimmed, "count in activity requirement must be an integer greater than 0.");
                     }
                 }
             }
@@ -1194,15 +1238,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static bool TryParseFiniteNumber(string raw, out double value)
             {
-                if (ConfigPipelineUtilities.TryParseNumber(raw, out value) &&
-                    !double.IsNaN(value) &&
-                    !double.IsInfinity(value))
-                {
-                    return true;
-                }
-
-                value = 0d;
-                return false;
+                return ConfigPipelineUtilities.TryParseFiniteNumber(raw, out value);
             }
 
             private static List<Dictionary<string, object>> ParseMaterials(string raw)
@@ -1212,7 +1248,30 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static List<Dictionary<string, object>> ParseActivityRequirements(string raw)
             {
-                return ParsePackedObjects(raw, "activityId", "count");
+                var values = new List<Dictionary<string, object>>();
+                if (string.IsNullOrWhiteSpace(raw))
+                    return values;
+
+                var refs = raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var activityRef in refs)
+                {
+                    var parts = activityRef.Trim().Split(':');
+                    var id = parts[0].Trim();
+                    var count = 1L;
+                    if (parts.Length == 2 && !long.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out count))
+                        continue;
+
+                    if (parts.Length > 2 || string.IsNullOrWhiteSpace(id))
+                        continue;
+
+                    values.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        ["activityId"] = id,
+                        ["count"] = count
+                    });
+                }
+
+                return values;
             }
 
             private static List<Dictionary<string, object>> ParseBuildingRequirements(string raw)

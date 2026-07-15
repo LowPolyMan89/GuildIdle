@@ -17,7 +17,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             "MapLocations",
             "MapExplorationLevels",
             "MapCellActivities",
-            "DangerEncounters",
             "MapEnums"
         };
 
@@ -39,11 +38,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 "cell_id", "location_id", "activity_id", "reveal_at_exploration_level",
                 "visible_in_watchtower", "notes"
-            },
-            ["DangerEncounters"] = new[]
-            {
-                "danger_encounter_id", "activity_id", "risk_percent", "roll_moment", "enemy_group_id",
-                "min_enemies", "max_enemies", "combat_mode", "loot_source", "defeat_loss_rule", "notes"
             },
             ["MapEnums"] = new[] { "enum_group", "value", "description" }
         };
@@ -67,11 +61,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                 "cell_id", "location_id", "activity_id", "reveal_at_exploration_level",
                 "visible_in_watchtower"
             },
-            ["DangerEncounters"] = new[]
-            {
-                "danger_encounter_id", "activity_id", "risk_percent", "roll_moment", "enemy_group_id",
-                "min_enemies", "max_enemies", "combat_mode", "loot_source", "defeat_loss_rule"
-            },
             ["MapEnums"] = new[] { "enum_group", "value", "description" }
         };
 
@@ -81,7 +70,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             ["MapLocations"] = "mapLocations",
             ["MapExplorationLevels"] = "mapExplorationLevels",
             ["MapCellActivities"] = "mapCellActivities",
-            ["DangerEncounters"] = "dangerEncounters",
             ["MapEnums"] = "enumValues"
         };
 
@@ -91,8 +79,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             FieldKey("MapCells", "notes"),
             FieldKey("MapLocations", "notes"),
             FieldKey("MapExplorationLevels", "notes"),
-            FieldKey("MapCellActivities", "notes"),
-            FieldKey("DangerEncounters", "notes")
+            FieldKey("MapCellActivities", "notes")
         };
 
         private static readonly HashSet<string> IntegerFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -103,15 +90,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             FieldKey("MapLocations", "tier"),
             FieldKey("MapExplorationLevels", "exploration_level"),
             FieldKey("MapExplorationLevels", "points_required"),
-            FieldKey("MapCellActivities", "reveal_at_exploration_level"),
-            FieldKey("DangerEncounters", "min_enemies"),
-            FieldKey("DangerEncounters", "max_enemies")
+            FieldKey("MapCellActivities", "reveal_at_exploration_level")
         };
 
         private static readonly HashSet<string> NumberFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            FieldKey("MapCells", "exploration_difficulty"),
-            FieldKey("DangerEncounters", "risk_percent")
+            FieldKey("MapCells", "exploration_difficulty")
         };
 
         private static readonly HashSet<string> BoolColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -125,11 +109,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             [FieldKey("MapCells", "state_default")] = "MapCellState",
             [FieldKey("MapCells", "terrain_type")] = "TerrainType",
             [FieldKey("MapCells", "visual_marker_id")] = "MapVisualMarker",
-            [FieldKey("MapLocations", "location_type")] = "LocationType",
-            [FieldKey("DangerEncounters", "roll_moment")] = "DangerRollMoment",
-            [FieldKey("DangerEncounters", "combat_mode")] = "CombatMode",
-            [FieldKey("DangerEncounters", "loot_source")] = "DangerLootSource",
-            [FieldKey("DangerEncounters", "defeat_loss_rule")] = "DangerDefeatLossRule"
+            [FieldKey("MapLocations", "location_type")] = "LocationType"
         };
 
         public bool Supports(ConfigSourceSettings source)
@@ -205,7 +185,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly HashSet<string> _cellIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _locationIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<long> _explorationLevels = new HashSet<long>();
-            private readonly HashSet<string> _dangerEncounterIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly Dictionary<string, string> _cellLocationIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             private readonly Dictionary<string, long> _cellMaxExplorationLevels = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             private readonly Dictionary<long, ExplorationPointRow> _explorationPointRows = new Dictionary<long, ExplorationPointRow>();
@@ -285,7 +264,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                 CollectMapCellIdsAndCoordinates();
                 CollectUniqueIds("MapLocations", "location_id", _locationIds, "location_id");
                 CollectExplorationLevels();
-                CollectUniqueIds("DangerEncounters", "danger_encounter_id", _dangerEncounterIds, "danger_encounter_id");
             }
 
             public void ValidateRows()
@@ -515,12 +493,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                     return;
                 }
 
-                if (string.Equals(table.Name, "DangerEncounters", StringComparison.OrdinalIgnoreCase))
-                {
-                    ValidateDangerEncounter(row);
-                    return;
-                }
-
                 if (string.Equals(table.Name, "MapEnums", StringComparison.OrdinalIgnoreCase))
                     ValidateMapEnum(row);
             }
@@ -593,24 +565,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                     if (_cellMaxExplorationLevels.TryGetValue(cellId, out var maxExplorationLevel) && revealLevel > maxExplorationLevel)
                         AddIssue("MapCellActivities", row.RowNumber, "reveal_at_exploration_level", row.Get("reveal_at_exploration_level"), "reveal_at_exploration_level must not be greater than MapCells.max_exploration_level for this cell_id.");
                 }
-            }
-
-            private void ValidateDangerEncounter(ConfigSheetDataRow row)
-            {
-                if (TryParseNumber(row, "risk_percent", out var riskPercent) && (riskPercent < 0 || riskPercent > 100))
-                    AddIssue("DangerEncounters", row.RowNumber, "risk_percent", row.Get("risk_percent"), "risk_percent must be in range 0..100.");
-
-                var hasMinEnemies = TryParseInteger(row, "min_enemies", out var minEnemies);
-                var hasMaxEnemies = TryParseInteger(row, "max_enemies", out var maxEnemies);
-
-                if (hasMinEnemies && minEnemies <= 0)
-                    AddIssue("DangerEncounters", row.RowNumber, "min_enemies", row.Get("min_enemies"), "min_enemies must be greater than 0.");
-
-                if (hasMaxEnemies && maxEnemies <= 0)
-                    AddIssue("DangerEncounters", row.RowNumber, "max_enemies", row.Get("max_enemies"), "max_enemies must be greater than 0.");
-
-                if (hasMinEnemies && hasMaxEnemies && minEnemies > maxEnemies)
-                    AddIssue("DangerEncounters", row.RowNumber, "max_enemies", row.Get("max_enemies"), "min_enemies must be <= max_enemies.");
             }
 
             private void ValidateMapEnum(ConfigSheetDataRow row)

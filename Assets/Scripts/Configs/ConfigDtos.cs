@@ -56,9 +56,9 @@ namespace GuildIdle.Configs
         public EquipmentWeaponConfigDto[] equipmentWeapons = Array.Empty<EquipmentWeaponConfigDto>();
         public EquipmentArmorConfigDto[] equipmentArmor = Array.Empty<EquipmentArmorConfigDto>();
         public RecipeConfigDto[] recipes = Array.Empty<RecipeConfigDto>();
+        public CraftDefinitionConfigDto[] craftDefinitions = Array.Empty<CraftDefinitionConfigDto>();
         public ConsumableConfigDto[] consumables = Array.Empty<ConsumableConfigDto>();
         public CurrencyConfigDto[] currencies = Array.Empty<CurrencyConfigDto>();
-        public ItemActionConfigDto[] itemActions = Array.Empty<ItemActionConfigDto>();
     }
 
     [Serializable]
@@ -177,22 +177,33 @@ namespace GuildIdle.Configs
         public string descriptionId;
         public string iconId;
         public string kind;
-        public string targetItemId;
         public string rarityId;
-        public string craftId;
-        public string craftStationId;
-        public int craftDurationSec;
-        public string craftSkillId;
-        public RequiredBuildingDto[] requiredBuildings = Array.Empty<RequiredBuildingDto>();
-        public MaterialCostDto[] materials = Array.Empty<MaterialCostDto>();
-        public bool consumeOnCraft;
-        public bool hiddenUntilRecipe;
+        public int tier;
+        public bool enabled;
 
         public string Id => id;
         public string NameId => nameId;
         public string DescriptionId => descriptionId;
         public string IconId => iconId;
         public string Kind => kind;
+    }
+
+    [Serializable]
+    public sealed class CraftDefinitionConfigDto
+    {
+        public string craftId;
+        public string targetItemId;
+        public string craftStationId;
+        public int craftDurationSec;
+        public string craftSkillId;
+        public RequiredBuildingDto[] requiredBuildings = Array.Empty<RequiredBuildingDto>();
+        public MaterialCostDto[] materials = Array.Empty<MaterialCostDto>();
+        public string requiredRecipeItemId;
+        public int requiredRecipeItemCount;
+        public bool consumeRecipeItem;
+        public int outputCount;
+        public int fatigueCost;
+        public int skillExp;
     }
 
     [Serializable]
@@ -206,8 +217,9 @@ namespace GuildIdle.Configs
         public string rarityId;
         public string usePlace;
         public string useCondition;
-        public string effects;
+        public string[] effects = Array.Empty<string>();
         public int cooldownSeconds;
+        public int checkIntervalSeconds;
 
         public string Id => id;
         public string NameId => nameId;
@@ -223,26 +235,6 @@ namespace GuildIdle.Configs
         public string iconId;
         public string nameId;
         public string descriptionId;
-    }
-
-    [Serializable]
-    public sealed class ItemActionConfigDto
-    {
-        public string id;
-        public string type;
-        public string outputItemId;
-        public int outputCount;
-        public string craftStationId;
-        public int durationSec;
-        public string skillId;
-        public int skillExp;
-        public MaterialCostDto[] materials = Array.Empty<MaterialCostDto>();
-        public RequiredBuildingDto[] requiredBuildings = Array.Empty<RequiredBuildingDto>();
-        public RequiredSkillDto[] requiredSkills = Array.Empty<RequiredSkillDto>();
-        public string visibilityItemId;
-        public int visibilityItemCount;
-        public bool consumeVisibilityItem;
-        public bool hiddenUntilVisibilityItem;
     }
 
     [Serializable]
@@ -333,6 +325,7 @@ namespace GuildIdle.Configs
         public QuestStartConditionConfigDto[] questStartConditions = Array.Empty<QuestStartConditionConfigDto>();
         public QuestStepConfigDto[] questSteps = Array.Empty<QuestStepConfigDto>();
         public QuestRewardConfigDto[] questRewards = Array.Empty<QuestRewardConfigDto>();
+        public DangerEncounterConfigDto[] dangerEncounters = Array.Empty<DangerEncounterConfigDto>();
     }
 
     [Serializable]
@@ -351,8 +344,10 @@ namespace GuildIdle.Configs
         public int durationSec;
         public int cycleSec;
         public int fatigueCost;
+        public string mainSkillId;
         public bool isRepeatable;
         public bool offlineEnabled;
+        public string statProfileId;
     }
 
     [Serializable]
@@ -360,7 +355,9 @@ namespace GuildIdle.Configs
     {
         public string activityId;
         public float successChance;
+        public string toolType;
         public bool autoRepeat;
+        public string failMode;
     }
 
     [Serializable]
@@ -381,6 +378,7 @@ namespace GuildIdle.Configs
         public string eventKind;
         public string discoverConditionId;
         public bool startsCombat;
+        public string encounterId;
         public bool oneTime;
         public bool hiddenUntilDiscovered;
     }
@@ -389,6 +387,7 @@ namespace GuildIdle.Configs
     public sealed class ExploreDetailConfigDto
     {
         public string activityId;
+        public string unlockLocationId;
         public int discoveryPointsRequired;
         public int dangerLevel;
     }
@@ -399,7 +398,7 @@ namespace GuildIdle.Configs
         public string activityId;
         public string enemyGroupId;
         public string combatMode;
-        public string intendedFirstResult;
+        public string balanceIntent;
         public string completionRewardRule;
     }
 
@@ -446,7 +445,6 @@ namespace GuildIdle.Configs
         public string nameId;
         public string descriptionId;
         public string iconId;
-        public string colorHex;
         public float rewardMult;
         public float durationMult;
         public float fatigueMult;
@@ -549,10 +547,10 @@ namespace GuildIdle.Configs
         public int level;
         public string levelPrefabId;
         public string sourceActivityId;
-        public int durationSec;
+        public string buildFormulaId;
         public int buildPointsRequired;
-        public string craftSkillId;
-        public string mainStatId;
+        public string skillId;
+        public int fatigueCost;
         public MaterialCostDto[] materials = Array.Empty<MaterialCostDto>();
         public RequiredActivityDto[] requirementsActivities = Array.Empty<RequiredActivityDto>();
         public RequiredBuildingDto[] requirementsBuildings = Array.Empty<RequiredBuildingDto>();
@@ -568,10 +566,10 @@ namespace GuildIdle.Configs
         public string type;
         public string targetBuildingId;
         public int targetLevel;
-        public int durationSec;
+        public string buildFormulaId;
         public int buildPointsRequired;
         public string skillId;
-        public string mainStatId;
+        public int fatigueCost;
         public MaterialCostDto[] materials = Array.Empty<MaterialCostDto>();
         public RequiredActivityDto[] requirementsActivities = Array.Empty<RequiredActivityDto>();
         public RequiredBuildingDto[] requirementsBuildings = Array.Empty<RequiredBuildingDto>();
@@ -596,7 +594,7 @@ namespace GuildIdle.Configs
     {
         public string buildingId;
         public int buildingLevel;
-        public string itemId;
+        public string craftId;
         public int sortOrder;
         public string uiCategory;
         public bool enabled;
@@ -661,10 +659,11 @@ namespace GuildIdle.Configs
         public int hp;
         public int damageMin;
         public int damageMax;
-        public float attackSpeed;
+        public float attacksPerSecond;
         public string attackRange;
         public string damageType;
         public float critChancePercent;
+        public float critDamageMultiplier;
         public float physicalResistPercent;
         public float magicResistPercent;
         public float dodgeChancePercent;
@@ -727,6 +726,7 @@ namespace GuildIdle.Configs
     {
         public string enemyGroupId;
         public string enemyRef;
+        public int sortOrder;
         public int weight;
         public int minCount;
         public int maxCount;
@@ -735,12 +735,12 @@ namespace GuildIdle.Configs
     [Serializable]
     public sealed class FormulaRuntimeConfigDto
     {
-        public HeroDerivedStatConfigDto[] heroDerivedStats = Array.Empty<HeroDerivedStatConfigDto>();
+        public FormulaConfigDto[] formulas = Array.Empty<FormulaConfigDto>();
         public SkillStatWeightConfigDto[] skillStatWeights = Array.Empty<SkillStatWeightConfigDto>();
     }
 
     [Serializable]
-    public sealed class HeroDerivedStatConfigDto
+    public sealed class FormulaConfigDto
     {
         public string formulaId;
         public string derivedStatId;
@@ -823,7 +823,6 @@ namespace GuildIdle.Configs
         public MapLocationConfigDto[] mapLocations = Array.Empty<MapLocationConfigDto>();
         public MapExplorationLevelConfigDto[] mapExplorationLevels = Array.Empty<MapExplorationLevelConfigDto>();
         public MapCellActivityConfigDto[] mapCellActivities = Array.Empty<MapCellActivityConfigDto>();
-        public DangerEncounterConfigDto[] dangerEncounters = Array.Empty<DangerEncounterConfigDto>();
         public EnumValueConfigDto[] enumValues = Array.Empty<EnumValueConfigDto>();
     }
 
@@ -881,11 +880,10 @@ namespace GuildIdle.Configs
         public float riskPercent;
         public string rollMoment;
         public string enemyGroupId;
-        public int minEnemies;
-        public int maxEnemies;
         public string combatMode;
         public string lootSource;
         public string defeatLossRule;
+        public string riskFormulaId;
     }
 
     [Serializable]

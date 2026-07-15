@@ -274,9 +274,9 @@ namespace GuildIdle.Editor.Configs
         {
             _formulas = new FormulaRuntimeConfigDto
             {
-                heroDerivedStats = new[]
+                formulas = new[]
                 {
-                    new HeroDerivedStatConfigDto
+                    new FormulaConfigDto
                     {
                         formulaId = "hero_max_fatigue",
                         derivedStatId = "max_fatigue",

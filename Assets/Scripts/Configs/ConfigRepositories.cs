@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace GuildIdle.Configs
@@ -11,6 +12,7 @@ namespace GuildIdle.Configs
         private readonly Dictionary<string, EquipmentWeaponConfigDto> _equipmentWeaponsById = NewIndex<EquipmentWeaponConfigDto>();
         private readonly Dictionary<string, EquipmentArmorConfigDto> _equipmentArmorById = NewIndex<EquipmentArmorConfigDto>();
         private readonly Dictionary<string, RecipeConfigDto> _recipesById = NewIndex<RecipeConfigDto>();
+        private readonly Dictionary<string, CraftDefinitionConfigDto> _craftDefinitionsById = NewIndex<CraftDefinitionConfigDto>();
         private readonly Dictionary<string, ConsumableConfigDto> _consumablesById = NewIndex<ConsumableConfigDto>();
         private readonly Dictionary<string, CurrencyConfigDto> _currenciesById = NewIndex<CurrencyConfigDto>();
 
@@ -18,9 +20,9 @@ namespace GuildIdle.Configs
         public EquipmentWeaponConfigDto[] EquipmentWeapons { get; }
         public EquipmentArmorConfigDto[] EquipmentArmor { get; }
         public RecipeConfigDto[] Recipes { get; }
+        public CraftDefinitionConfigDto[] CraftDefinitions { get; }
         public ConsumableConfigDto[] Consumables { get; }
         public CurrencyConfigDto[] Currencies { get; }
-        public ItemActionConfigDto[] ItemActions { get; }
 
         public int ItemCount => _itemsById.Count;
         public int CurrencyCount => _currenciesById.Count;
@@ -32,14 +34,15 @@ namespace GuildIdle.Configs
             EquipmentWeapons = dto.equipmentWeapons ?? Array.Empty<EquipmentWeaponConfigDto>();
             EquipmentArmor = dto.equipmentArmor ?? Array.Empty<EquipmentArmorConfigDto>();
             Recipes = dto.recipes ?? Array.Empty<RecipeConfigDto>();
+            CraftDefinitions = dto.craftDefinitions ?? Array.Empty<CraftDefinitionConfigDto>();
             Consumables = dto.consumables ?? Array.Empty<ConsumableConfigDto>();
             Currencies = dto.currencies ?? Array.Empty<CurrencyConfigDto>();
-            ItemActions = dto.itemActions ?? Array.Empty<ItemActionConfigDto>();
 
             AddItems(Resources, item => item.id, "Items/resources", _resourcesById, _itemsById);
             AddItems(EquipmentWeapons, item => item.id, "Items/equipmentWeapons", _equipmentWeaponsById, _itemsById);
             AddItems(EquipmentArmor, item => item.id, "Items/equipmentArmor", _equipmentArmorById, _itemsById);
             AddItems(Recipes, item => item.id, "Items/recipes", _recipesById, _itemsById);
+            AddItems(CraftDefinitions, item => item.craftId, "Items/craftDefinitions", _craftDefinitionsById);
             AddItems(Consumables, item => item.id, "Items/consumables", _consumablesById, _itemsById);
             AddItems(Currencies, item => item.currencyId, "Items/currencies", _currenciesById);
         }
@@ -78,7 +81,17 @@ namespace GuildIdle.Configs
         public bool TryGetEquipmentWeapon(string id, out EquipmentWeaponConfigDto weapon) => TryGetIndexed(_equipmentWeaponsById, id, out weapon);
         public bool TryGetEquipmentArmor(string id, out EquipmentArmorConfigDto armor) => TryGetIndexed(_equipmentArmorById, id, out armor);
         public bool TryGetRecipe(string id, out RecipeConfigDto recipe) => TryGetIndexed(_recipesById, id, out recipe);
+        public bool TryGetCraftDefinition(string craftId, out CraftDefinitionConfigDto definition) => TryGetIndexed(_craftDefinitionsById, craftId, out definition);
         public bool TryGetConsumable(string id, out ConsumableConfigDto consumable) => TryGetIndexed(_consumablesById, id, out consumable);
+
+        public CraftDefinitionConfigDto GetCraftDefinition(string craftId)
+        {
+            if (TryGetCraftDefinition(craftId, out var definition))
+                return definition;
+
+            LogMissing("Items/craftDefinitions", craftId);
+            return null;
+        }
 
         private static void AddItems<T>(IEnumerable<T> items, Func<T, string> idSelector, string group, Dictionary<string, T> index)
             where T : class
@@ -200,6 +213,8 @@ namespace GuildIdle.Configs
         private readonly Dictionary<string, List<QuestStartConditionConfigDto>> _questStartConditionsByQuestId = new Dictionary<string, List<QuestStartConditionConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<QuestStepConfigDto>> _questStepsByQuestId = new Dictionary<string, List<QuestStepConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<QuestRewardConfigDto>> _questRewardsByQuestId = new Dictionary<string, List<QuestRewardConfigDto>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, DangerEncounterConfigDto> _dangerEncountersById = ItemsConfigRepository.NewIndex<DangerEncounterConfigDto>();
+        private readonly Dictionary<string, List<DangerEncounterConfigDto>> _dangerEncountersByActivityId = new Dictionary<string, List<DangerEncounterConfigDto>>(StringComparer.Ordinal);
 
         public ActivityConfigDto[] Activities { get; }
         public WorkDetailConfigDto[] WorkDetails { get; }
@@ -218,6 +233,7 @@ namespace GuildIdle.Configs
         public QuestStartConditionConfigDto[] QuestStartConditions { get; }
         public QuestStepConfigDto[] QuestSteps { get; }
         public QuestRewardConfigDto[] QuestRewards { get; }
+        public DangerEncounterConfigDto[] DangerEncounters { get; }
         public int Count => _activitiesById.Count;
 
         public ActivitiesConfigRepository(ActivitiesRuntimeConfigDto dto)
@@ -240,6 +256,7 @@ namespace GuildIdle.Configs
             QuestStartConditions = dto.questStartConditions ?? Array.Empty<QuestStartConditionConfigDto>();
             QuestSteps = dto.questSteps ?? Array.Empty<QuestStepConfigDto>();
             QuestRewards = dto.questRewards ?? Array.Empty<QuestRewardConfigDto>();
+            DangerEncounters = dto.dangerEncounters ?? Array.Empty<DangerEncounterConfigDto>();
 
             foreach (var activity in Activities)
                 ItemsConfigRepository.AddUnique(_activitiesById, activity.id, activity, "Activities/activities");
@@ -265,6 +282,11 @@ namespace GuildIdle.Configs
                 ItemsConfigRepository.AddGrouped(_questStepsByQuestId, step.questId, step);
             foreach (var reward in QuestRewards)
                 ItemsConfigRepository.AddGrouped(_questRewardsByQuestId, reward.questId, reward);
+            foreach (var encounter in DangerEncounters)
+            {
+                ItemsConfigRepository.AddUnique(_dangerEncountersById, encounter.dangerEncounterId, encounter, "Activities/dangerEncounters");
+                ItemsConfigRepository.AddGrouped(_dangerEncountersByActivityId, encounter.activityId, encounter);
+            }
         }
 
         public ActivityConfigDto Get(string id)
@@ -287,12 +309,14 @@ namespace GuildIdle.Configs
         public QuestStartConditionConfigDto[] GetQuestStartConditions(string questId) => GetGroup(_questStartConditionsByQuestId, questId);
         public QuestStepConfigDto[] GetQuestSteps(string questId) => GetGroup(_questStepsByQuestId, questId);
         public QuestRewardConfigDto[] GetQuestRewards(string questId) => GetGroup(_questRewardsByQuestId, questId);
+        public DangerEncounterConfigDto[] GetDangerEncounters(string activityId) => GetGroup(_dangerEncountersByActivityId, activityId);
         public WorkDetailConfigDto GetWorkDetails(string activityId) => GetSingle(_workDetailsByActivityId, activityId, "Activities/workDetails");
         public OrderDetailConfigDto GetOrderDetails(string activityId) => GetSingle(_orderDetailsByActivityId, activityId, "Activities/orderDetails");
         public ExploreDetailConfigDto GetExploreDetails(string activityId) => GetSingle(_exploreDetailsByActivityId, activityId, "Activities/exploreDetails");
         public EventDetailConfigDto GetEventDetails(string activityId) => GetSingle(_eventDetailsByActivityId, activityId, "Activities/eventDetails");
         public CombatDetailConfigDto GetCombatDetails(string activityId) => GetSingle(_combatDetailsByActivityId, activityId, "Activities/combatDetails");
         public QuestConfigDto GetQuest(string questId) => GetSingle(_questsById, questId, "Activities/quests");
+        public DangerEncounterConfigDto GetDangerEncounter(string dangerEncounterId) => GetSingle(_dangerEncountersById, dangerEncounterId, "Activities/dangerEncounters");
 
         public bool TryGetWorkDetails(string activityId, out WorkDetailConfigDto details) => TryGetSingle(_workDetailsByActivityId, activityId, out details);
         public bool TryGetOrderDetails(string activityId, out OrderDetailConfigDto details) => TryGetSingle(_orderDetailsByActivityId, activityId, out details);
@@ -300,6 +324,7 @@ namespace GuildIdle.Configs
         public bool TryGetEventDetails(string activityId, out EventDetailConfigDto details) => TryGetSingle(_eventDetailsByActivityId, activityId, out details);
         public bool TryGetCombatDetails(string activityId, out CombatDetailConfigDto details) => TryGetSingle(_combatDetailsByActivityId, activityId, out details);
         public bool TryGetQuest(string questId, out QuestConfigDto quest) => TryGetSingle(_questsById, questId, out quest);
+        public bool TryGetDangerEncounter(string dangerEncounterId, out DangerEncounterConfigDto encounter) => TryGetSingle(_dangerEncountersById, dangerEncounterId, out encounter);
 
         private static T[] GetGroup<T>(Dictionary<string, List<T>> index, string id)
         {
@@ -419,7 +444,7 @@ namespace GuildIdle.Configs
     public sealed class EnemiesConfigRepository
     {
         private readonly Dictionary<string, EnemyConfigDto> _enemiesById = ItemsConfigRepository.NewIndex<EnemyConfigDto>();
-        private readonly Dictionary<string, EnemyGroupConfigDto> _enemyGroupsById = ItemsConfigRepository.NewIndex<EnemyGroupConfigDto>();
+        private readonly Dictionary<string, List<EnemyGroupConfigDto>> _enemyGroupsById = new Dictionary<string, List<EnemyGroupConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<EnemyLootConfigDto>> _enemyLootByGroupId = new Dictionary<string, List<EnemyLootConfigDto>>(StringComparer.Ordinal);
 
         public EnemyConfigDto[] Enemies { get; }
@@ -445,7 +470,7 @@ namespace GuildIdle.Configs
             foreach (var enemy in Enemies)
                 ItemsConfigRepository.AddUnique(_enemiesById, enemy.enemyId, enemy, "Enemies/enemies");
             foreach (var group in EnemyGroups)
-                ItemsConfigRepository.AddUnique(_enemyGroupsById, group.enemyGroupId, group, "Enemies/enemyGroups");
+                ItemsConfigRepository.AddGrouped(_enemyGroupsById, group.enemyGroupId, group);
             foreach (var loot in EnemyLoot)
                 ItemsConfigRepository.AddGrouped(_enemyLootByGroupId, loot.lootGroupId, loot);
         }
@@ -465,19 +490,23 @@ namespace GuildIdle.Configs
             return !string.IsNullOrWhiteSpace(id) && _enemiesById.TryGetValue(id, out enemy);
         }
 
-        public EnemyGroupConfigDto GetGroup(string enemyGroupId)
+        public EnemyGroupConfigDto[] GetGroup(string enemyGroupId)
         {
             if (TryGetGroup(enemyGroupId, out var group))
                 return group;
 
             ItemsConfigRepository.LogMissing("Enemies/enemyGroups", enemyGroupId);
-            return null;
+            return Array.Empty<EnemyGroupConfigDto>();
         }
 
-        public bool TryGetGroup(string enemyGroupId, out EnemyGroupConfigDto group)
+        public bool TryGetGroup(string enemyGroupId, out EnemyGroupConfigDto[] group)
         {
-            group = null;
-            return !string.IsNullOrWhiteSpace(enemyGroupId) && _enemyGroupsById.TryGetValue(enemyGroupId, out group);
+            group = Array.Empty<EnemyGroupConfigDto>();
+            if (string.IsNullOrWhiteSpace(enemyGroupId) || !_enemyGroupsById.TryGetValue(enemyGroupId, out var entries))
+                return false;
+
+            group = entries.OrderBy(entry => entry.sortOrder).ToArray();
+            return true;
         }
 
         public EnemyLootConfigDto[] GetEnemyLoot(string lootGroupId)
@@ -491,38 +520,38 @@ namespace GuildIdle.Configs
 
     public sealed class FormulasConfigRepository
     {
-        private readonly Dictionary<string, HeroDerivedStatConfigDto> _heroDerivedStatsByFormulaId = ItemsConfigRepository.NewIndex<HeroDerivedStatConfigDto>();
+        private readonly Dictionary<string, FormulaConfigDto> _formulasById = ItemsConfigRepository.NewIndex<FormulaConfigDto>();
         private readonly Dictionary<string, List<SkillStatWeightConfigDto>> _skillWeightsByProfileId = new Dictionary<string, List<SkillStatWeightConfigDto>>(StringComparer.Ordinal);
 
-        public HeroDerivedStatConfigDto[] HeroDerivedStats { get; }
+        public FormulaConfigDto[] Formulas { get; }
         public SkillStatWeightConfigDto[] SkillStatWeights { get; }
-        public int Count => HeroDerivedStats.Length + SkillStatWeights.Length;
+        public int Count => Formulas.Length + SkillStatWeights.Length;
 
         public FormulasConfigRepository(FormulaRuntimeConfigDto dto)
         {
             dto ??= new FormulaRuntimeConfigDto();
-            HeroDerivedStats = dto.heroDerivedStats ?? Array.Empty<HeroDerivedStatConfigDto>();
+            Formulas = dto.formulas ?? Array.Empty<FormulaConfigDto>();
             SkillStatWeights = dto.skillStatWeights ?? Array.Empty<SkillStatWeightConfigDto>();
 
-            foreach (var formula in HeroDerivedStats)
-                ItemsConfigRepository.AddUnique(_heroDerivedStatsByFormulaId, formula.formulaId, formula, "Formulas/heroDerivedStats");
+            foreach (var formula in Formulas)
+                ItemsConfigRepository.AddUnique(_formulasById, formula.formulaId, formula, "Formulas/formulas");
             foreach (var weight in SkillStatWeights)
                 ItemsConfigRepository.AddGrouped(_skillWeightsByProfileId, weight.profileId, weight);
         }
 
-        public HeroDerivedStatConfigDto GetHeroDerivedStat(string formulaId)
+        public FormulaConfigDto GetFormula(string formulaId)
         {
-            if (TryGetHeroDerivedStat(formulaId, out var formula))
+            if (TryGetFormula(formulaId, out var formula))
                 return formula;
 
-            ItemsConfigRepository.LogMissing("Formulas/heroDerivedStats", formulaId);
+            ItemsConfigRepository.LogMissing("Formulas/formulas", formulaId);
             return null;
         }
 
-        public bool TryGetHeroDerivedStat(string formulaId, out HeroDerivedStatConfigDto formula)
+        public bool TryGetFormula(string formulaId, out FormulaConfigDto formula)
         {
             formula = null;
-            return !string.IsNullOrWhiteSpace(formulaId) && _heroDerivedStatsByFormulaId.TryGetValue(formulaId, out formula);
+            return !string.IsNullOrWhiteSpace(formulaId) && _formulasById.TryGetValue(formulaId, out formula);
         }
 
         public SkillStatWeightConfigDto[] GetSkillWeights(string profileId)
@@ -604,7 +633,6 @@ namespace GuildIdle.Configs
         public MapLocationConfigDto[] MapLocations { get; }
         public MapExplorationLevelConfigDto[] MapExplorationLevels { get; }
         public MapCellActivityConfigDto[] MapCellActivities { get; }
-        public DangerEncounterConfigDto[] DangerEncounters { get; }
         public EnumValueConfigDto[] EnumValues { get; }
         public int Count => MapCells.Length + MapLocations.Length;
 
@@ -615,7 +643,6 @@ namespace GuildIdle.Configs
             MapLocations = dto.mapLocations ?? Array.Empty<MapLocationConfigDto>();
             MapExplorationLevels = dto.mapExplorationLevels ?? Array.Empty<MapExplorationLevelConfigDto>();
             MapCellActivities = dto.mapCellActivities ?? Array.Empty<MapCellActivityConfigDto>();
-            DangerEncounters = dto.dangerEncounters ?? Array.Empty<DangerEncounterConfigDto>();
             EnumValues = dto.enumValues ?? Array.Empty<EnumValueConfigDto>();
 
             foreach (var cell in MapCells)

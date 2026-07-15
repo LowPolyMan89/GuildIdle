@@ -14,7 +14,6 @@ namespace GuildIdle.Editor.ConfigDownloader
         private const string GrowthMilestonesSheet = "HeroGrowthMilestones";
         private const string UniqueSkillsSheet = "HeroUniqueSkills";
         private const string SkillEffectsSheet = "HeroSkillEffects";
-        private const string DefaultSkillPointsFormulaId = "hero_skill_points_default";
         private const string PeriodicPlusMilestonesMode = "PeriodicPlusMilestones";
         private const string AddToProfileMode = "AddToProfile";
 
@@ -28,7 +27,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         private static readonly string[] GrowthProfileColumns =
         {
-            "GrowthProfileId", "MaxLevel", "SkillPointsFormulaId", "AddStrengthEvery",
+            "GrowthProfileId", "MaxLevel", "AddStrengthEvery",
             "AddAgilityEvery", "AddIntelligenceEvery", "AddLuckEvery", "AddEnduranceEvery",
             "GenerationMode"
         };
@@ -230,7 +229,6 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                     var growthProfileId = Get(sheet, rowIndex, headers, "GrowthProfileId");
                     ValidateRequired(GrowthProfilesSheet, rowIndex, "GrowthProfileId", growthProfileId);
-                    ValidateRequired(GrowthProfilesSheet, rowIndex, "SkillPointsFormulaId", Get(sheet, rowIndex, headers, "SkillPointsFormulaId"));
                     ValidateRequired(GrowthProfilesSheet, rowIndex, "GenerationMode", Get(sheet, rowIndex, headers, "GenerationMode"));
 
                     var generationMode = Get(sheet, rowIndex, headers, "GenerationMode");
@@ -240,19 +238,11 @@ namespace GuildIdle.Editor.ConfigDownloader
                         AddIssue(GrowthProfilesSheet, rowIndex + 1, "GenerationMode", generationMode, $"Unsupported GenerationMode. Expected {PeriodicPlusMilestonesMode}.");
                     }
 
-                    var skillPointsFormulaId = Get(sheet, rowIndex, headers, "SkillPointsFormulaId");
-                    if (!string.IsNullOrWhiteSpace(skillPointsFormulaId) &&
-                        !string.Equals(skillPointsFormulaId, DefaultSkillPointsFormulaId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        AddIssue(GrowthProfilesSheet, rowIndex + 1, "SkillPointsFormulaId", skillPointsFormulaId, $"Unsupported SkillPointsFormulaId. Expected {DefaultSkillPointsFormulaId}.");
-                    }
-
                     var profile = new GrowthProfile
                     {
                         RowNumber = rowIndex + 1,
                         GrowthProfileId = growthProfileId,
                         MaxLevel = ParseMinInt(GrowthProfilesSheet, rowIndex, headers, "MaxLevel", 1),
-                        SkillPointsFormulaId = skillPointsFormulaId,
                         AddStrengthEvery = ParseOptionalPeriod(GrowthProfilesSheet, rowIndex, headers, "AddStrengthEvery"),
                         AddAgilityEvery = ParseOptionalPeriod(GrowthProfilesSheet, rowIndex, headers, "AddAgilityEvery"),
                         AddIntelligenceEvery = ParseOptionalPeriod(GrowthProfilesSheet, rowIndex, headers, "AddIntelligenceEvery"),
@@ -542,7 +532,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 {
                     HeroId = heroId,
                     Level = level,
-                    RequiredSkillPoints = CalculateRequiredSkillPoints(profile.SkillPointsFormulaId, level),
+                    RequiredSkillPoints = CalculateRequiredSkillPoints(level),
                     AddStrength = PeriodicAdd(level, profile.AddStrengthEvery),
                     AddAgility = PeriodicAdd(level, profile.AddAgilityEvery),
                     AddIntelligence = PeriodicAdd(level, profile.AddIntelligenceEvery),
@@ -563,12 +553,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                 growth.AddEndurance += milestone.AddEndurance;
             }
 
-            private static int CalculateRequiredSkillPoints(string formulaId, int level)
+            private static int CalculateRequiredSkillPoints(int level)
             {
-                if (string.Equals(formulaId, DefaultSkillPointsFormulaId, StringComparison.OrdinalIgnoreCase))
-                    return (level - 1) * 5;
-
-                return 0;
+                return (level - 1) * 5;
             }
 
             private static int PeriodicAdd(int level, int period)
@@ -847,7 +834,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             public int RowNumber;
             public string GrowthProfileId;
             public int MaxLevel;
-            public string SkillPointsFormulaId;
             public int AddStrengthEvery;
             public int AddAgilityEvery;
             public int AddIntelligenceEvery;

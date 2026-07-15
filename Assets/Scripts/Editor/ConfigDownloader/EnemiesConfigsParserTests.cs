@@ -39,7 +39,10 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"enemyGroups\""));
             Assert.That(runtimeJson, Does.Contain("\"enumValues\""));
             Assert.That(runtimeJson, Does.Contain("\"descriptionId\": \"enemy.rat.desc\""));
-            Assert.That(runtimeJson, Does.Contain("\"attackSpeed\": 1.2"));
+            Assert.That(runtimeJson, Does.Contain("\"attacksPerSecond\": 1.2"));
+            Assert.That(runtimeJson, Does.Contain("\"critDamageMultiplier\": 1.5"));
+            Assert.That(runtimeJson, Does.Contain("\"target\": \"enemy\""));
+            Assert.That(runtimeJson, Does.Contain("\"sortOrder\": 10"));
             Assert.That(runtimeJson, Does.Contain("\"combatExp\": 3"));
             Assert.That(runtimeJson, Does.Contain("\"combatAbilityIds\": [\"enemy_ability_bite\"]"));
             Assert.That(runtimeJson, Does.Not.Contain("README"));
@@ -51,10 +54,10 @@ namespace GuildIdle.Editor.ConfigDownloader
         public void BuildRuntimeJson_ExportsCombatAbilityIdsAsArray()
         {
             var download = CreateValidDownload();
-            FindSheet(download, "Enemies").rows[1].cells[17] = "enemy_ability_bite; enemy_ability_scratch";
+            FindSheet(download, "Enemies").rows[1].cells[18] = "enemy_ability_bite; enemy_ability_scratch";
             FindSheet(download, "Enemies").rows = Append(
                 FindSheet(download, "Enemies").rows,
-                Row("enemy_no_ability", "enemy.none.name", "enemy.none.desc", "icon_none", "battle_none", "animal", "1", "10", "1", "1", "1", "Melee", "Physical", "0", "0", "0", "0", "", "", "empty ability list"));
+                Row("enemy_no_ability", "enemy.none.name", "enemy.none.desc", "icon_none", "battle_none", "animal", "1", "10", "1", "1", "1", "Melee", "Physical", "0", "1.5", "0", "0", "0", "", "", "empty ability list"));
             FindSheet(download, "EnemyAbilities").rows = Append(
                 FindSheet(download, "EnemyAbilities").rows,
                 Row("enemy_ability_scratch", "ability.scratch.name", "OnAttackHit", "", "10", "ApplyStatus: poison_weak", "enemy", "1", "extra"));
@@ -89,7 +92,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             var download = CreateValidDownload();
             FindSheet(download, "Enemies").rows = Append(
                 FindSheet(download, "Enemies").rows,
-                Row("enemy_rat", "enemy.rat.name.dup", "enemy.rat.desc.dup", "icon_rat", "battle_rat", "animal", "1", "10", "1", "2", "1", "Melee", "Physical", "0", "0", "0", "0", "", "", "duplicate"));
+                Row("enemy_rat", "enemy.rat.name.dup", "enemy.rat.desc.dup", "icon_rat", "battle_rat", "animal", "1", "10", "1", "2", "1", "Melee", "Physical", "0", "1.5", "0", "0", "0", "", "", "duplicate"));
             FindSheet(download, "EnemyAbilities").rows = Append(
                 FindSheet(download, "EnemyAbilities").rows,
                 Row("enemy_ability_bite", "ability.dup.name", "OnAttackHit", "", "10", "ApplyStatus: poison_weak", "enemy", "1", "duplicate"));
@@ -98,7 +101,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Row("poison_weak", "status.dup.name", "poison", "5", "1", "1", "DamageOverTime", "Poison", "1", "", "", "duplicate"));
             FindSheet(download, "EnemyGroups").rows = Append(
                 FindSheet(download, "EnemyGroups").rows,
-                Row("enemy_group_rats", "enemy_rat:1", "1", "1", "1", "duplicate"));
+                Row("enemy_group_rats", "enemy_rat:1", "20", "1", "1", "1", "second group row"));
             FindSheet(download, "Enums").rows = Append(
                 FindSheet(download, "Enums").rows,
                 Row("enemy_type", "animal", "duplicate"));
@@ -111,7 +114,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(message, Does.Contain("Duplicate enemy id"));
             Assert.That(message, Does.Contain("Duplicate ability id"));
             Assert.That(message, Does.Contain("Duplicate status id"));
-            Assert.That(message, Does.Contain("Duplicate enemy_group_id"));
+            Assert.That(message, Does.Not.Contain("Duplicate enemy_group_id"));
             Assert.That(message, Does.Contain("Duplicate enum value in group 'enemy_type'."));
         }
 
@@ -120,8 +123,8 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             var download = CreateValidDownload();
             FindSheet(download, "EnemyGroups").rows[1].cells[1] = "missing_enemy:0";
-            FindSheet(download, "Enemies").rows[1].cells[17] = "missing_ability";
-            FindSheet(download, "Enemies").rows[1].cells[18] = "missing_loot_group";
+            FindSheet(download, "Enemies").rows[1].cells[18] = "missing_ability";
+            FindSheet(download, "Enemies").rows[1].cells[19] = "missing_loot_group";
             FindSheet(download, "EnemyLoot").rows[1].cells[1] = "missing_enemy";
             FindSheet(download, "EnemyAbilities").rows[1].cells[5] = "ApplyStatus: missing_status";
             WriteRaw(download);
@@ -144,9 +147,11 @@ namespace GuildIdle.Editor.ConfigDownloader
             FindSheet(download, "EnemyLoot").rows[1].cells[3] = "5";
             FindSheet(download, "EnemyLoot").rows[1].cells[4] = "2";
             FindSheet(download, "EnemyLoot").rows[1].cells[5] = "150";
-            FindSheet(download, "EnemyGroups").rows[1].cells[2] = "0";
+            FindSheet(download, "EnemyGroups").rows[1].cells[3] = "0";
             FindSheet(download, "Enemies").rows[1].cells[5] = "dragon";
             FindSheet(download, "Enemies").rows[1].cells[6] = "NaN";
+            FindSheet(download, "Enemies").rows[1].cells[10] = "0";
+            FindSheet(download, "Enemies").rows[1].cells[14] = "0";
             FindSheet(download, "EnemyAbilities").rows[1].cells[7] = "cooldown";
             WriteRaw(download);
 
@@ -160,6 +165,24 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(message, Does.Contain("Value is not listed in Enums group 'enemy_type'."));
             Assert.That(message, Does.Contain("Expected an integer number."));
             Assert.That(message, Does.Contain("Expected a number."));
+            Assert.That(message, Does.Contain("attacks_per_second must be greater than 0."));
+            Assert.That(message, Does.Contain("crit_damage_multiplier must be greater than 0."));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsNonFiniteApsAndCritMultiplier()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "Enemies").rows[1].cells[10] = "NaN";
+            FindSheet(download, "Enemies").rows[1].cells[14] = "Infinity";
+            WriteRaw(download);
+
+            var report = new EnemiesConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("Enemies row 2 column 'attacks_per_second' value 'NaN': Expected a number."));
+            Assert.That(message, Does.Contain("Enemies row 2 column 'crit_damage_multiplier' value 'Infinity': Expected a number."));
         }
 
         [Test]
@@ -186,6 +209,31 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
             Assert.That(ReadProjectFile(TestRuntimePath), Does.Contain("\"enemies\""));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_AllowsRepeatedGroupIdAndRepositoryReturnsStableSortedRows()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "EnemyGroups").rows = Append(
+                FindSheet(download, "EnemyGroups").rows,
+                Row("enemy_group_rats", "enemy_rat:1", "5", "40", "2", "4", "earlier"),
+                Row("enemy_group_rats", "enemy_rat:1", "10", "30", "3", "5", "same order"));
+            WriteRaw(download);
+
+            var report = new EnemiesConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+            var dto = JsonUtility.FromJson<GuildIdle.Configs.EnemiesRuntimeConfigDto>(runtimeJson);
+            var repository = new GuildIdle.Configs.EnemiesConfigRepository(dto);
+            var group = repository.GetGroup("enemy_group_rats");
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(group, Has.Length.EqualTo(3));
+            Assert.That(group[0].sortOrder, Is.EqualTo(5));
+            Assert.That(group[0].weight, Is.EqualTo(40));
+            Assert.That(group[0].minCount, Is.EqualTo(2));
+            Assert.That(group[0].maxCount, Is.EqualTo(4));
+            Assert.That(group[1].weight, Is.EqualTo(100));
+            Assert.That(group[2].weight, Is.EqualTo(30));
         }
 
         [Test]
@@ -239,8 +287,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                 sheets = new[]
                 {
                     Sheet("Enemies",
-                        Row("enemy_id", "name_id", "description_id", "icon_id", "battle_image_id", "enemy_type", "combat_exp", "hp", "damage_min", "damage_max", "attack_speed", "attack_range", "damage_type", "crit_chance_percent", "physical_resist_percent", "magic_resist_percent", "dodge_chance_percent", "combat_ability_ids", "loot_group_id", "notes"),
-                        Row("enemy_rat", "enemy.rat.name", "enemy.rat.desc", "icon_rat", "battle_rat", "animal", "3", "20", "1", "3", "1,2", "Melee", "Physical", "0", "0", "0", "2", "enemy_ability_bite", "loot_enemy_rat", "designer note")),
+                        Row("enemy_id", "name_id", "description_id", "icon_id", "battle_image_id", "enemy_type", "combat_exp", "hp", "damage_min", "damage_max", "attacks_per_second", "attack_range", "damage_type", "crit_chance_percent", "crit_damage_multiplier", "physical_resist_percent", "magic_resist_percent", "dodge_chance_percent", "combat_ability_ids", "loot_group_id", "notes"),
+                        Row("enemy_rat", "enemy.rat.name", "enemy.rat.desc", "icon_rat", "battle_rat", "animal", "3", "20", "1", "3", "1,2", "Melee", "Physical", "0", "1.5", "0", "0", "2", "enemy_ability_bite", "loot_enemy_rat", "designer note")),
                     Sheet("EnemyLevels",
                         Row("level", "hp_multiplier", "damage_multiplier", "combat_exp_multiplier", "loot_quantity_multiplier", "attack_speed_multiplier", "notes"),
                         Row("1", "1", "1", "1", "1", "1", "note")),
@@ -254,8 +302,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("status_id", "name_id", "type", "duration_sec", "tick_interval_sec", "max_stacks", "effect_type", "damage_type", "damage_value", "stat_id", "stat_modifier_value", "notes"),
                         Row("poison_weak", "status.poison.name", "poison", "10", "2", "5", "DamageOverTime", "Poison", "2", "", "", "note")),
                     Sheet("EnemyGroups",
-                        Row("enemy_group_id", "enemy_ref", "weight", "min_count", "max_count", "notes"),
-                        Row("enemy_group_rats", "enemy_rat:1", "100", "1", "3", "note")),
+                        Row("enemy_group_id", "enemy_ref", "sort_order", "weight", "min_count", "max_count", "notes"),
+                        Row("enemy_group_rats", "enemy_rat:1", "10", "100", "1", "3", "note")),
                     Sheet("Enums",
                         Row("enum_group", "value", "description"),
                         Row("enemy_type", "animal", "Animal enemies"),
@@ -279,7 +327,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 sheets = new[]
                 {
                     Sheet("CombatDetails",
-                        Row("activity_id", "enemy_group_id", "combat_mode", "intended_first_result", "completion_reward_rule", "notes"),
+                        Row("activity_id", "enemy_group_id", "combat_mode", "balance_intent", "completion_reward_rule", "notes"),
                         Row("combat_test", enemyGroupId, "Queue_1v1", "VictoryExpected", "ActivityRewards", "note"))
                 }
             };

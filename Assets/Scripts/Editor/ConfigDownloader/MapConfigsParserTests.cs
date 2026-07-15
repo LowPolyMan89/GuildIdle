@@ -33,14 +33,13 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"mapLocations\""));
             Assert.That(runtimeJson, Does.Contain("\"mapExplorationLevels\""));
             Assert.That(runtimeJson, Does.Contain("\"mapCellActivities\""));
-            Assert.That(runtimeJson, Does.Contain("\"dangerEncounters\""));
+            Assert.That(runtimeJson, Does.Not.Contain("\"dangerEncounters\""));
             Assert.That(runtimeJson, Does.Contain("\"enumValues\""));
             Assert.That(runtimeJson, Does.Contain("\"cellId\": \"cell_village_0_0\""));
             Assert.That(runtimeJson, Does.Contain("\"q\": 0"));
             Assert.That(runtimeJson, Does.Contain("\"explorationDifficulty\": 1.5"));
             Assert.That(runtimeJson, Does.Contain("\"isBlocking\": false"));
             Assert.That(runtimeJson, Does.Contain("\"visibleInWatchtower\": true"));
-            Assert.That(runtimeJson, Does.Contain("\"riskPercent\": 25"));
             Assert.That(runtimeJson, Does.Contain("\"visualMarkerId\": \"\""));
             Assert.That(runtimeJson, Does.Not.Contain("README"));
             Assert.That(runtimeJson, Does.Not.Contain("notes"));
@@ -77,7 +76,6 @@ namespace GuildIdle.Editor.ConfigDownloader
         public void BuildRuntimeJson_ReportsMissingSheetAndColumn()
         {
             var download = CreateValidDownload();
-            RemoveSheet(download, "DangerEncounters");
             RemoveHeader(FindSheet(download, "MapCells"), "terrain_type");
             WriteRaw(download);
 
@@ -85,7 +83,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             var message = report.ToDisplayMessage();
 
             Assert.That(report.Success, Is.False);
-            Assert.That(message, Does.Contain("DangerEncounters: Required sheet is missing."));
             Assert.That(message, Does.Contain("MapCells row 1 column 'terrain_type': Required column is missing."));
         }
 
@@ -99,9 +96,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             FindSheet(download, "MapLocations").rows = Append(
                 FindSheet(download, "MapLocations").rows,
                 Row("village", "map_location_dup_name_id", "Settlement", "1", "region_village", "cell_village_0_0", "TRUE", "duplicate"));
-            FindSheet(download, "DangerEncounters").rows = Append(
-                FindSheet(download, "DangerEncounters").rows,
-                Row("danger_hunt_rabbits", "hunt_rabbits", "25", "OnActivityComplete", "enemy_group_hunting_rabbits", "1", "3", "Queue_1v1", "ActivityLootToCombatBag", "CombatDefeatLootLoss25To50", "duplicate"));
             FindSheet(download, "MapEnums").rows = Append(
                 FindSheet(download, "MapEnums").rows,
                 Row("MapCellState", "Explored", "duplicate"));
@@ -113,7 +107,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(IssuesContain(report, "Duplicate cell_id"), Is.True, report.ToDisplayMessage());
             Assert.That(IssuesContain(report, "Duplicate q + r coordinate pair"), Is.True, report.ToDisplayMessage());
             Assert.That(IssuesContain(report, "Duplicate location_id"), Is.True, report.ToDisplayMessage());
-            Assert.That(IssuesContain(report, "Duplicate danger_encounter_id"), Is.True, report.ToDisplayMessage());
             Assert.That(IssuesContain(report, "Duplicate enum value in group 'MapCellState'."), Is.True, report.ToDisplayMessage());
         }
 
@@ -144,9 +137,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             FindSheet(download, "MapLocations").rows[1].cells[3] = "0";
             FindSheet(download, "MapExplorationLevels").rows[2].cells[1] = "40";
             FindSheet(download, "MapCellActivities").rows[1].cells[3] = "3";
-            FindSheet(download, "DangerEncounters").rows[1].cells[2] = "150";
-            FindSheet(download, "DangerEncounters").rows[1].cells[5] = "4";
-            FindSheet(download, "DangerEncounters").rows[1].cells[6] = "2";
             WriteRaw(download);
 
             var report = new MapConfigsParser().BuildRuntimeJson(CreateSource(), out _);
@@ -158,8 +148,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(IssuesContain(report, "tier must be greater than 0."), Is.True, report.ToDisplayMessage());
             Assert.That(IssuesContain(report, "points_required must not decrease as exploration_level increases."), Is.True, report.ToDisplayMessage());
             Assert.That(IssuesContain(report, "reveal_at_exploration_level does not exist in MapExplorationLevels.exploration_level."), Is.True, report.ToDisplayMessage());
-            Assert.That(IssuesContain(report, "risk_percent must be in range 0..100."), Is.True, report.ToDisplayMessage());
-            Assert.That(IssuesContain(report, "min_enemies must be <= max_enemies."), Is.True, report.ToDisplayMessage());
         }
 
         [Test]

@@ -28,15 +28,15 @@ namespace GuildIdle.Editor.ConfigDownloader
             ["Enemies"] = new[]
             {
                 "enemy_id", "name_id", "description_id", "icon_id", "battle_image_id", "enemy_type",
-                "combat_exp", "hp", "damage_min", "damage_max", "attack_speed", "attack_range", "damage_type",
-                "crit_chance_percent", "physical_resist_percent", "magic_resist_percent", "dodge_chance_percent",
+                "combat_exp", "hp", "damage_min", "damage_max", "attacks_per_second", "attack_range", "damage_type",
+                "crit_chance_percent", "crit_damage_multiplier", "physical_resist_percent", "magic_resist_percent", "dodge_chance_percent",
                 "combat_ability_ids", "loot_group_id", "notes"
             },
             ["EnemyLevels"] = new[] { "level", "hp_multiplier", "damage_multiplier", "combat_exp_multiplier", "loot_quantity_multiplier", "attack_speed_multiplier", "notes" },
             ["EnemyLoot"] = new[] { "loot_group_id", "enemy_id", "loot_id", "min_count", "max_count", "chance_percent", "quality_min", "quality_max", "notes" },
             ["EnemyAbilities"] = new[] { "ability_id", "name_id", "trigger", "conditions", "chance_percent", "effects", "target", "cooldown_sec", "notes" },
             ["CombatStatuses"] = new[] { "status_id", "name_id", "type", "duration_sec", "tick_interval_sec", "max_stacks", "effect_type", "damage_type", "damage_value", "stat_id", "stat_modifier_value", "notes" },
-            ["EnemyGroups"] = new[] { "enemy_group_id", "enemy_ref", "weight", "min_count", "max_count", "notes" },
+            ["EnemyGroups"] = new[] { "enemy_group_id", "enemy_ref", "sort_order", "weight", "min_count", "max_count", "notes" },
             ["Enums"] = new[] { "enum_group", "value", "description" }
         };
 
@@ -53,7 +53,8 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         private static readonly HashSet<string> RuntimeExcludedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "notes"
+            "notes",
+            "attack_speed"
         };
 
         private static readonly HashSet<string> IntegerFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -68,14 +69,16 @@ namespace GuildIdle.Editor.ConfigDownloader
             FieldKey("EnemyLoot", "quality_min"),
             FieldKey("EnemyLoot", "quality_max"),
             FieldKey("CombatStatuses", "max_stacks"),
+            FieldKey("EnemyGroups", "sort_order"),
             FieldKey("EnemyGroups", "min_count"),
             FieldKey("EnemyGroups", "max_count")
         };
 
         private static readonly HashSet<string> NumberFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            FieldKey("Enemies", "attack_speed"),
+            FieldKey("Enemies", "attacks_per_second"),
             FieldKey("Enemies", "crit_chance_percent"),
+            FieldKey("Enemies", "crit_damage_multiplier"),
             FieldKey("Enemies", "physical_resist_percent"),
             FieldKey("Enemies", "magic_resist_percent"),
             FieldKey("Enemies", "dodge_chance_percent"),
@@ -258,7 +261,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 CollectUniqueIds("Enemies", "enemy_id", _enemyIds, "enemy id");
                 CollectUniqueIds("EnemyAbilities", "ability_id", _abilityIds, "ability id");
                 CollectUniqueIds("CombatStatuses", "status_id", _statusIds, "status id");
-                CollectUniqueIds("EnemyGroups", "enemy_group_id", _enemyGroupIds, "enemy_group_id");
+                CollectGroupIds();
 
                 if (_tables.TryGetValue("EnemyLoot", out var lootTable) && lootTable.HasColumn("loot_group_id"))
                 {
@@ -358,6 +361,24 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
             }
 
+            private void CollectGroupIds()
+            {
+                if (!_tables.TryGetValue("EnemyGroups", out var table) || !table.HasColumn("enemy_group_id"))
+                    return;
+
+                foreach (var row in table.DataRows)
+                {
+                    var id = row.Get("enemy_group_id");
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        AddIssue("EnemyGroups", row.RowNumber, "enemy_group_id", id, "enemy_group_id is required.");
+                        continue;
+                    }
+
+                    _enemyGroupIds.Add(id);
+                }
+            }
+
             private void ValidateRequiredValues(ConfigSheetTable table, ConfigSheetDataRow row)
             {
                 foreach (var column in RequiredColumns[table.Name])
@@ -450,6 +471,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     AddIssue("Enemies", row.RowNumber, "loot_group_id", lootGroupId, "Referenced loot_group_id does not exist in EnemyLoot.loot_group_id.");
 
                 ValidateLessOrEqual(row, "damage_min", "damage_max");
+                ValidateGreaterThanZero(row, "attacks_per_second");
+                ValidateGreaterThanZero(row, "crit_damage_multiplier");
             }
 
             private void ValidateEnemyLootRow(ConfigSheetDataRow row)
@@ -530,6 +553,13 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 if (percent < 0 || percent > 100)
                     AddIssue(row.Table.Name, row.RowNumber, column, value, "Percent value must be in range 0..100.");
+            }
+
+            private void ValidateGreaterThanZero(ConfigSheetDataRow row, string column)
+            {
+                var value = row.Get(column);
+                if (ConfigPipelineUtilities.TryParseNumber(value, out var number) && number <= 0)
+                    AddIssue(row.Table.Name, row.RowNumber, column, value, $"{column} must be greater than 0.");
             }
 
             private void ValidateEnum(string sheetName, ConfigSheetDataRow row, string column, string value)

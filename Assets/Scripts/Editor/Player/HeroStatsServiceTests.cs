@@ -105,7 +105,7 @@ namespace GuildIdle.Editor.Player
         private static HeroStatsService CreateService(
             HeroGrowthConfigDto[] growth = null,
             SkillProgressionConfigDto[] progressions = null,
-            HeroDerivedStatConfigDto formula = null)
+            FormulaConfigDto formula = null)
         {
             return new HeroStatsService(new FakeHeroStatsConfigProvider(
                 growth ?? Array.Empty<HeroGrowthConfigDto>(),
@@ -128,12 +128,12 @@ namespace GuildIdle.Editor.Player
             };
         }
 
-        private static HeroDerivedStatConfigDto Formula(
+        private static FormulaConfigDto Formula(
             float baseValue,
             float primaryMultiplier = 0f,
             float levelMultiplier = 0f)
         {
-            return new HeroDerivedStatConfigDto
+            return new FormulaConfigDto
             {
                 formulaId = HeroStatsService.MaxFatigueFormulaId,
                 baseValue = baseValue,
@@ -147,12 +147,12 @@ namespace GuildIdle.Editor.Player
 
         private sealed class FakeHeroStatsConfigProvider : IHeroStatsConfigProvider
         {
-            private readonly HeroDerivedStatConfigDto _formula;
+            private readonly FormulaConfigDto _formula;
 
             public FakeHeroStatsConfigProvider(
                 HeroGrowthConfigDto[] growth,
                 SkillProgressionConfigDto[] progressions,
-                HeroDerivedStatConfigDto formula)
+                FormulaConfigDto formula)
             {
                 HeroGrowth = growth;
                 SkillProgression = progressions;
@@ -186,7 +186,7 @@ namespace GuildIdle.Editor.Player
                 return false;
             }
 
-            public bool TryGetHeroDerivedStat(string formulaId, out HeroDerivedStatConfigDto formula)
+            public bool TryGetFormula(string formulaId, out FormulaConfigDto formula)
             {
                 formula = _formula;
                 return formula != null &&

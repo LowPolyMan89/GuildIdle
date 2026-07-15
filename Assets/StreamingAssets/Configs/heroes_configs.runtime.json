@@ -1051,8 +1051,8 @@
     {
       "skillId": "will_to_live",
       "effectId": "will_to_live_prevent_death",
-      "trigger": "OnLethalDamageTaken",
-      "condition": "damage_would_kill=true",
+      "trigger": "OnHealthBelowZero",
+      "condition": "hp<0",
       "chancePercent": 25,
       "interval": 0,
       "effect": "PreventDeath",

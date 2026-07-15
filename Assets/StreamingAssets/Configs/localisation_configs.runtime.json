@@ -49,28 +49,16 @@
       "tr": "Loncanın ana para birimi. Eşya değildir ve depoda saklanmaz."
     },
     {
-      "id": "starter_hero_available_name_id",
-      "ru": "Стартовый Рен доступен",
-      "en": "Starting Ren Available",
-      "tr": "Başlangıç Reni Hazır"
-    },
-    {
-      "id": "starter_hero_available_description_id",
-      "ru": "Первый герой Рен доступен сразу, без призыва.",
-      "en": "The first hero, Ren, is available immediately without summoning.",
-      "tr": "İlk kahraman Ren, çağırma gerekmeden hemen hazırdır."
-    },
-    {
       "id": "combat_clear_hall_forest_name_id",
-      "ru": "Бой со стаей волков",
-      "en": "Fight the Wolf Pack",
-      "tr": "Kurt Sürüsüyle Savaş"
+      "ru": "Очистить Подлесок",
+      "en": "Clear the Underwood",
+      "tr": "Alt Ormanı Temizle"
     },
     {
       "id": "combat_clear_hall_forest_description_id",
-      "ru": "Первая попытка рассчитана на поражение. Подготовьте Жареное мясо кролика и вернитесь.",
-      "en": "The first attempt is expected to fail. Prepare Roasted Rabbit Meat and return.",
-      "tr": "İlk deneme yenilgi içindir."
+      "ru": "Одна группа: 4 тощих волка и Вожак. Неподготовленная попытка обычно заканчивается поражением; подготовьте Жареное мясо кролика и повторите бой.",
+      "en": "One group contains 4 Lean Wolves and the Wolf Leader. An unprepared attempt will usually fail; prepare Roasted Rabbit Meat and retry.",
+      "tr": "Grup 4 zayıf kurt ve Kurt Liderinden oluşur. Hazırlıksız deneme genellikle yenilgiyle biter; et hazırlayıp tekrar savaşın."
     },
     {
       "id": "work_pine_wood_name_id",
@@ -104,9 +92,9 @@
     },
     {
       "id": "hunt_rabbits_description_id",
-      "ru": "Охота в Подлеске: 1–2 Мяса кролика за 30 секунд, с риском опасной встречи.",
-      "en": "Hunt in the Underwood: 1–2 Rabbit Meat per 30 seconds, with danger risk.",
-      "tr": "Alt Orman'da tavşan avı."
+      "ru": "Охота в Подлеске: 1–2 Мяса кролика за 90 секунд, с риском опасной встречи.",
+      "en": "Hunt in the Underwood: 1–2 Rabbit Meat per 90 seconds, with danger risk.",
+      "tr": "Alt Orman'da 90 saniyede 1–2 Tavşan Eti avla; tehlikeli karşılaşma riski vardır."
     },
     {
       "id": "skill_gathering_name_id",
@@ -308,9 +296,9 @@
     },
     {
       "id": "enemy_lean_wolf_description",
-      "ru": "Голодный волк у разрушенного Холла.",
-      "en": "A hungry wolf near the ruined Hall.",
-      "tr": "Yıkık Hol yakınındaki aç kurt."
+      "ru": "Голодный волк из Подлеска.",
+      "en": "A hungry wolf from the Underwood.",
+      "tr": "Alt Orman'dan aç bir kurt."
     },
     {
       "id": "enemy_rabbit_name",
@@ -325,22 +313,16 @@
       "tr": "Av sırasında saldırabilen hızlı bir yaratık."
     },
     {
-      "id": "enemy_ability_bleeding_claws_name",
-      "ru": "Кровавые когти",
-      "en": "Bleeding Claws",
-      "tr": "Kanatan Pençeler"
-    },
-    {
       "id": "enemy_ability_intimidating_howl_name",
       "ru": "Пугающий вой",
       "en": "Intimidating Howl",
       "tr": "Korkutucu Uluma"
     },
     {
-      "id": "enemy_ability_quick_jump_name",
-      "ru": "Резкий прыжок",
-      "en": "Quick Jump",
-      "tr": "Hızlı Sıçrayış"
+      "id": "enemy_ability_bleeding_claws_name",
+      "ru": "Кровоточащие когти",
+      "en": "Bleeding Claws",
+      "tr": "Kanatan Pençeler"
     },
     {
       "id": "status_bleed_weak_name",
@@ -410,9 +392,9 @@
     },
     {
       "id": "hero_skill.reliable_hands.description",
-      "ru": "Каждый 5-й завершённый цикл сбора даёт 1 дополнительный базовый ресурс.",
-      "en": "Every 5th completed gathering cycle gives 1 extra base resource.",
-      "tr": "Tamamlanan her 5. toplama döngüsü 1 ek temel kaynak verir."
+      "ru": "Каждый 5-й завершённый цикл любой Gathering-активности Рена даёт 1 дополнительный базовый ресурс.",
+      "en": "Every 5th completed cycle of any Gathering activity performed by Ren gives 1 extra base resource.",
+      "tr": "Ren'in herhangi bir Gathering etkinliğinde tamamladığı her 5. döngü 1 ek temel kaynak verir."
     },
     {
       "id": "hero_skill.will_to_live.name",
@@ -422,9 +404,9 @@
     },
     {
       "id": "hero_skill.will_to_live.description",
-      "ru": "Имеет шанс пережить смертельный удар и продолжить бой.",
-      "en": "Has a chance to survive lethal damage and continue fighting.",
-      "tr": "Ölümcül hasardan kurtulup savaşa devam etme şansı vardır."
+      "ru": "Когда здоровье падает ниже 0, имеет 25% шанс пережить удар и остаться с 1 HP.",
+      "en": "When health falls below 0, has a 25% chance to survive the hit and remain at 1 HP.",
+      "tr": "Sağlık 0'ın altına düştüğünde darbeyi atlatıp 1 HP ile kalma şansı %25'tir."
     },
     {
       "id": "item.resource_stone.name",
@@ -451,18 +433,6 @@
       "tr": "Avdan çiğ et."
     },
     {
-      "id": "item.recipe_roasted_rabbit_meat.name",
-      "ru": "Рецепт: Жареное мясо кролика",
-      "en": "Recipe: Roasted Rabbit Meat",
-      "tr": "Tarif: Kızarmış Tavşan Eti"
-    },
-    {
-      "id": "item.recipe_roasted_rabbit_meat.description",
-      "ru": "Открывает готовку базового боевого расходника на Костре.",
-      "en": "Unlocks a basic combat consumable at the Campfire.",
-      "tr": "Temel savaş tüketimini açar."
-    },
-    {
       "id": "item.consumable_roasted_rabbit_meat.name",
       "ru": "Жареное мясо кролика",
       "en": "Roasted Rabbit Meat",
@@ -470,21 +440,9 @@
     },
     {
       "id": "item.consumable_roasted_rabbit_meat.description",
-      "ru": "Автоматически восстанавливает 25% здоровья. Не более 3 раз за бой.",
-      "en": "Automatically restores 25% health. Up to 3 uses per battle.",
-      "tr": "%25 sağlık yeniler."
-    },
-    {
-      "id": "combat_underwood_wolf_leader_name_id",
-      "ru": "Бой с Вожаком волков",
-      "en": "Fight the Wolf Leader",
-      "tr": "Kurt Lideriyle Savaş"
-    },
-    {
-      "id": "combat_underwood_wolf_leader_description_id",
-      "ru": "Победите Вожака и окончательно очистите Подлесок.",
-      "en": "Defeat the Wolf Leader and clear the Underwood.",
-      "tr": "Kurt Liderini yen."
+      "ru": "Автоматически восстанавливает 25 HP при здоровье 40% или ниже. Проверяется раз в секунду, перезарядка 5 секунд.",
+      "en": "Automatically restores 25 HP at 40% health or below. Checked once per second, 5-second cooldown.",
+      "tr": "Sağlık %40 veya altındayken otomatik olarak 25 HP yeniler. Saniyede bir kontrol edilir, 5 saniye bekleme süresi vardır."
     },
     {
       "id": "work_stone_name_id",
@@ -590,8 +548,8 @@
     },
     {
       "id": "quest_clear_underwood_description_id",
-      "ru": "Победите стаю и Вожака волков.",
-      "en": "Defeat the pack and the Wolf Leader.",
+      "ru": "Победите единую группу из 4 волков и Вожака.",
+      "en": "Defeat the single group of 4 wolves and the Wolf Leader.",
       "tr": "Kurtları yen."
     },
     {
@@ -602,9 +560,9 @@
     },
     {
       "id": "quest_prepare_for_wolves_description_id",
-      "ru": "Постройте Костёр, добудьте 10 Мяса кролика и приготовьте 10 расходников.",
-      "en": "Build the Campfire, gather 10 Rabbit Meat, and cook 10 consumables.",
-      "tr": "10 et hazırla."
+      "ru": "Необязательная помощь после поражения: постройте Костёр, добудьте 10 Мяса кролика и приготовьте 10 расходников.",
+      "en": "Optional help after a defeat: build the Campfire, gather 10 Rabbit Meat, and cook 10 consumables.",
+      "tr": "Yenilgiden sonra isteğe bağlı yardım: Kamp Ateşi kur, 10 Tavşan Eti topla ve 10 tüketilebilir eşya pişir."
     },
     {
       "id": "quest_build_hut_step_collect_wood_id",
@@ -626,15 +584,9 @@
     },
     {
       "id": "quest_clear_underwood_step_defeat_pack_id",
-      "ru": "Победить стаю волков",
-      "en": "Defeat the wolf pack",
-      "tr": "Kurt sürüsünü yen"
-    },
-    {
-      "id": "quest_clear_underwood_step_defeat_boss_id",
-      "ru": "Победить Вожака волков",
-      "en": "Defeat the Wolf Leader",
-      "tr": "Kurt Liderini yen"
+      "ru": "Победить 4 волков и Вожака",
+      "en": "Defeat 4 wolves and the Wolf Leader",
+      "tr": "4 kurdu ve Kurt Liderini yen"
     },
     {
       "id": "quest_prepare_for_wolves_step_build_campfire_id",

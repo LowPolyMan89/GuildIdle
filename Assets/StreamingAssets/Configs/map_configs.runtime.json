@@ -28,20 +28,6 @@
   ],
   "mapExplorationLevels": [],
   "mapCellActivities": [],
-  "dangerEncounters": [
-    {
-      "dangerEncounterId": "danger_hunt_rabbits",
-      "activityId": "hunt_rabbits",
-      "riskPercent": 25,
-      "rollMoment": "OnActivityComplete",
-      "enemyGroupId": "enemy_group_hunting_rabbits",
-      "minEnemies": 1,
-      "maxEnemies": 3,
-      "combatMode": "Queue_1v1",
-      "lootSource": "ActivityLootToCombatBag",
-      "defeatLossRule": "CombatDefeatLootLoss25To50"
-    }
-  ],
   "enumValues": [
     {
       "enumGroup": "MapCellState",
@@ -74,24 +60,9 @@
       "description": "Обычная ресурсная точка."
     },
     {
-      "enumGroup": "LocationType",
-      "value": "DangerResourceNode",
-      "description": "Ресурсная точка с риском боя."
-    },
-    {
-      "enumGroup": "CombatMode",
-      "value": "Queue_1v1",
-      "description": "Случайная очередь врагов, текущий бой всегда 1 герой против 1 врага."
-    },
-    {
       "enumGroup": "MapAccessRule",
       "value": "RadiusFromOrigin",
       "description": "Доступность гексов считается кодом по радиусу от стартовой клетки 0,0. Уровень Дозорной башни задаёт радиус, а не хранится в каждой клетке."
-    },
-    {
-      "enumGroup": "LocationType",
-      "value": "DangerCombatNode",
-      "description": "Боевая точка на карте."
     },
     {
       "enumGroup": "TerrainType",
@@ -107,31 +78,6 @@
       "enumGroup": "TerrainType",
       "value": "Forest",
       "description": "Лесная клетка."
-    },
-    {
-      "enumGroup": "MapVisualMarker",
-      "value": "poi_gathering",
-      "description": "Маркер точки сбора ресурсов."
-    },
-    {
-      "enumGroup": "MapVisualMarker",
-      "value": "poi_combat",
-      "description": "Маркер боевой точки."
-    },
-    {
-      "enumGroup": "DangerRollMoment",
-      "value": "OnActivityComplete",
-      "description": "Риск опасной встречи роллится при завершении активности."
-    },
-    {
-      "enumGroup": "DangerLootSource",
-      "value": "ActivityLootToCombatBag",
-      "description": "Лут активности временно переносится в боевой мешок."
-    },
-    {
-      "enumGroup": "DangerDefeatLossRule",
-      "value": "CombatDefeatLootLoss25To50",
-      "description": "При поражении теряется 25–50% боевого мешка."
     }
   ]
 }

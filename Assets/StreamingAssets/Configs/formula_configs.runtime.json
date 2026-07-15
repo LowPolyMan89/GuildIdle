@@ -1,5 +1,5 @@
 {
-  "heroDerivedStats": [
+  "formulas": [
     {
       "formulaId": "hero_max_hp",
       "derivedStatId": "max_hp",
@@ -269,6 +269,60 @@
       "valueType": "percent",
       "rounding": "round_2",
       "enabled": true
+    },
+    {
+      "formulaId": "hero_fatigue_recovery_per_minute",
+      "derivedStatId": "fatigue_recovery_per_minute",
+      "formulaType": "constant",
+      "baseValue": 1,
+      "primaryStat": "",
+      "primaryStatMultiplier": 0,
+      "secondaryStat": "",
+      "secondaryStatMultiplier": 0,
+      "levelMultiplier": 0,
+      "weaponValueMode": "",
+      "minValue": 0,
+      "maxValue": 0,
+      "capValue": 0,
+      "valueType": "number",
+      "rounding": "floor",
+      "enabled": true
+    },
+    {
+      "formulaId": "construction_points_per_second",
+      "derivedStatId": "build_points_per_second",
+      "formulaType": "linear_stats_with_skill_level",
+      "baseValue": 0.5,
+      "primaryStat": "Intelligence",
+      "primaryStatMultiplier": 0.2,
+      "secondaryStat": "Strength",
+      "secondaryStatMultiplier": 0.1,
+      "levelMultiplier": 0.35,
+      "weaponValueMode": "",
+      "minValue": 0.1,
+      "maxValue": 0,
+      "capValue": 0,
+      "valueType": "number",
+      "rounding": "round_2",
+      "enabled": true
+    },
+    {
+      "formulaId": "hunting_danger_risk",
+      "derivedStatId": "danger_encounter_risk_percent",
+      "formulaType": "context_base_minus_stats_and_skill_level",
+      "baseValue": 0,
+      "primaryStat": "Agility",
+      "primaryStatMultiplier": 0.5,
+      "secondaryStat": "Luck",
+      "secondaryStatMultiplier": 0.5,
+      "levelMultiplier": 0.5,
+      "weaponValueMode": "",
+      "minValue": 5,
+      "maxValue": 0,
+      "capValue": 0,
+      "valueType": "percent",
+      "rounding": "round_2",
+      "enabled": true
     }
   ],
   "skillStatWeights": [
@@ -325,7 +379,7 @@
       "profileId": "profile_hunting",
       "skillId": "skill_hunting",
       "statId": "Agility",
-      "weight": 1,
+      "weight": 0.7,
       "enabled": true
     },
     {
@@ -368,6 +422,13 @@
       "skillId": "skill_combat",
       "statId": "Agility",
       "weight": 0.5,
+      "enabled": true
+    },
+    {
+      "profileId": "profile_hunting",
+      "skillId": "skill_hunting",
+      "statId": "Luck",
+      "weight": 0.3,
       "enabled": true
     }
   ]

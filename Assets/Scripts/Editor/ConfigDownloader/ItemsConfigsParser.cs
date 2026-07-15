@@ -14,6 +14,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         private const string EquipmentWeaponsSheet = "Снаряжение - оружие";
         private const string EquipmentArmorSheet = "Снаряжение - броня";
         private const string RecipesSheet = "Рецепты";
+        private const string CraftDefinitionsSheet = "CraftDefinitions";
         private const string ConsumablesSheet = "Расходники";
         private const string CurrenciesSheet = "Валюты";
         private const string ForbiddenLegacyItemId = "item_gold";
@@ -25,6 +26,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             EquipmentWeaponsSheet,
             EquipmentArmorSheet,
             RecipesSheet,
+            CraftDefinitionsSheet,
             ConsumablesSheet,
             CurrenciesSheet
         };
@@ -59,16 +61,26 @@ namespace GuildIdle.Editor.ConfigDownloader
             },
             [RecipesSheet] = new[]
             {
-                "id", "Название", "name_id", "description_id", "icon_id", "kind", "target_item_id",
-                "rarity_id", "craft_id", "craft_station_id", "craft_duration_sec", "craft_skill_id",
-                "required_buildings", "materials", "consume_on_craft", "hidden_until_recipe", "notes"
+                "id", "Название", "name_id", "description_id", "icon_id", "kind", "rarity_id",
+                "tier", "enabled", "notes"
+            },
+            [CraftDefinitionsSheet] = new[]
+            {
+                "craft_id", "target_item_id", "craft_station_id", "craft_duration_sec", "craft_skill_id",
+                "required_buildings", "materials", "required_recipe_item_id", "required_recipe_item_count",
+                "consume_recipe_item", "output_count", "enabled", "notes", "fatigue_cost", "skill_exp"
             },
             [ConsumablesSheet] = new[]
             {
                 "id", "Название", "name_id", "description_id", "icon_id", "kind", "rarity_id",
-                "use_place", "use_condition", "effects", "cooldown_seconds", "notes"
+                "use_place", "use_condition", "effects", "cooldown_seconds", "check_interval_seconds", "notes"
             },
             [CurrenciesSheet] = new[] { "currency_id", "icon_id", "name_id", "description_id", "notes" }
+        };
+
+        private static readonly HashSet<string> EquipmentSlots = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "helmet", "armor", "boots", "weapon", "offhand", "accessory"
         };
 
         public bool Supports(ConfigSourceSettings source)
@@ -142,7 +154,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly ConfigPipelineReport _report;
             private readonly Dictionary<string, ConfigSheetTable> _tables = new Dictionary<string, ConfigSheetTable>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _itemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            private readonly Dictionary<string, ItemProductionInfo> _itemProduction = new Dictionary<string, ItemProductionInfo>(StringComparer.OrdinalIgnoreCase);
+            private readonly HashSet<string> _enabledItemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            private readonly HashSet<string> _enabledRecipeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             public ItemsConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
             {
@@ -213,6 +226,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 CollectItemIds(EquipmentArmorSheet, globalSeen);
                 CollectItemIds(RecipesSheet, globalSeen);
                 CollectItemIds(ConsumablesSheet, globalSeen);
+                CollectCraftIds();
             }
 
             public void ValidateRows()
@@ -222,6 +236,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 ValidateItemSheet(EquipmentArmorSheet, "equipment");
                 ValidateItemSheet(RecipesSheet, "recipe");
                 ValidateItemSheet(ConsumablesSheet, "consumable");
+                ValidateCraftDefinitions();
                 ValidateCurrencies();
             }
 
@@ -232,10 +247,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ["resources"] = BuildRows(ResourcesSheet, BuildResourceRow),
                     ["equipmentWeapons"] = BuildRows(EquipmentWeaponsSheet, BuildEquipmentWeaponRow),
                     ["equipmentArmor"] = BuildRows(EquipmentArmorSheet, BuildEquipmentArmorRow),
-                    ["recipes"] = BuildRows(RecipesSheet, BuildRecipeRow),
+                    ["recipes"] = BuildEnabledRows(RecipesSheet, BuildRecipeRow),
+                    ["craftDefinitions"] = BuildEnabledRows(CraftDefinitionsSheet, BuildCraftDefinitionRow),
                     ["consumables"] = BuildRows(ConsumablesSheet, BuildConsumableRow),
-                    ["currencies"] = BuildRows(CurrenciesSheet, BuildCurrencyRow),
-                    ["itemActions"] = BuildItemActions()
+                    ["currencies"] = BuildRows(CurrenciesSheet, BuildCurrencyRow)
                 };
 
                 return arrays;
@@ -270,7 +285,37 @@ namespace GuildIdle.Editor.ConfigDownloader
                         globalSeen[id] = sheetName;
 
                     _itemIds.Add(id);
-                    _itemProduction[id] = new ItemProductionInfo(row.Get("source_activity_id"));
+
+                    var isRecipe = string.Equals(sheetName, RecipesSheet, StringComparison.OrdinalIgnoreCase);
+                    if (IsRuntimeEnabled(row))
+                    {
+                        _enabledItemIds.Add(id);
+                        if (isRecipe)
+                            _enabledRecipeIds.Add(id);
+                    }
+                }
+            }
+
+            private void CollectCraftIds()
+            {
+                if (!_tables.TryGetValue(CraftDefinitionsSheet, out var table) || !table.HasColumn("craft_id"))
+                    return;
+
+                var firstRows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in table.DataRows)
+                {
+                    var craftId = row.Get("craft_id");
+                    if (string.IsNullOrWhiteSpace(craftId))
+                    {
+                        AddIssue(CraftDefinitionsSheet, row.RowNumber, "craft_id", craftId, "craft_id is required.");
+                        continue;
+                    }
+
+                    if (firstRows.TryGetValue(craftId, out var firstRow))
+                        AddIssue(CraftDefinitionsSheet, row.RowNumber, "craft_id", craftId, $"Duplicate craft_id; first declared at row {firstRow}.");
+                    else
+                        firstRows[craftId] = row.RowNumber;
+
                 }
             }
 
@@ -322,12 +367,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (row.Table.HasColumn("visibility_item_id") && !string.IsNullOrWhiteSpace(row.Get("visibility_item_id")))
                     ValidateNumberGreaterThan(row, "visibility_item_count", 0, "visibility_item_count must be greater than 0 when visibility_item_id is set.");
 
-                if (CreatesItemAction(row))
-                {
-                    ValidateNumberGreaterThan(row, "output_count", 0, "output_count must be greater than 0 for generated itemActions.");
-                    ValidateNumberGreaterThan(row, "craft_duration_sec", 0, "craft_duration_sec must be greater than 0 for generated itemActions.");
-                    ValidateNumberGreaterThanOrEqual(row, "skill_exp", 0, "skill_exp must be greater than or equal to 0 for generated itemActions.");
-                }
             }
 
             private void ValidateTypedItemFields(ConfigSheetDataRow row)
@@ -338,17 +377,12 @@ namespace GuildIdle.Editor.ConfigDownloader
                         TryParseBool(row, column, required: false, out _);
                 }
 
-                foreach (var column in new[] { "consume_on_craft", "hidden_until_recipe" })
-                {
-                    if (row.Table.HasColumn(column))
-                        TryParseBool(row, column, required: true, out _);
-                }
-
                 foreach (var column in new[]
                          {
                              "tier", "craft_duration_sec", "visibility_item_count", "output_count", "skill_exp",
                              "weapon_damage_min", "weapon_damage_max", "weapon_attack_interval",
-                             "physical_resist_bonus", "magic_resist_bonus", "max_hp_bonus", "cooldown_seconds"
+                             "physical_resist_bonus", "magic_resist_bonus", "max_hp_bonus", "cooldown_seconds",
+                             "check_interval_seconds"
                          })
                 {
                     if (!row.Table.HasColumn(column))
@@ -370,9 +404,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private void ValidateWeapon(ConfigSheetDataRow row)
             {
                 ValidateRequired(row, "equipment_slot");
-                var equipmentSlot = row.Get("equipment_slot");
-                if (!string.IsNullOrWhiteSpace(equipmentSlot) && !string.Equals(equipmentSlot, "weapon", StringComparison.OrdinalIgnoreCase))
-                    AddIssue(EquipmentWeaponsSheet, row.RowNumber, "equipment_slot", equipmentSlot, "weapon rows must have equipment_slot = weapon.");
+                ValidateEquipmentSlot(row);
 
                 if (TryParseNumber(row, "weapon_damage_min", out var damageMin) &&
                     TryParseNumber(row, "weapon_damage_max", out var damageMax) &&
@@ -389,6 +421,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private void ValidateArmor(ConfigSheetDataRow row)
             {
                 ValidateRequired(row, "equipment_slot");
+                ValidateEquipmentSlot(row);
                 ValidateNumberGreaterThanOrEqual(row, "physical_resist_bonus", 0, "physical_resist_bonus must be greater than or equal to 0.");
                 ValidateNumberGreaterThanOrEqual(row, "magic_resist_bonus", 0, "magic_resist_bonus must be greater than or equal to 0.");
                 ValidateNumberGreaterThanOrEqual(row, "max_hp_bonus", 0, "max_hp_bonus must be greater than or equal to 0.");
@@ -396,21 +429,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private void ValidateRecipe(ConfigSheetDataRow row)
             {
-                ValidateRequired(row, "target_item_id");
-                ValidateRequired(row, "craft_id");
-                TryParseBool(row, "consume_on_craft", required: true, out _);
-                TryParseBool(row, "hidden_until_recipe", required: true, out _);
-
-                var targetItemId = row.Get("target_item_id");
-                var craftId = row.Get("craft_id");
-                if (!string.IsNullOrWhiteSpace(targetItemId) &&
-                    !string.IsNullOrWhiteSpace(craftId) &&
-                    _itemProduction.TryGetValue(targetItemId, out var production) &&
-                    !string.IsNullOrWhiteSpace(production.SourceActivityId) &&
-                    !string.Equals(production.SourceActivityId, craftId, StringComparison.OrdinalIgnoreCase))
-                {
-                    AddIssue(RecipesSheet, row.RowNumber, "craft_id", craftId, "craft_id must match source_activity_id of target_item_id when target item is described in Items Configs.");
-                }
+                TryParseBool(row, "enabled", required: true, out _);
             }
 
             private void ValidateConsumable(ConfigSheetDataRow row)
@@ -418,6 +437,80 @@ namespace GuildIdle.Editor.ConfigDownloader
                 ValidateRequired(row, "use_place");
                 ValidateRequired(row, "effects");
                 ValidateNumberGreaterThanOrEqual(row, "cooldown_seconds", 0, "cooldown_seconds must be greater than or equal to 0.");
+                ValidateNumberGreaterThan(row, "check_interval_seconds", 0, "check_interval_seconds must be greater than 0.");
+            }
+
+            private void ValidateEquipmentSlot(ConfigSheetDataRow row)
+            {
+                var slot = row.Get("equipment_slot");
+                if (!string.IsNullOrWhiteSpace(slot) && !EquipmentSlots.Contains(slot))
+                    AddIssue(row.Table.Name, row.RowNumber, "equipment_slot", slot, "equipment_slot is not a canonical equipment slot.");
+            }
+
+            private void ValidateCraftDefinitions()
+            {
+                if (!_tables.TryGetValue(CraftDefinitionsSheet, out var table))
+                    return;
+
+                foreach (var row in table.DataRows)
+                {
+                    foreach (var column in RequiredColumns[CraftDefinitionsSheet])
+                    {
+                        if (!string.Equals(column, "notes", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(column, "required_recipe_item_id", StringComparison.OrdinalIgnoreCase) &&
+                            string.IsNullOrWhiteSpace(row.Get(column)))
+                        {
+                            AddIssue(CraftDefinitionsSheet, row.RowNumber, column, row.Get(column), $"{column} is required.");
+                        }
+                    }
+
+                    foreach (var column in new[] { "consume_recipe_item", "enabled" })
+                        TryParseBool(row, column, required: true, out _);
+
+                    foreach (var column in new[] { "craft_duration_sec", "required_recipe_item_count", "output_count", "fatigue_cost", "skill_exp" })
+                    {
+                        var value = row.Get(column);
+                        if (!string.IsNullOrWhiteSpace(value) && !ConfigPipelineUtilities.TryParseNumber(value, out _))
+                            AddIssue(CraftDefinitionsSheet, row.RowNumber, column, value, "Expected a number.");
+                    }
+
+                    ValidateNumberGreaterThan(row, "craft_duration_sec", 0, "craft_duration_sec must be greater than 0.");
+                    ValidateNumberGreaterThan(row, "output_count", 0, "output_count must be greater than 0.");
+                    ValidateNumberGreaterThanOrEqual(row, "fatigue_cost", 0, "fatigue_cost must be greater than or equal to 0.");
+                    ValidateNumberGreaterThanOrEqual(row, "skill_exp", 0, "skill_exp must be greater than or equal to 0.");
+                    ValidatePackedRefs(row, "materials", "id", "count");
+                    ValidatePackedRefs(row, "required_buildings", "building_id", "level");
+
+                    // Disabled craft definitions are not exported. Their runtime references are
+                    // intentionally ignored, while their own shape and scalar fields remain validated.
+                    if (!IsRuntimeEnabled(row))
+                        continue;
+
+                    var targetItemId = row.Get("target_item_id");
+                    if (!string.IsNullOrWhiteSpace(targetItemId) && !_enabledItemIds.Contains(targetItemId))
+                        AddIssue(CraftDefinitionsSheet, row.RowNumber, "target_item_id", targetItemId, "Referenced target_item_id is not exported by Items Configs.");
+
+                    var recipeItemId = row.Get("required_recipe_item_id");
+                    if (string.IsNullOrWhiteSpace(recipeItemId))
+                    {
+                        if (GetBool(row, "consume_recipe_item"))
+                            AddIssue(CraftDefinitionsSheet, row.RowNumber, "consume_recipe_item", row.Get("consume_recipe_item"), "consume_recipe_item requires required_recipe_item_id.");
+                    }
+                    else
+                    {
+                        if (!_enabledRecipeIds.Contains(recipeItemId))
+                            AddIssue(CraftDefinitionsSheet, row.RowNumber, "required_recipe_item_id", recipeItemId, "Referenced required_recipe_item_id is not exported by enabled Recipes.id.");
+                        ValidateNumberGreaterThan(row, "required_recipe_item_count", 0, "required_recipe_item_count must be greater than 0 when required_recipe_item_id is set.");
+                    }
+                }
+            }
+
+            private static bool IsRuntimeEnabled(ConfigSheetDataRow row)
+            {
+                return !row.Table.HasColumn("enabled") ||
+                       string.Equals(row.Get("enabled"), "TRUE", StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(row.Get("enabled"), "true", StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(row.Get("enabled"), "1", StringComparison.OrdinalIgnoreCase);
             }
 
             private void ValidateCurrencies()
@@ -455,6 +548,21 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 foreach (var row in table.DataRows)
                     rows.Add(buildRow(row));
+
+                return rows;
+            }
+
+            private List<Dictionary<string, object>> BuildEnabledRows(string sheetName, Func<ConfigSheetDataRow, Dictionary<string, object>> buildRow)
+            {
+                var rows = new List<Dictionary<string, object>>();
+                if (!_tables.TryGetValue(sheetName, out var table))
+                    return rows;
+
+                foreach (var row in table.DataRows)
+                {
+                    if (GetBool(row, "enabled"))
+                        rows.Add(buildRow(row));
+                }
 
                 return rows;
             }
@@ -502,16 +610,29 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ["descriptionId"] = row.Get("description_id"),
                     ["iconId"] = row.Get("icon_id"),
                     ["kind"] = row.Get("kind"),
-                    ["targetItemId"] = row.Get("target_item_id"),
                     ["rarityId"] = row.Get("rarity_id"),
+                    ["tier"] = GetNumber(row, "tier"),
+                    ["enabled"] = GetBool(row, "enabled")
+                };
+            }
+
+            private Dictionary<string, object> BuildCraftDefinitionRow(ConfigSheetDataRow row)
+            {
+                return new Dictionary<string, object>(StringComparer.Ordinal)
+                {
                     ["craftId"] = row.Get("craft_id"),
+                    ["targetItemId"] = row.Get("target_item_id"),
                     ["craftStationId"] = row.Get("craft_station_id"),
                     ["craftDurationSec"] = GetNumber(row, "craft_duration_sec"),
                     ["craftSkillId"] = row.Get("craft_skill_id"),
                     ["requiredBuildings"] = ParseRequiredBuildings(row.Get("required_buildings")),
                     ["materials"] = ParseMaterials(row.Get("materials")),
-                    ["consumeOnCraft"] = GetBool(row, "consume_on_craft"),
-                    ["hiddenUntilRecipe"] = GetBool(row, "hidden_until_recipe")
+                    ["requiredRecipeItemId"] = row.Get("required_recipe_item_id"),
+                    ["requiredRecipeItemCount"] = GetNumber(row, "required_recipe_item_count"),
+                    ["consumeRecipeItem"] = GetBool(row, "consume_recipe_item"),
+                    ["outputCount"] = GetNumber(row, "output_count"),
+                    ["fatigueCost"] = GetNumber(row, "fatigue_cost"),
+                    ["skillExp"] = GetNumber(row, "skill_exp")
                 };
             }
 
@@ -528,7 +649,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ["usePlace"] = row.Get("use_place"),
                     ["useCondition"] = row.Get("use_condition"),
                     ["effects"] = SplitSemicolonList(row.Get("effects")),
-                    ["cooldownSeconds"] = GetNumber(row, "cooldown_seconds")
+                    ["cooldownSeconds"] = GetNumber(row, "cooldown_seconds"),
+                    ["checkIntervalSeconds"] = GetNumber(row, "check_interval_seconds")
                 };
             }
 
@@ -569,58 +691,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ["sourceActivityId"] = row.Get("source_activity_id"),
                     ["skillExp"] = GetNumber(row, "skill_exp")
                 };
-            }
-
-            private List<Dictionary<string, object>> BuildItemActions()
-            {
-                var actions = new List<Dictionary<string, object>>();
-                AddActionsFromSheet(actions, ResourcesSheet, "Process");
-                AddActionsFromSheet(actions, EquipmentWeaponsSheet, "Craft");
-                AddActionsFromSheet(actions, EquipmentArmorSheet, "Craft");
-                return actions;
-            }
-
-            private void AddActionsFromSheet(List<Dictionary<string, object>> actions, string sheetName, string type)
-            {
-                if (!_tables.TryGetValue(sheetName, out var table))
-                    return;
-
-                foreach (var row in table.DataRows)
-                {
-                    if (!CreatesItemAction(row))
-                        continue;
-
-                    actions.Add(new Dictionary<string, object>(StringComparer.Ordinal)
-                    {
-                        ["id"] = row.Get("source_activity_id"),
-                        ["type"] = type,
-                        ["outputItemId"] = row.Get("id"),
-                        ["outputCount"] = GetNumber(row, "output_count"),
-                        ["craftStationId"] = row.Get("craft_station_id"),
-                        ["durationSec"] = GetNumber(row, "craft_duration_sec"),
-                        ["skillId"] = row.Get("craft_skill_id"),
-                        ["skillExp"] = GetNumber(row, "skill_exp"),
-                        ["materials"] = ParseMaterials(row.Get("materials")),
-                        ["requiredBuildings"] = ParseRequiredBuildings(row.Get("required_buildings")),
-                        ["requiredSkills"] = ParseRequiredSkills(row.Get("required_skills")),
-                        ["visibilityItemId"] = row.Get("visibility_item_id"),
-                        ["visibilityItemCount"] = GetNumber(row, "visibility_item_count"),
-                        ["consumeVisibilityItem"] = GetBool(row, "consume_visibility_item"),
-                        ["hiddenUntilVisibilityItem"] = GetBool(row, "hidden_until_visibility_item")
-                    });
-                }
-            }
-
-            private bool CreatesItemAction(ConfigSheetDataRow row)
-            {
-                if (row == null || string.IsNullOrWhiteSpace(row.Get("source_activity_id")) || string.IsNullOrWhiteSpace(row.Get("craft_station_id")))
-                    return false;
-
-                if (string.Equals(row.Table.Name, ResourcesSheet, StringComparison.OrdinalIgnoreCase))
-                    return string.Equals(row.Get("subtype"), "processed", StringComparison.OrdinalIgnoreCase);
-
-                return string.Equals(row.Table.Name, EquipmentWeaponsSheet, StringComparison.OrdinalIgnoreCase) ||
-                       string.Equals(row.Table.Name, EquipmentArmorSheet, StringComparison.OrdinalIgnoreCase);
             }
 
             private void ValidatePackedRefs(ConfigSheetDataRow row, string column, string idName, string countName)
@@ -833,14 +903,5 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
         }
 
-        private readonly struct ItemProductionInfo
-        {
-            public string SourceActivityId { get; }
-
-            public ItemProductionInfo(string sourceActivityId)
-            {
-                SourceActivityId = sourceActivityId ?? string.Empty;
-            }
-        }
     }
 }

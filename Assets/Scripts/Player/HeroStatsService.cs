@@ -8,7 +8,7 @@ namespace GuildIdle.Player
         HeroGrowthConfigDto[] HeroGrowth { get; }
         SkillProgressionConfigDto[] SkillProgression { get; }
         bool TryGetHero(string heroId, out HeroConfigDto hero);
-        bool TryGetHeroDerivedStat(string formulaId, out HeroDerivedStatConfigDto formula);
+        bool TryGetFormula(string formulaId, out FormulaConfigDto formula);
     }
 
     public sealed class HeroStatsService
@@ -58,7 +58,7 @@ namespace GuildIdle.Player
 
         public int CalculateMaxFatigue(string heroId, int level)
         {
-            if (!_configs.TryGetHeroDerivedStat(MaxFatigueFormulaId, out var formula) ||
+            if (!_configs.TryGetFormula(MaxFatigueFormulaId, out var formula) ||
                 formula == null ||
                 !formula.enabled)
             {

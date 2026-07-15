@@ -145,7 +145,7 @@ namespace GuildIdle.Editor.Player
                 return false;
             }
 
-            public bool TryGetHeroDerivedStat(string formulaId, out HeroDerivedStatConfigDto formula)
+            public bool TryGetFormula(string formulaId, out FormulaConfigDto formula)
             {
                 formula = null;
                 return false;

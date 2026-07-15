@@ -39,6 +39,110 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void Validate_DangerAndBuildReferencesUseUniversalFormulaRegistry()
+        {
+            var valid = Collection(
+                Source("activity_configs", "Activity Configs", "activity-formulas.json", Download(
+                    Sheet("Activities", Row("id"), Row("hunt_rabbits")),
+                    Sheet("Skills", Row("skill_id"), Row("skill_construction")),
+                    Sheet("DangerEncounters", Row("danger_encounter_id", "activity_id", "enemy_group_id", "risk_formula_id"), Row("danger_rabbits", "hunt_rabbits", "enemy_group_rats", "formula_risk")))),
+                Source("enemies_configs", "Enemies Configs", "enemies-formulas.json", EnemiesDownload(string.Empty)),
+                Source("formula_configs", "Formula Configs", "formulas.json", Download(
+                    Sheet("HeroDerivedStats", Row("formula_id"), Row("formula_risk"), Row("formula_build")))),
+                Source("buildings_configs", "Buildings Configs", "buildings-formulas.json", Download(
+                    Sheet("Index", Row("building_id", "levels", "start_level", "clickable_requirement"), Row("building_hall", "1", "1", "")),
+                    Sheet("Hall", Row("building_id", "building_hall"), Row("level", "source_activity_id", "build_formula_id", "skill_id", "active_hero_limit"), Row("1", "build_hall", "formula_build", "skill_construction", "1")),
+                    Sheet("SettlementStages", Row("stage_id", "enabled"), Row("stage_2", "TRUE")))));
+
+            var validReport = ConfigCrossConfigValidator.Validate(valid);
+
+            Assert.That(validReport.Success, Is.True, validReport.ToDisplayMessage());
+
+            var invalid = Collection(
+                Source("activity_configs", "Activity Configs", "activity-formulas-invalid.json", Download(
+                    Sheet("Activities", Row("id"), Row("hunt_rabbits")),
+                    Sheet("Skills", Row("skill_id"), Row("skill_construction")),
+                    Sheet("DangerEncounters", Row("danger_encounter_id", "activity_id", "enemy_group_id", "risk_formula_id"), Row("danger_rabbits", "hunt_rabbits", "enemy_group_rats", "missing_risk")))),
+                Source("enemies_configs", "Enemies Configs", "enemies-formulas-invalid.json", EnemiesDownload(string.Empty)),
+                Source("formula_configs", "Formula Configs", "formulas-invalid.json", Download(
+                    Sheet("HeroDerivedStats", Row("formula_id"), Row("formula_risk"), Row("formula_build")))),
+                Source("buildings_configs", "Buildings Configs", "buildings-formulas-invalid.json", Download(
+                    Sheet("Index", Row("building_id", "levels", "start_level", "clickable_requirement"), Row("building_hall", "1", "1", "")),
+                    Sheet("Hall", Row("building_id", "building_hall"), Row("level", "source_activity_id", "build_formula_id", "skill_id", "active_hero_limit"), Row("1", "build_hall", "0", "skill_construction", "1")),
+                    Sheet("SettlementStages", Row("stage_id", "enabled"), Row("stage_2", "TRUE")))));
+
+            var invalidReport = ConfigCrossConfigValidator.Validate(invalid);
+            var message = invalidReport.ToDisplayMessage();
+
+            Assert.That(invalidReport.Success, Is.False);
+            Assert.That(message, Does.Contain("risk_formula_id").And.Contain("missing_risk"));
+            Assert.That(message, Does.Contain("Hall row 3 column 'build_formula_id' value '0'"));
+        }
+
+        [Test]
+        public void Validate_BuildingCraftablesUseCraftDefinitionRegistry()
+        {
+            var items = Source("items_configs", "Items Configs", "craft-items.json", Download(
+                Sheet("CraftDefinitions", Row("craft_id"), Row("craft_known"))));
+            var validBuildings = Source("buildings_configs", "Buildings Configs", "craft-buildings.json", Download(
+                Sheet("Index", Row("building_id", "levels", "start_level", "clickable_requirement"), Row("building_hall", "0", "0", "")),
+                Sheet("Hall", Row("building_id", "building_hall"), Row("level", "source_activity_id", "active_hero_limit"), Row("0", "", "1")),
+                Sheet("Craftables - Hall", Row("building_id", "building_level", "craft_id"), Row("building_hall", "0", "craft_known")),
+                Sheet("SettlementStages", Row("stage_id", "enabled"), Row("stage_2", "TRUE"))));
+
+            var validReport = ConfigCrossConfigValidator.Validate(Collection(items, validBuildings));
+            Assert.That(validReport.Success, Is.True, validReport.ToDisplayMessage());
+
+            var invalidBuildings = Source("buildings_configs", "Buildings Configs", "craft-buildings-invalid.json", Download(
+                Sheet("Index", Row("building_id", "levels", "start_level", "clickable_requirement"), Row("building_hall", "0", "0", "")),
+                Sheet("Hall", Row("building_id", "building_hall"), Row("level", "source_activity_id", "active_hero_limit"), Row("0", "", "1")),
+                Sheet("Craftables - Hall", Row("building_id", "building_level", "craft_id"), Row("building_hall", "0", "craft_missing")),
+                Sheet("SettlementStages", Row("stage_id", "enabled"), Row("stage_2", "TRUE"))));
+
+            var invalidReport = ConfigCrossConfigValidator.Validate(Collection(items, invalidBuildings));
+            Assert.That(invalidReport.Success, Is.False);
+            Assert.That(invalidReport.ToDisplayMessage(), Does.Contain("craft_id").And.Contain("CraftDefinitions.craft_id"));
+        }
+
+        [Test]
+        public void Validate_CraftReferencesResolveOnlyEnabledRuntimeItems()
+        {
+            const string staleRuntime = "{\"recipes\":[{\"id\":\"recipe_old\",\"kind\":\"recipe\"}]}";
+
+            var disabledRecipeReference = Collection(Source(
+                "items_configs",
+                "GuildIdle - Items Configs",
+                "items-disabled-recipe.json",
+                ItemsCraftReferenceDownload("resource_pine_wood", "recipe_old", "TRUE"),
+                staleRuntime));
+            var disabledRecipeReport = ConfigCrossConfigValidator.Validate(disabledRecipeReference);
+
+            Assert.That(disabledRecipeReport.Success, Is.False);
+            Assert.That(disabledRecipeReport.ToDisplayMessage(), Does.Contain("required_recipe_item_id").And.Contain("Recipes.id registry"));
+
+            var disabledTargetReference = Collection(Source(
+                "items_configs",
+                "GuildIdle - Items Configs",
+                "items-disabled-target.json",
+                ItemsCraftReferenceDownload("recipe_old", "", "TRUE"),
+                staleRuntime));
+            var disabledTargetReport = ConfigCrossConfigValidator.Validate(disabledTargetReference);
+
+            Assert.That(disabledTargetReport.Success, Is.False);
+            Assert.That(disabledTargetReport.ToDisplayMessage(), Does.Contain("target_item_id").And.Contain("item registry"));
+
+            var disabledCraft = Collection(Source(
+                "items_configs",
+                "GuildIdle - Items Configs",
+                "items-disabled-craft.json",
+                ItemsCraftReferenceDownload("resource_pine_wood", "recipe_old", "FALSE"),
+                staleRuntime));
+            var disabledCraftReport = ConfigCrossConfigValidator.Validate(disabledCraft);
+
+            Assert.That(disabledCraftReport.Success, Is.True, disabledCraftReport.ToDisplayMessage());
+        }
+
+        [Test]
         public void Validate_ActivityCombatDetailsReportsMissingEnemyGroupId()
         {
             var collection = Collection(
@@ -239,6 +343,29 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void Validate_ActivityEnemyAbilityAndStatusLocalisationReferences()
+        {
+            var collection = Collection(
+                Source("activity_configs", "Activity Configs", "localised-activity.json", Download(
+                    Sheet("Activities", Row("id", "name_id", "description_id"), Row("work_test", "activity.name", "activity.description")),
+                    Sheet("Rarities", Row("id", "name_id", "description_id"), Row("Common", "rarity.name", "rarity.description")),
+                    Sheet("Skills", Row("skill_id", "skill_name_id", "skill_description_id"), Row("skill_test", "skill.name", "skill.description")))),
+                Source("enemies_configs", "Enemies Configs", "localised-enemies.json", Download(
+                    Sheet("Enemies", Row("enemy_id", "name_id", "description_id"), Row("enemy_test", "enemy.name", "enemy.description")),
+                    Sheet("EnemyAbilities", Row("ability_id", "name_id"), Row("bleeding_claws", "ability.bleeding_claws.name")),
+                    Sheet("CombatStatuses", Row("status_id", "name_id"), Row("bleeding", "status.bleeding.name")))),
+                Source("localisation", "Localisation", "localisation-refs.json", LocalisationDownload(
+                    "activity.name", "activity.description", "rarity.name", "rarity.description", "skill.name", "skill.description",
+                    "enemy.name", "enemy.description", "status.bleeding.name")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("EnemyAbilities row 2 column 'name_id' value 'ability.bleeding_claws.name'"));
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Localisation.id"));
+        }
+
+        [Test]
         public void Validate_StorageBuildingsUsesBuildingsRegistry()
         {
             var collection = Collection(
@@ -248,6 +375,43 @@ namespace GuildIdle.Editor.ConfigDownloader
                     "warehouse.name", "warehouse.description",
                     "stage_arrival_name_id", "stage_arrival_description_id",
                     "stage_2_name_id", "stage_2_description_id")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+        }
+
+        [Test]
+        public void Validate_EmptyRecipesSheetStillDeclaresRecipeItemKind()
+        {
+            var collection = Collection(
+                Source("items_configs", "GuildIdle - Items Configs", "items-empty-recipes.json", Download(
+                    Sheet("Рецепты", Row("id", "kind")))),
+                Source("storage_configs", "GuildIdle - Storage Configs", "storage-recipe.json", Download(
+                    Sheet("StorageRules",
+                        Row("storage_rule_id", "item_kind", "mode"),
+                        Row("storage_recipe", "recipe", "stack")))));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+        }
+
+        [Test]
+        public void Validate_PlainBuildingActivityRequirementUsesActivityRegistry()
+        {
+            var collection = Collection(
+                Source("activity_configs", "GuildIdle - Activity Configs", "activity-requirement.json", Download(
+                    Sheet("Activities", Row("id"), Row("combat_clear_hall_forest")))),
+                Source("buildings_configs", "GuildIdle - Buildings Configs", "building-requirement.json", Download(
+                    Sheet("Index",
+                        Row("building_id", "levels", "start_level", "clickable_requirement"),
+                        Row("building_underwood", "1", "1", "")),
+                    Sheet("Underwood",
+                        Row("building_id", "building_underwood"),
+                        Row("level", "source_activity_id", "requirements_activities", "active_hero_limit"),
+                        Row("1", "combat_clear_hall_forest", "combat_clear_hall_forest", "")),
+                    Sheet("SettlementStages", Row("stage_id", "enabled"), Row("stage_2", "TRUE")))));
 
             var report = ConfigCrossConfigValidator.Validate(collection);
 
@@ -713,6 +877,31 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(hallLevel.activeHeroLimit, Is.EqualTo(1));
         }
 
+        [Test]
+        public void RuntimeRegressionChecksExecutableDtosAfterDeserialization()
+        {
+            var activitiesDto = JsonUtility.FromJson<ActivitiesRuntimeConfigDto>(
+                "{\"activities\":[{\"id\":\"work_safe\",\"notes\":\"starter_hero_available\"}]," +
+                "\"rewards\":[{\"activityId\":\"work_safe\",\"targetId\":\"resource_wood\"}]," +
+                "\"dangerEncounters\":[{\"dangerEncounterId\":\"danger_safe\",\"activityId\":\"work_safe\",\"enemyGroupId\":\"group_safe\",\"riskFormulaId\":\"formula_risk\"}]," +
+                "\"notes\":\"enemy_ability_quick_jump\"}");
+            var activities = new ActivitiesConfigRepository(activitiesDto);
+
+            var enemiesDto = JsonUtility.FromJson<EnemiesRuntimeConfigDto>(
+                "{\"enemies\":[{\"enemyId\":\"enemy_safe\",\"combatAbilityIds\":[\"enemy_ability_bite\"],\"notes\":\"enemy_ability_quick_jump\"}]," +
+                "\"enemyAbilities\":[{\"abilityId\":\"enemy_ability_bite\",\"notes\":\"enemy_ability_quick_jump\"}]}");
+
+            Assert.That(Array.Exists(activities.Activities, row => row.id == "starter_hero_available"), Is.False);
+            Assert.That(Array.Exists(activities.Rewards, row => row.activityId == "starter_hero_available"), Is.False);
+            Assert.That(activities.TryGetDangerEncounter("danger_safe", out var danger), Is.True);
+            Assert.That(danger.riskFormulaId, Is.EqualTo("formula_risk"));
+            Assert.That(Array.Exists(enemiesDto.enemies[0].combatAbilityIds, id => id == "enemy_ability_quick_jump"), Is.False);
+            Assert.That(Array.Exists(enemiesDto.enemyAbilities, row => row.abilityId == "enemy_ability_quick_jump"), Is.False);
+            Assert.That(typeof(MapRuntimeConfigDto).GetField("dangerEncounters"), Is.Null);
+            Assert.That(typeof(CombatDetailConfigDto).GetField("intendedFirstResult"), Is.Null);
+            Assert.That(typeof(RarityConfigDto).GetField("colorHex"), Is.Null);
+        }
+
         private static ConfigSourceSettingsCollection Collection(params ConfigSourceSettings[] sources)
         {
             return new ConfigSourceSettingsCollection { sources = sources };
@@ -741,7 +930,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             return Download(
                 Sheet("CombatDetails",
-                    Row("activity_id", "enemy_group_id", "combat_mode", "intended_first_result", "completion_reward_rule"),
+                    Row("activity_id", "enemy_group_id", "combat_mode", "balance_intent", "completion_reward_rule"),
                     Row("combat_test", enemyGroupId, "Queue_1v1", "VictoryExpected", "ActivityRewards")));
         }
 
@@ -954,7 +1143,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         private static ConfigSheetDownload ItemsCurrenciesDownload(string currencyId, string nameId, string descriptionId)
         {
             return Download(
-                Sheet("Р’Р°Р»СЋС‚С‹",
+                Sheet("Валюты",
                     Row("currency_id", "icon_id", "name_id", "description_id"),
                     Row(currencyId, "icon_gold", nameId, descriptionId)));
         }
@@ -962,9 +1151,23 @@ namespace GuildIdle.Editor.ConfigDownloader
         private static ConfigSheetDownload ItemsResourcesDownload(string resourceId, string nameId, string descriptionId)
         {
             return Download(
-                Sheet("Р РµСЃСѓСЂСЃС‹",
+                Sheet("Ресурсы",
                     Row("id", "name_id", "description_id", "icon_id", "kind", "rarity_id", "materials"),
                     Row(resourceId, nameId, descriptionId, "icon_resource", "resource", "", "")));
+        }
+
+        private static ConfigSheetDownload ItemsCraftReferenceDownload(string targetItemId, string requiredRecipeItemId, string craftEnabled)
+        {
+            return Download(
+                Sheet("Ресурсы",
+                    Row("id", "kind"),
+                    Row("resource_pine_wood", "resource")),
+                Sheet("Рецепты",
+                    Row("id", "kind", "enabled"),
+                    Row("recipe_old", "recipe", "FALSE")),
+                Sheet("CraftDefinitions",
+                    Row("craft_id", "target_item_id", "required_recipe_item_id", "enabled"),
+                    Row("craft_test", targetItemId, requiredRecipeItemId, craftEnabled)));
         }
 
         private static ConfigSheetDownload EmptyDownload()

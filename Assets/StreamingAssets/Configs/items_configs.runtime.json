@@ -93,7 +93,7 @@
       "hiddenUntilVisibilityItem": false,
       "outputCount": 1,
       "materials": [],
-      "sourceActivityId": "starter_hero_available",
+      "sourceActivityId": "",
       "skillExp": 0,
       "weaponDamageMin": 2,
       "weaponDamageMax": 4,
@@ -103,16 +103,11 @@
     }
   ],
   "equipmentArmor": [],
-  "recipes": [
+  "recipes": [],
+  "craftDefinitions": [
     {
-      "id": "recipe_roasted_rabbit_meat",
-      "nameId": "item.recipe_roasted_rabbit_meat.name",
-      "descriptionId": "item.recipe_roasted_rabbit_meat.description",
-      "iconId": "icon_recipe_roasted_rabbit_meat",
-      "kind": "recipe",
-      "targetItemId": "consumable_roasted_rabbit_meat",
-      "rarityId": "Common",
       "craftId": "cook_roasted_rabbit_meat",
+      "targetItemId": "consumable_roasted_rabbit_meat",
       "craftStationId": "building_campfire",
       "craftDurationSec": 10,
       "craftSkillId": "skill_crafting",
@@ -128,8 +123,12 @@
         "count": 1
       }
     ],
-      "consumeOnCraft": false,
-      "hiddenUntilRecipe": true
+      "requiredRecipeItemId": "",
+      "requiredRecipeItemCount": 0,
+      "consumeRecipeItem": false,
+      "outputCount": 1,
+      "fatigueCost": 1,
+      "skillExp": 2
     }
   ],
   "consumables": [
@@ -141,9 +140,10 @@
       "kind": "consumable",
       "rarityId": "Common",
       "usePlace": "combat",
-      "useCondition": "hp_percent<=40;max_uses_per_combat=3",
-      "effects": ["RestoreHealthPercent:25"],
-      "cooldownSeconds": 0
+      "useCondition": "hp_percent<=40",
+      "effects": ["RestoreHealthFlat:25"],
+      "cooldownSeconds": 5,
+      "checkIntervalSeconds": 1
     }
   ],
   "currencies": [
@@ -153,6 +153,5 @@
       "nameId": "gold_name_id",
       "descriptionId": "gold_description_id"
     }
-  ],
-  "itemActions": []
+  ]
 }

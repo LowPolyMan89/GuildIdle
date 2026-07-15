@@ -43,6 +43,16 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void RuntimeGrowthDtoDoesNotDeclareOrSerializeLegacyFormulaField()
+        {
+            var dto = new GuildIdle.Configs.HeroGrowthConfigDto { heroId = "aska", level = 1, requiredSkillPoints = 0 };
+            var json = JsonUtility.ToJson(dto);
+
+            Assert.That(typeof(GuildIdle.Configs.HeroGrowthConfigDto).GetField("skillPointsFormulaId"), Is.Null);
+            Assert.That(json, Does.Not.Contain("skillPointsFormulaId"));
+        }
+
+        [Test]
         public void BuildRuntimeJson_GeneratesGrowthFromProfileAndMilestones()
         {
             WriteRaw(CreateValidDownload());
@@ -218,9 +228,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("1", "aska", "TRUE", "Rare", "scout", "aska_agility_growth", "ranger|herbalist", "hero_aska_full", "hero_aska_icon", "hero_aska_battle", "hero.aska.name", "hero.aska.description", "2", "8", "2", "4", "4", "note"),
                         Row("2", "ren", "TRUE", "Common", "adventurer", "ren_worker_growth", "guild_apprentice", "hero_ren_full", "hero_ren_icon", "hero_ren_battle", "hero.ren.name", "hero.ren.description", "4", "2", "2", "2", "5", "note")),
                     Sheet("HeroGrowthProfiles",
-                        Row("GrowthProfileId", "MaxLevel", "SkillPointsFormulaId", "AddStrengthEvery", "AddAgilityEvery", "AddIntelligenceEvery", "AddLuckEvery", "AddEnduranceEvery", "GenerationMode", "Notes"),
-                        Row("aska_agility_growth", "10", "hero_skill_points_default", "0", "1", "0", "5", "0", "PeriodicPlusMilestones", "note"),
-                        Row("ren_worker_growth", "6", "hero_skill_points_default", "3", "0", "0", "0", "3", "PeriodicPlusMilestones", "note")),
+                        Row("GrowthProfileId", "MaxLevel", "AddStrengthEvery", "AddAgilityEvery", "AddIntelligenceEvery", "AddLuckEvery", "AddEnduranceEvery", "GenerationMode", "Notes"),
+                        Row("aska_agility_growth", "10", "0", "1", "0", "5", "0", "PeriodicPlusMilestones", "note"),
+                        Row("ren_worker_growth", "6", "3", "0", "0", "0", "3", "PeriodicPlusMilestones", "note")),
                     Sheet("HeroGrowthMilestones",
                         Row("GrowthProfileId", "Level", "ApplyMode", "RequiredSkillPointsOverride", "AddStrength", "AddAgility", "AddIntelligence", "AddLuck", "AddEndurance", "MilestoneId", "Comment"),
                         Row("aska_agility_growth", "10", "AddToProfile", "", "0", "0", "0", "1", "0", "aska_lvl_10", "comment"),

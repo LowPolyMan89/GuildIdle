@@ -42,6 +42,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Not.Contain("cells"));
             Assert.That(runtimeJson, Does.Contain("\"tier\": 1"));
             Assert.That(runtimeJson, Does.Contain("\"isRepeatable\": true"));
+            Assert.That(runtimeJson, Does.Contain("\"dangerEncounters\""));
+            Assert.That(runtimeJson, Does.Not.Contain("colorHex"));
         }
 
         [Test]
@@ -159,7 +161,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                 FindSheet(download, "EnumValues").rows,
                 Row("Order", "ActivityType", "Order", "Order type"),
                 Row("CombatOrder", "ActivityCategory", "CombatOrder", "Combat order category"),
-                Row("ProgressBar", "ProgressMode", "ProgressBar", "Progress bar mode"));
+                Row("ProgressBar", "ProgressMode", "ProgressBar", "Progress bar mode"),
+                Row("Queue", "CombatMode", "Queue_1v1", "Queue combat"));
             WriteRaw(download);
 
             var report = new ActivityConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
@@ -181,7 +184,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             FindSheet(download, "EnumValues").rows = Append(
                 FindSheet(download, "EnumValues").rows,
                 Row("Order", "ActivityType", "Order", "Order type"),
-                Row("ProgressBar", "ProgressMode", "ProgressBar", "Progress bar mode"));
+                Row("ProgressBar", "ProgressMode", "ProgressBar", "Progress bar mode"),
+                Row("Queue", "CombatMode", "Queue_1v1", "Queue combat"));
             WriteRaw(download);
 
             var report = new ActivityConfigsParser().BuildRuntimeJson(CreateSource(), out _);
@@ -285,6 +289,72 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(ReadProjectFile(TestRuntimePath), Does.Contain("\"activities\""));
         }
 
+        [TestCase("2026-07-15")]
+        [TestCase("31.12")]
+        public void BuildRuntimeJson_RejectsDateInRarityMultiplier(string dateValue)
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "Rarities").rows[1].cells[5] = dateValue;
+            WriteRaw(download);
+
+            var report = new ActivityConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Rarities row 2 column 'reward_mult'"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsNonFiniteRarityAndDangerNumbers()
+        {
+            var rarityDownload = CreateValidDownload();
+            FindSheet(rarityDownload, "Rarities").rows[1].cells[5] = "NaN";
+            WriteRaw(rarityDownload);
+
+            var rarityReport = new ActivityConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(rarityReport.Success, Is.False);
+            Assert.That(rarityReport.ToDisplayMessage(), Does.Contain("Rarities row 2 column 'reward_mult' value 'NaN': Expected a number."));
+
+            var dangerDownload = CreateValidDownload();
+            FindSheet(dangerDownload, "DangerEncounters").rows = Append(
+                FindSheet(dangerDownload, "DangerEncounters").rows,
+                Row("danger_test", "work_active", "Infinity", "OnComplete", "enemy_group_test", "Queue_1v1", "ActivityRewards", "NoLoss", "note", "risk_formula_test"));
+            FindSheet(dangerDownload, "EnumValues").rows = Append(
+                FindSheet(dangerDownload, "EnumValues").rows,
+                Row("Danger roll", "DangerRollMoment", "OnComplete", "On completion"),
+                Row("Combat", "CombatMode", "Queue_1v1", "Queue combat"),
+                Row("Loot", "DangerLootSource", "ActivityRewards", "Activity rewards"),
+                Row("Loss", "DangerDefeatLossRule", "NoLoss", "No loss"));
+            WriteRaw(dangerDownload);
+
+            var dangerReport = new ActivityConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(dangerReport.Success, Is.False);
+            Assert.That(dangerReport.ToDisplayMessage(), Does.Contain("DangerEncounters row 2 column 'risk_percent' value 'Infinity': Expected a number."));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_ExportsDangerEncounterFromActivityConfig()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "DangerEncounters").rows = Append(
+                FindSheet(download, "DangerEncounters").rows,
+                Row("danger_test", "work_active", "25", "OnComplete", "enemy_group_test", "Queue_1v1", "ActivityRewards", "NoLoss", "note", "risk_formula_test"));
+            FindSheet(download, "EnumValues").rows = Append(
+                FindSheet(download, "EnumValues").rows,
+                Row("Danger roll", "DangerRollMoment", "OnComplete", "On completion"),
+                Row("Combat", "CombatMode", "Queue_1v1", "Queue combat"),
+                Row("Loot", "DangerLootSource", "ActivityRewards", "Activity rewards"),
+                Row("Loss", "DangerDefeatLossRule", "NoLoss", "No loss"));
+            WriteRaw(download);
+
+            var report = new ActivityConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(runtimeJson, Does.Contain("\"dangerEncounterId\": \"danger_test\""));
+            Assert.That(runtimeJson, Does.Contain("\"riskFormulaId\": \"risk_formula_test\""));
+        }
+
         private static ConfigSourceSettings CreateSource()
         {
             return new ConfigSourceSettings
@@ -317,7 +387,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     Sheet("OrderDetails", Row("Название", "activity_id", "order_source", "reputation_id", "can_repeat", "repeat_cooldown_sec", "consume_requirements_on_start", "notes")),
                     Sheet("EventDetails", Row("Название", "activity_id", "event_kind", "discover_condition_id", "starts_combat", "encounter_id", "one_time", "hidden_until_discovered", "notes")),
                     Sheet("ExploreDetails", Row("Название", "activity_id", "unlock_location_id", "discovery_points_required", "danger_level", "notes")),
-                    Sheet("CombatDetails", Row("Название", "activity_id", "enemy_group_id", "combat_mode", "intended_first_result", "completion_reward_rule", "notes")),
+                    Sheet("CombatDetails", Row("Название", "activity_id", "enemy_group_id", "combat_mode", "balance_intent", "completion_reward_rule", "notes")),
                     Sheet("ActivityRequirements",
                         Row("Название", "activity_id", "req_type", "target_id", "value", "consume", "hidden", "check_moment", "notes"),
                         Row("Requirement", "work_active", "Resource", "resource_pine_wood", "1", "FALSE", "FALSE", "OnStart", "note")),
@@ -327,8 +397,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     Sheet("ActivityTriggers",
                         Row("Название", "activity_id", "trigger_moment", "trigger_type", "target_id", "value", "chance", "once_only", "notes")),
                     Sheet("Rarities",
-                        Row("Название", "id", "name_id", "description_id", "icon_id", "color_hex", "reward_mult", "duration_mult", "fatigue_mult", "weight", "notes"),
-                        Row("Common", "Common", "rarity.common.name", "rarity.common.desc", "icon_common", "#ffffff", "1", "1", "1", "100", "note")),
+                        Row("Название", "id", "name_id", "description_id", "icon_id", "reward_mult", "duration_mult", "fatigue_mult", "weight", "notes"),
+                        Row("Common", "Common", "rarity.common.name", "rarity.common.desc", "icon_common", "1", "1", "1", "100", "note")),
                     Sheet("Skills",
                         Row("Название", "skill_id", "skill_name_id", "skill_description_id", "skill_icon_id"),
                         Row("Gathering", "skill_gathering", "skill.gathering.name", "skill.gathering.desc", "icon_skill")),
@@ -363,6 +433,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("quest_disabled", "step_disabled", "10", "ResourceCount", "resource_pine_wood", "1", "quest.step.disabled", "TRUE", "note")),
                     Sheet("QuestRewards",
                         Row("quest_id", "reward_type", "target_id", "min", "max", "grant_moment", "notes")),
+                    Sheet("DangerEncounters",
+                        Row("danger_encounter_id", "activity_id", "risk_percent", "roll_moment", "enemy_group_id", "combat_mode", "loot_source", "defeat_loss_rule", "notes", "risk_formula_id")),
                     Sheet("README", Row("README"), Row("This sheet must not be emitted"))
                 }
             };

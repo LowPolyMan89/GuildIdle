@@ -48,7 +48,10 @@ namespace GuildIdle.Editor.ConfigDownloader
             "weapon_damage_linear_stat",
             "inverse_interval_stat",
             "linear_stat_capped",
-            "mixed_linear_stat_capped"
+            "mixed_linear_stat_capped",
+            "constant",
+            "linear_stats_with_skill_level",
+            "context_base_minus_stats_and_skill_level"
         };
 
         private static readonly HashSet<string> WeaponValueModes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -285,7 +288,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 return new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.Ordinal)
                 {
-                    ["heroDerivedStats"] = BuildHeroDerivedStats(),
+                    ["formulas"] = BuildHeroDerivedStats(),
                     ["skillStatWeights"] = BuildSkillStatWeights()
                 };
             }
@@ -389,6 +392,34 @@ namespace GuildIdle.Editor.ConfigDownloader
                 var formulaType = row.Get("formula_type");
                 if (string.IsNullOrWhiteSpace(formulaType) || !FormulaTypes.Contains(formulaType))
                     return;
+
+                if (string.Equals(formulaType, "constant", StringComparison.OrdinalIgnoreCase))
+                {
+                    RequireNumber(row, "base_value");
+                    return;
+                }
+
+                if (string.Equals(formulaType, "linear_stats_with_skill_level", StringComparison.OrdinalIgnoreCase))
+                {
+                    RequireNumber(row, "base_value");
+                    RequireString(row, "primary_stat");
+                    RequireNumber(row, "primary_stat_multiplier");
+                    RequireString(row, "secondary_stat");
+                    RequireNumber(row, "secondary_stat_multiplier");
+                    RequireNumber(row, "level_multiplier");
+                    return;
+                }
+
+                if (string.Equals(formulaType, "context_base_minus_stats_and_skill_level", StringComparison.OrdinalIgnoreCase))
+                {
+                    RequireString(row, "primary_stat");
+                    RequireNumber(row, "primary_stat_multiplier");
+                    RequireString(row, "secondary_stat");
+                    RequireNumber(row, "secondary_stat_multiplier");
+                    RequireNumber(row, "level_multiplier");
+                    RequireNumber(row, "min_value");
+                    return;
+                }
 
                 if (string.Equals(formulaType, "linear_stat_with_level", StringComparison.OrdinalIgnoreCase))
                 {
@@ -564,15 +595,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static bool TryParseFiniteNumber(string raw, out double value)
             {
-                if (ConfigPipelineUtilities.TryParseNumber(raw, out value) &&
-                    !double.IsNaN(value) &&
-                    !double.IsInfinity(value))
-                {
-                    return true;
-                }
-
-                value = 0d;
-                return false;
+                return ConfigPipelineUtilities.TryParseFiniteNumber(raw, out value);
             }
 
             private void AddIssue(string sheet, int row, string column, string value, string message)

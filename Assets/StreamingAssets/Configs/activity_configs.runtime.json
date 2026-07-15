@@ -1,23 +1,6 @@
 {
   "activities": [
     {
-      "id": "starter_hero_available",
-      "nameId": "starter_hero_available_name_id",
-      "descriptionId": "starter_hero_available_description_id",
-      "iconId": "icon_tavern",
-      "type": "Event",
-      "category": "Tutorial",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Trigger",
-      "durationSec": 0,
-      "cycleSec": 0,
-      "fatigueCost": 0,
-      "isRepeatable": false,
-      "offlineEnabled": false
-    },
-    {
       "id": "combat_clear_hall_forest",
       "nameId": "combat_clear_hall_forest_name_id",
       "descriptionId": "combat_clear_hall_forest_description_id",
@@ -48,7 +31,7 @@
       "locationId": "village",
       "progressMode": "Cycle",
       "durationSec": 0,
-      "cycleSec": 30,
+      "cycleSec": 90,
       "fatigueCost": 1,
       "mainSkillId": "skill_gathering",
       "isRepeatable": true,
@@ -67,7 +50,7 @@
       "locationId": "village",
       "progressMode": "Cycle",
       "durationSec": 0,
-      "cycleSec": 30,
+      "cycleSec": 90,
       "fatigueCost": 1,
       "mainSkillId": "skill_gathering",
       "isRepeatable": true,
@@ -86,31 +69,12 @@
       "locationId": "village",
       "progressMode": "Cycle",
       "durationSec": 0,
-      "cycleSec": 30,
+      "cycleSec": 90,
       "fatigueCost": 2,
       "mainSkillId": "skill_hunting",
       "isRepeatable": true,
       "offlineEnabled": true,
       "statProfileId": "profile_hunting"
-    },
-    {
-      "id": "combat_underwood_wolf_leader",
-      "nameId": "combat_underwood_wolf_leader_name_id",
-      "descriptionId": "combat_underwood_wolf_leader_description_id",
-      "iconId": "icon_combat_wolf_leader",
-      "type": "CombatTask",
-      "category": "Combat",
-      "rarityId": "Common",
-      "tier": 1,
-      "locationId": "village",
-      "progressMode": "Trigger",
-      "durationSec": 0,
-      "cycleSec": 0,
-      "fatigueCost": 5,
-      "mainSkillId": "skill_combat",
-      "isRepeatable": false,
-      "offlineEnabled": false,
-      "statProfileId": "profile_combat"
     }
   ],
   "workDetails": [
@@ -137,55 +101,20 @@
   "combatDetails": [
     {
       "activityId": "combat_clear_hall_forest",
-      "enemyGroupId": "enemy_group_underwood_first_wolves",
+      "enemyGroupId": "enemy_group_underwood_wolves",
       "combatMode": "Queue_1v1",
-      "intendedFirstResult": "FirstDefeatThenVictory",
-      "completionRewardRule": "ActivityRewards"
-    },
-    {
-      "activityId": "combat_underwood_wolf_leader",
-      "enemyGroupId": "enemy_group_underwood_wolf_leader",
-      "combatMode": "Queue_1v1",
-      "intendedFirstResult": "VictoryExpected",
+      "balanceIntent": "FirstDefeatThenVictory",
       "completionRewardRule": "ActivityRewards"
     }
   ],
-  "requirements": [
-    {
-      "activityId": "combat_underwood_wolf_leader",
-      "reqType": "ActivityCompleted",
-      "targetId": "combat_clear_hall_forest",
-      "value": 1,
-      "consume": false,
-      "hidden": false,
-      "checkMoment": "OnStart"
-    }
-  ],
+  "requirements": [],
   "rewards": [
-    {
-      "activityId": "starter_hero_available",
-      "rewardType": "Hero",
-      "targetId": "ren",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
-    },
-    {
-      "activityId": "starter_hero_available",
-      "rewardType": "Equipment",
-      "targetId": "item_wooden_club",
-      "min": 1,
-      "max": 1,
-      "chance": 100,
-      "grantMoment": "OnComplete"
-    },
     {
       "activityId": "combat_clear_hall_forest",
       "rewardType": "SkillExp",
       "targetId": "skill_combat",
-      "min": 15,
-      "max": 15,
+      "min": 40,
+      "max": 40,
       "chance": 100,
       "grantMoment": "OnComplete"
     },
@@ -242,35 +171,15 @@
       "max": 10,
       "chance": 100,
       "grantMoment": "OnCycle"
-    },
-    {
-      "activityId": "combat_underwood_wolf_leader",
-      "rewardType": "SkillExp",
-      "targetId": "skill_combat",
-      "min": 25,
-      "max": 25,
-      "chance": 100,
-      "grantMoment": "OnComplete"
     }
   ],
-  "triggers": [
-    {
-      "activityId": "combat_clear_hall_forest",
-      "triggerMoment": "OnFail",
-      "triggerType": "GiveItem",
-      "targetId": "recipe_roasted_rabbit_meat",
-      "value": 1,
-      "chance": 100,
-      "onceOnly": true
-    }
-  ],
+  "triggers": [],
   "rarities": [
     {
       "id": "Common",
       "nameId": "rarity.common.name",
       "descriptionId": "rarity.common.description",
       "iconId": "icon_rarity_common",
-      "colorHex": "#B8B8B8",
       "rewardMult": 1,
       "durationMult": 1,
       "fatigueMult": 1,
@@ -281,9 +190,8 @@
       "nameId": "rarity.uncommon.name",
       "descriptionId": "rarity.uncommon.description",
       "iconId": "icon_rarity_uncommon",
-      "colorHex": "#35C759",
       "rewardMult": 1.2,
-      "durationMult": 1.05,
+      "durationMult": 1.5,
       "fatigueMult": 1.1,
       "weight": 45
     },
@@ -292,7 +200,6 @@
       "nameId": "rarity.rare.name",
       "descriptionId": "rarity.rare.description",
       "iconId": "icon_rarity_rare",
-      "colorHex": "#3B82F6",
       "rewardMult": 1.6,
       "durationMult": 1.15,
       "fatigueMult": 1.25,
@@ -303,7 +210,6 @@
       "nameId": "rarity.epic.name",
       "descriptionId": "rarity.epic.description",
       "iconId": "icon_rarity_epic",
-      "colorHex": "#9B5CFF",
       "rewardMult": 2,
       "durationMult": 1.3,
       "fatigueMult": 1.4,
@@ -314,7 +220,6 @@
       "nameId": "rarity.legendary.name",
       "descriptionId": "rarity.legendary.description",
       "iconId": "icon_rarity_legendary",
-      "colorHex": "#F5B642",
       "rewardMult": 2.8,
       "durationMult": 1.5,
       "fatigueMult": 1.6,
@@ -927,7 +832,27 @@
     {
       "enumGroup": "IntendedFirstResult",
       "value": "FirstDefeatThenVictory",
-      "description": "Первая попытка рассчитана на поражение, повторная — на победу после подготовки."
+      "description": "Неподготовленная попытка обычно заканчивается поражением; после подготовки бой должен быть устойчиво проходимым. Runtime не форсирует исход."
+    },
+    {
+      "enumGroup": "DangerRollMoment",
+      "value": "OnActivityComplete",
+      "description": "Риск опасной встречи проверяется после завершения рабочего цикла."
+    },
+    {
+      "enumGroup": "DangerLootSource",
+      "value": "ActivityLootToCombatBag",
+      "description": "Награда рабочего цикла временно переносится в combat bag опасной встречи."
+    },
+    {
+      "enumGroup": "DangerDefeatLossRule",
+      "value": "CombatDefeatLootLoss25To50",
+      "description": "При поражении теряется случайный равномерный целый процент от 25 до 50 включительно."
+    },
+    {
+      "enumGroup": "CombatMode",
+      "value": "Queue_1v1",
+      "description": "Последовательная очередь врагов; герой сражается с одной целью за раз."
     }
   ],
   "quests": [
@@ -1007,22 +932,12 @@
     },
     {
       "questId": "quest_clear_underwood",
-      "stepId": "step_defeat_pack",
+      "stepId": "step_clear_underwood",
       "stepOrder": 10,
       "objectiveType": "ActivityCompleted",
       "targetId": "combat_clear_hall_forest",
       "targetValue": 1,
       "descriptionId": "quest_clear_underwood_step_defeat_pack_id",
-      "required": true
-    },
-    {
-      "questId": "quest_clear_underwood",
-      "stepId": "step_defeat_boss",
-      "stepOrder": 20,
-      "objectiveType": "ActivityCompleted",
-      "targetId": "combat_underwood_wolf_leader",
-      "targetValue": 1,
-      "descriptionId": "quest_clear_underwood_step_defeat_boss_id",
       "required": true
     },
     {
@@ -1056,5 +971,18 @@
       "required": true
     }
   ],
-  "questRewards": []
+  "questRewards": [],
+  "dangerEncounters": [
+    {
+      "dangerEncounterId": "danger_hunt_rabbits",
+      "activityId": "hunt_rabbits",
+      "riskPercent": 25,
+      "rollMoment": "OnActivityComplete",
+      "enemyGroupId": "enemy_group_hunting_rabbits",
+      "combatMode": "Queue_1v1",
+      "lootSource": "ActivityLootToCombatBag",
+      "defeatLossRule": "CombatDefeatLootLoss25To50",
+      "riskFormulaId": "hunting_danger_risk"
+    }
+  ]
 }

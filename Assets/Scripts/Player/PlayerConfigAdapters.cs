@@ -29,8 +29,8 @@ namespace GuildIdle.Player
         public HeroGrowthConfigDto[] HeroGrowth => _heroes.HeroGrowth;
         public SkillProgressionConfigDto[] SkillProgression => _activities.SkillsProgression;
         public bool TryGetHero(string heroId, out HeroConfigDto hero) => _heroes.TryGet(heroId, out hero);
-        public bool TryGetHeroDerivedStat(string formulaId, out HeroDerivedStatConfigDto formula) =>
-            _formulas.TryGetHeroDerivedStat(formulaId, out formula);
+        public bool TryGetFormula(string formulaId, out FormulaConfigDto formula) =>
+            _formulas.TryGetFormula(formulaId, out formula);
     }
 
     public sealed class RepositoryPlayerBootstrapConfigAdapter : IPlayerBootstrapConfigProvider

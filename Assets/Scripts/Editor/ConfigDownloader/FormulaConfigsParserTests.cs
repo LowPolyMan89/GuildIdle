@@ -29,7 +29,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             var report = new FormulaConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
-            Assert.That(runtimeJson, Does.Contain("\"heroDerivedStats\""));
+            Assert.That(runtimeJson, Does.Contain("\"formulas\""));
             Assert.That(runtimeJson, Does.Contain("\"skillStatWeights\""));
             Assert.That(runtimeJson, Does.Contain("\"formulaId\": \"hero_melee_damage_min\""));
             Assert.That(runtimeJson, Does.Contain("\"primaryStatMultiplier\": 0.4"));
@@ -39,6 +39,23 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Not.Contain("expression_preview"));
             Assert.That(runtimeJson, Does.Not.Contain("cells"));
             Assert.That(runtimeJson, Does.Not.Contain("Display name"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_DeserializesIntoUniversalFormulaRepository()
+        {
+            WriteRaw(CreateValidDownload());
+
+            var report = new FormulaConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+            var dto = JsonUtility.FromJson<GuildIdle.Configs.FormulaRuntimeConfigDto>(runtimeJson);
+            var repository = new GuildIdle.Configs.FormulasConfigRepository(dto);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(repository.Formulas, Is.Not.Empty);
+            Assert.That(repository.TryGetFormula("hero_melee_damage_min", out var formula), Is.True);
+            Assert.That(formula.formulaId, Is.EqualTo("hero_melee_damage_min"));
+            Assert.That(typeof(GuildIdle.Configs.FormulaRuntimeConfigDto).GetField("heroDerivedStats"), Is.Null);
+            Assert.That(typeof(GuildIdle.Configs.FormulasConfigRepository).GetMethod("GetHeroDerivedStat"), Is.Null);
         }
 
         [Test]
@@ -52,6 +69,25 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"primaryStatMultiplier\": 0.4"));
             Assert.That(runtimeJson, Does.Contain("\"weight\": 0.5"));
             Assert.That(runtimeJson, Does.Contain("\"baseValue\": 1.5"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_SupportsUniversalBuildAndRiskFormulaTypes()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "HeroDerivedStats").rows = Append(
+                FindSheet(download, "HeroDerivedStats").rows,
+                Row("formula_constant", "build_points", "Constant", "constant", "10", "", "", "", "", "", "", "0", "", "", "number", "floor", "TRUE", "note", "preview"),
+                Row("formula_build", "build_points", "Build", "linear_stats_with_skill_level", "10", "Strength", "1", "Agility", "0.5", "2", "", "0", "", "", "number", "floor", "TRUE", "note", "preview"),
+                Row("formula_risk", "risk_percent", "Risk", "context_base_minus_stats_and_skill_level", "", "Strength", "1", "Agility", "0.5", "2", "", "0", "", "", "percent", "floor", "TRUE", "note", "preview"));
+            WriteRaw(download);
+
+            var report = new FormulaConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(runtimeJson, Does.Contain("\"formulaType\": \"constant\""));
+            Assert.That(runtimeJson, Does.Contain("\"formulaType\": \"linear_stats_with_skill_level\""));
+            Assert.That(runtimeJson, Does.Contain("\"formulaType\": \"context_base_minus_stats_and_skill_level\""));
         }
 
         [Test]
@@ -130,7 +166,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             var report = new FormulaConfigsParser().ParseAndWrite(CreateSource());
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
-            Assert.That(ReadProjectFile(TestRuntimePath), Does.Contain("\"heroDerivedStats\""));
+            Assert.That(ReadProjectFile(TestRuntimePath), Does.Contain("\"formulas\""));
         }
 
         private static ConfigSourceSettings CreateSource()
