@@ -8,6 +8,8 @@ namespace GuildIdle.Activities
         GuildIdle.Player.IStorageService Storage { get; }
         GuildIdle.Player.SaveData CaptureCheckpoint();
         void RestoreCheckpoint(GuildIdle.Player.SaveData checkpoint);
+        bool TryGetOperationReceipt(string aggregateId, string operationId, out GuildIdle.Player.OperationReceiptSaveData receipt);
+        void RecordOperationReceipt(GuildIdle.Player.OperationReceiptSaveData receipt);
         bool HasHero(string heroId);
         bool AddHero(string heroId);
         bool HasHeroState(string heroId);

@@ -1745,6 +1745,7 @@ namespace GuildIdle.Player
                 materialsPaid = execution.materialsPaid,
                 accumulatedBuildPoints = Math.Max(0f, execution.accumulatedBuildPoints),
                 buildingLevelApplied = execution.buildingLevelApplied,
+                buildingEventPending = execution.buildingEventPending,
                 buildingEventPublished = execution.buildingEventPublished,
                 linkedCombat = CloneLinkedCombat(execution.linkedCombat),
                 pendingResultId = execution.pendingResultId,

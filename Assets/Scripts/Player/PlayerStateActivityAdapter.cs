@@ -17,6 +17,8 @@ namespace GuildIdle.Player
         public IStorageService Storage => _state.Storage;
         public SaveData CaptureCheckpoint() => _state.ToSaveData();
         public void RestoreCheckpoint(SaveData checkpoint) => _state.RestoreTransactional(checkpoint);
+        public bool TryGetOperationReceipt(string aggregateId, string operationId, out OperationReceiptSaveData receipt) => _state.TryGetOperationReceipt(aggregateId, operationId, out receipt);
+        public void RecordOperationReceipt(OperationReceiptSaveData receipt) => _state.RecordOperationReceipt(receipt);
         public bool HasHero(string heroId) => _state.HasHero(heroId);
         public bool AddHero(string heroId) => _state.AddHero(heroId);
         public bool HasHeroState(string heroId) => _state.HasHeroState(heroId);

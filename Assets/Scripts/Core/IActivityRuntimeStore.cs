@@ -40,6 +40,7 @@ namespace GuildIdle.Core
         public bool materialsPaid;
         public float accumulatedBuildPoints;
         public bool buildingLevelApplied;
+        public bool buildingEventPending;
         public bool buildingEventPublished;
         public LinkedCombatStartRequestSaveData linkedCombat;
         public string pendingResultId;

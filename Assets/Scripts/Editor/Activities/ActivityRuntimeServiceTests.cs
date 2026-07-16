@@ -330,6 +330,27 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void ReliableHandsTargetsBaseResourceInsteadOfFirstLootEntry()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new FixedRandom(1));
+            Assert.That(runtime.Start(WorkStart("test_multi_loot_work", "ren", 2)).success, Is.True);
+
+            Assert.That(runtime.Tick(20f).success, Is.True);
+            var bag = state.PendingResults.GetAll()[0];
+            long consumables = 0;
+            long resources = 0;
+            foreach (var entry in bag.entries)
+            {
+                if (entry.rewardType == "Consumable") consumables += entry.quantity;
+                if (entry.rewardType == "Resource") resources += entry.quantity;
+            }
+
+            Assert.That(consumables, Is.EqualTo(2));
+            Assert.That(resources, Is.EqualTo(3));
+        }
+
+        [Test]
         public void SaveLoadFinalizesStagedWorkCycleWithoutRecalculatingIt()
         {
             var state = NewState();
@@ -402,12 +423,23 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.IsHeroBusy("ren"), Is.True);
             Assert.That(state.GetActivityExecution(started.executionId), Is.Not.Null);
 
+            var beforeBind = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+            Assert.That(beforeBind.success, Is.False);
+            Assert.That(beforeBind.code, Is.EqualTo("CombatNotBound"));
             Assert.That(runtime.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
-            var resolved = runtime.ResolveLinkedCombatExecution(handoff.requestId);
+            var mismatch = runtime.ResolveLinkedCombatExecution(handoff.requestId, "other-combat");
+            Assert.That(mismatch.success, Is.False);
+            Assert.That(mismatch.code, Is.EqualTo("CombatExecutionMismatch"));
+            var resolved = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
             Assert.That(resolved.success, Is.True);
             Assert.That(resolved.completedActivityId, Is.EqualTo("hunt_rabbits"));
             Assert.That(state.IsHeroBusy("ren"), Is.False);
             Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            state = SaveService.Load(_factory, storage);
+            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var replay = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+            Assert.That(replay.success, Is.True);
+            Assert.That(replay.replayed, Is.True);
         }
 
         [Test]
@@ -446,11 +478,24 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.GetItem("resource_pine_wood"), Is.Zero);
             Assert.That(state.GetItem("resource_stone"), Is.Zero);
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(initialFatigue - 3));
+            var runningFatigue = state.GetHeroFatigue("test_builder_hero");
+            var duplicateRunning = runtime.Start(new ActivityStartRequest { activityId = "test_build_campfire", heroId = "test_builder_hero" });
+            Assert.That(duplicateRunning.success, Is.False);
+            Assert.That(HasIssue(duplicateRunning.issues, "ConstructionAlreadyRunning"), Is.True);
+            Assert.That(state.GetHeroFatigue("test_builder_hero"), Is.EqualTo(runningFatigue));
 
             runtime.Tick(1f);
             var beforePause = state.GetActivityExecution(started.executionId).accumulatedBuildPoints;
             Assert.That(runtime.PauseConstruction(started.executionId).success, Is.True);
             Assert.That(runtime.Cancel(started.executionId).success, Is.True);
+            var pausedFatigue = state.GetHeroFatigue("test_builder_hero");
+            var duplicateStart = runtime.Start(new ActivityStartRequest { activityId = "test_build_campfire", heroId = "test_builder_hero" });
+            Assert.That(duplicateStart.success, Is.False);
+            Assert.That(HasIssue(duplicateStart.issues, "ConstructionResumeRequired"), Is.True);
+            Assert.That(state.GetActivityExecutions(), Has.Length.EqualTo(1));
+            Assert.That(state.GetHeroFatigue("test_builder_hero"), Is.EqualTo(pausedFatigue));
+            Assert.That(state.GetItem("resource_pine_wood"), Is.Zero);
+            Assert.That(state.GetItem("resource_stone"), Is.Zero);
             var saveStorage = new MemorySaveStorage();
             Assert.That(SaveService.Save(state, saveStorage), Is.True);
             state = SaveService.Load(_factory, saveStorage);
@@ -470,6 +515,9 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.GetBuildingLevel("building_campfire"), Is.EqualTo(1));
             Assert.That(state.GetActivityExecution(started.executionId).status, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.ResultPending));
             Assert.That(state.GetActivityExecution(started.executionId).linkedCombat, Is.Null);
+            var duplicatePending = runtime.Start(new ActivityStartRequest { activityId = "test_build_campfire", heroId = "ren" });
+            Assert.That(duplicatePending.success, Is.False);
+            Assert.That(HasIssue(duplicatePending.issues, "ConstructionResultPending"), Is.True);
 
             var result = state.PendingResults.GetAll()[0];
             var claimed = state.PendingResults.ClaimAll("claim-build", result.resultId, result.revision, state.Storage.GetSnapshot().Revision);
@@ -558,6 +606,33 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.IsHeroBusy("ren"), Is.False);
         }
 
+        [Test]
+        public void PendingBuildingLevelEventIsReconciledExactlyOnce()
+        {
+            var state = NewState();
+            state.UnlockBuilding("building_campfire");
+            state.SetBuildingLevel("building_campfire", 0);
+            Assert.That(state.Storage.Add("outbox-wood", state.Storage.GetSnapshot().Revision, "resource_pine_wood", 2).Success, Is.True);
+            Assert.That(state.Storage.Add("outbox-stone", state.Storage.GetSnapshot().Revision, "resource_stone", 2).Success, Is.True);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(new ActivityStartRequest { activityId = "test_build_campfire", heroId = "ren" });
+            Assert.That(started.success, Is.True);
+            Assert.That(runtime.Tick(2f).success, Is.True);
+            Assert.That(state.GetActivityExecution(started.executionId).buildingEventPending, Is.True);
+            var storage = new MemorySaveStorage();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+
+            var delivered = new List<ActivityRuntimeEvent>();
+            _ = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), eventSink: delivered.Add);
+            _ = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), eventSink: delivered.Add);
+
+            Assert.That(delivered, Has.Count.EqualTo(1));
+            Assert.That(delivered[0].eventType, Is.EqualTo(ActivityRuntimeEventType.BuildingLevelChanged));
+            Assert.That(state.GetActivityExecution(started.executionId).buildingEventPending, Is.False);
+            Assert.That(state.GetActivityExecution(started.executionId).buildingEventPublished, Is.True);
+        }
+
         private PlayerState NewState()
         {
             var state = _factory.Create(new SaveData { currentStageId = "stage_arrival" });
@@ -593,6 +668,10 @@ namespace GuildIdle.Editor.Activities
                         new ResourceConfigDto { id = "resource_pine_wood", kind = "resource" },
                         new ResourceConfigDto { id = "resource_stone", kind = "resource" },
                         new ResourceConfigDto { id = "resource_rabbit_meat", kind = "resource" }
+                    },
+                    consumables = new[]
+                    {
+                        new ConsumableConfigDto { id = "test_work_consumable", kind = "consumable" }
                     },
                     currencies = new[]
                     {
@@ -633,6 +712,7 @@ namespace GuildIdle.Editor.Activities
                     activities = new[]
                     {
                         new ActivityConfigDto { id = "work_pine_wood", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 2, mainSkillId = "skill_gathering", isRepeatable = true },
+                        new ActivityConfigDto { id = "test_multi_loot_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "hunt_rabbits", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
                         new ActivityConfigDto { id = "empty_repeat", type = "Work", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_cycle", type = "Work", cycleSec = 5, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
@@ -653,6 +733,8 @@ namespace GuildIdle.Editor.Activities
                     {
                         Reward("work_pine_wood", "Resource", "resource_pine_wood", 1, "OnCycle"),
                         Reward("work_pine_wood", "SkillExp", "skill_gathering", 1, "OnCycle"),
+                        Reward("test_multi_loot_work", "Consumable", "test_work_consumable", 1, "OnCycle"),
+                        Reward("test_multi_loot_work", "Resource", "resource_pine_wood", 1, "OnCycle"),
                         Reward("hunt_rabbits", "Resource", "resource_rabbit_meat", 1, "OnCycle"),
                         Reward("hunt_rabbits", "SkillExp", "skill_hunting", 2, "OnCycle"),
                         Reward("bad_cycle", "Unsupported", "bad_reward", 1, "OnCycle"),
@@ -762,7 +844,8 @@ namespace GuildIdle.Editor.Activities
                 {
                     storageRules = new[]
                     {
-                        new StorageRuleConfigDto { storageRuleId = "storage_resource", itemKind = "resource", mode = "stack", maxStack = 100, occupiesSlot = true }
+                        new StorageRuleConfigDto { storageRuleId = "storage_resource", itemKind = "resource", mode = "stack", maxStack = 100, occupiesSlot = true },
+                        new StorageRuleConfigDto { storageRuleId = "storage_consumable", itemKind = "consumable", mode = "stack", maxStack = 20, occupiesSlot = true }
                     },
                     storageBuildings = new[]
                     {

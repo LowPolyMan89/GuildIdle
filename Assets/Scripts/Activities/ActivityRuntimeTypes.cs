@@ -81,7 +81,7 @@ namespace GuildIdle.Activities
     {
         LinkedCombatStartRequestSaveData[] GetPendingLinkedCombatStarts();
         LinkedCombatGatewayResult BindLinkedCombatExecution(string requestId, string combatExecutionId);
-        LinkedCombatGatewayResult ResolveLinkedCombatExecution(string requestId);
+        LinkedCombatGatewayResult ResolveLinkedCombatExecution(string requestId, string combatExecutionId);
     }
 
     public sealed class FormulaEvaluationContext
