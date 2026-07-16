@@ -143,6 +143,48 @@ namespace GuildIdle.Editor.Player
             }
         }
 
+        [Test]
+        public void ProductionLinkedCombatCompletionUsesCoordinatedProgressionOnly()
+        {
+            var database = CreateConstructionProgressionDatabase();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
+            state.AddHero("ren");
+            var progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(state);
+            progression.Handle(new NewGame());
+            var updateCount = 0;
+            progression.Updated += _ => updateCount++;
+            SetPlayerRuntime(state, progression);
+
+            try
+            {
+                var runtime = PlayerRuntimeComposition.CreateRuntimeService();
+                var started = runtime.Start(new ActivityStartRequest { activityId = "hunt_rabbits", heroId = "ren", plannedCycleCount = 3 });
+                var ticked = runtime.Tick(20f);
+                var handoff = runtime.GetPendingLinkedCombatStarts()[0];
+                var bag = state.PendingResults.GetAll()[0];
+
+                Assert.That(started.success, Is.True);
+                Assert.That(ticked.success, Is.True);
+                Assert.That(runtime.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+                Assert.That(state.PendingResults.ClaimAll("production-linked-bag", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision).Success, Is.True);
+                var resolved = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+
+                Assert.That(resolved.success, Is.True);
+                Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+                Assert.That(state.GetQuestInstance("story:quest_hunt").status, Is.EqualTo(QuestInstanceStatus.Completed));
+                Assert.That(updateCount, Is.Zero, "Production diagnostic eventSink must not replay coordinated linked combat ActivityCompleted.");
+                var replay = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+                Assert.That(replay.success, Is.True);
+                Assert.That(replay.replayed, Is.True);
+                Assert.That(updateCount, Is.Zero);
+            }
+            finally
+            {
+                SetPlayerRuntime(null, null);
+            }
+        }
+
         private static void SetPlayerRuntime(PlayerState state, ProgressionRuntimeService progression)
         {
             typeof(global::GuildIdle.Player.Player).GetField("_state", BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, state);
@@ -154,7 +196,11 @@ namespace GuildIdle.Editor.Player
             return new ConfigDatabase(
                 new ItemsRuntimeConfigDto
                 {
-                    resources = new[] { new ResourceConfigDto { id = "resource_pine_wood", kind = "resource" } },
+                    resources = new[]
+                    {
+                        new ResourceConfigDto { id = "resource_pine_wood", kind = "resource" },
+                        new ResourceConfigDto { id = "resource_rabbit_meat", kind = "resource" }
+                    },
                     currencies = new[] { new CurrencyConfigDto { currencyId = "gold_id" } }
                 },
                 new HeroesRuntimeConfigDto
@@ -171,9 +217,35 @@ namespace GuildIdle.Editor.Player
                 },
                 new ActivitiesRuntimeConfigDto
                 {
-                    activities = new[] { new ActivityConfigDto { id = "test_build_empty", type = "Build", durationSec = 1, fatigueCost = 1, isRepeatable = false } },
-                    skills = new[] { new SkillConfigDto { skillId = "skill_construction" } },
-                    skillsProgression = new[] { new SkillProgressionConfigDto { level = 1, totalExpRequired = 0 } }
+                    activities = new[]
+                    {
+                        new ActivityConfigDto { id = "test_build_empty", type = "Build", durationSec = 1, fatigueCost = 1, isRepeatable = false },
+                        new ActivityConfigDto { id = "hunt_rabbits", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true }
+                    },
+                    skills = new[]
+                    {
+                        new SkillConfigDto { skillId = "skill_construction" },
+                        new SkillConfigDto { skillId = "skill_hunting" }
+                    },
+                    skillsProgression = new[] { new SkillProgressionConfigDto { level = 1, totalExpRequired = 0 } },
+                    rewards = new[]
+                    {
+                        new ActivityRewardConfigDto { activityId = "hunt_rabbits", rewardType = "Resource", targetId = "resource_rabbit_meat", min = 1, max = 1, chance = 100, grantMoment = "OnCycle" },
+                        new ActivityRewardConfigDto { activityId = "hunt_rabbits", rewardType = "SkillExp", targetId = "skill_hunting", min = 1, max = 1, chance = 100, grantMoment = "OnCycle" }
+                    },
+                    dangerEncounters = new[]
+                    {
+                        new DangerEncounterConfigDto
+                        {
+                            dangerEncounterId = "danger_test_rabbits",
+                            activityId = "hunt_rabbits",
+                            riskPercent = 100,
+                            enemyGroupId = "enemy_group_test_rabbits",
+                            combatMode = "Queue_1v1",
+                            defeatLossRule = "CombatDefeatLootLoss25To50",
+                            riskFormulaId = "test_danger_risk"
+                        }
+                    }
                 },
                 new BuildingsRuntimeConfigDto
                 {
@@ -202,9 +274,21 @@ namespace GuildIdle.Editor.Player
                 new QuestRuntimeConfigDto
                 {
                     stages = new[] { new StageConfigDto { stageId = "stage_arrival", enabled = true } },
-                    storyQuests = new[] { new StoryQuestConfigDto { questId = "quest_build_hall", enabled = true } },
-                    questStartConditions = new[] { new QuestStartConditionConfigDto { questId = "quest_build_hall", conditionGroup = "default", conditionType = "NewGame", compareOperator = "GreaterOrEqual", value = 1 } },
-                    questSteps = new[] { new QuestStepConfigDto { questId = "quest_build_hall", stepId = "build_hall", objectiveType = "BuildingLevel", targetId = "building_hall", compareOperator = "GreaterOrEqual", targetValue = 2, required = true } }
+                    storyQuests = new[]
+                    {
+                        new StoryQuestConfigDto { questId = "quest_build_hall", enabled = true },
+                        new StoryQuestConfigDto { questId = "quest_hunt", enabled = true }
+                    },
+                    questStartConditions = new[]
+                    {
+                        new QuestStartConditionConfigDto { questId = "quest_build_hall", conditionGroup = "default", conditionType = "NewGame", compareOperator = "GreaterOrEqual", value = 1 },
+                        new QuestStartConditionConfigDto { questId = "quest_hunt", conditionGroup = "default", conditionType = "NewGame", compareOperator = "GreaterOrEqual", value = 1 }
+                    },
+                    questSteps = new[]
+                    {
+                        new QuestStepConfigDto { questId = "quest_build_hall", stepId = "build_hall", objectiveType = "BuildingLevel", targetId = "building_hall", compareOperator = "GreaterOrEqual", targetValue = 2, required = true },
+                        new QuestStepConfigDto { questId = "quest_hunt", stepId = "hunt", objectiveType = "ActivityCompleted", targetId = "hunt_rabbits", compareOperator = "GreaterOrEqual", targetValue = 1, required = true }
+                    }
                 },
                 null,
                 new FormulaRuntimeConfigDto
@@ -218,6 +302,16 @@ namespace GuildIdle.Editor.Player
                             baseValue = 1,
                             primaryStat = "Intelligence",
                             secondaryStat = "Strength",
+                            rounding = "round_2",
+                            enabled = true
+                        },
+                        new FormulaConfigDto
+                        {
+                            formulaId = "test_danger_risk",
+                            formulaType = "context_base_minus_stats_and_skill_level",
+                            primaryStat = "Agility",
+                            secondaryStat = "Luck",
+                            minValue = 100,
                             rounding = "round_2",
                             enabled = true
                         }

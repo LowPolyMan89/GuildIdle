@@ -510,6 +510,8 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.IsHeroBusy("ren"), Is.True);
             Assert.That(state.GetActivityExecution(started.executionId), Is.Not.Null);
 
+            var progression = new RecordingProgressionProcessor();
+            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new FixedRandom(100), progressionProcessor: progression);
             var beforeBind = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
             Assert.That(beforeBind.success, Is.False);
             Assert.That(beforeBind.code, Is.EqualTo("CombatNotBound"));
@@ -520,13 +522,131 @@ namespace GuildIdle.Editor.Activities
             var resolved = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
             Assert.That(resolved.success, Is.True);
             Assert.That(resolved.completedActivityId, Is.EqualTo("hunt_rabbits"));
+            Assert.That(progression.ActivityCompletedCount, Is.EqualTo(1));
             Assert.That(state.IsHeroBusy("ren"), Is.False);
             Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
             state = SaveService.Load(_factory, storage);
-            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: new RecordingProgressionProcessor());
+            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: progression);
             var replay = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
             Assert.That(replay.success, Is.True);
             Assert.That(replay.replayed, Is.True);
+            Assert.That(progression.ActivityCompletedCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void LinkedCombatCompletionSupportsCombatBeforeActivityBag()
+        {
+            var state = NewState();
+            var progression = new RecordingProgressionProcessor();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new DangerSequenceRandom(100, 1), progressionProcessor: progression);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 3));
+            Assert.That(runtime.Tick(20f).success, Is.True);
+            var handoff = runtime.GetPendingLinkedCombatStarts()[0];
+            var bag = state.PendingResults.GetAll()[0];
+            Assert.That(runtime.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+
+            var combatResolved = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+            Assert.That(combatResolved.success, Is.True);
+            Assert.That(combatResolved.completedActivityId, Is.Null);
+            Assert.That(progression.ActivityCompletedCount, Is.Zero);
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Not.Null);
+
+            var claimed = state.PendingResults.ClaimAll("bag-after-combat", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision);
+            Assert.That(claimed.Success, Is.True);
+            Assert.That(claimed.Resolved, Is.True);
+
+            Assert.That(progression.ActivityCompletedCount, Is.EqualTo(1));
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+            var replay = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+            Assert.That(replay.success, Is.True);
+            Assert.That(replay.replayed, Is.True);
+            Assert.That(progression.ActivityCompletedCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void LinkedCombatCompletionProcessorFailureIsRetryable()
+        {
+            var state = NewState();
+            var progression = new RecordingProgressionProcessor { FailActivityCompleted = true };
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new DangerSequenceRandom(100, 1), progressionProcessor: progression);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 3));
+            Assert.That(runtime.Tick(20f).success, Is.True);
+            var handoff = runtime.GetPendingLinkedCombatStarts()[0];
+            var bag = state.PendingResults.GetAll()[0];
+            Assert.That(runtime.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+            Assert.That(state.PendingResults.ClaimAll("bag-before-failed-combat", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision).Success, Is.True);
+
+            var failed = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+            var executionAfterFailure = state.GetActivityExecution(started.executionId);
+
+            Assert.That(failed.success, Is.False);
+            Assert.That(failed.code, Is.EqualTo("TestActivityFailed"));
+            Assert.That(executionAfterFailure, Is.Not.Null);
+            Assert.That(executionAfterFailure.activityBagResolved, Is.True);
+            Assert.That(executionAfterFailure.linkedCombat.resolved, Is.False);
+            Assert.That(HasLinkedCombatReceipt(state, handoff.requestId), Is.False);
+            progression.FailActivityCompleted = false;
+            var retried = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+            Assert.That(retried.success, Is.True);
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            Assert.That(progression.ActivityCompletedCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void LinkedCombatCompletionSaveFailureRollsBackExecutionRemovalAndReceipt()
+        {
+            var storage = new MemorySaveStorage();
+            var state = NewState();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            var progression = new RecordingProgressionProcessor();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new DangerSequenceRandom(100, 1), progressionProcessor: progression);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 3));
+            Assert.That(runtime.Tick(20f).success, Is.True);
+            var handoff = runtime.GetPendingLinkedCombatStarts()[0];
+            var bag = state.PendingResults.GetAll()[0];
+            Assert.That(runtime.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+            Assert.That(state.PendingResults.ClaimAll("bag-before-save-failure", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision).Success, Is.True);
+            storage.ThrowOnSaveCall = storage.SaveCalls + 1;
+            LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save failure");
+
+            var failed = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+            var executionAfterFailure = state.GetActivityExecution(started.executionId);
+
+            Assert.That(failed.success, Is.False);
+            Assert.That(failed.code, Is.EqualTo("SaveFailed"));
+            Assert.That(executionAfterFailure, Is.Not.Null);
+            Assert.That(executionAfterFailure.activityBagResolved, Is.True);
+            Assert.That(executionAfterFailure.linkedCombat.resolved, Is.False);
+            Assert.That(state.IsActivityCompleted("hunt_rabbits"), Is.False);
+            Assert.That(HasLinkedCombatReceipt(state, handoff.requestId), Is.False);
+        }
+
+        [Test]
+        public void LinkedCombatCompletionActivityBagBeforeCombatPublishesCoordinatedDiagnosticEvent()
+        {
+            var state = NewState();
+            var progression = new RecordingProgressionProcessor();
+            var delivered = new List<ActivityRuntimeEvent>();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new DangerSequenceRandom(100, 1), eventSink: delivered.Add, progressionProcessor: progression);
+            Assert.That(runtime.Start(WorkStart("hunt_rabbits", "ren", 3)).success, Is.True);
+            Assert.That(runtime.Tick(20f).success, Is.True);
+            var handoff = runtime.GetPendingLinkedCombatStarts()[0];
+            var bag = state.PendingResults.GetAll()[0];
+            Assert.That(runtime.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+            Assert.That(state.PendingResults.ClaimAll("bag-before-combat-event", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision).Success, Is.True);
+
+            var resolved = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+            var replay = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+
+            Assert.That(resolved.success, Is.True);
+            Assert.That(delivered, Has.Count.EqualTo(1));
+            Assert.That(delivered[0].eventType, Is.EqualTo(ActivityRuntimeEventType.ActivityCompleted));
+            Assert.That(delivered[0].progressionAlreadyProcessed, Is.True);
+            Assert.That(replay.success, Is.True);
+            Assert.That(replay.replayed, Is.True);
+            Assert.That(progression.ActivityCompletedCount, Is.EqualTo(1));
         }
 
         [Test]
@@ -822,6 +942,14 @@ namespace GuildIdle.Editor.Activities
                     return true;
             }
 
+            return false;
+        }
+
+        private static bool HasLinkedCombatReceipt(PlayerState state, string requestId)
+        {
+            var aggregateId = $"linked-combat-resolution:{requestId}";
+            foreach (var receipt in state.ToSaveData().operationReceipts)
+                if (receipt != null && receipt.aggregateId == aggregateId && receipt.operationId == "resolve") return true;
             return false;
         }
 

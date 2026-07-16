@@ -53,7 +53,9 @@ namespace GuildIdle.Activities
             {
                 [AddExtraBaseResourceEffect] = ApplyExtraBaseResource
             };
+            _activityState.PendingResults.Resolved += HandlePendingResultResolved;
             ReconcilePendingBuildingEvents();
+            ReconcileLinkedCombatCompletions();
         }
 
         public ActivityStartResult Start(string activityId, string heroId)
@@ -413,7 +415,7 @@ namespace GuildIdle.Activities
         {
             if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(combatExecutionId))
                 return GatewayFailure("InvalidResolution", "requestId and combatExecutionId are required.");
-            var receiptAggregateId = $"linked-combat-resolution:{requestId}";
+            var receiptAggregateId = LinkedCombatResolutionReceiptAggregateId(requestId);
             if (_activityState.TryGetOperationReceipt(receiptAggregateId, "resolve", out var receipt))
             {
                 if (!string.Equals(receipt.fingerprint, combatExecutionId, StringComparison.Ordinal))
@@ -428,29 +430,23 @@ namespace GuildIdle.Activities
             if (!string.Equals(execution.linkedCombat.combatExecutionId, combatExecutionId, StringComparison.Ordinal))
                 return GatewayFailure("CombatExecutionMismatch", "Resolved combat execution does not match the linked binding.");
             if (execution.linkedCombat.resolved)
-                return GatewaySuccess(execution, true, execution.activityBagResolved ? execution.activityId : null);
+            {
+                if (execution.activityBagResolved)
+                    return TryFinalizeLinkedCombatCompletion(execution, combatExecutionId, false, true);
+                return GatewaySuccess(execution, true, null);
+            }
+
+            if (execution.activityBagResolved)
+                return TryFinalizeLinkedCombatCompletion(execution, combatExecutionId, true, false);
 
             var checkpoint = _activityState.CaptureCheckpoint();
             execution.linkedCombat.resolved = true;
-            var completedActivityId = execution.activityBagResolved ? execution.activityId : null;
-            var changed = completedActivityId == null ? UpdateExecution(execution) : RemoveExecution(execution.executionId);
-            _activityState.RecordOperationReceipt(new OperationReceiptSaveData
-            {
-                aggregateId = receiptAggregateId,
-                operationId = "resolve",
-                fingerprint = combatExecutionId,
-                success = true,
-                code = "Resolved",
-                resolved = true
-            });
-            if (!changed || !Save())
+            if (!UpdateExecution(execution) || !Save())
             {
                 _activityState.RestoreCheckpoint(checkpoint);
                 return GatewayFailure("SaveFailed", "Failed to persist linked combat resolution.");
             }
-            if (!string.IsNullOrWhiteSpace(completedActivityId))
-                NotifyEventSink(new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.ActivityCompleted, targetId = completedActivityId, value = 1 });
-            return GatewaySuccess(execution, false, completedActivityId);
+            return GatewaySuccess(execution, false, null);
         }
 
         public ActivityRuntimeSnapshot GetSnapshot()
@@ -1368,6 +1364,118 @@ namespace GuildIdle.Activities
             }
         }
 
+        private void ReconcileLinkedCombatCompletions()
+        {
+            foreach (var execution in GetExecutions())
+            {
+                if (!IsLinkedCombatReadyForCompletion(execution))
+                    continue;
+                TryFinalizeLinkedCombatCompletion(execution, execution.linkedCombat.combatExecutionId, false, false);
+            }
+        }
+
+        private void HandlePendingResultResolved(PendingResultResolvedEvent resolved)
+        {
+            if (resolved == null || !string.Equals(resolved.SourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
+                return;
+            var execution = GetExecution(resolved.SourceExecutionId);
+            if (!IsLinkedCombatReadyForCompletion(execution))
+                return;
+            TryFinalizeLinkedCombatCompletion(execution, execution.linkedCombat.combatExecutionId, false, false);
+        }
+
+        private bool IsLinkedCombatReadyForCompletion(ActivityExecutionSaveData execution)
+        {
+            return execution?.linkedCombat != null &&
+                   !string.IsNullOrWhiteSpace(execution.linkedCombat.requestId) &&
+                   !string.IsNullOrWhiteSpace(execution.linkedCombat.combatExecutionId) &&
+                   execution.linkedCombat.resolved &&
+                   execution.activityBagResolved &&
+                   string.Equals(execution.linkedCombat.rootExecutionId, execution.executionId, StringComparison.Ordinal) &&
+                   string.Equals(execution.linkedCombat.occupationOwnerId, execution.executionId, StringComparison.Ordinal);
+        }
+
+        private LinkedCombatGatewayResult TryFinalizeLinkedCombatCompletion(
+            ActivityExecutionSaveData execution,
+            string combatExecutionId,
+            bool markCombatResolved,
+            bool replayed)
+        {
+            if (execution?.linkedCombat == null)
+                return GatewayFailure("RequestNotFound", "Linked combat execution was not found.");
+            if (string.IsNullOrWhiteSpace(execution.linkedCombat.combatExecutionId))
+                return GatewayFailure("CombatNotBound", "Linked combat request must be bound before it can be resolved.");
+            if (!string.Equals(execution.linkedCombat.combatExecutionId, combatExecutionId, StringComparison.Ordinal))
+                return GatewayFailure("CombatExecutionMismatch", "Resolved combat execution does not match the linked binding.");
+            if (!execution.activityBagResolved)
+                return GatewaySuccess(execution, replayed, null);
+            if (_progressionProcessor == null)
+                return GatewayFailure("ActivityCompletedProcessorMissing", "Linked combat completion requires a transaction-aware progression processor.");
+
+            var checkpoint = _activityState.CaptureCheckpoint();
+            var current = GetExecution(execution.executionId);
+            if (current?.linkedCombat == null)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                return GatewayFailure("RequestNotFound", "Linked combat execution was not found.");
+            }
+            if (markCombatResolved)
+                current.linkedCombat.resolved = true;
+            if (!IsLinkedCombatReadyForCompletion(current))
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                return GatewayFailure("LinkedCombatNotReady", "Linked combat completion requires both Activity Bag and Combat Result to be resolved.");
+            }
+
+            var completedActivityId = current.activityId;
+            var request = CloneLinkedCombat(current.linkedCombat);
+            var progression = _progressionProcessor.ProcessActivityCompleted(completedActivityId);
+            if (!progression.success)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                return GatewayFailure(progression.code ?? "ActivityCompletedProcessor", progression.message ?? "ActivityCompleted processor failed.");
+            }
+            current = GetExecution(execution.executionId);
+            if (current == null)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                return GatewayFailure("RequestNotFound", "Linked combat execution disappeared while finalizing completion.");
+            }
+            if (!_activityState.IsActivityCompleted(completedActivityId) && !_activityState.CompleteActivity(completedActivityId))
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                return GatewayFailure("ActivityCompleted", "Failed to mark linked work activity completed.");
+            }
+            if (!RemoveExecution(current.executionId))
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                return GatewayFailure("ActivityExecution", "Failed to remove linked work execution.");
+            }
+            _activityState.RecordOperationReceipt(new OperationReceiptSaveData
+            {
+                aggregateId = LinkedCombatResolutionReceiptAggregateId(request.requestId),
+                operationId = "resolve",
+                fingerprint = combatExecutionId,
+                success = true,
+                code = "Resolved",
+                resolved = true
+            });
+            if (!Save())
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                return GatewayFailure("SaveFailed", "Failed to persist linked combat completion.");
+            }
+
+            NotifyEventSink(new ActivityRuntimeEvent
+            {
+                eventType = ActivityRuntimeEventType.ActivityCompleted,
+                targetId = completedActivityId,
+                value = 1,
+                progressionAlreadyProcessed = true
+            });
+            return GatewaySuccess(new ActivityExecutionSaveData { activityId = completedActivityId, linkedCombat = request }, replayed, completedActivityId);
+        }
+
         private bool TryResumeBuildCompletionLifecycle(
             ActivityExecutionSaveData execution,
             List<ActivityRequirementIssue> issues,
@@ -1726,6 +1834,8 @@ namespace GuildIdle.Activities
                 if (execution?.linkedCombat != null && string.Equals(execution.linkedCombat.requestId, requestId, StringComparison.Ordinal)) return execution;
             return null;
         }
+
+        private static string LinkedCombatResolutionReceiptAggregateId(string requestId) => $"linked-combat-resolution:{requestId}";
 
         private LinkedCombatGatewayResult GatewaySuccess(ActivityExecutionSaveData execution, bool replayed, string completedActivityId) => new LinkedCombatGatewayResult
         {

@@ -183,8 +183,7 @@ namespace GuildIdle.Player
                 string.Equals(execution.linkedCombat.occupationOwnerId, execution.executionId, StringComparison.Ordinal))
             {
                 execution.activityBagResolved = true;
-                if (!execution.linkedCombat.resolved)
-                    return _state.UpdateActivityExecution(execution);
+                return _state.UpdateActivityExecution(execution);
             }
             if (string.Equals(execution.runtimeKind, "Build", StringComparison.Ordinal))
                 _state.CompleteActivity(execution.activityId);
