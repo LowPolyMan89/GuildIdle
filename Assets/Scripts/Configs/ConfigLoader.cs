@@ -16,6 +16,7 @@ namespace GuildIdle.Configs
         private HeroesRuntimeConfigDto _heroes;
         private ActivitiesRuntimeConfigDto _activities;
         private BuildingsRuntimeConfigDto _buildings;
+        private QuestRuntimeConfigDto _quests;
         private EnemiesRuntimeConfigDto _enemies;
         private FormulaRuntimeConfigDto _formulas;
         private LootRuntimeConfigDto _loot;
@@ -48,22 +49,19 @@ namespace GuildIdle.Configs
 
         private IEnumerator LoadAll()
         {
+            yield return LoadJson("localisation_configs.runtime.json", json => _localisation = Parse<LocalisationRuntimeConfigDto>("localisation_configs.runtime.json", json));
+            if (Configs.HasErrors) yield break;
+
+            yield return LoadJson("formula_configs.runtime.json", json => _formulas = Parse<FormulaRuntimeConfigDto>("formula_configs.runtime.json", json));
+            if (Configs.HasErrors) yield break;
+
             yield return LoadJson("items_configs.runtime.json", json => _items = Parse<ItemsRuntimeConfigDto>("items_configs.runtime.json", json));
             if (Configs.HasErrors) yield break;
 
             yield return LoadJson("heroes_configs.runtime.json", json => _heroes = Parse<HeroesRuntimeConfigDto>("heroes_configs.runtime.json", json));
             if (Configs.HasErrors) yield break;
 
-            yield return LoadJson("activity_configs.runtime.json", json => _activities = Parse<ActivitiesRuntimeConfigDto>("activity_configs.runtime.json", json));
-            if (Configs.HasErrors) yield break;
-
-            yield return LoadJson("buildings_configs.runtime.json", json => _buildings = Parse<BuildingsRuntimeConfigDto>("buildings_configs.runtime.json", json));
-            if (Configs.HasErrors) yield break;
-
             yield return LoadJson("enemies_configs.runtime.json", json => _enemies = Parse<EnemiesRuntimeConfigDto>("enemies_configs.runtime.json", json));
-            if (Configs.HasErrors) yield break;
-
-            yield return LoadJson("formula_configs.runtime.json", json => _formulas = Parse<FormulaRuntimeConfigDto>("formula_configs.runtime.json", json));
             if (Configs.HasErrors) yield break;
 
             yield return LoadJson("loot_configs.runtime.json", json => _loot = Parse<LootRuntimeConfigDto>("loot_configs.runtime.json", json));
@@ -72,16 +70,22 @@ namespace GuildIdle.Configs
             yield return LoadJson("map_configs.runtime.json", json => _map = Parse<MapRuntimeConfigDto>("map_configs.runtime.json", json));
             if (Configs.HasErrors) yield break;
 
-            yield return LoadJson("storage_configs.runtime.json", json => _storage = Parse<StorageRuntimeConfigDto>("storage_configs.runtime.json", json));
+            yield return LoadJson("activity_configs.runtime.json", json => _activities = Parse<ActivitiesRuntimeConfigDto>("activity_configs.runtime.json", json));
             if (Configs.HasErrors) yield break;
 
-            yield return LoadJson("localisation_configs.runtime.json", json => _localisation = Parse<LocalisationRuntimeConfigDto>("localisation_configs.runtime.json", json));
+            yield return LoadJson("buildings_configs.runtime.json", json => _buildings = Parse<BuildingsRuntimeConfigDto>("buildings_configs.runtime.json", json));
+            if (Configs.HasErrors) yield break;
+
+            yield return LoadJson("quest_configs.runtime.json", json => _quests = Parse<QuestRuntimeConfigDto>("quest_configs.runtime.json", json));
+            if (Configs.HasErrors) yield break;
+
+            yield return LoadJson("storage_configs.runtime.json", json => _storage = Parse<StorageRuntimeConfigDto>("storage_configs.runtime.json", json));
             if (Configs.HasErrors) yield break;
 
             ConfigDatabase database;
             try
             {
-                database = new ConfigDatabase(_items, _heroes, _activities, _buildings, _enemies, _formulas, _loot, _map, _storage, _localisation);
+                database = new ConfigDatabase(_items, _heroes, _activities, _buildings, _quests, _enemies, _formulas, _loot, _map, _storage, _localisation);
             }
             catch (Exception exception)
             {
@@ -96,6 +100,7 @@ namespace GuildIdle.Configs
                 $"heroes={database.Heroes.Count}, " +
                 $"activities={database.Activities.Count}, " +
                 $"buildings={database.Buildings.Count}, " +
+                $"quests={database.Quests.Count}, " +
                 $"enemies={database.Enemies.Count}, " +
                 $"formulas={database.Formulas.Count}, " +
                 $"loot={database.Loot.Count}, " +

@@ -6,6 +6,7 @@ namespace GuildIdle.Configs
         public HeroesConfigRepository Heroes { get; }
         public ActivitiesConfigRepository Activities { get; }
         public BuildingsConfigRepository Buildings { get; }
+        public QuestConfigRepository Quests { get; }
         public EnemiesConfigRepository Enemies { get; }
         public FormulasConfigRepository Formulas { get; }
         public LootConfigRepository Loot { get; }
@@ -18,6 +19,7 @@ namespace GuildIdle.Configs
             HeroesRuntimeConfigDto heroes,
             ActivitiesRuntimeConfigDto activities,
             BuildingsRuntimeConfigDto buildings,
+            QuestRuntimeConfigDto quests,
             EnemiesRuntimeConfigDto enemies,
             FormulaRuntimeConfigDto formulas,
             LootRuntimeConfigDto loot,
@@ -29,6 +31,7 @@ namespace GuildIdle.Configs
             Heroes = new HeroesConfigRepository(heroes);
             Activities = new ActivitiesConfigRepository(activities);
             Buildings = new BuildingsConfigRepository(buildings);
+            Quests = new QuestConfigRepository(quests);
             Enemies = new EnemiesConfigRepository(enemies);
             Formulas = new FormulasConfigRepository(formulas);
             Loot = new LootConfigRepository(loot);

@@ -3,6 +3,7 @@ using GuildIdle.Activities;
 using GuildIdle.Core;
 using GuildIdle.Editor.Configs;
 using GuildIdle.Player;
+using GuildIdle.Progression;
 using NUnit.Framework;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
@@ -48,7 +49,7 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
-        public void StageQuestRuntimeFactory_UsesProvidedPlayerState()
+        public void ProgressionRuntimeFactory_UsesProvidedPlayerState()
         {
             var database = new TestConfigDatabaseBuilder()
                 .WithFullPlayerStateTestData()
@@ -56,9 +57,9 @@ namespace GuildIdle.Editor.Player
             RuntimeConfigs.SetDatabaseForTests(database);
             var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
 
-            var runtime = PlayerRuntimeComposition.CreateStageQuestRuntimeService(state);
+            var runtime = PlayerRuntimeComposition.CreateProgressionRuntimeService(state);
 
-            Assert.That(runtime.GetSnapshot().CurrentStage.StageId, Is.EqualTo("stage_arrival"));
+            Assert.That(runtime.GetStageSnapshot().StageId, Is.EqualTo("stage_arrival"));
         }
 
         [Test]

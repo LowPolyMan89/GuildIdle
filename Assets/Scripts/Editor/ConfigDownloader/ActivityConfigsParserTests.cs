@@ -32,7 +32,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"activities\""));
             Assert.That(runtimeJson, Does.Contain("\"workDetails\""));
             Assert.That(runtimeJson, Does.Contain("\"id\": \"work_active\""));
-            Assert.That(runtimeJson, Does.Contain("\"questId\": \"quest_active\""));
+            Assert.That(runtimeJson, Does.Not.Contain("\"questId\""));
             Assert.That(runtimeJson, Does.Not.Contain("work_disabled"));
             Assert.That(runtimeJson, Does.Not.Contain("quest_disabled"));
             Assert.That(runtimeJson, Does.Not.Contain("README"));
@@ -244,23 +244,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(message, Does.Contain("EnumValues row 15 column 'value'"));
             Assert.That(message, Does.Contain("EnumValues row 16 column 'value' value 'Work': Duplicate enum value in group 'ActivityType'."));
             Assert.That(message, Does.Not.Contain("Expected a number."));
-        }
-
-        [Test]
-        public void BuildRuntimeJson_RejectsUnknownQuestStartConditionType()
-        {
-            var download = CreateValidDownload();
-            FindSheet(download, "EnumValues").rows = Append(
-                FindSheet(download, "EnumValues").rows,
-                Row("NewGame", "QuestCondition", "NewGame", "New game quest condition"));
-            FindSheet(download, "QuestStartConditions").rows[1].cells[1] = "BadCondition";
-            WriteRaw(download);
-
-            var report = new ActivityConfigsParser().BuildRuntimeJson(CreateSource(), out _);
-
-            Assert.That(report.Success, Is.False);
-            Assert.That(report.ToDisplayMessage(), Does.Contain("QuestStartConditions row 2 column 'condition_type' value 'BadCondition'"));
-            Assert.That(report.ToDisplayMessage(), Does.Contain("QuestCondition"));
         }
 
         [Test]

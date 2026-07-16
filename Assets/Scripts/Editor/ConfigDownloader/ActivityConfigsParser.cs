@@ -27,10 +27,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             "Skills",
             "SkillsProgression",
             "EnumValues",
-            "Quests",
-            "QuestStartConditions",
-            "QuestSteps",
-            "QuestRewards",
             "DangerEncounters"
         };
 
@@ -54,10 +50,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             ["Skills"] = new[] { "skill_id", "skill_name_id", "skill_description_id", "skill_icon_id" },
             ["SkillsProgression"] = new[] { "level", "exp_to_next_level", "total_exp_required" },
             ["EnumValues"] = new[] { "enum_group", "value", "description" },
-            ["Quests"] = new[] { "quest_id", "name_id", "description_id", "category", "sort_order", "is_tutorial", "enabled" },
-            ["QuestStartConditions"] = new[] { "quest_id", "condition_type", "target_id", "value" },
-            ["QuestSteps"] = new[] { "quest_id", "step_id", "step_order", "objective_type", "target_id", "target_value", "description_id", "required" },
-            ["QuestRewards"] = new[] { "quest_id", "reward_type", "target_id", "min", "max", "grant_moment" },
             ["DangerEncounters"] = new[]
             {
                 "danger_encounter_id", "activity_id", "risk_percent", "roll_moment", "enemy_group_id",
@@ -80,10 +72,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             ["Skills"] = "skills",
             ["SkillsProgression"] = "skillsProgression",
             ["EnumValues"] = "enumValues",
-            ["Quests"] = "quests",
-            ["QuestStartConditions"] = "questStartConditions",
-            ["QuestSteps"] = "questSteps",
-            ["QuestRewards"] = "questRewards",
             ["DangerEncounters"] = "dangerEncounters"
         };
 
@@ -113,12 +101,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             FieldKey("ExploreDetails", "danger_level"),
             FieldKey("ActivityRewards", "min"),
             FieldKey("ActivityRewards", "max"),
-            FieldKey("Quests", "sort_order"),
-            FieldKey("QuestStartConditions", "value"),
-            FieldKey("QuestSteps", "step_order"),
-            FieldKey("QuestSteps", "target_value"),
-            FieldKey("QuestRewards", "min"),
-            FieldKey("QuestRewards", "max"),
             FieldKey("Rarities", "weight"),
             FieldKey("SkillsProgression", "level"),
             FieldKey("SkillsProgression", "exp_to_next_level"),
@@ -350,8 +332,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly Dictionary<string, string> _activityCategories = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _rarityIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _skillIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            private readonly HashSet<string> _allQuestIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            private readonly HashSet<string> _enabledQuestIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _dangerEncounterIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             public ActivityConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
@@ -420,7 +400,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 CollectIdSet("Rarities", "id", _rarityIds);
                 CollectIdSet("Skills", "skill_id", _skillIds);
-                CollectQuestIds();
 
                 if (!_tables.TryGetValue("Activities", out var activities) ||
                     !activities.HasColumn("id") ||
@@ -454,40 +433,6 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                     if (TryParseBool(row, "enabled", required: true, out var enabled) && enabled)
                         _enabledActivityIds.Add(id);
-                }
-            }
-
-            private void CollectQuestIds()
-            {
-                if (!_tables.TryGetValue("Quests", out var quests) ||
-                    !quests.HasColumn("quest_id") ||
-                    !quests.HasColumn("enabled"))
-                {
-                    return;
-                }
-
-                var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                foreach (var row in quests.DataRows)
-                {
-                    var questId = row.Get("quest_id");
-                    if (string.IsNullOrWhiteSpace(questId))
-                    {
-                        AddIssue("Quests", row.RowNumber, "quest_id", questId, "quest_id is required.");
-                        continue;
-                    }
-
-                    if (seen.TryGetValue(questId, out var firstRow))
-                    {
-                        AddIssue("Quests", row.RowNumber, "quest_id", questId, $"Duplicate quest_id; first declared at row {firstRow}.");
-                    }
-                    else
-                    {
-                        seen[questId] = row.RowNumber;
-                    }
-
-                    _allQuestIds.Add(questId);
-                    if (TryParseBool(row, "enabled", required: true, out var enabled) && enabled)
-                        _enabledQuestIds.Add(questId);
                 }
             }
 
@@ -636,14 +581,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                     var activityId = row.Get("activity_id");
                     if (!string.IsNullOrWhiteSpace(activityId) && !_allActivityIds.Contains(activityId))
                         AddIssue(table.Name, row.RowNumber, "activity_id", activityId, "Referenced activity_id does not exist in Activities.id.");
-                }
-
-                if (table.HasColumn("quest_id") &&
-                    !string.Equals(table.Name, "Quests", StringComparison.OrdinalIgnoreCase))
-                {
-                    var questId = row.Get("quest_id");
-                    if (!string.IsNullOrWhiteSpace(questId) && !_allQuestIds.Contains(questId))
-                        AddIssue(table.Name, row.RowNumber, "quest_id", questId, "Referenced quest_id does not exist in Quests.quest_id.");
                 }
 
                 if (string.Equals(table.Name, "Activities", StringComparison.OrdinalIgnoreCase))
@@ -860,23 +797,12 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (string.Equals(sheetName, "Activities", StringComparison.OrdinalIgnoreCase))
                     return TryParseBool(row, "enabled", required: false, out var enabled) && !enabled;
 
-                if (string.Equals(sheetName, "Quests", StringComparison.OrdinalIgnoreCase))
-                    return TryParseBool(row, "enabled", required: false, out var enabled) && !enabled;
-
                 if (row.HasColumn("activity_id"))
                 {
                     var activityId = row.Get("activity_id");
                     return !string.IsNullOrWhiteSpace(activityId) &&
                            _allActivityIds.Contains(activityId) &&
                            !_enabledActivityIds.Contains(activityId);
-                }
-
-                if (row.HasColumn("quest_id"))
-                {
-                    var questId = row.Get("quest_id");
-                    return !string.IsNullOrWhiteSpace(questId) &&
-                           _allQuestIds.Contains(questId) &&
-                           !_enabledQuestIds.Contains(questId);
                 }
 
                 return false;

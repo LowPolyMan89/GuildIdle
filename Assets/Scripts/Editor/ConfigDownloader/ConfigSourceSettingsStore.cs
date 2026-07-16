@@ -169,16 +169,17 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             return new[]
             {
-                CreateSource("heroes_configs", "GuildIdle - Heroes Configs", "https://docs.google.com/spreadsheets/d/1ROad00r18FJfrHILmfbMDqTSFJYft93sqIkgg-BmeZU"),
-                CreateSource("activity_configs", "GuildIdle - Activity Configs", "https://docs.google.com/spreadsheets/d/10MOjF_GtcZcji0yv-dk69LtW3kfg6HqC2dyrdy9oa3w"),
-                CreateSource("enemies_configs", "GuildIdle - Enemies Configs", "https://docs.google.com/spreadsheets/d/1hjKKBn81MF6rn6dUECc6MQZoJ-q6TquicYd6CED8gQ4"),
-                CreateSource("storage_configs", "GuildIdle - Storage Configs", "https://docs.google.com/spreadsheets/d/1hSoVEQGuNQOpzQEtIWC95OthajpCXUjjbJe4AxA08-U"),
-                CreateSource("map_configs", "GuildIdle - Map Configs", "https://docs.google.com/spreadsheets/d/1dc3A4rq8rTh8wgMYk8Jze-MyJY986F76K35X5qqX1mo"),
                 CreateSource("localisation", "GuildIdle - Localisation", "https://docs.google.com/spreadsheets/d/1j1cPqDSoFHRlxAyeL6T9ma15D29IY9rmubP1y09uVEk"),
-                CreateSource("items_configs", "GuildIdle - Items Configs", "https://docs.google.com/spreadsheets/d/1URJdSKzwWwhAZgviDkdYNgdHR8IqCVfCoq77GvYY4iw"),
                 CreateSource("formula_configs", "GuildIdle - Formula Configs", "https://docs.google.com/spreadsheets/d/1WwMrY9HtVyqWiKI_wBIh4M7zikh4ocMVbj2LA4bKCT0"),
+                CreateSource("items_configs", "GuildIdle - Items Configs", "https://docs.google.com/spreadsheets/d/1URJdSKzwWwhAZgviDkdYNgdHR8IqCVfCoq77GvYY4iw"),
+                CreateSource("heroes_configs", "GuildIdle - Heroes Configs", "https://docs.google.com/spreadsheets/d/1ROad00r18FJfrHILmfbMDqTSFJYft93sqIkgg-BmeZU"),
+                CreateSource("enemies_configs", "GuildIdle - Enemies Configs", "https://docs.google.com/spreadsheets/d/1hjKKBn81MF6rn6dUECc6MQZoJ-q6TquicYd6CED8gQ4"),
                 CreateSource("loot_configs", "GuildIdle - Loot Configs", "https://docs.google.com/spreadsheets/d/1Y1YePRz3EXU_Vs5ibbAe81v9n0Ef4_k1Hgja57rSGV8"),
-                CreateSource("buildings_configs", "GuildIdle - Buildings Configs", "https://docs.google.com/spreadsheets/d/1oHtDe-dr3-qDds4ZiUYjYBwpafwyr7X11FGJ5Qp1A7k")
+                CreateSource("map_configs", "GuildIdle - Map Configs", "https://docs.google.com/spreadsheets/d/1dc3A4rq8rTh8wgMYk8Jze-MyJY986F76K35X5qqX1mo"),
+                CreateSource("activity_configs", "GuildIdle - Activity Configs", "https://docs.google.com/spreadsheets/d/10MOjF_GtcZcji0yv-dk69LtW3kfg6HqC2dyrdy9oa3w"),
+                CreateSource("buildings_configs", "GuildIdle - Buildings Configs", "https://docs.google.com/spreadsheets/d/1oHtDe-dr3-qDds4ZiUYjYBwpafwyr7X11FGJ5Qp1A7k"),
+                CreateSource("quest_configs", "GuildIdle - Quest Configs", "https://docs.google.com/spreadsheets/d/1kmnCRqiXHawcAjzi3J0hYhjAhti4OUgLnW-_-3PqVOo"),
+                CreateSource("storage_configs", "GuildIdle - Storage Configs", "https://docs.google.com/spreadsheets/d/1hSoVEQGuNQOpzQEtIWC95OthajpCXUjjbJe4AxA08-U")
             };
         }
 

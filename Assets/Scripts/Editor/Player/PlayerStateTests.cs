@@ -5,6 +5,7 @@ using GuildIdle.Configs;
 using GuildIdle.Core;
 using GuildIdle.Editor.Configs;
 using GuildIdle.Player;
+using GuildIdle.Progression;
 using NUnit.Framework;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
@@ -57,30 +58,14 @@ namespace GuildIdle.Editor.Player
                 Assert.That(skill.level, Is.EqualTo(1));
                 Assert.That(skill.exp, Is.Zero);
             }
-            Assert.That(saveData.quests, Has.Length.EqualTo(2));
-            foreach (var quest in saveData.quests)
-            {
-                Assert.That(quest.completed, Is.False);
-                Assert.That(quest.rewardsGranted, Is.False);
-                foreach (var step in quest.steps)
-                {
-                    Assert.That(step.currentValue, Is.Zero);
-                    Assert.That(step.completed, Is.False);
-                }
-            }
-            Assert.That(Array.Exists(saveData.quests, quest => quest.questId == "quest_disabled_new_game"), Is.False);
-            var buildHutQuest = Array.Find(saveData.quests, quest => quest.questId == "quest_build_hut");
-            Assert.That(buildHutQuest, Is.Not.Null);
-            Assert.That(
-                Array.ConvertAll(buildHutQuest.steps, step => step.stepId),
-                Is.EqualTo(new[] { "step_collect_wood", "step_collect_stone", "step_build_hut" }));
+            Assert.That(saveData.questInstances, Is.Empty, "PlayerStateFactory does not activate quests; ProgressionRuntimeService owns activation.");
             Assert.That(Array.Exists(saveData.itemInstances, instance => instance.itemId == "item_unused_sword"), Is.False);
         }
 
         [Test]
-        public void Bootstrap_SkipsDisabledNewGameQuest()
+        public void Bootstrap_DoesNotCreateQuestInstances()
         {
-            Assert.That(_factory.CreateDefault().GetQuestState("quest_disabled_new_game"), Is.Null);
+            Assert.That(_factory.CreateDefault().GetQuestInstances(), Is.Empty);
         }
 
         [Test]
@@ -121,13 +106,15 @@ namespace GuildIdle.Editor.Player
         {
             var state = _factory.Create(new SaveData
             {
-                saveVersion = 5,
+                saveVersion = 6,
                 currentStageId = "stage_arrival",
-                quests = new[]
+                questInstances = new[]
                 {
-                    new QuestSaveData
+                    new QuestInstanceSaveData
                     {
+                        instanceId = "story:quest_build_hut",
                         questId = "quest_build_hut",
+                        status = QuestInstanceStatus.Active,
                         steps = new[]
                         {
                             new QuestStepSaveData { stepId = "step_build_hut", currentValue = 3, completed = true },
@@ -138,7 +125,7 @@ namespace GuildIdle.Editor.Player
                 }
             });
 
-            var quest = state.GetQuestState("quest_build_hut");
+            var quest = state.GetQuestInstance("story:quest_build_hut");
             Assert.That(
                 Array.ConvertAll(quest.steps, step => step.stepId),
                 Is.EqualTo(new[] { "step_collect_wood", "step_collect_stone", "step_build_hut" }));
@@ -251,7 +238,7 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
-        public void SaveLoadRoundtripPreservesV5Contracts()
+        public void SaveLoadRoundtripPreservesV6Contracts()
         {
             var state = _factory.CreateDefault();
             var maxFatigue = state.GetHeroMaxFatigue("ren");
@@ -267,12 +254,16 @@ namespace GuildIdle.Editor.Player
             Assert.That(state.UnlockLocation("old_wolf_den_1_1"), Is.True);
             Assert.That(state.CompleteActivity("combat_first_map_node"), Is.True);
             Assert.That(state.SetActivityAvailable("combat_clear_hall_forest", true), Is.True);
-            var quest = state.GetQuestState("quest_build_hut");
-            quest.completed = true;
+            var quest = QuestStateBuilder.Create(
+                "story:quest_build_hut",
+                "quest_build_hut",
+                null,
+                RuntimeConfigs.Quests.GetSteps("quest_build_hut"));
+            quest.status = QuestInstanceStatus.Completed;
             quest.rewardsGranted = false;
             quest.steps[0].completed = true;
             quest.steps[0].currentValue = 8;
-            Assert.That(state.SetQuestState(quest), Is.True);
+            Assert.That(state.SetQuestInstance(quest), Is.True);
             Assert.That(state.AddActivityExecution(new ActivityExecutionSaveData
             {
                 executionId = "exec_1",
@@ -300,9 +291,9 @@ namespace GuildIdle.Editor.Player
             Assert.That(restored.IsLocationUnlocked("old_wolf_den_1_1"), Is.True);
             Assert.That(restored.IsActivityCompleted("combat_first_map_node"), Is.True);
             Assert.That(restored.IsActivityAvailable("combat_clear_hall_forest"), Is.True);
-            Assert.That(restored.GetQuestState("quest_build_hut").completed, Is.True);
-            Assert.That(restored.GetQuestState("quest_build_hut").rewardsGranted, Is.False);
-            Assert.That(restored.GetQuestState("quest_build_hut").steps[0].completed, Is.True);
+            Assert.That(restored.GetQuestInstance("story:quest_build_hut").status, Is.EqualTo(QuestInstanceStatus.Completed));
+            Assert.That(restored.GetQuestInstance("story:quest_build_hut").rewardsGranted, Is.False);
+            Assert.That(restored.GetQuestInstance("story:quest_build_hut").steps[0].completed, Is.True);
         }
 
         [Test]
@@ -367,7 +358,7 @@ namespace GuildIdle.Editor.Player
             using (var logs = new CapturingLogHandler())
             {
                 state = SaveService.Load(_factory, storage);
-                logs.AssertWarningContains("Player save version '4' is older than supported version '5'. Creating default save.");
+                logs.AssertWarningContains("Player save version '4' is older than supported version '6'. Creating default save.");
             }
 
             Assert.That(state.CurrentStageId, Is.EqualTo("stage_arrival"));
@@ -375,11 +366,11 @@ namespace GuildIdle.Editor.Player
             Assert.That(state.GetItem("resource_pine_wood"), Is.Zero);
             Assert.That(state.HasHero("ren"), Is.True);
             Assert.That(state.GetEquippedItem("ren", "weapon").itemId, Is.EqualTo("item_wooden_club"));
-            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"saveVersion\":5"));
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"saveVersion\":6"));
         }
 
         [Test]
-        public void Load_CurrentV5DoesNotApplyNewGameBootstrapOrConvertItemStacks()
+        public void Load_CurrentV6DoesNotApplyNewGameBootstrapOrConvertItemStacks()
         {
             var state = _factory.Create(new SaveData
             {
@@ -392,6 +383,51 @@ namespace GuildIdle.Editor.Player
             Assert.That(state.GetItem("item_wooden_club"), Is.EqualTo(2));
             Assert.That(state.GetItemInstances(), Is.Empty);
             Assert.That(state.GetEquipmentSlots(), Is.Empty);
+        }
+
+        [Test]
+        public void SaveService_MigratesV5QuestStateToStoryInstanceAndPersistsV6()
+        {
+            var storage = new MemorySaveStorage();
+            storage.SetString(
+                SaveService.SaveKey,
+                "{\"saveVersion\":5,\"currentStageId\":\"stage_arrival\",\"quests\":[{\"questId\":\"quest_build_hut\",\"completed\":true,\"rewardsGranted\":false,\"steps\":[{\"stepId\":\"step_collect_wood\",\"currentValue\":8,\"completed\":true}]}]}");
+
+            var state = SaveService.Load(_factory, storage, out var origin);
+
+            var instance = state.GetQuestInstance("story:quest_build_hut");
+            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.MigratedV5));
+            Assert.That(instance.questId, Is.EqualTo("quest_build_hut"));
+            Assert.That(instance.cycleId, Is.Null);
+            Assert.That(instance.status, Is.EqualTo(QuestInstanceStatus.Completed));
+            Assert.That(instance.rewardsGranted, Is.False);
+            Assert.That(instance.steps[0].currentValue, Is.EqualTo(8));
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"saveVersion\":6"));
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"instanceId\":\"story:quest_build_hut\""));
+        }
+
+        [Test]
+        public void V6RoundtripPreservesUnknownInstanceAndTwoDailyCycles()
+        {
+            var state = _factory.Create(new SaveData
+            {
+                saveVersion = 6,
+                currentStageId = "stage_arrival",
+                questInstances = new[]
+                {
+                    new QuestInstanceSaveData { instanceId = "custom:kept", questId = "missing_definition", status = QuestInstanceStatus.Active, steps = new[] { new QuestStepSaveData { stepId = "unknown_step", currentValue = 3 } } },
+                    new QuestInstanceSaveData { instanceId = "daily:cycle_1:quest_daily", questId = "quest_daily", cycleId = "cycle_1", status = QuestInstanceStatus.Active },
+                    new QuestInstanceSaveData { instanceId = "daily:cycle_2:quest_daily", questId = "quest_daily", cycleId = "cycle_2", status = QuestInstanceStatus.Expired }
+                }
+            });
+            var storage = new MemorySaveStorage();
+
+            SaveService.Save(state, storage);
+            var restored = SaveService.Load(_factory, storage);
+
+            Assert.That(restored.GetQuestInstance("custom:kept").steps[0].stepId, Is.EqualTo("unknown_step"));
+            Assert.That(restored.GetQuestInstance("daily:cycle_1:quest_daily").cycleId, Is.EqualTo("cycle_1"));
+            Assert.That(restored.GetQuestInstance("daily:cycle_2:quest_daily").status, Is.EqualTo(QuestInstanceStatus.Expired));
         }
 
         [Test]
@@ -453,7 +489,7 @@ namespace GuildIdle.Editor.Player
         {
             var state = _factory.Create(new SaveData
             {
-                saveVersion = 5,
+                saveVersion = 6,
                 currentStageId = "stage_arrival",
                 unlockedHeroes = new[] { "ren", "aska" },
                 acquiredHeroes = new[] { "ren", "aska" },
@@ -532,7 +568,7 @@ namespace GuildIdle.Editor.Player
         public void SaveService_NewerVersionDoesNotOverwriteRawSave()
         {
             var storage = new MemorySaveStorage();
-            const string json = "{\"saveVersion\":6,\"currentStageId\":\"stage_arrival\"}";
+            const string json = "{\"saveVersion\":7,\"currentStageId\":\"stage_arrival\"}";
             storage.SetString(SaveService.SaveKey, json);
 
             PlayerState state;
@@ -557,7 +593,7 @@ namespace GuildIdle.Editor.Player
             Assert.That(state, Is.Not.Null);
             Assert.That(state.CurrentStageId, Is.EqualTo("stage_2"));
             Assert.That(state.HasHero("ren"), Is.False);
-            Assert.That(state.GetQuestStates(), Is.Empty);
+            Assert.That(state.GetQuestInstances(), Is.Empty);
             Assert.That(state.GetItemInstances(), Is.Empty);
         }
 

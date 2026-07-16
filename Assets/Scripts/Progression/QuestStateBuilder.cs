@@ -5,95 +5,97 @@ using GuildIdle.Player;
 
 namespace GuildIdle.Progression
 {
+    public static class QuestInstanceIds
+    {
+        public static string Story(string questId) => string.IsNullOrWhiteSpace(questId) ? throw new ArgumentException("quest_id is required.", nameof(questId)) : $"story:{questId}";
+        public static string Daily(string cycleId, string questId) =>
+            string.IsNullOrWhiteSpace(cycleId) || string.IsNullOrWhiteSpace(questId)
+                ? throw new ArgumentException("cycle_id and quest_id are required for daily instances.")
+                : $"daily:{cycleId}:{questId}";
+    }
+
     public static class QuestStateBuilder
     {
-        public static QuestSaveData Create(string questId, QuestStepConfigDto[] configuredSteps)
+        public static QuestInstanceSaveData Create(string instanceId, string questId, string cycleId, QuestStepConfigDto[] configuredSteps)
         {
-            configuredSteps ??= Array.Empty<QuestStepConfigDto>();
-            var ordered = Ordered(configuredSteps);
-            var steps = new QuestStepSaveData[ordered.Length];
-            for (var i = 0; i < ordered.Length; i++)
+            var steps = Ordered(configuredSteps);
+            var state = new QuestStepSaveData[steps.Length];
+            for (var index = 0; index < steps.Length; index++)
+                state[index] = new QuestStepSaveData { stepId = steps[index].stepId };
+            return new QuestInstanceSaveData
             {
-                steps[i] = new QuestStepSaveData
-                {
-                    stepId = ordered[i].stepId,
-                    currentValue = 0,
-                    completed = false
-                };
-            }
-
-            return new QuestSaveData
-            {
+                instanceId = instanceId,
                 questId = questId,
-                completed = false,
+                cycleId = cycleId,
+                status = QuestInstanceStatus.Active,
                 rewardsGranted = false,
-                steps = steps
+                steps = state
             };
         }
 
-        public static QuestSaveData Reconcile(
-            QuestSaveData existing,
-            QuestStepConfigDto[] configuredSteps,
-            out bool changed)
+        public static QuestInstanceSaveData Reconcile(QuestInstanceSaveData existing, QuestStepConfigDto[] configuredSteps, out bool changed)
         {
-            if (existing == null)
-                throw new ArgumentNullException(nameof(existing));
-
+            if (existing == null) throw new ArgumentNullException(nameof(existing));
             var byId = new Dictionary<string, QuestStepSaveData>(StringComparer.Ordinal);
             foreach (var step in existing.steps ?? Array.Empty<QuestStepSaveData>())
-            {
-                if (step != null && !string.IsNullOrWhiteSpace(step.stepId) && !byId.ContainsKey(step.stepId))
-                    byId.Add(step.stepId, step);
-            }
+                if (step != null && !string.IsNullOrWhiteSpace(step.stepId) && !byId.ContainsKey(step.stepId)) byId.Add(step.stepId, Clone(step));
 
-            var ordered = Ordered(configuredSteps ?? Array.Empty<QuestStepConfigDto>());
-            var reconciled = new QuestStepSaveData[ordered.Length];
-            changed = ordered.Length != byId.Count;
-            for (var i = 0; i < ordered.Length; i++)
+            var output = new List<QuestStepSaveData>();
+            foreach (var configured in Ordered(configuredSteps))
             {
-                var config = ordered[i];
-                if (!byId.TryGetValue(config.stepId, out var saved))
+                if (byId.TryGetValue(configured.stepId, out var saved))
                 {
-                    reconciled[i] = new QuestStepSaveData { stepId = config.stepId };
-                    changed = true;
-                    continue;
+                    output.Add(saved); byId.Remove(configured.stepId);
                 }
+                else output.Add(new QuestStepSaveData { stepId = configured.stepId });
+            }
+            var unknownSteps = new List<QuestStepSaveData>(byId.Values);
+            unknownSteps.Sort((left, right) => string.CompareOrdinal(left.stepId, right.stepId));
+            output.AddRange(unknownSteps);
 
-                reconciled[i] = new QuestStepSaveData
+            changed = output.Count != (existing.steps?.Length ?? 0);
+            if (!changed)
+            {
+                for (var index = 0; index < output.Count; index++)
                 {
-                    stepId = saved.stepId,
-                    currentValue = Math.Max(0, saved.currentValue),
-                    completed = saved.completed
-                };
-                var original = existing.steps != null && i < existing.steps.Length ? existing.steps[i] : null;
-                if (original == null || !string.Equals(original.stepId, saved.stepId, StringComparison.Ordinal))
-                    changed = true;
+                    var source = existing.steps[index];
+                    var normalized = output[index];
+                    if (source == null || source.stepId != normalized.stepId || source.currentValue != normalized.currentValue || source.completed != normalized.completed)
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
             }
-
-            return new QuestSaveData
+            var result = new QuestInstanceSaveData
             {
+                instanceId = existing.instanceId,
                 questId = existing.questId,
-                completed = existing.completed,
+                cycleId = existing.cycleId,
+                status = existing.status,
                 rewardsGranted = existing.rewardsGranted,
-                steps = reconciled
+                steps = output.ToArray()
             };
+            return result;
         }
 
-        private static QuestStepConfigDto[] Ordered(QuestStepConfigDto[] configuredSteps)
+        private static QuestStepConfigDto[] Ordered(QuestStepConfigDto[] source)
         {
-            var list = new List<QuestStepConfigDto>();
-            foreach (var step in configuredSteps)
+            source ??= Array.Empty<QuestStepConfigDto>();
+            var result = (QuestStepConfigDto[])source.Clone();
+            Array.Sort(result, (left, right) =>
             {
-                if (step != null && !string.IsNullOrWhiteSpace(step.stepId))
-                    list.Add(step);
-            }
-
-            list.Sort((left, right) =>
-            {
-                var order = left.stepOrder.CompareTo(right.stepOrder);
-                return order != 0 ? order : string.CompareOrdinal(left.stepId, right.stepId);
+                var order = (left?.stepOrder ?? int.MaxValue).CompareTo(right?.stepOrder ?? int.MaxValue);
+                return order != 0 ? order : string.CompareOrdinal(left?.stepId, right?.stepId);
             });
-            return list.ToArray();
+            return result;
         }
+
+        private static QuestStepSaveData Clone(QuestStepSaveData value) => new QuestStepSaveData
+        {
+            stepId = value.stepId,
+            currentValue = Math.Max(0, value.currentValue),
+            completed = value.completed
+        };
     }
 }

@@ -1,4 +1,5 @@
 using GuildIdle.Core;
+using GuildIdle.Progression;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
@@ -7,7 +8,9 @@ namespace GuildIdle.Player
     public static class Player
     {
         public static PlayerState State => _state;
+        public static ProgressionRuntimeService Progression => _progression;
         private static PlayerState _state;
+        private static ProgressionRuntimeService _progression;
         private static PlayerBootstrapService _bootstrapService;
 
         public static bool IsLoaded => _state != null && RuntimeConfigs.IsLoaded;
@@ -30,14 +33,19 @@ namespace GuildIdle.Player
                 return false;
             }
 
-            var loadedState = PlayerRuntimeComposition.LoadPlayerState();
+            var loadedState = PlayerRuntimeComposition.LoadPlayerState(out var origin);
             if (loadedState == null)
             {
                 _state = null;
+                _progression = null;
                 return false;
             }
 
             _state = loadedState;
+            _progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(_state);
+            _progression.Initialize();
+            if (origin == SaveLoadOrigin.Fresh)
+                _progression.Handle(new NewGame());
             return true;
         }
 
@@ -55,6 +63,9 @@ namespace GuildIdle.Player
             }
 
             _state = PlayerRuntimeComposition.ResetPlayerState();
+            _progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(_state);
+            _progression.Initialize();
+            _progression.Handle(new NewGame());
             return true;
         }
 
@@ -256,6 +267,7 @@ namespace GuildIdle.Player
         private static void HandleConfigLoadFailed(string error)
         {
             _state = null;
+            _progression = null;
             PlayerRuntimeComposition.InvalidatePlayerStateFactory();
             Debug.LogError($"[Player] Runtime configs failed to load; player state was not initialized. {error}");
         }

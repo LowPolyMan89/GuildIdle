@@ -23,6 +23,7 @@ namespace GuildIdle.Editor.Configs
                 database.Heroes,
                 database.Activities,
                 database.Buildings,
+                database.Quests,
                 database.Storage);
             return new PlayerStateFactory(bootstrapConfigs, heroStats, BootstrapDefinition);
         }

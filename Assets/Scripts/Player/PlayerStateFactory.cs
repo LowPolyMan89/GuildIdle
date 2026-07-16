@@ -45,7 +45,6 @@ namespace GuildIdle.Player
                 _configs);
             ApplyStarterHeroes(state, _bootstrap.InitialStageId);
             ApplyDefaultBuildings(state);
-            ApplyNewGameQuests(state);
             ApplyStarterEquipment(state, _bootstrap.InitialStageId);
             return state;
         }
@@ -95,25 +94,6 @@ namespace GuildIdle.Player
             }
         }
 
-        private void ApplyNewGameQuests(PlayerState state)
-        {
-            foreach (var quest in _configs.Quests)
-            {
-                if (quest == null || !quest.enabled || !StartsOnNewGame(quest.questId))
-                    continue;
-
-                var configuredSteps = _configs.GetQuestSteps(quest.questId);
-                var existing = state.GetQuestState(quest.questId);
-                if (existing == null)
-                {
-                    state.SetQuestState(QuestStateBuilder.Create(quest.questId, configuredSteps));
-                    continue;
-                }
-
-                state.SetQuestState(QuestStateBuilder.Reconcile(existing, configuredSteps, out _));
-            }
-        }
-
         private void ApplyStarterEquipment(PlayerState state, string stageId)
         {
             foreach (var loadout in _configs.GetSettlementStageStarterEquipment(stageId))
@@ -121,24 +101,6 @@ namespace GuildIdle.Player
                 var instanceId = state.AddItemInstance(loadout.itemId, PlayerState.OnStorageItemStateId);
                 state.EquipItemInstance(loadout.heroId, loadout.equipmentSlot, instanceId);
             }
-        }
-
-        private bool StartsOnNewGame(string questId)
-        {
-            var conditions = _configs.GetQuestStartConditions(questId) ?? Array.Empty<QuestStartConditionConfigDto>();
-            foreach (var condition in conditions)
-            {
-                if (condition == null || !QuestStartConditionMatcher.IsSupported(condition.conditionType))
-                    return false;
-            }
-
-            var newGame = new NewGame();
-            foreach (var condition in conditions)
-            {
-                if (QuestStartConditionMatcher.MatchesEvent(condition, newGame))
-                    return true;
-            }
-            return false;
         }
 
         private void ValidateStageBootstrap(string stageId)
@@ -178,7 +140,7 @@ namespace GuildIdle.Player
         private void ValidateLoadedStage(string stageId)
         {
             if (string.IsNullOrWhiteSpace(stageId) ||
-                !_configs.TryGetSettlementStage(stageId, out var stage) || stage == null || !stage.enabled)
+                !_configs.TryGetStage(stageId, out var stage) || stage == null || !stage.enabled)
             {
                 throw new SaveCompatibilityException($"Save references an unknown or disabled stage '{stageId}'.");
             }

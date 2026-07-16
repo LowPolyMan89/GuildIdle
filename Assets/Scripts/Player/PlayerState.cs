@@ -27,7 +27,7 @@ namespace GuildIdle.Player
         private readonly HashSet<string> _completedActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _availableActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, ActivityExecutionSaveData> _activityExecutions = new Dictionary<string, ActivityExecutionSaveData>(StringComparer.Ordinal);
-        private readonly Dictionary<string, QuestSaveData> _quests = new Dictionary<string, QuestSaveData>(StringComparer.Ordinal);
+        private readonly Dictionary<string, QuestInstanceSaveData> _questInstances = new Dictionary<string, QuestInstanceSaveData>(StringComparer.Ordinal);
         private string _currentStageId;
 
         public PlayerState(
@@ -56,7 +56,7 @@ namespace GuildIdle.Player
                 unlockedHeroes = BuildSortedArray(_unlockedHeroes),
                 acquiredHeroes = BuildSortedArray(_acquiredHeroes),
                 heroes = BuildHeroEntries(),
-                quests = GetQuestStates(),
+                questInstances = GetQuestInstances(),
                 unlockedBuildings = BuildSortedArray(_unlockedBuildings),
                 buildingLevels = BuildBuildingLevelEntries(),
                 unlockedLocations = BuildSortedArray(_unlockedLocations),
@@ -68,7 +68,7 @@ namespace GuildIdle.Player
 
         public bool SetCurrentStage(string stageId)
         {
-            if (!_configs.TryGetSettlementStage(stageId, out var stage) || stage == null || !stage.enabled)
+            if (!_configs.TryGetStage(stageId, out var stage) || stage == null || !stage.enabled)
             {
                 Debug.LogError($"[PlayerState] Unknown or disabled stage id '{stageId}'.");
                 return false;
@@ -78,29 +78,29 @@ namespace GuildIdle.Player
             return true;
         }
 
-        public QuestSaveData GetQuestState(string questId)
+        public QuestInstanceSaveData GetQuestInstance(string instanceId)
         {
-            return !string.IsNullOrWhiteSpace(questId) && _quests.TryGetValue(questId, out var quest)
-                ? CloneQuest(quest)
+            return !string.IsNullOrWhiteSpace(instanceId) && _questInstances.TryGetValue(instanceId, out var quest)
+                ? CloneQuestInstance(quest)
                 : null;
         }
 
-        public QuestSaveData[] GetQuestStates()
+        public QuestInstanceSaveData[] GetQuestInstances()
         {
-            var keys = SortedKeys(_quests);
-            var entries = new QuestSaveData[keys.Count];
+            var keys = SortedKeys(_questInstances);
+            var entries = new QuestInstanceSaveData[keys.Count];
             for (var i = 0; i < keys.Count; i++)
-                entries[i] = CloneQuest(_quests[keys[i]]);
+                entries[i] = CloneQuestInstance(_questInstances[keys[i]]);
 
             return entries;
         }
 
-        public bool SetQuestState(QuestSaveData quest)
+        public bool SetQuestInstance(QuestInstanceSaveData quest)
         {
-            if (!TryNormalizeQuest(quest, out var normalized))
+            if (!TryNormalizeQuestInstance(quest, out var normalized, out _))
                 return false;
 
-            _quests[normalized.questId] = normalized;
+            _questInstances[normalized.instanceId] = normalized;
             return true;
         }
 
@@ -133,7 +133,7 @@ namespace GuildIdle.Player
         }
 
         public bool TryCommitQuestRewardBatch(
-            QuestSaveData quest,
+            QuestInstanceSaveData quest,
             RewardMutation[] mutations,
             out RewardMutationResult[] results,
             out string error)
@@ -151,14 +151,14 @@ namespace GuildIdle.Player
                 return false;
             }
 
-            var committedQuest = CloneQuest(quest);
+            var committedQuest = CloneQuestInstance(quest);
             committedQuest.rewardsGranted = true;
-            if (SetQuestState(committedQuest))
+            if (SetQuestInstance(committedQuest))
                 return true;
 
             Restore(before, wasNormalized);
             results = Array.Empty<RewardMutationResult>();
-            error = $"Failed to persist reward state for quest '{quest.questId}'.";
+            error = $"Failed to persist reward state for quest instance '{quest.instanceId}'.";
             return false;
         }
 
@@ -725,7 +725,7 @@ namespace GuildIdle.Player
             LoadHeroes(saveData.unlockedHeroes, _unlockedHeroes);
             LoadHeroes(saveData.acquiredHeroes, _acquiredHeroes);
             LoadHeroStates(saveData.heroes);
-            LoadQuests(saveData.quests);
+            LoadQuestInstances(saveData.questInstances);
             LoadBuildings(saveData.unlockedBuildings);
             LoadBuildingLevels(saveData.buildingLevels);
             LoadLocations(saveData.unlockedLocations);
@@ -752,7 +752,7 @@ namespace GuildIdle.Player
             _completedActivities.Clear();
             _availableActivities.Clear();
             _activityExecutions.Clear();
-            _quests.Clear();
+            _questInstances.Clear();
             WasNormalized = false;
             Load(saveData);
             WasNormalized = wasNormalized;
@@ -892,17 +892,21 @@ namespace GuildIdle.Player
             }
         }
 
-        private void LoadQuests(QuestSaveData[] entries)
+        private void LoadQuestInstances(QuestInstanceSaveData[] entries)
         {
             if (entries == null)
                 return;
 
             foreach (var entry in entries)
             {
-                if (!TryNormalizeQuest(entry, out var quest) || _quests.ContainsKey(quest.questId))
+                if (!TryNormalizeQuestInstance(entry, out var quest, out var normalized) || _questInstances.ContainsKey(quest.instanceId))
+                {
+                    WasNormalized = true;
                     continue;
+                }
 
-                _quests.Add(quest.questId, quest);
+                _questInstances.Add(quest.instanceId, quest);
+                WasNormalized |= normalized;
             }
         }
 
@@ -1490,13 +1494,14 @@ namespace GuildIdle.Player
             };
         }
 
-        private bool TryNormalizeQuest(QuestSaveData source, out QuestSaveData quest)
+        private bool TryNormalizeQuestInstance(QuestInstanceSaveData source, out QuestInstanceSaveData quest, out bool changed)
         {
             quest = null;
-            if (source == null || !_configs.TryGetQuest(source.questId, out _))
+            changed = false;
+            if (source == null || string.IsNullOrWhiteSpace(source.questId) || !IsStructurallyValidQuestInstanceId(source.instanceId) || !QuestInstanceStatus.IsValid(source.status))
                 return false;
 
-            var configuredSteps = _configs.GetQuestSteps(source.questId);
+            var configuredSteps = _configs.GetQuestSteps(source.questId) ?? Array.Empty<QuestStepConfigDto>();
             var configuredStepOrders = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var configuredStep in configuredSteps)
             {
@@ -1510,12 +1515,14 @@ namespace GuildIdle.Player
             {
                 foreach (var step in source.steps)
                 {
-                    if (step == null || string.IsNullOrWhiteSpace(step.stepId) ||
-                        !configuredStepOrders.ContainsKey(step.stepId) || !seen.Add(step.stepId))
+                    if (step == null || string.IsNullOrWhiteSpace(step.stepId) || !seen.Add(step.stepId))
                     {
+                        changed = true;
                         continue;
                     }
 
+                    if (step.currentValue < 0)
+                        changed = true;
                     steps.Add(new QuestStepSaveData
                     {
                         stepId = step.stepId,
@@ -1527,20 +1534,42 @@ namespace GuildIdle.Player
 
             steps.Sort((left, right) =>
             {
-                var order = configuredStepOrders[left.stepId].CompareTo(configuredStepOrders[right.stepId]);
+                var leftOrder = configuredStepOrders.TryGetValue(left.stepId, out var lo) ? lo : int.MaxValue;
+                var rightOrder = configuredStepOrders.TryGetValue(right.stepId, out var ro) ? ro : int.MaxValue;
+                var order = leftOrder.CompareTo(rightOrder);
                 return order != 0 ? order : string.CompareOrdinal(left.stepId, right.stepId);
             });
-            quest = new QuestSaveData
+            var sourceSteps = source.steps ?? Array.Empty<QuestStepSaveData>();
+            if (source.steps == null || steps.Count != sourceSteps.Length)
             {
+                changed = true;
+            }
+            else
+            {
+                for (var index = 0; index < steps.Count; index++)
+                {
+                    if (!string.Equals(steps[index].stepId, sourceSteps[index]?.stepId, StringComparison.Ordinal))
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+            if (string.IsNullOrWhiteSpace(source.cycleId) && source.cycleId != null)
+                changed = true;
+            quest = new QuestInstanceSaveData
+            {
+                instanceId = source.instanceId,
                 questId = source.questId,
-                completed = source.completed,
+                cycleId = string.IsNullOrWhiteSpace(source.cycleId) ? null : source.cycleId,
+                status = source.status,
                 rewardsGranted = source.rewardsGranted,
                 steps = steps.ToArray()
             };
             return true;
         }
 
-        private static QuestSaveData CloneQuest(QuestSaveData source)
+        private static QuestInstanceSaveData CloneQuestInstance(QuestInstanceSaveData source)
         {
             if (source == null)
                 return null;
@@ -1560,13 +1589,28 @@ namespace GuildIdle.Player
                     };
             }
 
-            return new QuestSaveData
+            return new QuestInstanceSaveData
             {
+                instanceId = source.instanceId,
                 questId = source.questId,
-                completed = source.completed,
+                cycleId = source.cycleId,
+                status = source.status,
                 rewardsGranted = source.rewardsGranted,
                 steps = steps
             };
+        }
+
+        private static bool IsStructurallyValidQuestInstanceId(string instanceId)
+        {
+            if (string.IsNullOrWhiteSpace(instanceId))
+                return false;
+            var parts = instanceId.Split(':');
+            if (parts.Length < 2)
+                return false;
+            foreach (var part in parts)
+                if (string.IsNullOrWhiteSpace(part) || !string.Equals(part, part.Trim(), StringComparison.Ordinal))
+                    return false;
+            return true;
         }
 
         private static ItemInstanceSaveData CloneItemInstance(ItemInstanceSaveData source)

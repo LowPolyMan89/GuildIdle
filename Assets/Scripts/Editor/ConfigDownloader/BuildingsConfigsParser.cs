@@ -499,12 +499,9 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             public void ValidateSettlementStages()
             {
-                ValidateSettlementStagesTable();
                 ValidateSettlementStageSlotsTable();
-                ValidateSettlementStageObjectivesTable();
                 ValidateSettlementStageStarterHeroesTable();
                 ValidateSettlementStageStarterEquipmentTable();
-                ValidateStage2IsEmpty();
             }
 
             public Dictionary<string, List<Dictionary<string, object>>> BuildRuntimeArrays()
@@ -516,9 +513,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ["buildActions"] = BuildBuildActions(),
                     ["buildingActivities"] = BuildBuildingActivities(),
                     ["buildingCraftables"] = BuildBuildingCraftables(),
-                    ["settlementStages"] = BuildSettlementStages(),
                     ["settlementStageSlots"] = BuildSettlementStageSlots(),
-                    ["settlementStageObjectives"] = BuildSettlementStageObjectives(),
                     ["settlementStageStarterHeroes"] = BuildSettlementStageStarterHeroes(),
                     ["settlementStageStarterEquipment"] = BuildSettlementStageStarterEquipment()
                 };
@@ -726,9 +721,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ValidateRequired(row, "building_id");
                     ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
 
-                    if (!string.IsNullOrWhiteSpace(stageId) && !_enabledStageIds.Contains(stageId))
-                        AddIssue(SettlementStageSlotsSheet, row.RowNumber, "stage_id", stageId, "stage_id references missing enabled SettlementStages.stage_id.");
-
                     if (!string.IsNullOrWhiteSpace(buildingId) && !_buildings.ContainsKey(buildingId))
                         AddIssue(SettlementStageSlotsSheet, row.RowNumber, "building_id", buildingId, "building_id does not exist in Index.building_id.");
 
@@ -815,9 +807,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ValidateRequired(row, "hero_id");
                     ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
 
-                    if (!string.IsNullOrWhiteSpace(stageId) && !_enabledStageIds.Contains(stageId))
-                        AddIssue(SettlementStageStarterHeroesSheet, row.RowNumber, "stage_id", stageId, "stage_id references missing enabled SettlementStages.stage_id.");
-
                     var key = $"{stageId}\n{heroId}";
                     if (seen.TryGetValue(key, out var firstRow))
                         AddIssue(SettlementStageStarterHeroesSheet, row.RowNumber, "hero_id", heroId, $"Duplicate stage_id + hero_id; first declared at row {firstRow}.");
@@ -859,9 +848,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ValidateRequired(row, "item_id");
                     ValidateRequired(row, "equipment_slot");
                     ValidateNumberGreaterThanOrEqual(row, "sort_order", 0d, "sort_order must be greater than or equal to 0.");
-
-                    if (!string.IsNullOrWhiteSpace(stageId) && !_enabledStageIds.Contains(stageId))
-                        AddIssue(SettlementStageStarterEquipmentSheet, row.RowNumber, "stage_id", stageId, "stage_id references missing enabled SettlementStages.stage_id.");
 
                     if (!string.IsNullOrWhiteSpace(stageId) && !string.IsNullOrWhiteSpace(heroId) &&
                         !starterHeroKeys.Contains($"{stageId}\n{heroId}"))
@@ -1485,9 +1471,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static bool IsSettlementStageSheet(string sheetName)
             {
-                return string.Equals(sheetName, SettlementStagesSheet, StringComparison.OrdinalIgnoreCase) ||
-                       string.Equals(sheetName, SettlementStageSlotsSheet, StringComparison.OrdinalIgnoreCase) ||
-                       string.Equals(sheetName, SettlementStageObjectivesSheet, StringComparison.OrdinalIgnoreCase) ||
+                return string.Equals(sheetName, SettlementStageSlotsSheet, StringComparison.OrdinalIgnoreCase) ||
                        string.Equals(sheetName, SettlementStageStarterHeroesSheet, StringComparison.OrdinalIgnoreCase) ||
                        string.Equals(sheetName, SettlementStageStarterEquipmentSheet, StringComparison.OrdinalIgnoreCase);
             }

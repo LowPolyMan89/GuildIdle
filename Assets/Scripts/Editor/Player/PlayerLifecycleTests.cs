@@ -157,7 +157,6 @@ namespace GuildIdle.Editor.Player
         {
             public BuildingConfigDto[] Buildings => Array.Empty<BuildingConfigDto>();
             public SkillConfigDto[] Skills => Array.Empty<SkillConfigDto>();
-            public QuestConfigDto[] Quests => Array.Empty<QuestConfigDto>();
             public HeroSkillEffectConfigDto[] HeroSkillEffects => Array.Empty<HeroSkillEffectConfigDto>();
 
             public bool TryGetHero(string heroId, out HeroConfigDto hero)
@@ -178,7 +177,7 @@ namespace GuildIdle.Editor.Player
                 return false;
             }
 
-            public bool TryGetSettlementStage(string stageId, out SettlementStageConfigDto stage)
+            public bool TryGetStage(string stageId, out StageConfigDto stage)
             {
                 stage = null;
                 return false;
@@ -189,15 +188,6 @@ namespace GuildIdle.Editor.Player
 
             public SettlementStageStarterEquipmentConfigDto[] GetSettlementStageStarterEquipment(string stageId) =>
                 Array.Empty<SettlementStageStarterEquipmentConfigDto>();
-
-            public bool TryGetQuest(string questId, out QuestConfigDto quest)
-            {
-                quest = null;
-                return false;
-            }
-
-            public QuestStartConditionConfigDto[] GetQuestStartConditions(string questId) =>
-                Array.Empty<QuestStartConditionConfigDto>();
 
             public QuestStepConfigDto[] GetQuestSteps(string questId) => Array.Empty<QuestStepConfigDto>();
             public bool IsKnownItemState(string stateId) => false;

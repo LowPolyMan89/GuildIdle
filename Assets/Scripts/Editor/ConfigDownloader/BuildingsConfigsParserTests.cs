@@ -35,9 +35,9 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"buildActions\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingActivities\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingCraftables\""));
-            Assert.That(runtimeJson, Does.Contain("\"settlementStages\""));
             Assert.That(runtimeJson, Does.Contain("\"settlementStageSlots\""));
-            Assert.That(runtimeJson, Does.Contain("\"settlementStageObjectives\""));
+            Assert.That(runtimeJson, Does.Not.Contain("\"settlementStages\""));
+            Assert.That(runtimeJson, Does.Not.Contain("\"settlementStageObjectives\""));
             Assert.That(runtimeJson, Does.Contain("\"settlementStageStarterHeroes\""));
             Assert.That(runtimeJson, Does.Contain("\"settlementStageStarterEquipment\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingId\": \"building_hall\""));
@@ -108,8 +108,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(report.Success, Is.False);
             Assert.That(message, Does.Contain("Duplicate stage_id + hero_id"));
             Assert.That(message, Does.Contain("hero_id must be enabled in SettlementStageStarterHeroes"));
-            Assert.That(message, Does.Contain("stage_2 must not have starter heroes"));
-            Assert.That(message, Does.Contain("stage_2 must not have starter equipment"));
         }
 
         [Test]
@@ -337,68 +335,6 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
-        public void BuildRuntimeJson_RequiresEnabledStage2()
-        {
-            var missingStage2 = CreateValidDownload();
-            ReplaceSheet(missingStage2, Sheet("SettlementStages",
-                Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes"),
-                Row("stage_arrival", "stage.arrival.name", "stage.arrival.desc", "stage_arrival_location", "1800", "AllRequired", "", "10", "TRUE", "note")));
-            WriteRaw(missingStage2);
-
-            var missingReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
-            Assert.That(missingReport.Success, Is.False);
-            Assert.That(missingReport.ToDisplayMessage(), Does.Contain("stage_2 is required."));
-
-            var disabledStage2 = CreateValidDownload();
-            FindSheet(disabledStage2, "SettlementStages").rows[2].cells[8] = "FALSE";
-            WriteRaw(disabledStage2);
-
-            var disabledReport = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
-            Assert.That(disabledReport.Success, Is.False);
-            Assert.That(disabledReport.ToDisplayMessage(), Does.Contain("stage_2 must be enabled."));
-        }
-
-        [Test]
-        public void BuildRuntimeJson_RejectsRuntimeRowsThatReferenceDisabledStage()
-        {
-            var download = CreateValidDownload();
-            var stages = FindSheet(download, "SettlementStages");
-            stages.rows = Append(stages.rows, Row("stage_disabled", "stage.disabled.name", "stage.disabled.desc", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE", "note"));
-            FindSheet(download, "SettlementStageSlots").rows = Append(
-                FindSheet(download, "SettlementStageSlots").rows,
-                Row("stage_disabled", "slot_disabled", "building_hall", "30", "TRUE", "note"));
-            FindSheet(download, "SettlementStageObjectives").rows = Append(
-                FindSheet(download, "SettlementStageObjectives").rows,
-                Row("stage_disabled", "quest_disabled_stage", "100", "TRUE", "30", "note"));
-            WriteRaw(download);
-
-            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
-            var message = report.ToDisplayMessage();
-
-            Assert.That(report.Success, Is.False);
-            Assert.That(message, Does.Contain("SettlementStageSlots row 4 column 'stage_id' value 'stage_disabled'"));
-            Assert.That(message, Does.Contain("SettlementStageObjectives row 4 column 'stage_id' value 'stage_disabled'"));
-            Assert.That(message, Does.Contain("missing enabled SettlementStages.stage_id"));
-        }
-
-        [Test]
-        public void BuildRuntimeJson_RejectsActiveStageNextStageIdWhenTargetStageDisabled()
-        {
-            var download = CreateValidDownload();
-            FindSheet(download, "SettlementStages").rows[1].cells[6] = "stage_disabled";
-            FindSheet(download, "SettlementStages").rows = Append(
-                FindSheet(download, "SettlementStages").rows,
-                Row("stage_disabled", "stage.disabled.name", "stage.disabled.desc", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE", "note"));
-            WriteRaw(download);
-
-            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
-
-            Assert.That(report.Success, Is.False);
-            Assert.That(report.ToDisplayMessage(), Does.Contain("SettlementStages row 2 column 'next_stage_id' value 'stage_disabled'"));
-            Assert.That(report.ToDisplayMessage(), Does.Contain("missing enabled SettlementStages.stage_id"));
-        }
-
-        [Test]
         public void ParseAndWrite_DoesNotOverwriteExistingRuntimeWhenValidationFails()
         {
             var download = CreateValidDownload();
@@ -468,18 +404,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("building_hall", "0", "build_hall", "10", "combat_clear_hall_forest", "build_hall", "", "TRUE", "note"),
                         Row("building_warehouse", "0", "build_warehouse", "20", "", "", "building_hall:1", "TRUE", "note"),
                         Row("building_carpentry", "0", "missing_disabled_activity", "30", "", "", "building_hall:1", "FALSE", "note")),
-                    Sheet("SettlementStages",
-                        Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes"),
-                        Row("stage_arrival", "stage.arrival.name", "stage.arrival.desc", "stage_arrival_location", "1800", "AllRequired", "stage_2", "10", "TRUE", "note"),
-                        Row("stage_2", "stage.2.name", "stage.2.desc", "stage_2_location", "0", "AllRequired", "", "20", "TRUE", "note")),
                     Sheet("SettlementStageSlots",
                         Row("stage_id", "slot_id", "building_id", "sort_order", "enabled", "notes"),
                         Row("stage_arrival", "slot_hall", "building_hall", "10", "TRUE", "note"),
                         Row("stage_arrival", "slot_underwood", "building_underwood", "20", "TRUE", "note")),
-                    Sheet("SettlementStageObjectives",
-                        Row("stage_id", "quest_id", "weight_percent", "required", "sort_order", "notes"),
-                        Row("stage_arrival", "quest_build_hall", "50", "TRUE", "10", "note"),
-                        Row("stage_arrival", "quest_clear_underwood", "50", "TRUE", "20", "note")),
                     Sheet("SettlementStageStarterHeroes",
                         Row("stage_id", "hero_id", "sort_order", "enabled", "notes"),
                         Row("stage_arrival", "ren", "10", "TRUE", "note")),

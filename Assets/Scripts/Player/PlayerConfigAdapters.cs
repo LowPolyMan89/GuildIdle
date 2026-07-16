@@ -19,16 +19,13 @@ namespace GuildIdle.Player
     {
         BuildingConfigDto[] Buildings { get; }
         SkillConfigDto[] Skills { get; }
-        QuestConfigDto[] Quests { get; }
         HeroSkillEffectConfigDto[] HeroSkillEffects { get; }
         bool TryGetHero(string heroId, out HeroConfigDto hero);
         bool TryGetItem(string itemId, out IItemConfig item);
         bool TryGetEquipmentSlot(string itemId, out string equipmentSlot);
-        bool TryGetSettlementStage(string stageId, out SettlementStageConfigDto stage);
+        bool TryGetStage(string stageId, out StageConfigDto stage);
         SettlementStageStarterHeroConfigDto[] GetSettlementStageStarterHeroes(string stageId);
         SettlementStageStarterEquipmentConfigDto[] GetSettlementStageStarterEquipment(string stageId);
-        bool TryGetQuest(string questId, out QuestConfigDto quest);
-        QuestStartConditionConfigDto[] GetQuestStartConditions(string questId);
         QuestStepConfigDto[] GetQuestSteps(string questId);
         bool IsKnownItemState(string stateId);
     }
@@ -62,6 +59,7 @@ namespace GuildIdle.Player
         private readonly HeroesConfigRepository _heroes;
         private readonly ActivitiesConfigRepository _activities;
         private readonly BuildingsConfigRepository _buildings;
+        private readonly QuestConfigRepository _quests;
         private readonly StorageConfigRepository _storage;
 
         public RepositoryPlayerBootstrapConfigAdapter(
@@ -69,31 +67,28 @@ namespace GuildIdle.Player
             HeroesConfigRepository heroes,
             ActivitiesConfigRepository activities,
             BuildingsConfigRepository buildings,
+            QuestConfigRepository quests,
             StorageConfigRepository storage)
         {
             _items = items ?? throw new ArgumentNullException(nameof(items));
             _heroes = heroes ?? throw new ArgumentNullException(nameof(heroes));
             _activities = activities ?? throw new ArgumentNullException(nameof(activities));
             _buildings = buildings ?? throw new ArgumentNullException(nameof(buildings));
+            _quests = quests ?? throw new ArgumentNullException(nameof(quests));
             _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         }
 
         public BuildingConfigDto[] Buildings => _buildings.Buildings;
         public SkillConfigDto[] Skills => _activities.Skills;
-        public QuestConfigDto[] Quests => _activities.Quests;
         public HeroSkillEffectConfigDto[] HeroSkillEffects => _heroes.HeroSkillEffects;
         public bool TryGetHero(string heroId, out HeroConfigDto hero) => _heroes.TryGet(heroId, out hero);
         public bool TryGetItem(string itemId, out IItemConfig item) => _items.TryGet(itemId, out item);
-        public bool TryGetSettlementStage(string stageId, out SettlementStageConfigDto stage) =>
-            _buildings.TryGetSettlementStage(stageId, out stage);
+        public bool TryGetStage(string stageId, out StageConfigDto stage) => _quests.TryGetStage(stageId, out stage);
         public SettlementStageStarterHeroConfigDto[] GetSettlementStageStarterHeroes(string stageId) =>
             _buildings.GetSettlementStageStarterHeroes(stageId);
         public SettlementStageStarterEquipmentConfigDto[] GetSettlementStageStarterEquipment(string stageId) =>
             _buildings.GetSettlementStageStarterEquipment(stageId);
-        public bool TryGetQuest(string questId, out QuestConfigDto quest) => _activities.TryGetQuest(questId, out quest);
-        public QuestStartConditionConfigDto[] GetQuestStartConditions(string questId) =>
-            _activities.GetQuestStartConditions(questId);
-        public QuestStepConfigDto[] GetQuestSteps(string questId) => _activities.GetQuestSteps(questId);
+        public QuestStepConfigDto[] GetQuestSteps(string questId) => _quests.GetSteps(questId);
         public bool IsKnownItemState(string stateId) => _storage.TryGetItemState(stateId, out _);
 
         public bool TryGetEquipmentSlot(string itemId, out string equipmentSlot)

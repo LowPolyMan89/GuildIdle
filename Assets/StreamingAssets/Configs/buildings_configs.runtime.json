@@ -348,30 +348,6 @@
       "enabled": true
     }
   ],
-  "settlementStages": [
-    {
-      "stageId": "stage_arrival",
-      "nameId": "stage_arrival_name_id",
-      "descriptionId": "stage_arrival_description_id",
-      "stagePrefabId": "stage_arrival_location",
-      "targetDurationSec": 1800,
-      "completionRule": "AllRequired",
-      "nextStageId": "stage_2",
-      "sortOrder": 10,
-      "enabled": true
-    },
-    {
-      "stageId": "stage_2",
-      "nameId": "stage_2_name_id",
-      "descriptionId": "stage_2_description_id",
-      "stagePrefabId": "stage_2_location",
-      "targetDurationSec": 0,
-      "completionRule": "AllRequired",
-      "nextStageId": "",
-      "sortOrder": 20,
-      "enabled": true
-    }
-  ],
   "settlementStageSlots": [
     {
       "stageId": "stage_arrival",
@@ -407,22 +383,6 @@
       "buildingId": "building_warehouse",
       "sortOrder": 50,
       "enabled": true
-    }
-  ],
-  "settlementStageObjectives": [
-    {
-      "stageId": "stage_arrival",
-      "questId": "quest_build_hut",
-      "weightPercent": 50,
-      "required": true,
-      "sortOrder": 10
-    },
-    {
-      "stageId": "stage_arrival",
-      "questId": "quest_clear_underwood",
-      "weightPercent": 50,
-      "required": true,
-      "sortOrder": 20
     }
   ],
   "settlementStageStarterHeroes": [

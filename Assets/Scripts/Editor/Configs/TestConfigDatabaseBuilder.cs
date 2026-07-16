@@ -13,6 +13,7 @@ namespace GuildIdle.Editor.Configs
         private HeroesRuntimeConfigDto _heroes;
         private ActivitiesRuntimeConfigDto _activities;
         private BuildingsRuntimeConfigDto _buildings;
+        private QuestRuntimeConfigDto _quests;
         private EnemiesRuntimeConfigDto _enemies;
         private FormulaRuntimeConfigDto _formulas;
         private LootRuntimeConfigDto _loot;
@@ -32,6 +33,7 @@ namespace GuildIdle.Editor.Configs
                 _heroes,
                 _activities,
                 _buildings,
+                _quests,
                 _enemies,
                 _formulas,
                 _loot,
@@ -207,12 +209,15 @@ namespace GuildIdle.Editor.Configs
                 {
                     new SkillProgressionConfigDto { level = 1, totalExpRequired = 0 },
                     new SkillProgressionConfigDto { level = 2, totalExpRequired = 100 }
-                },
-                quests = new[]
+                }
+            };
+            _quests = new QuestRuntimeConfigDto
+            {
+                storyQuests = new[]
                 {
-                    new QuestConfigDto { questId = "quest_build_hut", enabled = true },
-                    new QuestConfigDto { questId = "quest_clear_underwood", enabled = true },
-                    new QuestConfigDto { questId = "quest_disabled_new_game", enabled = false }
+                    new StoryQuestConfigDto { questId = "quest_build_hut", enabled = true },
+                    new StoryQuestConfigDto { questId = "quest_clear_underwood", enabled = true },
+                    new StoryQuestConfigDto { questId = "quest_disabled_new_game", enabled = false }
                 },
                 questStartConditions = new[]
                 {
@@ -238,8 +243,8 @@ namespace GuildIdle.Editor.Configs
 
         public TestConfigDatabaseBuilder WithQuestStartConditions(params QuestStartConditionConfigDto[] conditions)
         {
-            _activities ??= new ActivitiesRuntimeConfigDto();
-            _activities.questStartConditions = conditions ?? Array.Empty<QuestStartConditionConfigDto>();
+            _quests ??= new QuestRuntimeConfigDto();
+            _quests.questStartConditions = conditions ?? Array.Empty<QuestStartConditionConfigDto>();
             return this;
         }
 
@@ -276,11 +281,6 @@ namespace GuildIdle.Editor.Configs
                     new BuildingLevelConfigDto { buildingId = "building_hidden", level = 0 },
                     new BuildingLevelConfigDto { buildingId = "building_hidden", level = 1 }
                 },
-                settlementStages = new[]
-                {
-                    new SettlementStageConfigDto { stageId = "stage_arrival", enabled = true, nextStageId = "stage_2" },
-                    new SettlementStageConfigDto { stageId = "stage_2", enabled = true }
-                },
                 settlementStageStarterHeroes = new[]
                 {
                     new SettlementStageStarterHeroConfigDto { stageId = "stage_arrival", heroId = "ren", sortOrder = 10 }
@@ -296,6 +296,12 @@ namespace GuildIdle.Editor.Configs
                         sortOrder = 10
                     }
                 }
+            };
+            _quests ??= new QuestRuntimeConfigDto();
+            _quests.stages = new[]
+            {
+                new StageConfigDto { stageId = "stage_arrival", enabled = true, nextStageId = "stage_2" },
+                new StageConfigDto { stageId = "stage_2", enabled = true }
             };
             return this;
         }
@@ -332,12 +338,10 @@ namespace GuildIdle.Editor.Configs
                 buildings = new[]
                 {
                     new BuildingConfigDto { buildingId = "building_underwood", levels = 2 }
-                },
-                settlementStages = new[]
-                {
-                    new SettlementStageConfigDto { stageId = "stage_arrival", enabled = true }
                 }
             };
+            _quests ??= new QuestRuntimeConfigDto();
+            _quests.stages = new[] { new StageConfigDto { stageId = "stage_arrival", enabled = true } };
             return this;
         }
 

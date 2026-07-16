@@ -6,7 +6,7 @@ namespace GuildIdle.Configs
 {
     public static class Configs
     {
-        private static readonly ConfigDatabase EmptyDatabase = new ConfigDatabase(null, null, null, null, null, null, null, null, null, null);
+        private static readonly ConfigDatabase EmptyDatabase = new ConfigDatabase(null, null, null, null, null, null, null, null, null, null, null);
         private static readonly LocalisationService LocalisationService = new LocalisationService();
 
         private static ConfigDatabase _database;
@@ -24,6 +24,7 @@ namespace GuildIdle.Configs
         public static HeroesConfigRepository Heroes => GetRepository(database => database.Heroes, "Heroes");
         public static ActivitiesConfigRepository Activities => GetRepository(database => database.Activities, "Activities");
         public static BuildingsConfigRepository Buildings => GetRepository(database => database.Buildings, "Buildings");
+        public static QuestConfigRepository Quests => GetRepository(database => database.Quests, "Quests");
         public static EnemiesConfigRepository Enemies => GetRepository(database => database.Enemies, "Enemies");
         public static FormulasConfigRepository Formulas => GetRepository(database => database.Formulas, "Formulas");
         public static LootConfigRepository Loot => GetRepository(database => database.Loot, "Loot");

@@ -7,643 +7,436 @@ using GuildIdle.Player;
 
 namespace GuildIdle.Progression
 {
-    public sealed class StageQuestRuntimeService
+    public sealed class QuestRuntimeService
     {
-        private const string AllRequiredCompletionRule = "AllRequired";
-
-        private readonly IStageQuestConfigProvider _configs;
-        private readonly IStageQuestRuntimeStore _store;
+        private readonly IQuestRuntimeConfigProvider _configs;
+        private readonly IProgressionRuntimeStore _store;
         private readonly IActivityRandom _random;
 
-        public StageQuestRuntimeService(
-            IStageQuestConfigProvider configs,
-            IStageQuestRuntimeStore store,
-            IActivityRandom random = null)
+        public QuestRuntimeService(IQuestRuntimeConfigProvider configs, IProgressionRuntimeStore store, IActivityRandom random = null)
         {
             _configs = configs ?? throw new ArgumentNullException(nameof(configs));
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _random = random ?? new SystemActivityRandom();
-            Initialize();
         }
 
-        public event Action<StageQuestUpdate> Updated;
-
-        public StageQuestUpdate Handle(ProgressionEvent progressionEvent)
+        public QuestRuntimeResult Initialize()
         {
-            if (progressionEvent == null)
-                throw new ArgumentNullException(nameof(progressionEvent));
-
-            var issues = new List<StageQuestIssue>();
-            var activated = new List<string>();
-            var completed = new List<string>();
-            var rewards = new List<StageQuestRewardGrant>();
-            var changed = false;
-
-            var validEvent = ValidateStageEnteredEvent(progressionEvent, issues);
-            if (validEvent)
-            {
-                changed |= ActivateMatchingQuests(progressionEvent, issues, activated);
-                changed |= ApplyEventToActiveQuests(progressionEvent, issues, completed);
-            }
-            changed |= ApplyPendingRewards(issues, rewards);
-            var transition = TryTransition(issues, activated, completed, rewards, ref changed);
-            var saved = changed && _store.Save();
-            var update = new StageQuestUpdate(
-                GetSnapshot(), issues, activated, completed, rewards, transition, changed, saved);
-            if (changed)
-                Updated?.Invoke(update);
-            return update;
-        }
-
-        public StageQuestSnapshot GetSnapshot()
-        {
-            if (!_configs.TryGetSettlementStage(_store.CurrentStageId, out var stage) || stage == null || !stage.enabled)
-                throw new InvalidOperationException($"Unknown or disabled current stage '{_store.CurrentStageId}'.");
-
-            var objectives = OrderedObjectives(stage.stageId);
-            var objectiveSnapshots = new List<StageObjectiveSnapshot>();
-            var currentStageQuestIds = new HashSet<string>(StringComparer.Ordinal);
-            var progress = 0;
-            foreach (var objective in objectives)
-            {
-                if (objective == null)
-                    continue;
-                if (!string.IsNullOrWhiteSpace(objective.questId))
-                    currentStageQuestIds.Add(objective.questId);
-                var state = _store.GetQuestState(objective.questId);
-                var isCompleted = state?.completed == true && AreRequiredQuestObjectivesSupported(objective.questId);
-                if (objective.required && isCompleted)
-                    progress += Math.Max(0, objective.weightPercent);
-                objectiveSnapshots.Add(new StageObjectiveSnapshot(
-                    objective.questId,
-                    objective.weightPercent,
-                    objective.required,
-                    objective.sortOrder,
-                    state != null,
-                    isCompleted));
-            }
-
-            progress = Math.Max(0, Math.Min(100, progress));
-            var active = new List<QuestSnapshot>();
-            var completed = new List<QuestSnapshot>();
-            foreach (var state in OrderedQuestStates())
-            {
-                if (!currentStageQuestIds.Contains(state.questId))
-                    continue;
-                if (!_configs.TryGetQuest(state.questId, out var quest) || quest == null)
-                    continue;
-                var snapshot = BuildQuestSnapshot(quest, state, objectives);
-                if (state.completed)
-                    completed.Add(snapshot);
-                else
-                    active.Add(snapshot);
-            }
-
-            return new StageQuestSnapshot(
-                new CurrentStageSnapshot(
-                    stage.stageId,
-                    stage.nameId,
-                    stage.descriptionId,
-                    stage.completionRule,
-                    stage.nextStageId,
-                    progress,
-                    objectiveSnapshots),
-                active,
-                completed);
-        }
-
-        private void Initialize()
-        {
-            if (!_configs.TryGetSettlementStage(_store.CurrentStageId, out var stage) || stage == null || !stage.enabled)
-                throw new InvalidOperationException($"Unknown or disabled current stage '{_store.CurrentStageId}'.");
-
-            var issues = new List<StageQuestIssue>();
-            var activated = new List<string>();
-            var completed = new List<string>();
-            var rewards = new List<StageQuestRewardGrant>();
-            var changed = ReconcileExistingQuestStates(issues);
-            changed |= ActivateStateBasedQuests(issues, activated);
-            changed |= CompleteReadyQuests(issues, completed);
-            changed |= ApplyPendingRewards(issues, rewards);
-            TryTransition(issues, activated, completed, rewards, ref changed);
-            if (changed)
-                _store.Save();
-        }
-
-        private bool ReconcileExistingQuestStates(List<StageQuestIssue> issues)
-        {
-            var changed = false;
-            foreach (var state in _store.GetQuestStates())
-            {
-                if (!_configs.TryGetQuest(state.questId, out var quest) || quest == null || !quest.enabled)
-                    continue;
-                var reconciled = QuestStateBuilder.Reconcile(state, _configs.GetQuestSteps(state.questId), out var questChanged);
-                if (!reconciled.completed)
-                    questChanged |= ApplyStateBackedObjectives(state.questId, reconciled, issues);
-                if (!questChanged)
-                    continue;
-                if (_store.SetQuestState(reconciled))
-                    changed = true;
-                else
-                    issues.Add(new StageQuestIssue("QuestReconcileFailed", state.questId, null, "Failed to reconcile saved quest state."));
-            }
-            return changed;
-        }
-
-        private bool ActivateStateBasedQuests(List<StageQuestIssue> issues, List<string> activated)
-        {
-            var changed = false;
-            foreach (var quest in OrderedQuests())
-            {
-                if (quest == null || !quest.enabled || _store.GetQuestState(quest.questId) != null)
-                    continue;
-                var conditions = _configs.GetQuestStartConditions(quest.questId);
-                if (!AllConditionsSupported(quest.questId, conditions, issues))
-                    continue;
-                var matches = false;
-                foreach (var condition in conditions ?? Array.Empty<QuestStartConditionConfigDto>())
-                {
-                    if (condition != null && Matches(condition.conditionType, QuestConditionType.BuildingLevel) &&
-                        _store.GetBuildingLevel(condition.targetId) >= condition.value)
-                    {
-                        matches = true;
-                        break;
-                    }
-                }
-                if (matches)
-                    changed |= ActivateQuest(quest, issues, activated);
-            }
-            return changed;
-        }
-
-        private bool ActivateMatchingQuests(
-            ProgressionEvent progressionEvent,
-            List<StageQuestIssue> issues,
-            List<string> activated)
-        {
-            var changed = false;
-            foreach (var quest in OrderedQuests())
-            {
-                if (quest == null || !quest.enabled || _store.GetQuestState(quest.questId) != null)
-                    continue;
-                var conditions = _configs.GetQuestStartConditions(quest.questId);
-                if (!AllConditionsSupported(quest.questId, conditions, issues))
-                    continue;
-                var matches = false;
-                foreach (var condition in conditions ?? Array.Empty<QuestStartConditionConfigDto>())
-                {
-                    if (QuestStartConditionMatcher.MatchesEvent(condition, progressionEvent))
-                    {
-                        matches = true;
-                        break;
-                    }
-                }
-                if (matches)
-                    changed |= ActivateQuest(quest, issues, activated);
-            }
-            return changed;
-        }
-
-        private bool ActivateQuest(QuestConfigDto quest, List<StageQuestIssue> issues, List<string> activated)
-        {
-            var state = QuestStateBuilder.Create(quest.questId, _configs.GetQuestSteps(quest.questId));
-            ApplyStateBackedObjectives(quest.questId, state, issues);
-            if (!_store.SetQuestState(state))
-            {
-                issues.Add(new StageQuestIssue("QuestActivationFailed", quest.questId, null, "Failed to activate quest."));
-                return false;
-            }
-            activated.Add(quest.questId);
-            return true;
-        }
-
-        private bool ApplyStateBackedObjectives(string questId, QuestSaveData state, List<StageQuestIssue> issues)
-        {
-            var changed = false;
-            var stepsById = IndexSteps(state);
-            foreach (var config in _configs.GetQuestSteps(questId) ?? Array.Empty<QuestStepConfigDto>())
-            {
-                if (config == null || !stepsById.TryGetValue(config.stepId, out var step) || step.completed)
-                    continue;
-                if (!IsObjectiveSupported(config.objectiveType))
-                {
-                    AddUnsupportedObjective(questId, config, issues);
-                    continue;
-                }
-
-                if (Matches(config.objectiveType, QuestObjectiveType.ResourceCount) ||
-                    Matches(config.objectiveType, QuestObjectiveType.ItemCount))
-                {
-                    var beforeValue = step.currentValue;
-                    var beforeCompleted = step.completed;
-                    UpdateStep(step, _store.GetItem(config.targetId), config.targetValue);
-                    changed |= beforeValue != step.currentValue || beforeCompleted != step.completed;
-                }
-                else if (Matches(config.objectiveType, QuestObjectiveType.BuildingLevel))
-                {
-                    var beforeValue = step.currentValue;
-                    var beforeCompleted = step.completed;
-                    UpdateStep(step, _store.GetBuildingLevel(config.targetId), config.targetValue);
-                    changed |= beforeValue != step.currentValue || beforeCompleted != step.completed;
-                }
-            }
-            return changed;
-        }
-
-        private bool ApplyEventToActiveQuests(
-            ProgressionEvent progressionEvent,
-            List<StageQuestIssue> issues,
-            List<string> completedQuestIds)
-        {
-            var changed = false;
-            foreach (var state in _store.GetQuestStates())
-            {
-                if (state == null || state.completed)
-                    continue;
-                var stateChanged = false;
-                var stepsById = IndexSteps(state);
-                foreach (var config in _configs.GetQuestSteps(state.questId) ?? Array.Empty<QuestStepConfigDto>())
-                {
-                    if (config == null || !stepsById.TryGetValue(config.stepId, out var step))
-                        continue;
-                    if (!IsObjectiveSupported(config.objectiveType))
-                    {
-                        AddUnsupportedObjective(state.questId, config, issues);
-                        continue;
-                    }
-                    if (step.completed || !ObjectiveMatchesEvent(config, progressionEvent, out var currentValue))
-                        continue;
-                    var beforeValue = step.currentValue;
-                    var beforeCompleted = step.completed;
-                    UpdateStep(step, currentValue, config.targetValue);
-                    stateChanged |= beforeValue != step.currentValue || beforeCompleted != step.completed;
-                }
-
-                stateChanged |= TryMarkQuestCompleted(state.questId, state, issues, completedQuestIds);
-                if (!stateChanged)
-                    continue;
-                if (_store.SetQuestState(state))
-                    changed = true;
-                else
-                    issues.Add(new StageQuestIssue("QuestUpdateFailed", state.questId, null, "Failed to persist quest state."));
-            }
-            return changed;
-        }
-
-        private bool CompleteReadyQuests(List<StageQuestIssue> issues, List<string> completedQuestIds)
-        {
-            var changed = false;
-            foreach (var state in _store.GetQuestStates())
-            {
-                if (state == null || state.completed || !TryMarkQuestCompleted(state.questId, state, issues, completedQuestIds))
-                    continue;
-                if (_store.SetQuestState(state))
-                    changed = true;
-            }
-            return changed;
-        }
-
-        private bool TryMarkQuestCompleted(
-            string questId,
-            QuestSaveData state,
-            List<StageQuestIssue> issues,
-            List<string> completedQuestIds)
-        {
-            if (state.completed)
-                return false;
-            var requiredCount = 0;
-            var stepsById = IndexSteps(state);
-            foreach (var config in _configs.GetQuestSteps(questId) ?? Array.Empty<QuestStepConfigDto>())
-            {
-                if (config == null)
-                    continue;
-                if (!IsObjectiveSupported(config.objectiveType))
-                {
-                    AddUnsupportedObjective(questId, config, issues);
-                    if (config.required)
-                        return false;
-                    continue;
-                }
-                if (!config.required)
-                    continue;
-                requiredCount++;
-                if (!stepsById.TryGetValue(config.stepId, out var step) || !step.completed)
-                    return false;
-            }
-            if (requiredCount == 0)
-                return false;
-            state.completed = true;
-            completedQuestIds?.Add(questId);
-            return true;
-        }
-
-        private bool ApplyPendingRewards(List<StageQuestIssue> issues, List<StageQuestRewardGrant> grants)
-        {
-            var changed = false;
-            foreach (var state in _store.GetQuestStates())
-            {
-                if (state == null || !state.completed || state.rewardsGranted)
-                    continue;
-                if (!AddObjectiveIssuesAndCheckRequiredSupported(state.questId, issues))
-                    continue;
-                var definitions = new List<RewardDefinition>();
-                var invalidGrantMoment = false;
-                foreach (var reward in _configs.GetQuestRewards(state.questId) ?? Array.Empty<QuestRewardConfigDto>())
-                {
-                    if (reward == null)
-                        continue;
-                    if (!ActivityResolverUtilities.MomentMatches(reward.grantMoment, GrantMoment.OnComplete))
-                    {
-                        issues.Add(new StageQuestIssue("QuestRewardInvalid", state.questId, null, $"Unsupported quest reward grant moment '{reward.grantMoment}'."));
-                        invalidGrantMoment = true;
-                        continue;
-                    }
-                    definitions.Add(new RewardDefinition
-                    {
-                        sourceId = state.questId,
-                        rewardType = reward.rewardType,
-                        targetId = reward.targetId,
-                        min = reward.min,
-                        max = reward.max,
-                        chance = 100f,
-                        grantMoment = reward.grantMoment
-                    });
-                }
-                if (invalidGrantMoment)
-                    continue;
-
-                var prepared = RewardBatchPipeline.Prepare(definitions, GrantMoment.OnComplete, null, _random, true);
-                if (!prepared.success)
-                {
-                    foreach (var issue in prepared.issues)
-                        issues.Add(new StageQuestIssue("QuestRewardInvalid", state.questId, null, issue.message));
-                    continue;
-                }
-                if (!_store.TryCommitQuestRewardBatch(state, prepared.mutations, out var results, out var error))
-                {
-                    issues.Add(new StageQuestIssue("QuestRewardCommitFailed", state.questId, null, error ?? "Failed to commit quest rewards."));
-                    continue;
-                }
-
-                prepared.ApplyResults(results);
-                foreach (var reward in prepared.rewards)
-                    grants.Add(new StageQuestRewardGrant(state.questId, reward.rewardType, reward.targetId, reward.amount, reward.applied));
-                changed = true;
-            }
-            return changed;
-        }
-
-        private TransitionResult TryTransition(
-            List<StageQuestIssue> issues,
-            List<string> activated,
-            List<string> completed,
-            List<StageQuestRewardGrant> rewards,
-            ref bool changed)
-        {
-            if (!_configs.TryGetSettlementStage(_store.CurrentStageId, out var stage) || stage == null || !stage.enabled)
-                return TransitionResult.None;
-            var required = RequiredObjectives(stage.stageId);
-            if (required.Count == 0)
-                return TransitionResult.None;
-            if (!Matches(stage.completionRule, AllRequiredCompletionRule))
-            {
-                issues.Add(new StageQuestIssue("UnsupportedCompletionRule", null, null, $"Unsupported completion rule '{stage.completionRule}'."));
-                return TransitionResult.None;
-            }
-            foreach (var objective in required)
-            {
-                var quest = _store.GetQuestState(objective.questId);
-                if (quest == null || !quest.completed || !quest.rewardsGranted ||
-                    !AddObjectiveIssuesAndCheckRequiredSupported(objective.questId, issues))
-                    return TransitionResult.None;
-            }
-            if (string.IsNullOrWhiteSpace(stage.nextStageId))
-                return TransitionResult.None;
-
-            var from = stage.stageId;
-            if (!_store.SetCurrentStage(stage.nextStageId))
-            {
-                issues.Add(new StageQuestIssue("StageTransitionFailed", null, null, $"Failed to enter stage '{stage.nextStageId}'."));
-                return TransitionResult.None;
-            }
-
-            changed = true;
-            var entered = new StageEntered(stage.nextStageId);
-            changed |= ActivateMatchingQuests(entered, issues, activated);
-            changed |= ApplyEventToActiveQuests(entered, issues, completed);
-            changed |= ApplyPendingRewards(issues, rewards);
-            return new TransitionResult(true, from, stage.nextStageId);
-        }
-
-        private QuestSnapshot BuildQuestSnapshot(
-            QuestConfigDto quest,
-            QuestSaveData state,
-            SettlementStageObjectiveConfigDto[] currentObjectives)
-        {
-            var required = false;
-            foreach (var objective in currentObjectives)
-            {
-                if (objective != null && objective.required && string.Equals(objective.questId, quest.questId, StringComparison.Ordinal))
-                {
-                    required = true;
-                    break;
-                }
-            }
-            var saved = IndexSteps(state);
-            var steps = new List<QuestStepSnapshot>();
-            foreach (var config in OrderedSteps(quest.questId))
-            {
-                saved.TryGetValue(config.stepId, out var step);
-                steps.Add(new QuestStepSnapshot(
-                    config.stepId,
-                    config.stepOrder,
-                    config.objectiveType,
-                    config.targetId,
-                    config.targetValue,
-                    step?.currentValue ?? 0,
-                    config.descriptionId,
-                    config.required,
-                    step?.completed == true));
-            }
-            return new QuestSnapshot(quest.questId, quest.nameId, quest.descriptionId, quest.sortOrder, quest.isTutorial, required, state.completed, steps);
-        }
-
-        private QuestSaveData[] OrderedQuestStates()
-        {
-            var states = new List<QuestSaveData>(_store.GetQuestStates());
-            states.Sort((left, right) =>
-            {
-                _configs.TryGetQuest(left.questId, out var leftConfig);
-                _configs.TryGetQuest(right.questId, out var rightConfig);
-                var order = (leftConfig?.sortOrder ?? 0).CompareTo(rightConfig?.sortOrder ?? 0);
-                return order != 0 ? order : string.CompareOrdinal(left.questId, right.questId);
-            });
-            return states.ToArray();
-        }
-
-        private QuestConfigDto[] OrderedQuests()
-        {
-            var quests = new List<QuestConfigDto>(_configs.Quests ?? Array.Empty<QuestConfigDto>());
-            quests.Sort((left, right) =>
-            {
-                var order = (left?.sortOrder ?? 0).CompareTo(right?.sortOrder ?? 0);
-                return order != 0 ? order : string.CompareOrdinal(left?.questId, right?.questId);
-            });
-            return quests.ToArray();
-        }
-
-        private QuestStepConfigDto[] OrderedSteps(string questId)
-        {
-            var steps = new List<QuestStepConfigDto>(
-                _configs.GetQuestSteps(questId) ?? Array.Empty<QuestStepConfigDto>());
-            steps.Sort((left, right) =>
-            {
-                var order = (left?.stepOrder ?? 0).CompareTo(right?.stepOrder ?? 0);
-                return order != 0 ? order : string.CompareOrdinal(left?.stepId, right?.stepId);
-            });
-            return steps.ToArray();
-        }
-
-        private SettlementStageObjectiveConfigDto[] OrderedObjectives(string stageId)
-        {
-            var objectives = new List<SettlementStageObjectiveConfigDto>(
-                _configs.GetSettlementStageObjectives(stageId) ?? Array.Empty<SettlementStageObjectiveConfigDto>());
-            objectives.Sort((left, right) =>
-            {
-                var order = (left?.sortOrder ?? 0).CompareTo(right?.sortOrder ?? 0);
-                return order != 0 ? order : string.CompareOrdinal(left?.questId, right?.questId);
-            });
-            return objectives.ToArray();
-        }
-
-        private List<SettlementStageObjectiveConfigDto> RequiredObjectives(string stageId)
-        {
-            var required = new List<SettlementStageObjectiveConfigDto>();
-            foreach (var objective in OrderedObjectives(stageId))
-            {
-                if (objective?.required == true)
-                    required.Add(objective);
-            }
-            return required;
-        }
-
-        private static Dictionary<string, QuestStepSaveData> IndexSteps(QuestSaveData state)
-        {
-            var result = new Dictionary<string, QuestStepSaveData>(StringComparer.Ordinal);
-            foreach (var step in state?.steps ?? Array.Empty<QuestStepSaveData>())
-            {
-                if (step != null && !string.IsNullOrWhiteSpace(step.stepId) && !result.ContainsKey(step.stepId))
-                    result.Add(step.stepId, step);
-            }
+            var result = new QuestRuntimeResult();
+            ReconcileInstances(result);
+            ActivateDefinitions(null, stateOnly: true, result);
+            ApplyStateBackedSteps(result);
+            CompleteReadyInstances(result);
+            ApplyPendingRewards(result);
             return result;
         }
 
-        private bool AllConditionsSupported(
-            string questId,
-            QuestStartConditionConfigDto[] conditions,
-            List<StageQuestIssue> issues)
+        public QuestRuntimeResult Handle(ProgressionEvent progressionEvent)
         {
-            var supported = true;
-            foreach (var condition in conditions ?? Array.Empty<QuestStartConditionConfigDto>())
-            {
-                if (condition != null && QuestStartConditionMatcher.IsSupported(condition.conditionType))
-                    continue;
-                supported = false;
-                issues.Add(new StageQuestIssue("UnsupportedCondition", questId, null, $"Unsupported quest condition '{condition?.conditionType}'."));
-            }
-            return supported;
+            if (progressionEvent == null) throw new ArgumentNullException(nameof(progressionEvent));
+            var result = new QuestRuntimeResult();
+            ActivateDefinitions(progressionEvent, stateOnly: false, result);
+            ApplyEventToActiveInstances(progressionEvent, result);
+            CompleteReadyInstances(result);
+            ApplyPendingRewards(result);
+            return result;
         }
 
-        private static bool IsObjectiveSupported(string value) =>
-            Matches(value, QuestObjectiveType.ResourceCount) || Matches(value, QuestObjectiveType.ItemCount) ||
-            Matches(value, QuestObjectiveType.BuildingLevel) || Matches(value, QuestObjectiveType.ActivityCompleted);
-
-        private bool AreRequiredQuestObjectivesSupported(string questId)
+        public QuestRuntimeSnapshot GetSnapshot()
         {
-            foreach (var objective in _configs.GetQuestSteps(questId) ?? Array.Empty<QuestStepConfigDto>())
+            var active = new List<QuestInstanceSnapshot>();
+            var completed = new List<QuestInstanceSnapshot>();
+            foreach (var instance in OrderedInstances())
             {
-                if (objective == null || objective.required && !IsObjectiveSupported(objective.objectiveType))
+                if (!_configs.TryGetDefinition(instance.questId, out var definition) || !IsValidInstanceForDefinition(instance, definition)) continue;
+                var snapshot = BuildSnapshot(instance, definition);
+                if (instance.status == QuestInstanceStatus.Active) active.Add(snapshot);
+                else if (instance.status == QuestInstanceStatus.Completed) completed.Add(snapshot);
+            }
+            return new QuestRuntimeSnapshot { ActiveInstances = SnapshotLists.ReadOnly(active), CompletedInstances = SnapshotLists.ReadOnly(completed) };
+        }
+
+        private void ReconcileInstances(QuestRuntimeResult result)
+        {
+            foreach (var instance in _store.GetQuestInstances() ?? Array.Empty<QuestInstanceSaveData>())
+            {
+                if (!_configs.TryGetDefinition(instance.questId, out var definition))
+                {
+                    result.IssueValues.Add(new ProgressionIssue("UnknownQuestDefinition", "Saved quest instance has no current definition and was preserved.", instance.questId, instance.instanceId));
+                    continue;
+                }
+                if (!IsValidInstanceForDefinition(instance, definition))
+                {
+                    result.IssueValues.Add(new ProgressionIssue("InvalidQuestInstance", "Saved quest instance id/cycle does not match its quest definition kind and was preserved without progression.", instance.questId, instance.instanceId));
+                    continue;
+                }
+                var configuredSteps = _configs.GetSteps(instance.questId) ?? Array.Empty<QuestStepConfigDto>();
+                var configuredStepIds = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var step in configuredSteps)
+                    if (step != null && !string.IsNullOrWhiteSpace(step.stepId)) configuredStepIds.Add(step.stepId);
+                foreach (var savedStep in instance.steps ?? Array.Empty<QuestStepSaveData>())
+                    if (savedStep != null && !string.IsNullOrWhiteSpace(savedStep.stepId) && !configuredStepIds.Contains(savedStep.stepId))
+                        result.IssueValues.Add(new ProgressionIssue("UnknownQuestStep", "Saved quest step has no current definition and was preserved.", instance.questId, instance.instanceId, savedStep.stepId));
+                var reconciled = QuestStateBuilder.Reconcile(instance, configuredSteps, out var changed);
+                if (changed && _store.SetQuestInstance(reconciled)) result.ChangedValue = true;
+            }
+        }
+
+        private void ActivateDefinitions(ProgressionEvent progressionEvent, bool stateOnly, QuestRuntimeResult result)
+        {
+            foreach (var definition in OrderedDefinitions())
+            {
+                if (definition == null || !definition.Enabled || definition.Kind != QuestDefinitionKind.Story) continue;
+                var instanceId = QuestInstanceIds.Story(definition.QuestId);
+                if (_store.GetQuestInstance(instanceId) != null) continue;
+                var conditions = _configs.GetStartConditions(definition.QuestId) ?? Array.Empty<QuestStartConditionConfigDto>();
+                if (!ConditionsMatch(definition, conditions, progressionEvent, stateOnly, result)) continue;
+                var instance = QuestStateBuilder.Create(instanceId, definition.QuestId, null, _configs.GetSteps(definition.QuestId));
+                if (!_store.SetQuestInstance(instance))
+                {
+                    result.IssueValues.Add(new ProgressionIssue("QuestActivationFailed", "Failed to persist activated quest instance in PlayerState.", definition.QuestId, instanceId));
+                    continue;
+                }
+                result.ChangedValue = true;
+                result.ActivatedValues.Add(instanceId);
+                ApplyStateBackedSteps(instance, result);
+            }
+        }
+
+        private bool ConditionsMatch(QuestDefinition definition, QuestStartConditionConfigDto[] conditions, ProgressionEvent progressionEvent, bool stateOnly, QuestRuntimeResult result)
+        {
+            if (conditions.Length == 0) return false;
+            var groups = new Dictionary<string, List<QuestStartConditionConfigDto>>(StringComparer.Ordinal);
+            foreach (var condition in conditions)
+            {
+                if (!IsValidCondition(condition, out var error))
+                {
+                    result.IssueValues.Add(new ProgressionIssue("InvalidQuestStartCondition", error, definition.QuestId));
+                    return false;
+                }
+                if (!groups.TryGetValue(condition.conditionGroup, out var group)) groups[condition.conditionGroup] = group = new List<QuestStartConditionConfigDto>();
+                group.Add(condition);
+            }
+            foreach (var group in groups.Values)
+            {
+                var matches = true;
+                foreach (var condition in group)
+                {
+                    if (!ConditionMatches(condition, progressionEvent, stateOnly)) { matches = false; break; }
+                }
+                if (matches) return true;
+            }
+            return false;
+        }
+
+        private bool ConditionMatches(QuestStartConditionConfigDto condition, ProgressionEvent progressionEvent, bool stateOnly)
+        {
+            switch (condition.conditionType)
+            {
+                case "NewGame":
+                    return !stateOnly && progressionEvent?.Kind == ProgressionEventKind.NewGame && Compare(1, condition.value, condition.compareOperator);
+                case "ActivityFailed":
+                    return !stateOnly && progressionEvent is ActivityFailed failed && failed.TargetId == condition.targetId && Compare(failed.CurrentValue, condition.value, condition.compareOperator);
+                case "StageEntered":
+                    if (string.Equals(_store.CurrentStageId, condition.targetId, StringComparison.Ordinal) && Compare(1, condition.value, condition.compareOperator)) return true;
+                    return !stateOnly && progressionEvent is StageEntered entered && entered.TargetId == condition.targetId && Compare(entered.CurrentValue, condition.value, condition.compareOperator);
+                case "BuildingLevel":
+                    return Compare(_store.GetBuildingLevel(condition.targetId), condition.value, condition.compareOperator);
+                case "QuestCompleted":
+                    if (!stateOnly && progressionEvent is QuestCompleted completed && completed.QuestId == condition.targetId && Compare(1, condition.value, condition.compareOperator)) return true;
+                    return Compare(HasCompletedDefinition(condition.targetId) ? 1 : 0, condition.value, condition.compareOperator);
+                default:
                     return false;
             }
-            return true;
         }
 
-        private bool AddObjectiveIssuesAndCheckRequiredSupported(string questId, List<StageQuestIssue> issues)
+        private static bool IsValidCondition(QuestStartConditionConfigDto condition, out string error)
         {
-            var supported = true;
-            foreach (var objective in _configs.GetQuestSteps(questId) ?? Array.Empty<QuestStepConfigDto>())
+            error = null;
+            if (condition == null || string.IsNullOrWhiteSpace(condition.conditionGroup)) { error = "condition_group is required."; return false; }
+            if (!IsOperatorSupported(condition.compareOperator)) { error = $"Unsupported compare operator '{condition.compareOperator}'."; return false; }
+            if (condition.value < 0) { error = "Condition value must be non-negative."; return false; }
+            switch (condition.conditionType)
             {
-                if (objective != null && IsObjectiveSupported(objective.objectiveType))
-                    continue;
-                if (objective == null)
+                case "NewGame": if (!string.IsNullOrWhiteSpace(condition.targetId)) { error = "NewGame requires empty target_id."; return false; } return true;
+                case "ActivityFailed": case "StageEntered": case "BuildingLevel": case "QuestCompleted":
+                    if (string.IsNullOrWhiteSpace(condition.targetId)) { error = $"{condition.conditionType} requires target_id."; return false; } return true;
+                default: error = $"Unsupported condition_type '{condition.conditionType}'."; return false;
+            }
+        }
+
+        private void ApplyStateBackedSteps(QuestRuntimeResult result)
+        {
+            foreach (var instance in _store.GetQuestInstances() ?? Array.Empty<QuestInstanceSaveData>())
+                if (instance.status == QuestInstanceStatus.Active && _configs.TryGetDefinition(instance.questId, out var definition) && IsValidInstanceForDefinition(instance, definition)) ApplyStateBackedSteps(instance, result);
+        }
+
+        private void ApplyStateBackedSteps(QuestInstanceSaveData instance, QuestRuntimeResult result)
+        {
+            var changed = false;
+            var states = IndexSteps(instance);
+            foreach (var step in _configs.GetSteps(instance.questId) ?? Array.Empty<QuestStepConfigDto>())
+            {
+                if (step == null || !states.TryGetValue(step.stepId, out var state) || state.completed) continue;
+                int? value = null;
+                switch (step.objectiveType)
                 {
-                    supported = false;
+                    case "ResourceCount": case "ItemCount": value = _store.GetItem(step.targetId); break;
+                    case "BuildingLevel": value = _store.GetBuildingLevel(step.targetId); break;
+                    case "ActivityCompleted": value = _store.IsActivityCompleted(step.targetId) ? 1 : 0; break;
+                    case "QuestCompleted": value = HasCompletedDefinition(step.targetId) ? 1 : 0; break;
+                }
+                if (value.HasValue) changed |= UpdateStep(state, value.Value, step);
+            }
+            if (changed && _store.SetQuestInstance(instance)) { result.ChangedValue = true; }
+        }
+
+        private void ApplyEventToActiveInstances(ProgressionEvent progressionEvent, QuestRuntimeResult result)
+        {
+            foreach (var instance in _store.GetQuestInstances() ?? Array.Empty<QuestInstanceSaveData>())
+            {
+                if (instance.status != QuestInstanceStatus.Active || !_configs.TryGetDefinition(instance.questId, out var definition) || !IsValidInstanceForDefinition(instance, definition)) continue;
+                var changed = false;
+                var states = IndexSteps(instance);
+                foreach (var step in _configs.GetSteps(instance.questId) ?? Array.Empty<QuestStepConfigDto>())
+                {
+                    if (step == null || !states.TryGetValue(step.stepId, out var state) || state.completed) continue;
+                    if (TryGetEventValue(step, progressionEvent, out var value)) changed |= UpdateStep(state, value, step);
+                }
+                if (changed && _store.SetQuestInstance(instance)) result.ChangedValue = true;
+            }
+        }
+
+        private static bool TryGetEventValue(QuestStepConfigDto step, ProgressionEvent progressionEvent, out int value)
+        {
+            value = 0;
+            if (progressionEvent is QuestCompleted completed && step.objectiveType == "QuestCompleted" && completed.QuestId == step.targetId) { value = 1; return true; }
+            if (!(progressionEvent is TargetValueProgressionEvent target) || target.TargetId != step.targetId) return false;
+            if (step.objectiveType == "ResourceCount" && progressionEvent.Kind == ProgressionEventKind.ResourceQuantityChanged ||
+                step.objectiveType == "ItemCount" && progressionEvent.Kind == ProgressionEventKind.ItemQuantityChanged ||
+                step.objectiveType == "BuildingLevel" && progressionEvent.Kind == ProgressionEventKind.BuildingLevelChanged ||
+                step.objectiveType == "ActivityCompleted" && progressionEvent.Kind == ProgressionEventKind.ActivityCompleted)
+            { value = target.CurrentValue; return true; }
+            return false;
+        }
+
+        private void CompleteReadyInstances(QuestRuntimeResult result)
+        {
+            foreach (var instance in _store.GetQuestInstances() ?? Array.Empty<QuestInstanceSaveData>())
+            {
+                if (instance.status != QuestInstanceStatus.Active || !_configs.TryGetDefinition(instance.questId, out var definition) || !IsValidInstanceForDefinition(instance, definition)) continue;
+                var states = IndexSteps(instance); var blocks = false;
+                foreach (var step in _configs.GetSteps(instance.questId) ?? Array.Empty<QuestStepConfigDto>())
+                {
+                    if (!IsValidStep(step, out var error))
+                    {
+                        result.IssueValues.Add(new ProgressionIssue("UnsupportedQuestStep", error, instance.questId, instance.instanceId, step?.stepId));
+                        if (step != null && step.required) blocks = true;
+                        continue;
+                    }
+                    if (step.required && (!states.TryGetValue(step.stepId, out var state) || !state.completed)) blocks = true;
+                }
+                if (blocks) continue;
+                instance.status = QuestInstanceStatus.Completed;
+                if (!_store.SetQuestInstance(instance)) continue;
+                result.ChangedValue = true; result.CompletedValues.Add(instance.instanceId);
+                var completed = new QuestCompleted(instance.instanceId, instance.questId);
+                result.CompletionEventValues.Add(completed);
+            }
+        }
+
+        private void ApplyPendingRewards(QuestRuntimeResult result)
+        {
+            foreach (var instance in _store.GetQuestInstances() ?? Array.Empty<QuestInstanceSaveData>())
+            {
+                if (instance.status != QuestInstanceStatus.Completed || instance.rewardsGranted || !_configs.TryGetDefinition(instance.questId, out var definition) || !IsValidInstanceForDefinition(instance, definition)) continue;
+                var definitions = new List<RewardDefinition>(); var valid = true;
+                foreach (var reward in _configs.GetRewards(instance.questId) ?? Array.Empty<QuestRewardConfigDto>())
+                {
+                    if (reward == null || reward.grantMoment != GrantMoment.OnComplete)
+                    {
+                        result.IssueValues.Add(new ProgressionIssue("InvalidQuestReward", "Quest reward must use OnComplete grant moment.", instance.questId, instance.instanceId)); valid = false; continue;
+                    }
+                    definitions.Add(new RewardDefinition { sourceId = instance.instanceId, rewardType = reward.rewardType, targetId = reward.targetId, min = reward.min, max = reward.max, chance = reward.chance, grantMoment = reward.grantMoment });
+                }
+                if (!valid) continue;
+                var prepared = RewardBatchPipeline.Prepare(definitions, GrantMoment.OnComplete, null, _random, true);
+                if (!prepared.success)
+                {
+                    foreach (var issue in prepared.issues) result.IssueValues.Add(new ProgressionIssue("InvalidQuestReward", issue.message, instance.questId, instance.instanceId));
                     continue;
                 }
-                AddUnsupportedObjective(questId, objective, issues);
-                if (objective.required)
-                    supported = false;
-            }
-            return supported;
-        }
-
-        private static bool ObjectiveMatchesEvent(
-            QuestStepConfigDto config,
-            ProgressionEvent progressionEvent,
-            out int currentValue)
-        {
-            currentValue = 0;
-            if (!(progressionEvent is TargetValueProgressionEvent targetEvent) ||
-                !string.Equals(config.targetId, targetEvent.TargetId, StringComparison.Ordinal))
-                return false;
-            if (Matches(config.objectiveType, QuestObjectiveType.ResourceCount) && progressionEvent.Kind != ProgressionEventKind.ResourceQuantityChanged)
-                return false;
-            if (Matches(config.objectiveType, QuestObjectiveType.ItemCount) && progressionEvent.Kind != ProgressionEventKind.ItemQuantityChanged)
-                return false;
-            if (Matches(config.objectiveType, QuestObjectiveType.BuildingLevel) && progressionEvent.Kind != ProgressionEventKind.BuildingLevelChanged)
-                return false;
-            if (Matches(config.objectiveType, QuestObjectiveType.ActivityCompleted) && progressionEvent.Kind != ProgressionEventKind.ActivityCompleted)
-                return false;
-            currentValue = targetEvent.CurrentValue;
-            return true;
-        }
-
-        private static void UpdateStep(QuestStepSaveData step, int currentValue, int targetValue)
-        {
-            if (step.completed)
-                return;
-            step.currentValue = Math.Max(0, currentValue);
-            if (step.currentValue >= targetValue)
-                step.completed = true;
-        }
-
-        private static void AddUnsupportedObjective(string questId, QuestStepConfigDto config, List<StageQuestIssue> issues)
-        {
-            foreach (var issue in issues)
-            {
-                if (issue.Code == "UnsupportedObjective" &&
-                    string.Equals(issue.QuestId, questId, StringComparison.Ordinal) &&
-                    string.Equals(issue.StepId, config.stepId, StringComparison.Ordinal))
+                if (!_store.TryCommitQuestRewardBatch(instance, prepared.mutations, out var applied, out var error))
                 {
-                    return;
+                    result.IssueValues.Add(new ProgressionIssue("QuestRewardCommitFailed", error ?? "Atomic quest reward commit failed.", instance.questId, instance.instanceId)); continue;
                 }
+                prepared.ApplyResults(applied); result.ChangedValue = true;
+                foreach (var reward in prepared.rewards) result.RewardValues.Add(new QuestRewardGrant { InstanceId = instance.instanceId, QuestId = instance.questId, RewardType = reward.rewardType, TargetId = reward.targetId, Amount = reward.amount, Applied = reward.applied });
             }
-            issues.Add(new StageQuestIssue("UnsupportedObjective", questId, config.stepId, $"Unsupported quest objective '{config.objectiveType}'."));
         }
 
-        private bool ValidateStageEnteredEvent(ProgressionEvent progressionEvent, List<StageQuestIssue> issues)
+        private QuestInstanceSnapshot BuildSnapshot(QuestInstanceSaveData instance, QuestDefinition definition)
         {
-            if (progressionEvent.Kind == ProgressionEventKind.StageEntered &&
-                progressionEvent is TargetValueProgressionEvent entered &&
-                !string.Equals(entered.TargetId, _store.CurrentStageId, StringComparison.Ordinal))
+            var steps = new List<QuestStepSnapshot>(); var states = IndexSteps(instance);
+            foreach (var config in _configs.GetSteps(instance.questId) ?? Array.Empty<QuestStepConfigDto>())
             {
-                issues.Add(new StageQuestIssue("StageEnteredMismatch", null, null, $"StageEntered '{entered.TargetId}' does not match current stage '{_store.CurrentStageId}'."));
-                return false;
+                states.TryGetValue(config.stepId, out var state);
+                steps.Add(new QuestStepSnapshot { StepId = config.stepId, StepOrder = config.stepOrder, ObjectiveType = config.objectiveType, TargetId = config.targetId, CompareOperator = config.compareOperator, TargetValue = config.targetValue, CurrentValue = state?.currentValue ?? 0, DescriptionId = config.descriptionId, Required = config.required, Completed = state?.completed ?? false });
             }
-            return true;
+            return new QuestInstanceSnapshot { InstanceId = instance.instanceId, QuestId = instance.questId, CycleId = instance.cycleId, Status = instance.status, DefinitionKind = definition.Kind, NameId = definition.NameId, DescriptionId = definition.DescriptionId, IconId = definition.IconId, JournalCategory = definition.JournalCategory, SortOrder = definition.SortOrder, IsTutorial = definition.IsTutorial, RewardsGranted = instance.rewardsGranted, Steps = SnapshotLists.ReadOnly(steps) };
         }
 
-        private static bool Matches(string value, string expected) =>
-            string.Equals(value, expected, StringComparison.OrdinalIgnoreCase);
+        private bool HasCompletedDefinition(string questId)
+        {
+            if (!_configs.TryGetDefinition(questId, out var definition)) return false;
+            foreach (var instance in _store.GetQuestInstances() ?? Array.Empty<QuestInstanceSaveData>())
+                if (instance.questId == questId && instance.status == QuestInstanceStatus.Completed && IsValidInstanceForDefinition(instance, definition)) return true;
+            return false;
+        }
+
+        private static bool IsValidInstanceForDefinition(QuestInstanceSaveData instance, QuestDefinition definition)
+        {
+            if (instance == null || definition == null || !string.Equals(instance.questId, definition.QuestId, StringComparison.Ordinal)) return false;
+            if (definition.Kind == QuestDefinitionKind.Story)
+                return string.IsNullOrWhiteSpace(instance.cycleId) && string.Equals(instance.instanceId, QuestInstanceIds.Story(definition.QuestId), StringComparison.Ordinal);
+            return !string.IsNullOrWhiteSpace(instance.cycleId) && string.Equals(instance.instanceId, QuestInstanceIds.Daily(instance.cycleId, definition.QuestId), StringComparison.Ordinal);
+        }
+
+        private QuestDefinition[] OrderedDefinitions()
+        {
+            var result = (QuestDefinition[])(_configs.Definitions ?? Array.Empty<QuestDefinition>()).Clone();
+            Array.Sort(result, (left, right) => { var order = (left?.SortOrder ?? int.MaxValue).CompareTo(right?.SortOrder ?? int.MaxValue); return order != 0 ? order : string.CompareOrdinal(left?.QuestId, right?.QuestId); });
+            return result;
+        }
+
+        private QuestInstanceSaveData[] OrderedInstances()
+        {
+            var result = _store.GetQuestInstances() ?? Array.Empty<QuestInstanceSaveData>();
+            Array.Sort(result, (left, right) => string.CompareOrdinal(left?.instanceId, right?.instanceId)); return result;
+        }
+
+        private static Dictionary<string, QuestStepSaveData> IndexSteps(QuestInstanceSaveData instance)
+        {
+            var result = new Dictionary<string, QuestStepSaveData>(StringComparer.Ordinal);
+            foreach (var step in instance.steps ?? Array.Empty<QuestStepSaveData>()) if (step != null && !string.IsNullOrWhiteSpace(step.stepId) && !result.ContainsKey(step.stepId)) result.Add(step.stepId, step);
+            return result;
+        }
+
+        private static bool UpdateStep(QuestStepSaveData state, int value, QuestStepConfigDto config)
+        {
+            var normalized = Math.Max(0, value); var completed = Compare(normalized, config.targetValue, config.compareOperator);
+            if (state.currentValue == normalized && state.completed == completed) return false;
+            state.currentValue = normalized; state.completed |= completed; return true;
+        }
+
+        private static bool IsValidStep(QuestStepConfigDto step, out string error)
+        {
+            error = null;
+            if (step == null || string.IsNullOrWhiteSpace(step.stepId) || string.IsNullOrWhiteSpace(step.targetId)) { error = "Quest step requires step_id and target_id."; return false; }
+            if (!IsOperatorSupported(step.compareOperator)) { error = $"Unsupported compare operator '{step.compareOperator}'."; return false; }
+            if (step.targetValue < 0) { error = "Quest step target_value must be non-negative."; return false; }
+            switch (step.objectiveType)
+            {
+                case "ResourceCount": case "ItemCount": case "BuildingLevel": case "ActivityCompleted": case "QuestCompleted": return true;
+                default: error = $"Unsupported objective_type '{step.objectiveType}'."; return false;
+            }
+        }
+
+        private static bool IsOperatorSupported(string value) => value == "GreaterOrEqual" || value == "Equal";
+        private static bool Compare(int current, int target, string operation) => operation == "Equal" ? current == target : operation == "GreaterOrEqual" && current >= target;
+    }
+
+    public sealed class StageProgressionService
+    {
+        private readonly IStageProgressionConfigProvider _configs;
+        private readonly IProgressionRuntimeStore _store;
+        public StageProgressionService(IStageProgressionConfigProvider configs, IProgressionRuntimeStore store) { _configs = configs ?? throw new ArgumentNullException(nameof(configs)); _store = store ?? throw new ArgumentNullException(nameof(store)); }
+        public StageTransitionResult TryTransition() => TryTransition(new List<ProgressionIssue>());
+
+        internal StageTransitionResult TryTransition(List<ProgressionIssue> issues)
+        {
+            if (!_configs.TryGetStage(_store.CurrentStageId, out var stage) || stage == null || !stage.enabled)
+            { issues.Add(new ProgressionIssue("InvalidCurrentStage", $"Current stage '{_store.CurrentStageId}' is missing or disabled.")); return StageTransitionResult.None; }
+            if (stage.completionRule != "AllRequired" || string.IsNullOrWhiteSpace(stage.nextStageId)) return StageTransitionResult.None;
+            var hasRequiredQuest = false;
+            foreach (var relation in _configs.GetStageQuests(stage.stageId) ?? Array.Empty<StageQuestConfigDto>())
+            {
+                if (relation == null || !relation.enabled || !relation.required) continue;
+                hasRequiredQuest = true;
+                var instance = _store.GetQuestInstance(QuestInstanceIds.Story(relation.questId));
+                if (instance == null || instance.questId != relation.questId || instance.status != QuestInstanceStatus.Completed || !instance.rewardsGranted) return StageTransitionResult.None;
+            }
+            if (!hasRequiredQuest) return StageTransitionResult.None;
+            if (!_configs.TryGetStage(stage.nextStageId, out var next) || next == null || !next.enabled || !_store.SetCurrentStage(next.stageId))
+            { issues.Add(new ProgressionIssue("StageTransitionFailed", $"Could not enter stage '{stage.nextStageId}'.")); return StageTransitionResult.None; }
+            return new StageTransitionResult { Occurred = true, FromStageId = stage.stageId, ToStageId = next.stageId };
+        }
+
+        public StageProgressionSnapshot GetSnapshot()
+        {
+            if (!_configs.TryGetStage(_store.CurrentStageId, out var stage) || stage == null) return new StageProgressionSnapshot { StageId = _store.CurrentStageId };
+            var visible = new List<StageQuestInstanceSnapshot>(); var progress = 0;
+            foreach (var relation in _configs.GetStageQuests(stage.stageId) ?? Array.Empty<StageQuestConfigDto>())
+            {
+                if (relation == null || !relation.enabled) continue;
+                var instance = _store.GetQuestInstance(QuestInstanceIds.Story(relation.questId));
+                if (instance != null && instance.questId != relation.questId) instance = null;
+                if (relation.required && instance?.status == QuestInstanceStatus.Completed) progress += relation.weightPercent;
+                if (relation.showInStageUi && instance != null) visible.Add(new StageQuestInstanceSnapshot { InstanceId = instance.instanceId, QuestId = instance.questId, Status = instance.status, WeightPercent = relation.weightPercent, Required = relation.required, SortOrder = relation.sortOrder });
+            }
+            visible.Sort((left, right) => left.SortOrder.CompareTo(right.SortOrder));
+            return new StageProgressionSnapshot { StageId = stage.stageId, NameId = stage.nameId, DescriptionId = stage.descriptionId, StagePrefabId = stage.stagePrefabId, CompletionRule = stage.completionRule, NextStageId = stage.nextStageId, RequiredProgressPercent = Math.Min(100, progress), VisibleInstances = SnapshotLists.ReadOnly(visible) };
+        }
+    }
+
+    public sealed class ProgressionRuntimeService
+    {
+        private readonly QuestRuntimeService _quests;
+        private readonly StageProgressionService _stages;
+        private readonly IProgressionRuntimeStore _store;
+        private bool _savePending;
+        public ProgressionRuntimeService(QuestRuntimeService quests, StageProgressionService stages, IProgressionRuntimeStore store) { _quests = quests ?? throw new ArgumentNullException(nameof(quests)); _stages = stages ?? throw new ArgumentNullException(nameof(stages)); _store = store ?? throw new ArgumentNullException(nameof(store)); }
+        public event Action<ProgressionRuntimeUpdate> Updated;
+        public ProgressionRuntimeUpdate Initialize() => CompleteTransaction(_quests.Initialize());
+        public ProgressionRuntimeUpdate Handle(ProgressionEvent progressionEvent) => CompleteTransaction(_quests.Handle(progressionEvent ?? throw new ArgumentNullException(nameof(progressionEvent))));
+        public QuestRuntimeSnapshot GetQuestSnapshot() => _quests.GetSnapshot();
+        public StageProgressionSnapshot GetStageSnapshot() => _stages.GetSnapshot();
+
+        private ProgressionRuntimeUpdate CompleteTransaction(QuestRuntimeResult aggregate)
+        {
+            DrainQuestCompleted(aggregate);
+            var transition = _stages.TryTransition(aggregate.IssueValues);
+            if (transition.Occurred)
+            {
+                aggregate.ChangedValue = true;
+                Merge(aggregate, _quests.Handle(new StageEntered(transition.ToStageId)));
+                DrainQuestCompleted(aggregate);
+            }
+            var mustSave = aggregate.ChangedValue || _savePending;
+            var saved = !mustSave || _store.Save();
+            _savePending = mustSave && !saved;
+            if (!saved) aggregate.IssueValues.Add(new ProgressionIssue("ProgressionSaveFailed", "Failed to save the coordinated progression transaction."));
+            var update = new ProgressionRuntimeUpdate
+            {
+                QuestSnapshot = _quests.GetSnapshot(), StageSnapshot = _stages.GetSnapshot(), Issues = SnapshotLists.ReadOnly(aggregate.IssueValues),
+                ActivatedInstanceIds = SnapshotLists.ReadOnly(aggregate.ActivatedValues), CompletedInstanceIds = SnapshotLists.ReadOnly(aggregate.CompletedValues),
+                PublishedQuestCompletedEvents = SnapshotLists.ReadOnly(aggregate.CompletionEventValues), Rewards = SnapshotLists.ReadOnly(aggregate.RewardValues),
+                Transition = transition, Changed = aggregate.ChangedValue, Saved = saved
+            };
+            Updated?.Invoke(update);
+            return update;
+        }
+
+        private void DrainQuestCompleted(QuestRuntimeResult aggregate)
+        {
+            for (var index = 0; index < aggregate.CompletionEventValues.Count; index++) Merge(aggregate, _quests.Handle(aggregate.CompletionEventValues[index]));
+        }
+
+        private static void Merge(QuestRuntimeResult target, QuestRuntimeResult source)
+        {
+            if (source == null) return;
+            target.ChangedValue |= source.ChangedValue; target.IssueValues.AddRange(source.IssueValues); target.ActivatedValues.AddRange(source.ActivatedValues);
+            target.CompletedValues.AddRange(source.CompletedValues); target.CompletionEventValues.AddRange(source.CompletionEventValues); target.RewardValues.AddRange(source.RewardValues);
+        }
     }
 }

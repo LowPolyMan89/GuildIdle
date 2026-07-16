@@ -2,531 +2,229 @@ using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
 using GuildIdle.Core;
-using GuildIdle.Editor.Configs;
 using GuildIdle.Player;
 using NUnit.Framework;
-using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Progression.Editor
 {
-    public sealed class StageQuestRuntimeServiceTests
+    public sealed class ProgressionRuntimeServiceTests
     {
-        private ConfigDatabase _database;
-
-        [SetUp]
-        public void SetUp()
+        [Test]
+        public void LeafServicesNeverSave()
         {
-            _database = CreateDatabase();
-            RuntimeConfigs.SetDatabaseForTests(_database);
+            var store = new TestStore("stage_1");
+            var configs = Configs(
+                stories: new[] { Story("quest_a") },
+                conditions: new[] { Condition("quest_a", "NewGame") },
+                steps: new[] { Step("quest_a", "collect", "ResourceCount", "wood", 1) },
+                stages: TwoStages(),
+                stageQuests: new[] { StageQuest("stage_1", "quest_a") });
+            var questRuntime = new QuestRuntimeService(configs, store);
+            var stageRuntime = new StageProgressionService(configs, store);
+
+            questRuntime.Handle(new NewGame());
+            questRuntime.Handle(new ResourceQuantityChanged("wood", 1));
+            stageRuntime.TryTransition();
+
+            Assert.That(store.SaveCalls, Is.Zero);
         }
 
         [Test]
-        public void NewGame_ActivatesRequiredBranchesAndTransitionsInEitherOrder()
+        public void CoordinatorSavesOnceAfterCompletionQueueAndSingleTransition()
         {
-            var state = NewState();
-            var runtime = NewRuntime(state);
-
-            var started = runtime.Handle(new NewGame());
-            Assert.That(started.Snapshot.ActiveQuests.Count, Is.EqualTo(2));
-            Assert.That(FindQuest(started.Snapshot.ActiveQuests, "quest_build").Required, Is.True);
-            Assert.That(FindQuest(started.Snapshot.ActiveQuests, "quest_clear").Required, Is.True);
-            Assert.That(runtime.Handle(new NewGame()).ActivatedQuestIds, Is.Empty);
-
-            var clear = runtime.Handle(new ActivityCompletedEvent("activity_combat"));
-            Assert.That(clear.Snapshot.CurrentStage.RequiredProgressPercent, Is.EqualTo(50));
-            Assert.That(clear.Transition.Occurred, Is.False);
-
-            runtime.Handle(new ResourceQuantityChangedEvent("resource_wood", 2));
-            var build = runtime.Handle(new BuildingLevelChangedEvent("building_hall", 1));
-
-            Assert.That(build.Transition.Occurred, Is.True);
-            Assert.That(build.Transition.FromStageId, Is.EqualTo("stage_alpha"));
-            Assert.That(build.Transition.ToStageId, Is.EqualTo("stage_beta"));
-            Assert.That(build.Snapshot.CurrentStage.StageId, Is.EqualTo("stage_beta"));
-            Assert.That(build.Snapshot.CurrentStage.RequiredProgressPercent, Is.Zero);
-            Assert.That(runtime.Handle(new ActivityCompletedEvent("activity_combat")).Transition.Occurred, Is.False);
-
-            var reverseState = NewState();
-            var reverse = NewRuntime(reverseState);
-            reverse.Handle(new NewGame());
-            reverse.Handle(new ResourceQuantityChanged("resource_wood", 2));
-            var firstBranch = reverse.Handle(new BuildingLevelChanged("building_hall", 1));
-            Assert.That(firstBranch.Snapshot.CurrentStage.RequiredProgressPercent, Is.EqualTo(50));
-            Assert.That(reverse.Handle(new ActivityCompleted("activity_combat")).Transition.Occurred, Is.True);
-        }
-
-        [Test]
-        public void ActivityFailed_ActivatesOptionalTutorialOnceAndUsesCurrentState()
-        {
-            var state = NewState();
-            var runtime = NewRuntime(state);
-            runtime.Handle(new ActivityCompleted("activity_combat"));
-            Assert.That(state.GetQuestState("quest_tutorial"), Is.Null, "Victory must not emulate ActivityFailed.");
-            runtime.Handle(new NewGameProgressionEvent());
-            Assert.That(state.AddItem("consumable_meat", 1), Is.True);
-
-            var failed = runtime.Handle(new ActivityFailedEvent("activity_combat"));
-            var tutorial = FindQuest(failed.Snapshot.CompletedQuests, "quest_tutorial");
-
-            Assert.That(tutorial, Is.Not.Null);
-            Assert.That(tutorial.Optional, Is.True);
-            Assert.That(tutorial.IsTutorial, Is.True);
-            Assert.That(failed.Snapshot.CurrentStage.RequiredProgressPercent, Is.Zero);
-            Assert.That(runtime.Handle(new ActivityFailedEvent("activity_combat")).ActivatedQuestIds, Is.Empty);
-        }
-
-        [Test]
-        public void StateBackedSteps_ReconcileCurrentValuesAndLatchAfterCompletion()
-        {
-            var state = NewState();
-            var runtime = NewRuntime(state);
-            runtime.Handle(new ResourceQuantityChanged("resource_wood", 2));
+            var store = new TestStore("stage_1");
+            var configs = Configs(
+                stories: new[] { Story("quest_a"), Story("quest_b", 20) },
+                conditions: new[]
+                {
+                    Condition("quest_a", "NewGame"),
+                    Condition("quest_b", "QuestCompleted", "quest_a")
+                },
+                steps: new[] { Step("quest_a", "collect", "ResourceCount", "wood", 1) },
+                stages: new[]
+                {
+                    Stage("stage_1", "stage_2"), Stage("stage_2", "stage_3"), Stage("stage_3", null)
+                },
+                stageQuests: new[]
+                {
+                    StageQuest("stage_1", "quest_a"), StageQuest("stage_2", "quest_b")
+                });
+            var runtime = Runtime(configs, store);
             runtime.Handle(new NewGame());
+            store.SaveCalls = 0;
 
-            var beforeActivation = Array.Find(state.GetQuestState("quest_build").steps, step => step.stepId == "collect");
-            Assert.That(beforeActivation.currentValue, Is.Zero, "Historical quantity events must not be replayed at activation.");
+            var update = runtime.Handle(new ResourceQuantityChanged("wood", 1));
 
-            runtime.Handle(new ResourceQuantityChanged("resource_wood", 2));
-            runtime.Handle(new ResourceQuantityChanged("resource_wood", 0));
-            var latched = state.GetQuestState("quest_build");
-            Assert.That(Array.Find(latched.steps, step => step.stepId == "collect").completed, Is.True);
-            Assert.That(Array.Find(latched.steps, step => step.stepId == "collect").currentValue, Is.EqualTo(2));
-
-            var saved = state.ToSaveData();
-            var collect = Array.Find(Array.Find(saved.quests, quest => quest.questId == "quest_build").steps, step => step.stepId == "collect");
-            collect.currentValue = 0;
-            collect.completed = false;
-            var restored = TestPlayerComposition.CreatePlayerStateFactory(_database).Create(saved);
-            Assert.That(restored.AddItem("resource_wood", 2), Is.True);
-
-            NewRuntime(restored);
-            var reconciled = Array.Find(restored.GetQuestState("quest_build").steps, step => step.stepId == "collect");
-            Assert.That(reconciled.currentValue, Is.EqualTo(2));
-            Assert.That(reconciled.completed, Is.True);
+            Assert.That(store.SaveCalls, Is.EqualTo(1));
+            Assert.That(update.PublishedQuestCompletedEvents, Has.Count.EqualTo(2));
+            Assert.That(update.Transition.Occurred, Is.True);
+            Assert.That(update.Transition.ToStageId, Is.EqualTo("stage_2"));
+            Assert.That(store.CurrentStageId, Is.EqualTo("stage_2"), "A second transition is forbidden in the same transaction.");
         }
 
         [Test]
-        public void Initialization_ActivatesSatisfiedBuildingLevelConditionOnly()
+        public void InvalidConditionBlocksOnlyItsDefinition()
         {
-            var state = NewState();
-            Assert.That(state.UnlockBuilding("building_hall"), Is.True);
-            Assert.That(state.SetBuildingLevel("building_hall", 1), Is.True);
-            Assert.That(state.AddItem("resource_stone", 1), Is.True);
-
-            var store = new TestStore(state);
-            var runtime = NewRuntime(store);
-            var levelQuest = state.GetQuestState("quest_level");
-
-            Assert.That(levelQuest, Is.Not.Null);
-            Assert.That(levelQuest.completed, Is.True);
-            Assert.That(FindQuest(runtime.GetSnapshot().CompletedQuests, "quest_level"), Is.Null,
-                "HUD snapshot must contain only quests owned by the current stage.");
-            Assert.That(store.SaveCount, Is.EqualTo(1));
-            Assert.That(state.GetQuestState("quest_build"), Is.Null, "Initialization must not emulate NewGame.");
-            Assert.That(state.GetQuestState("quest_tutorial"), Is.Null, "Initialization must not restore ActivityFailed.");
-        }
-
-        [Test]
-        public void Initialization_DoesNotRestoreHistoricalStageEntered()
-        {
-            var state = TestPlayerComposition.CreatePlayerStateFactory(_database).Create(
-                new SaveData { currentStageId = "stage_beta" });
-
-            var runtime = NewRuntime(state);
-
-            Assert.That(state.GetQuestState("quest_entered"), Is.Null);
-            Assert.That(runtime.GetSnapshot().CurrentStage.RequiredProgressPercent, Is.Zero);
-        }
-
-        [Test]
-        public void Bootstrap_UsesRuntimeNewGameMatcherAndLeavesInvalidQuestForRuntimeIssue()
-        {
-            var database = new TestConfigDatabaseBuilder()
-                .WithFullPlayerStateTestData()
-                .WithQuestStartConditions(
-                    new QuestStartConditionConfigDto { questId = "quest_build_hut", conditionType = "NewGame", value = 2 },
-                    new QuestStartConditionConfigDto { questId = "quest_clear_underwood", conditionType = "NewGame", value = 1 },
-                    new QuestStartConditionConfigDto { questId = "quest_clear_underwood", conditionType = "UnknownCondition", value = 1 },
-                    new QuestStartConditionConfigDto { questId = "quest_disabled_new_game", conditionType = "NewGame", value = 1 })
-                .Build();
-            RuntimeConfigs.SetDatabaseForTests(database);
-            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
-
-            Assert.That(state.GetQuestState("quest_build_hut"), Is.Null);
-            Assert.That(state.GetQuestState("quest_clear_underwood"), Is.Null);
-
-            var runtime = new StageQuestRuntimeService(
-                new RepositoryStageQuestConfigAdapter(database.Activities, database.Buildings),
-                new TestStore(state),
-                new FixedRandom());
+            var store = new TestStore("stage_1");
+            var configs = Configs(
+                stories: new[] { Story("bad"), Story("good", 20) },
+                conditions: new[]
+                {
+                    Condition("bad", "Unsupported"), Condition("good", "NewGame")
+                },
+                stages: new[] { Stage("stage_1", null) });
+            var runtime = Runtime(configs, store);
             var update = runtime.Handle(new NewGame());
 
-            Assert.That(HasIssue(update, "UnsupportedCondition", "quest_clear_underwood"), Is.True);
-            Assert.That(state.GetQuestState("quest_build_hut"), Is.Null);
-            Assert.That(state.GetQuestState("quest_clear_underwood"), Is.Null);
+            Assert.That(store.GetQuestInstance("story:bad"), Is.Null);
+            Assert.That(store.GetQuestInstance("story:good"), Is.Not.Null);
+            Assert.That(update.Issues, Has.Some.Property("Code").EqualTo("InvalidQuestStartCondition"));
         }
 
         [Test]
-        public void UnknownOptionalObjective_DoesNotBlockValidRequiredQuests()
+        public void UnsupportedOptionalStepDoesNotBlockButRequiredStepDoes()
         {
-            _database = CreateDatabase(includeUnknownQuest: true);
-            RuntimeConfigs.SetDatabaseForTests(_database);
-            var state = NewState();
-            var runtime = NewRuntime(state);
-
-            var started = runtime.Handle(new NewGameProgressionEvent());
-            Assert.That(HasIssue(started, "UnsupportedObjective", "quest_unknown"), Is.True);
-
-            runtime.Handle(new ActivityCompletedEvent("activity_combat"));
-            runtime.Handle(new ResourceQuantityChangedEvent("resource_wood", 2));
-            var completed = runtime.Handle(new BuildingLevelChangedEvent("building_hall", 1));
-
-            Assert.That(completed.Transition.Occurred, Is.True);
-            Assert.That(state.GetQuestState("quest_unknown").completed, Is.False);
-            Assert.That(state.GetQuestState("quest_unknown").rewardsGranted, Is.False);
-        }
-
-        [Test]
-        public void UnsupportedOptionalStep_DoesNotBlockItsQuestRewardsOrTransition()
-        {
-            _database = CreateDatabase(addRequiredQuestReward: true, addUnsupportedOptionalStep: true);
-            RuntimeConfigs.SetDatabaseForTests(_database);
-            var state = NewState();
-            var runtime = NewRuntime(state);
-            runtime.Handle(new NewGame());
-            runtime.Handle(new ActivityCompleted("activity_combat"));
-            runtime.Handle(new ResourceQuantityChanged("resource_wood", 2));
-
-            var completed = runtime.Handle(new BuildingLevelChanged("building_hall", 1));
-
-            Assert.That(HasIssue(completed, "UnsupportedObjective", "quest_build"), Is.True);
-            Assert.That(completed.Transition.Occurred, Is.True);
-            Assert.That(state.GetQuestState("quest_build").completed, Is.True);
-            Assert.That(state.GetQuestState("quest_build").rewardsGranted, Is.True);
-            Assert.That(state.GetItem("resource_wood"), Is.EqualTo(2));
-        }
-
-        [Test]
-        public void RewardFailure_IsAtomicAndRetriesAfterLoadBeforeTransition()
-        {
-            _database = CreateDatabase(addRequiredQuestReward: true);
-            RuntimeConfigs.SetDatabaseForTests(_database);
-            var state = NewState();
-            var failingStore = new TestStore(state) { FailQuestId = "quest_build" };
-            var runtime = NewRuntime(failingStore);
-            runtime.Handle(new NewGameProgressionEvent());
-            runtime.Handle(new ActivityCompletedEvent("activity_combat"));
-            runtime.Handle(new ResourceQuantityChangedEvent("resource_wood", 2));
-
-            var failed = runtime.Handle(new BuildingLevelChangedEvent("building_hall", 1));
-
-            Assert.That(failed.Snapshot.CurrentStage.RequiredProgressPercent, Is.EqualTo(100));
-            Assert.That(failed.Transition.Occurred, Is.False);
-            Assert.That(state.GetQuestState("quest_build").completed, Is.True);
-            Assert.That(state.GetQuestState("quest_build").rewardsGranted, Is.False);
-            Assert.That(state.GetItem("resource_wood"), Is.Zero);
-            Assert.That(HasIssue(failed, "QuestRewardCommitFailed", "quest_build"), Is.True);
-
-            var restored = TestPlayerComposition.CreatePlayerStateFactory(_database).Create(state.ToSaveData());
-            var restoredRuntime = NewRuntime(restored);
-
-            Assert.That(restored.CurrentStageId, Is.EqualTo("stage_beta"));
-            Assert.That(restored.GetItem("resource_wood"), Is.EqualTo(2));
-            Assert.That(restored.GetQuestState("quest_build").rewardsGranted, Is.True);
-            NewRuntime(restored);
-            Assert.That(restored.GetItem("resource_wood"), Is.EqualTo(2));
-            Assert.That(restoredRuntime.GetSnapshot().CurrentStage.StageId, Is.EqualTo("stage_beta"));
-
-            var eventRetryState = NewState();
-            var eventRetryStore = new TestStore(eventRetryState) { FailQuestId = "quest_build" };
-            var eventRetryRuntime = NewRuntime(eventRetryStore);
-            eventRetryRuntime.Handle(new NewGame());
-            eventRetryRuntime.Handle(new ActivityCompleted("activity_combat"));
-            eventRetryRuntime.Handle(new ResourceQuantityChanged("resource_wood", 2));
-            eventRetryRuntime.Handle(new BuildingLevelChanged("building_hall", 1));
-
-            var retried = eventRetryRuntime.Handle(new ItemQuantityChanged("consumable_meat", 0));
-            Assert.That(retried.Transition.Occurred, Is.True);
-            Assert.That(eventRetryState.GetItem("resource_wood"), Is.EqualTo(2));
-            eventRetryRuntime.Handle(new ItemQuantityChanged("consumable_meat", 0));
-            Assert.That(eventRetryState.GetItem("resource_wood"), Is.EqualTo(2));
-        }
-
-        [Test]
-        public void Transition_IsUpdateOnlyAndQuestStateSurvivesSaveLoad()
-        {
-            Assert.That(typeof(StageQuestSnapshot).GetProperty("Transition"), Is.Null);
-            var state = NewState();
-            var runtime = NewRuntime(state);
-            runtime.Handle(new NewGameProgressionEvent());
-            runtime.Handle(new ActivityCompletedEvent("activity_combat"));
-
-            var restored = TestPlayerComposition.CreatePlayerStateFactory(_database).Create(state.ToSaveData());
-            var snapshot = NewRuntime(restored).GetSnapshot();
-
-            Assert.That(snapshot.CurrentStage.StageId, Is.EqualTo("stage_alpha"));
-            Assert.That(FindQuest(snapshot.CompletedQuests, "quest_clear"), Is.Not.Null);
-            Assert.That(FindQuest(snapshot.ActiveQuests, "quest_build"), Is.Not.Null);
-        }
-
-        [Test]
-        public void Transition_DoesNotRepeatThroughSnapshotNextUpdateOrLoad()
-        {
-            var state = NewState();
-            var runtime = NewRuntime(state);
-            runtime.Handle(new NewGame());
-            runtime.Handle(new ActivityCompleted("activity_combat"));
-            runtime.Handle(new ResourceQuantityChanged("resource_wood", 2));
-            var transitioned = runtime.Handle(new BuildingLevelChanged("building_hall", 1));
-
-            Assert.That(transitioned.Transition.Occurred, Is.True);
-            Assert.That(runtime.GetSnapshot().CurrentStage.StageId, Is.EqualTo("stage_beta"));
-            Assert.That(runtime.GetSnapshot().ActiveQuests, Is.Empty);
-            Assert.That(runtime.GetSnapshot().CompletedQuests, Is.Empty);
-            Assert.That(runtime.Handle(new ItemQuantityChanged("consumable_meat", 0)).Transition.Occurred, Is.False);
-
-            var restored = TestPlayerComposition.CreatePlayerStateFactory(_database).Create(state.ToSaveData());
-            var restoredRuntime = NewRuntime(restored);
-            Assert.That(restoredRuntime.GetSnapshot().CurrentStage.StageId, Is.EqualTo("stage_beta"));
-            Assert.That(restoredRuntime.Handle(new ItemQuantityChanged("consumable_meat", 0)).Transition.Occurred, Is.False);
-        }
-
-        [Test]
-        public void PlayerStateRewardBatch_RollsBackEveryMutationOnFailure()
-        {
-            var state = NewState();
-            var mutations = new[]
-            {
-                new RewardMutation(RewardMutationKind.Item, "resource_wood", 2),
-                new RewardMutation((RewardMutationKind)999, "invalid", 1)
-            };
-
-            var success = state.TryApplyRewardBatch(mutations, out var results, out _);
-
-            Assert.That(success, Is.False);
-            Assert.That(results, Is.Empty);
-            Assert.That(state.GetItem("resource_wood"), Is.Zero);
-
-            Assert.That(state.SetQuestState(new QuestSaveData { questId = "quest_build", completed = true }), Is.True);
-            var quest = state.GetQuestState("quest_build");
-            Assert.That(state.TryCommitQuestRewardBatch(quest, mutations, out _, out _), Is.False);
-            Assert.That(state.GetItem("resource_wood"), Is.Zero);
-            Assert.That(state.GetQuestState("quest_build").rewardsGranted, Is.False);
-        }
-
-        [Test]
-        public void Snapshot_IsOrderedImmutableAndUpdatedFiresOnlyForChangedHandle()
-        {
-            var state = NewState();
-            var runtime = NewRuntime(state);
-            var updateCount = 0;
-            runtime.Updated += _ => updateCount++;
-
-            var unchanged = runtime.Handle(new ItemQuantityChanged("consumable_meat", 0));
-            var changed = runtime.Handle(new NewGame());
-
-            Assert.That(unchanged.Changed, Is.False);
-            Assert.That(updateCount, Is.EqualTo(1));
-            Assert.That(changed.Snapshot.ActiveQuests[0].QuestId, Is.EqualTo("quest_build"));
-            Assert.That(changed.Snapshot.ActiveQuests[0].Steps[0].StepId, Is.EqualTo("collect"));
-            Assert.That(changed.Snapshot.CurrentStage.Objectives[0].QuestId, Is.EqualTo("quest_build"));
-            Assert.Throws<NotSupportedException>(() =>
-                ((IList<QuestSnapshot>)changed.Snapshot.ActiveQuests).Add(changed.Snapshot.ActiveQuests[0]));
-        }
-
-        private PlayerState NewState()
-        {
-            return TestPlayerComposition.CreatePlayerStateFactory(_database).Create(
-                new SaveData { currentStageId = "stage_alpha" });
-        }
-
-        private StageQuestRuntimeService NewRuntime(PlayerState state)
-        {
-            return NewRuntime(new TestStore(state));
-        }
-
-        private StageQuestRuntimeService NewRuntime(TestStore store)
-        {
-            return new StageQuestRuntimeService(
-                new RepositoryStageQuestConfigAdapter(_database.Activities, _database.Buildings),
-                store,
-                new FixedRandom());
-        }
-
-        private static QuestSnapshot FindQuest(IReadOnlyList<QuestSnapshot> quests, string questId)
-        {
-            foreach (var quest in quests)
-            {
-                if (quest.QuestId == questId)
-                    return quest;
-            }
-            return null;
-        }
-
-        private static bool HasIssue(StageQuestUpdate update, string code, string questId)
-        {
-            foreach (var issue in update.Issues)
-            {
-                if (issue.Code == code && issue.QuestId == questId)
-                    return true;
-            }
-            return false;
-        }
-
-        private static ConfigDatabase CreateDatabase(
-            bool includeUnknownQuest = false,
-            bool addRequiredQuestReward = false,
-            bool addUnsupportedOptionalStep = false)
-        {
-            var quests = new List<QuestConfigDto>
-            {
-                Quest("quest_build", 10),
-                Quest("quest_clear", 20),
-                Quest("quest_tutorial", 30),
-                Quest("quest_level", 40),
-                Quest("quest_entered", 50)
-            };
-            var conditions = new List<QuestStartConditionConfigDto>
-            {
-                Condition("quest_build", "NewGame", null, 1),
-                Condition("quest_clear", "NewGame", null, 1),
-                Condition("quest_tutorial", "ActivityFailed", "activity_combat", 1),
-                Condition("quest_level", "BuildingLevel", "building_hall", 1),
-                Condition("quest_entered", "StageEntered", "stage_beta", 1)
-            };
-            var steps = new List<QuestStepConfigDto>
-            {
-                Step("quest_build", "collect", 10, "ResourceCount", "resource_wood", 2),
-                Step("quest_build", "build", 20, "BuildingLevel", "building_hall", 1),
-                Step("quest_clear", "clear", 10, "ActivityCompleted", "activity_combat", 1),
-                Step("quest_tutorial", "prepare", 10, "ItemCount", "consumable_meat", 1),
-                Step("quest_level", "stock", 10, "ResourceCount", "resource_stone", 1),
-                Step("quest_entered", "entered", 10, "BuildingLevel", "building_hall", 1)
-            };
-            if (includeUnknownQuest)
-            {
-                quests.Add(Quest("quest_unknown", 50));
-                conditions.Add(Condition("quest_unknown", "NewGame", null, 1));
-                steps.Add(Step("quest_unknown", "unknown", 10, "UnknownObjective", "unknown", 1));
-            }
-            if (addUnsupportedOptionalStep)
-                steps.Add(Step("quest_build", "optional_unknown", 30, "UnknownObjective", "unknown", 1, false));
-
-            var rewards = addRequiredQuestReward
-                ? new[]
+            var store = new TestStore("stage_1");
+            var configs = Configs(
+                stories: new[] { Story("optional"), Story("required", 20) },
+                conditions: new[] { Condition("optional", "NewGame"), Condition("required", "NewGame") },
+                steps: new[]
                 {
-                    new QuestRewardConfigDto
-                    {
-                        questId = "quest_build",
-                        rewardType = "Resource",
-                        targetId = "resource_wood",
-                        min = 2,
-                        max = 2,
-                        grantMoment = "OnComplete"
-                    }
-                }
-                : Array.Empty<QuestRewardConfigDto>();
-
-            return new ConfigDatabase(
-                new ItemsRuntimeConfigDto
-                {
-                    resources = new[]
-                    {
-                        new ResourceConfigDto { id = "resource_wood", kind = "resource" },
-                        new ResourceConfigDto { id = "resource_stone", kind = "resource" }
-                    },
-                    consumables = new[] { new ConsumableConfigDto { id = "consumable_meat", kind = "consumable" } }
+                    Step("optional", "unknown_optional", "Unsupported", "x", 1, false),
+                    Step("required", "unknown_required", "Unsupported", "x", 1, true)
                 },
-                new HeroesRuntimeConfigDto(),
-                new ActivitiesRuntimeConfigDto
-                {
-                    activities = new[] { new ActivityConfigDto { id = "activity_combat", type = "Combat" } },
-                    quests = quests.ToArray(),
-                    questStartConditions = conditions.ToArray(),
-                    questSteps = steps.ToArray(),
-                    questRewards = rewards
-                },
-                new BuildingsRuntimeConfigDto
-                {
-                    buildings = new[] { new BuildingConfigDto { buildingId = "building_hall", levels = 1 } },
-                    buildingLevels = new[]
-                    {
-                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 0 },
-                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 1 }
-                    },
-                    settlementStages = new[]
-                    {
-                        new SettlementStageConfigDto { stageId = "stage_alpha", completionRule = "AllRequired", nextStageId = "stage_beta", enabled = true },
-                        new SettlementStageConfigDto { stageId = "stage_beta", completionRule = "AllRequired", enabled = true }
-                    },
-                    settlementStageObjectives = new[]
-                    {
-                        new SettlementStageObjectiveConfigDto { stageId = "stage_alpha", questId = "quest_build", weightPercent = 50, required = true, sortOrder = 10 },
-                        new SettlementStageObjectiveConfigDto { stageId = "stage_alpha", questId = "quest_clear", weightPercent = 50, required = true, sortOrder = 20 },
-                        new SettlementStageObjectiveConfigDto { stageId = "stage_alpha", questId = "quest_tutorial", weightPercent = 40, required = false, sortOrder = 30 }
-                    }
-                },
-                null, null, null, null, null, null);
+                stages: new[] { Stage("stage_1", null) });
+
+            var runtime = Runtime(configs, store);
+            var update = runtime.Handle(new NewGame());
+
+            Assert.That(store.GetQuestInstance("story:optional").status, Is.EqualTo(QuestInstanceStatus.Completed));
+            Assert.That(store.GetQuestInstance("story:required").status, Is.EqualTo(QuestInstanceStatus.Active));
+            Assert.That(update.Issues, Has.Count.GreaterThanOrEqualTo(2));
         }
 
-        private static QuestConfigDto Quest(string id, int order) =>
-            new QuestConfigDto { questId = id, sortOrder = order, isTutorial = true, enabled = true };
-
-        private static QuestStartConditionConfigDto Condition(string questId, string type, string target, int value) =>
-            new QuestStartConditionConfigDto { questId = questId, conditionType = type, targetId = target, value = value };
-
-        private static QuestStepConfigDto Step(
-            string questId,
-            string stepId,
-            int order,
-            string type,
-            string target,
-            int value,
-            bool required = true) =>
-            new QuestStepConfigDto { questId = questId, stepId = stepId, stepOrder = order, objectiveType = type, targetId = target, targetValue = value, required = required };
-
-        private sealed class TestStore : IStageQuestRuntimeStore
+        [Test]
+        public void ExistingActiveDailyInstanceUsesSameProgressionAndRewards()
         {
-            private readonly PlayerState _state;
-
-            public TestStore(PlayerState state)
+            var store = new TestStore("stage_1");
+            store.SetQuestInstance(QuestStateBuilder.Create("daily:cycle_1:daily_a", "daily_a", "cycle_1", new[]
             {
-                _state = state;
-            }
+                Step("daily_a", "activity", "ActivityCompleted", "activity_a", 1)
+            }));
+            var configs = Configs(
+                dailies: new[] { Daily("daily_a") },
+                steps: new[] { Step("daily_a", "activity", "ActivityCompleted", "activity_a", 1) },
+                stages: new[] { Stage("stage_1", null) });
 
-            public string FailQuestId { get; set; }
-            public int SaveCount { get; private set; }
-            public string CurrentStageId => _state.CurrentStageId;
-            public bool SetCurrentStage(string stageId) => _state.SetCurrentStage(stageId);
-            public QuestSaveData GetQuestState(string questId) => _state.GetQuestState(questId);
-            public QuestSaveData[] GetQuestStates() => _state.GetQuestStates();
-            public bool SetQuestState(QuestSaveData quest) => _state.SetQuestState(quest);
-            public int GetItem(string itemId) => _state.GetItem(itemId);
-            public int GetBuildingLevel(string buildingId) => _state.GetBuildingLevel(buildingId);
-            public bool IsActivityCompleted(string activityId) => _state.IsActivityCompleted(activityId);
-            public bool Save()
+            Runtime(configs, store).Handle(new ActivityCompleted("activity_a"));
+
+            var instance = store.GetQuestInstance("daily:cycle_1:daily_a");
+            Assert.That(instance.status, Is.EqualTo(QuestInstanceStatus.Completed));
+            Assert.That(instance.rewardsGranted, Is.True);
+        }
+
+        [Test]
+        public void SaveFailureIsReportedAfterSnapshotsAreProduced()
+        {
+            var store = new TestStore("stage_1") { SaveSucceeds = false };
+            var configs = Configs(
+                stories: new[] { Story("quest_a") },
+                conditions: new[] { Condition("quest_a", "NewGame") },
+                stages: new[] { Stage("stage_1", null) });
+
+            var runtime = Runtime(configs, store);
+            var update = runtime.Handle(new NewGame());
+
+            Assert.That(update.Saved, Is.False);
+            Assert.That(update.QuestSnapshot.CompletedInstances, Has.Count.EqualTo(1));
+            Assert.That(update.Issues, Has.Some.Property("Code").EqualTo("ProgressionSaveFailed"));
+            Assert.That(store.SaveCalls, Is.EqualTo(1));
+
+            store.SaveSucceeds = true;
+            var retry = runtime.Handle(new ActivityFailed("unrelated"));
+            Assert.That(retry.Saved, Is.True);
+            Assert.That(store.SaveCalls, Is.EqualTo(2));
+        }
+
+        private static ProgressionRuntimeService Runtime(RepositoryProgressionConfigAdapter configs, TestStore store)
+        {
+            return new ProgressionRuntimeService(
+                new QuestRuntimeService(configs, store),
+                new StageProgressionService(configs, store),
+                store);
+        }
+
+        private static RepositoryProgressionConfigAdapter Configs(
+            StoryQuestConfigDto[] stories = null,
+            DailyQuestConfigDto[] dailies = null,
+            QuestStartConditionConfigDto[] conditions = null,
+            QuestStepConfigDto[] steps = null,
+            StageConfigDto[] stages = null,
+            StageQuestConfigDto[] stageQuests = null)
+        {
+            return new RepositoryProgressionConfigAdapter(new QuestConfigRepository(new QuestRuntimeConfigDto
             {
-                SaveCount++;
+                storyQuests = stories ?? Array.Empty<StoryQuestConfigDto>(),
+                dailyQuests = dailies ?? Array.Empty<DailyQuestConfigDto>(),
+                questStartConditions = conditions ?? Array.Empty<QuestStartConditionConfigDto>(),
+                questSteps = steps ?? Array.Empty<QuestStepConfigDto>(),
+                stages = stages ?? Array.Empty<StageConfigDto>(),
+                stageQuests = stageQuests ?? Array.Empty<StageQuestConfigDto>()
+            }));
+        }
+
+        private static StoryQuestConfigDto Story(string id, int order = 10) =>
+            new StoryQuestConfigDto { questId = id, sortOrder = order, enabled = true };
+
+        private static DailyQuestConfigDto Daily(string id) =>
+            new DailyQuestConfigDto { questId = id, dailyPoolId = "pool", selectionWeight = 1, enabled = true };
+
+        private static QuestStartConditionConfigDto Condition(string questId, string type, string targetId = null) =>
+            new QuestStartConditionConfigDto
+            {
+                questId = questId, conditionGroup = "default", conditionType = type, targetId = targetId,
+                compareOperator = "GreaterOrEqual", value = 1
+            };
+
+        private static QuestStepConfigDto Step(string questId, string stepId, string type, string targetId, int target, bool required = true) =>
+            new QuestStepConfigDto
+            {
+                questId = questId, stepId = stepId, objectiveType = type, targetId = targetId,
+                compareOperator = "GreaterOrEqual", targetValue = target, required = required
+            };
+
+        private static StageConfigDto Stage(string id, string next) =>
+            new StageConfigDto { stageId = id, completionRule = "AllRequired", nextStageId = next, enabled = true };
+
+        private static StageConfigDto[] TwoStages() => new[] { Stage("stage_1", "stage_2"), Stage("stage_2", null) };
+
+        private static StageQuestConfigDto StageQuest(string stageId, string questId) =>
+            new StageQuestConfigDto { stageId = stageId, questId = questId, weightPercent = 100, required = true, showInStageUi = true, enabled = true };
+
+        private sealed class TestStore : IProgressionRuntimeStore
+        {
+            private readonly Dictionary<string, QuestInstanceSaveData> _instances = new Dictionary<string, QuestInstanceSaveData>(StringComparer.Ordinal);
+            private readonly Dictionary<string, int> _items = new Dictionary<string, int>(StringComparer.Ordinal);
+            public TestStore(string stageId) { CurrentStageId = stageId; }
+            public string CurrentStageId { get; private set; }
+            public int SaveCalls { get; set; }
+            public bool SaveSucceeds { get; set; } = true;
+            public bool SetCurrentStage(string stageId) { if (CurrentStageId == stageId) return false; CurrentStageId = stageId; return true; }
+            public QuestInstanceSaveData GetQuestInstance(string instanceId) => _instances.TryGetValue(instanceId, out var value) ? value : null;
+            public QuestInstanceSaveData[] GetQuestInstances() { var values = new QuestInstanceSaveData[_instances.Count]; _instances.Values.CopyTo(values, 0); return values; }
+            public bool SetQuestInstance(QuestInstanceSaveData instance) { if (instance == null || string.IsNullOrWhiteSpace(instance.instanceId)) return false; _instances[instance.instanceId] = instance; return true; }
+            public int GetItem(string itemId) => _items.TryGetValue(itemId, out var value) ? value : 0;
+            public int GetBuildingLevel(string buildingId) => 0;
+            public bool IsActivityCompleted(string activityId) => false;
+            public bool TryCommitQuestRewardBatch(QuestInstanceSaveData instance, RewardMutation[] mutations, out RewardMutationResult[] results, out string error)
+            {
+                instance.rewardsGranted = true;
+                _instances[instance.instanceId] = instance;
+                results = Array.Empty<RewardMutationResult>();
+                error = null;
                 return true;
             }
-
-            public bool TryCommitQuestRewardBatch(QuestSaveData quest, RewardMutation[] mutations, out RewardMutationResult[] results, out string error)
-            {
-                if (quest?.questId == FailQuestId)
-                {
-                    FailQuestId = null;
-                    results = Array.Empty<RewardMutationResult>();
-                    error = "Injected atomic reward failure.";
-                    return false;
-                }
-                return _state.TryCommitQuestRewardBatch(quest, mutations, out results, out error);
-            }
-        }
-
-        private sealed class FixedRandom : GuildIdle.Activities.IActivityRandom
-        {
-            public int RangeInclusive(int min, int max) => min;
-            public float Percent() => 0f;
+            public bool Save() { SaveCalls++; return SaveSucceeds; }
         }
     }
 }

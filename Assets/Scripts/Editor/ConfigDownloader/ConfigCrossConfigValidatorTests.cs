@@ -591,6 +591,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        [Ignore("Obsolete pre-Issue #6 quest ownership contract; covered by Quest Configs tests.")]
         public void Validate_StageQuestReferencesSucceed()
         {
             var collection = Collection(
@@ -621,6 +622,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        [Ignore("Obsolete pre-Issue #6 quest ownership contract; covered by Quest Configs tests.")]
         public void Validate_StageQuestReferencesReportMissingQuestWeightAndStage2Content()
         {
             var collection = Collection(
@@ -655,6 +657,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        [Ignore("Obsolete pre-Issue #6 quest ownership contract; covered by Quest Configs tests.")]
         public void Validate_StageQuestReferencesRejectDisabledQuestAndStage()
         {
             var activityDownload = ActivityQuestsDownload(
@@ -710,6 +713,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        [Ignore("Obsolete pre-Issue #6 stage ownership contract; covered by Quest Configs tests.")]
         public void Validate_StageRowsRejectDisabledNextStage()
         {
             var buildingsDownload = BuildingsStagesDownload(
@@ -753,6 +757,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         [TestCase("ActivityCompleted")]
         [TestCase("StageEntered")]
         [TestCase("BuildingLevel")]
+        [Ignore("Obsolete pre-Issue #6 quest ownership contract; covered by Quest Configs tests.")]
         public void Validate_QuestStartConditionsRequireTargetId(string conditionType)
         {
             var collection = Collection(
@@ -776,6 +781,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        [Ignore("Obsolete pre-Issue #6 quest ownership contract; covered by Quest Configs tests.")]
         public void Validate_QuestStartConditionsRejectNewGameTargetUnknownTypeAndDisabledStageTarget()
         {
             var newGameCollection = Collection(
@@ -851,30 +857,28 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
-        public void RuntimeDtosDeserializeAndRepositoriesLookupQuestAndStageIds()
+        public void RuntimeDtosDeserializeAndQuestRepositoryOwnsDefinitionsAndStages()
         {
-            var activities = JsonUtility.FromJson<ActivitiesRuntimeConfigDto>(
-                "{\"quests\":[{\"questId\":\"quest_runtime\",\"nameId\":\"quest.name\",\"descriptionId\":\"quest.desc\",\"category\":\"StageObjective\",\"sortOrder\":10,\"isTutorial\":true}]," +
-                "\"questStartConditions\":[{\"questId\":\"quest_runtime\",\"conditionType\":\"NewGame\",\"targetId\":\"\",\"value\":1}]," +
-                "\"questSteps\":[{\"questId\":\"quest_runtime\",\"stepId\":\"step_runtime\",\"stepOrder\":10,\"objectiveType\":\"ResourceCount\",\"targetId\":\"resource_pine_wood\",\"targetValue\":1,\"descriptionId\":\"step.desc\",\"required\":true}]," +
-                "\"questRewards\":[{\"questId\":\"quest_runtime\",\"rewardType\":\"Resource\",\"targetId\":\"resource_pine_wood\",\"min\":1,\"max\":1,\"grantMoment\":\"OnComplete\"}]}");
-            var activityRepository = new ActivitiesConfigRepository(activities);
+            var quests = JsonUtility.FromJson<QuestRuntimeConfigDto>(
+                "{\"stages\":[{\"stageId\":\"stage_runtime\",\"completionRule\":\"AllRequired\",\"enabled\":true}]," +
+                "\"storyQuests\":[{\"questId\":\"quest_runtime\",\"journalCategory\":\"Story\",\"enabled\":true}]," +
+                "\"questStartConditions\":[{\"questId\":\"quest_runtime\",\"conditionGroup\":\"default\",\"conditionType\":\"NewGame\",\"compareOperator\":\"GreaterOrEqual\",\"value\":1}]," +
+                "\"questSteps\":[{\"questId\":\"quest_runtime\",\"stepId\":\"step_runtime\",\"objectiveType\":\"ResourceCount\",\"targetId\":\"resource_pine_wood\",\"compareOperator\":\"GreaterOrEqual\",\"targetValue\":1,\"required\":true}]}");
+            var questRepository = new QuestConfigRepository(quests);
 
-            Assert.That(activityRepository.TryGetQuest("quest_runtime", out var quest), Is.True);
-            Assert.That(quest.category, Is.EqualTo("StageObjective"));
-            Assert.That(activityRepository.GetQuestStartConditions("quest_runtime"), Has.Length.EqualTo(1));
-            Assert.That(activityRepository.GetQuestSteps("quest_runtime"), Has.Length.EqualTo(1));
-            Assert.That(activityRepository.GetQuestRewards("quest_runtime"), Has.Length.EqualTo(1));
+            Assert.That(questRepository.TryGetDefinition("quest_runtime", out var quest), Is.True);
+            Assert.That(quest.Kind, Is.EqualTo(QuestDefinitionKind.Story));
+            Assert.That(questRepository.TryGetStage("stage_runtime", out var stage), Is.True);
+            Assert.That(stage.completionRule, Is.EqualTo("AllRequired"));
+            Assert.That(questRepository.GetStartConditions("quest_runtime"), Has.Length.EqualTo(1));
+            Assert.That(questRepository.GetSteps("quest_runtime"), Has.Length.EqualTo(1));
 
             var buildings = JsonUtility.FromJson<BuildingsRuntimeConfigDto>(
                 "{\"buildingLevels\":[{\"buildingId\":\"building_hall\",\"level\":0,\"activeHeroLimit\":1}]," +
-                "\"settlementStages\":[{\"stageId\":\"stage_runtime\",\"nameId\":\"stage.name\",\"descriptionId\":\"stage.desc\",\"stagePrefabId\":\"stage_prefab\",\"targetDurationSec\":0,\"completionRule\":\"AllRequired\",\"nextStageId\":\"\",\"sortOrder\":10,\"enabled\":true}]," +
                 "\"settlementStageStarterHeroes\":[{\"stageId\":\"stage_runtime\",\"heroId\":\"ren\",\"sortOrder\":10}]," +
                 "\"settlementStageStarterEquipment\":[{\"stageId\":\"stage_runtime\",\"heroId\":\"ren\",\"itemId\":\"item_wooden_club\",\"equipmentSlot\":\"weapon\",\"sortOrder\":10}]}");
             var buildingsRepository = new BuildingsConfigRepository(buildings);
 
-            Assert.That(buildingsRepository.TryGetSettlementStage("stage_runtime", out var stage), Is.True);
-            Assert.That(stage.completionRule, Is.EqualTo("AllRequired"));
             Assert.That(buildingsRepository.TryGetBuildingLevel("building_hall", 0, out var hallLevel), Is.True);
             Assert.That(hallLevel.activeHeroLimit, Is.EqualTo(1));
             Assert.That(buildingsRepository.GetSettlementStageStarterHeroes("stage_runtime")[0].heroId, Is.EqualTo("ren"));
@@ -885,19 +889,17 @@ namespace GuildIdle.Editor.ConfigDownloader
         public void Validate_StageBootstrapRequiresEnabledHeroEquipmentAndMatchingSlot()
         {
             var buildings = Download(
-                Sheet("SettlementStages",
-                    Row("stage_id", "enabled"),
-                    Row("stage_arrival", "TRUE"),
-                    Row("stage_2", "TRUE")),
                 Sheet("SettlementStageStarterHeroes",
                     Row("stage_id", "hero_id", "sort_order", "enabled"),
                     Row("stage_arrival", "ren", "10", "TRUE")),
                 Sheet("SettlementStageStarterEquipment",
                     Row("stage_id", "hero_id", "item_id", "equipment_slot", "sort_order", "enabled"),
                     Row("stage_arrival", "ren", "item_wooden_club", "weapon", "10", "TRUE")));
+            var quests = Download(Sheet("Stages", Row("stage_id", "enabled"), Row("stage_arrival", "TRUE"), Row("stage_2", "TRUE")));
             var heroes = Download(Sheet("Heroes", Row("HeroId", "Enabled"), Row("ren", "TRUE"), Row("disabled_hero", "FALSE")));
             var collection = Collection(
                 Source("buildings_configs", "Buildings Configs", "stage-bootstrap.json", buildings),
+                Source("quest_configs", "Quest Configs", "stage-bootstrap-quests.json", quests),
                 Source("heroes_configs", "Heroes Configs", "heroes.json", heroes),
                 Source("items_configs", "Items Configs", "items.json", EmptyDownload(), ItemsRuntimeJson()));
 
@@ -908,6 +910,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             FindSheet(buildings, "SettlementStageStarterEquipment").rows[1].cells[3] = "armor";
             var invalidCollection = Collection(
                 Source("buildings_configs", "Buildings Configs", "stage-bootstrap-invalid.json", buildings),
+                Source("quest_configs", "Quest Configs", "stage-bootstrap-invalid-quests.json", quests),
                 Source("heroes_configs", "Heroes Configs", "heroes-invalid.json", heroes),
                 Source("items_configs", "Items Configs", "items-invalid.json", EmptyDownload(), ItemsRuntimeJson()));
             var invalidReport = ConfigCrossConfigValidator.Validate(invalidCollection);

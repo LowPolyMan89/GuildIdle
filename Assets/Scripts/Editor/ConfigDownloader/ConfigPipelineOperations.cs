@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -13,18 +14,25 @@ namespace GuildIdle.Editor.ConfigDownloader
 
     public static class ConfigPipelineOperations
     {
+        private static readonly string[] PipelineOrder =
+        {
+            "localisation", "formula_configs", "items_configs", "heroes_configs", "enemies_configs",
+            "loot_configs", "map_configs", "activity_configs", "buildings_configs", "quest_configs", "storage_configs"
+        };
+
         private static readonly IConfigPipelineParser[] _parsers =
         {
-            new HeroesConfigsParser(),
-            new ActivityConfigsParser(),
-            new EnemiesConfigsParser(),
-            new StorageConfigsParser(),
-            new MapConfigsParser(),
-            new ItemsConfigsParser(),
+            new LocalisationConfigsParser(),
             new FormulaConfigsParser(),
+            new ItemsConfigsParser(),
+            new HeroesConfigsParser(),
+            new EnemiesConfigsParser(),
             new LootConfigsParser(),
+            new MapConfigsParser(),
+            new ActivityConfigsParser(),
             new BuildingsConfigsParser(),
-            new LocalisationConfigsParser()
+            new QuestConfigsSpreadsheetParser(),
+            new StorageConfigsParser()
         };
 
         public static void ParseEnabled(ConfigSourceSettingsCollection collection)
@@ -122,21 +130,17 @@ namespace GuildIdle.Editor.ConfigDownloader
             if (collection?.sources == null)
                 return;
 
-            var enabledCount = 0;
+            var enabled = new List<ConfigSourceSettings>();
             foreach (var source in collection.sources)
-            {
-                if (source != null && source.enabled)
-                    enabledCount++;
-            }
+                if (source != null && source.enabled) enabled.Add(source);
+            enabled.Sort((left, right) => PipelineRank(left?.config_id).CompareTo(PipelineRank(right?.config_id)));
+            var enabledCount = enabled.Count;
 
             try
             {
                 var index = 0;
-                foreach (var source in collection.sources)
+                foreach (var source in enabled)
                 {
-                    if (source == null || !source.enabled)
-                        continue;
-
                     EditorUtility.DisplayProgressBar(
                         progressTitle,
                         $"{source.display_name} ({index + 1}/{enabledCount})",
@@ -151,6 +155,13 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
 
             ConfigSourceSettingsStore.Save(collection);
+        }
+
+        private static int PipelineRank(string configId)
+        {
+            for (var index = 0; index < PipelineOrder.Length; index++)
+                if (string.Equals(configId, PipelineOrder[index], StringComparison.OrdinalIgnoreCase)) return index;
+            return int.MaxValue;
         }
 
         private static bool TryGetParser(ConfigSourceSettings source, out IConfigPipelineParser parser)

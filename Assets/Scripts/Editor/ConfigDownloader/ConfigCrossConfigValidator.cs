@@ -18,6 +18,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         private const string FormulaConfigId = "formula_configs";
         private const string LootConfigId = "loot_configs";
         private const string BuildingsConfigId = "buildings_configs";
+        private const string QuestConfigId = "quest_configs";
         private const string LocalisationConfigId = "localisation";
         private const string LocalisationConfigIdAlias = "localisation_configs";
 
@@ -55,6 +56,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             FormulaCrossChecks.Validate(registry, report);
             LootCrossChecks.Validate(registry, report);
             BuildingsCrossChecks.Validate(registry, report);
+            QuestCrossChecks.Validate(registry, report);
             MapCrossChecks.Validate(registry, report);
 
             return report;
@@ -127,6 +129,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                    IsConfig(configId, FormulaConfigId) ||
                    IsConfig(configId, LootConfigId) ||
                    IsConfig(configId, BuildingsConfigId) ||
+                   IsConfig(configId, QuestConfigId) ||
                    IsLocalisationConfig(configId);
         }
 
@@ -301,6 +304,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             public FormulaRegistry Formula { get; private set; }
             public LootRegistry Loot { get; private set; }
             public BuildingsRegistry Buildings { get; private set; }
+            public QuestRegistry Quests { get; private set; }
             public LocalisationRegistry Localisation { get; private set; }
 
             public static ConfigRegistry Build(ConfigSourceSettingsCollection collection)
@@ -334,6 +338,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 registry.Formula = FormulaRegistry.TryBuild(registry.Get(FormulaConfigId));
                 registry.Loot = LootRegistry.TryBuild(registry.Get(LootConfigId));
                 registry.Buildings = BuildingsRegistry.TryBuild(registry.Get(BuildingsConfigId));
+                registry.Quests = QuestRegistry.TryBuild(registry.Get(QuestConfigId));
                 registry.Localisation = LocalisationRegistry.TryBuild(registry.Get(LocalisationConfigId));
 
                 return registry;
@@ -533,6 +538,37 @@ namespace GuildIdle.Editor.ConfigDownloader
                     if (IsTrue(row.Get("enabled")))
                         EnabledQuestIds.Add(questId);
                 }
+            }
+        }
+
+        private sealed class QuestRegistry
+        {
+            public LoadedConfig Source { get; }
+            public HashSet<string> StageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> EnabledStageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> DefinitionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> StoryQuestIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            private QuestRegistry(LoadedConfig source) { Source = source; }
+
+            public static QuestRegistry TryBuild(LoadedConfig source)
+            {
+                if (source == null) return null;
+                var registry = new QuestRegistry(source);
+                if (source.TryGetTable("Stages", out var stages))
+                {
+                    foreach (var row in stages.DataRows)
+                    {
+                        var id = row.Get("stage_id");
+                        if (IsBlank(id)) continue;
+                        registry.StageIds.Add(id);
+                        if (!IsDisabled(row.Get("enabled"))) registry.EnabledStageIds.Add(id);
+                    }
+                }
+                CollectIds(source, "StoryQuests", "quest_id", registry.StoryQuestIds);
+                foreach (var id in registry.StoryQuestIds) registry.DefinitionIds.Add(id);
+                CollectIds(source, "DailyQuests", "quest_id", registry.DefinitionIds);
+                return registry;
             }
         }
 
@@ -1172,7 +1208,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                 ValidateCombatDetails(activity, registry, report);
                 ValidateDangerEncounters(activity, registry, report);
                 ValidateLocalisation(activity, registry, report);
-                ValidateQuests(activity, registry, report);
             }
 
             private static void ValidateActivities(ActivityRegistry activity, ConfigRegistry registry, ConfigPipelineReport report)
@@ -2101,11 +2136,11 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 ValidateLocalisation(buildings, registry, report);
                 ValidateIndexRules(buildings, report);
-                ValidateSettlementStages(buildings, registry, report);
                 ValidateBuildingLevelRows(buildings, registry, report);
                 ValidateBuildingActivities(buildings, registry, report);
                 ValidateCraftables(buildings, registry, report);
                 ValidateActionConflicts(buildings, registry, report);
+                ValidateStageComposition(buildings, registry, report);
             }
 
             private static void ValidateLocalisation(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
@@ -2147,14 +2182,14 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
             }
 
-            private static void ValidateSettlementStages(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
+            private static void ValidateStageComposition(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
             {
-                ValidateStageRows(buildings, registry, report);
                 ValidateStageSlots(buildings, report);
-                ValidateStageObjectives(buildings, registry, report);
                 ValidateStageStarterHeroes(buildings, registry, report);
                 ValidateStageStarterEquipment(buildings, registry, report);
-                ValidateStage2IsEmpty(buildings, report);
+                ValidateStage2HasNoRows(buildings, report, "SettlementStageSlots", "stage_2 must not have slots.");
+                ValidateStage2HasNoRows(buildings, report, "SettlementStageStarterHeroes", "stage_2 must not have starter heroes.");
+                ValidateStage2HasNoRows(buildings, report, "SettlementStageStarterEquipment", "stage_2 must not have starter equipment.");
             }
 
             private static void ValidateStageRows(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
@@ -2196,9 +2231,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                     var stageId = row.Get("stage_id");
                     var slotId = row.Get("slot_id");
                     var buildingId = row.Get("building_id");
-
-                    if (!IsBlank(stageId) && !buildings.EnabledStageIds.Contains(stageId))
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageSlots", row.RowNumber, "stage_id", stageId, "stage_id references missing enabled SettlementStages.stage_id.");
 
                     if (!IsBlank(buildingId) && !buildings.BuildingIds.Contains(buildingId))
                         AddIssue(report, buildings.Source.DisplayName, "SettlementStageSlots", row.RowNumber, "building_id", buildingId, "building_id does not exist in Buildings Configs / Index.building_id.");
@@ -2602,6 +2634,175 @@ namespace GuildIdle.Editor.ConfigDownloader
                     {
                         if (registry.Items.EnabledCraftDefinitionIds.Contains(actionId))
                             AddIssue(report, buildings.Source.DisplayName, "buildActions", 0, "id", actionId, "Generated Build action id conflicts with Items Configs / CraftDefinitions.craft_id.");
+                    }
+                }
+            }
+        }
+
+        private static class QuestCrossChecks
+        {
+            public static void Validate(ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                var quests = registry.Quests;
+                if (quests == null) return;
+                ValidateLocalisation(quests, registry, report);
+                ValidateConditions(quests, registry, report);
+                ValidateSteps(quests, registry, report);
+                ValidateRewards(quests, registry, report);
+                ValidateBuildingStageReferences(quests, registry, report);
+            }
+
+            private static void ValidateLocalisation(QuestRegistry quests, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!TryGetRequiredRegistry(report, registry.Localisation, "Localisation")) return;
+                foreach (var sheet in new[] { "Stages", "StoryQuests", "DailyQuests" })
+                {
+                    if (!quests.Source.TryGetTable(sheet, out var table)) continue;
+                    foreach (var row in table.DataRows)
+                    {
+                        ValidateIdSet(report, quests.Source.DisplayName, sheet, row, "name_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                        ValidateIdSet(report, quests.Source.DisplayName, sheet, row, "description_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                    }
+                }
+                if (quests.Source.TryGetTable("QuestSteps", out var steps))
+                    foreach (var row in steps.DataRows)
+                        ValidateIdSet(report, quests.Source.DisplayName, "QuestSteps", row, "description_id", registry.Localisation.LocalisationIds, "Localisation.id");
+            }
+
+            private static void ValidateConditions(QuestRegistry quests, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!quests.Source.TryGetTable("QuestStartConditions", out var table)) return;
+                foreach (var row in table.DataRows)
+                {
+                    var type = row.Get("condition_type");
+                    switch (type)
+                    {
+                        case "ActivityFailed":
+                            if (TryGetRequiredRegistry(report, registry.Activity, "Activity Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Activity.ActivityIds, "Activity Configs / Activities.id");
+                            break;
+                        case "StageEntered":
+                            ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", quests.EnabledStageIds, "Quest Configs / enabled Stages.stage_id");
+                            break;
+                        case "BuildingLevel":
+                            if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
+                            break;
+                        case "QuestCompleted":
+                            ValidateDefinitionTarget(quests, report, table, row);
+                            break;
+                    }
+                }
+            }
+
+            private static void ValidateSteps(QuestRegistry quests, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!quests.Source.TryGetTable("QuestSteps", out var table)) return;
+                foreach (var row in table.DataRows)
+                {
+                    switch (row.Get("objective_type"))
+                    {
+                        case "ResourceCount":
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs")) ValidateItemTarget(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Items, ItemTargetKind.Resource, "Items Configs / resources.id");
+                            break;
+                        case "ItemCount":
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs")) ValidateItemTarget(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Items, ItemTargetKind.AnyItem, "Items Configs item registry");
+                            break;
+                        case "BuildingLevel":
+                            if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
+                            break;
+                        case "ActivityCompleted":
+                            if (TryGetRequiredRegistry(report, registry.Activity, "Activity Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Activity.ActivityIds, "Activity Configs / Activities.id");
+                            break;
+                        case "QuestCompleted":
+                            ValidateDefinitionTarget(quests, report, table, row);
+                            break;
+                    }
+                }
+            }
+
+            private static void ValidateDefinitionTarget(QuestRegistry quests, ConfigPipelineReport report, ConfigSheetTable table, ConfigSheetDataRow row)
+            {
+                var target = row.Get("target_id");
+                if (target.StartsWith("story:", StringComparison.OrdinalIgnoreCase) || target.StartsWith("daily:", StringComparison.OrdinalIgnoreCase) || !quests.DefinitionIds.Contains(target))
+                    AddIssue(report, quests.Source.DisplayName, table.Name, row.RowNumber, "target_id", target, "QuestCompleted target_id must reference QuestDefinition.quest_id, never an instance_id.");
+            }
+
+            private static void ValidateRewards(QuestRegistry quests, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                if (!quests.Source.TryGetTable("QuestRewards", out var table)) return;
+                foreach (var row in table.DataRows)
+                {
+                    var raw = row.Get("reward_type");
+                    if (!ActivityTypeParser.TryParseRewardType(raw, out var type))
+                    {
+                        AddIssue(report, quests.Source.DisplayName, table.Name, row.RowNumber, "reward_type", raw, "Unknown RewardType registry value.");
+                        continue;
+                    }
+                    if (type == RewardTypeEnum.HeroExp || type == RewardTypeEnum.Reputation)
+                    {
+                        AddIssue(report, quests.Source.DisplayName, table.Name, row.RowNumber, "reward_type", raw, $"Reward type '{raw}' is recognized but not supported by RewardBatchPipeline.");
+                        continue;
+                    }
+                    if (IsBlank(row.Get("target_id")) && type != RewardTypeEnum.Gold)
+                    {
+                        AddIssue(report, quests.Source.DisplayName, table.Name, row.RowNumber, "target_id", row.Get("target_id"), $"Reward type '{raw}' requires target_id.");
+                        continue;
+                    }
+                    switch (type)
+                    {
+                        case RewardTypeEnum.Resource:
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs")) ValidateItemTarget(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Items, ItemTargetKind.Resource, "Items Configs / resources.id");
+                            break;
+                        case RewardTypeEnum.Item:
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs")) ValidateItemTarget(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Items, ItemTargetKind.AnyItem, "Items Configs item registry");
+                            break;
+                        case RewardTypeEnum.Equipment:
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs")) ValidateItemTarget(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Items, ItemTargetKind.Equipment, "Items Configs equipment.id");
+                            break;
+                        case RewardTypeEnum.Consumable:
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs")) ValidateItemTarget(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Items, ItemTargetKind.Consumable, "Items Configs consumables.id");
+                            break;
+                        case RewardTypeEnum.Recipe:
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs")) ValidateItemTarget(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Items, ItemTargetKind.Recipe, "Items Configs recipes.id");
+                            break;
+                        case RewardTypeEnum.SkillExp:
+                            if (TryGetRequiredRegistry(report, registry.Activity, "Activity Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Activity.SkillIds, "Activity Configs / Skills.skill_id");
+                            break;
+                        case RewardTypeEnum.Currency:
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Items.CurrencyIds, "Items Configs / currencies.currency_id");
+                            break;
+                        case RewardTypeEnum.Gold:
+                            if (TryGetRequiredRegistry(report, registry.Items, "Items Configs") && !registry.Items.CurrencyIds.Contains(GoldCurrencyId)) AddIssue(report, quests.Source.DisplayName, table.Name, row.RowNumber, "reward_type", raw, $"Gold reward requires currency '{GoldCurrencyId}'.");
+                            break;
+                        case RewardTypeEnum.LootTable:
+                            if (TryGetRequiredRegistry(report, registry.Loot, "Loot Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Loot.LootTableIds, "Loot Configs / LootTables.loot_table_id");
+                            break;
+                        case RewardTypeEnum.Hero:
+                            if (TryGetRequiredRegistry(report, registry.Heroes, "Heroes Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Heroes.HeroIds, "Heroes Configs / Heroes.HeroId");
+                            break;
+                        case RewardTypeEnum.UnlockBuilding:
+                            if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
+                            break;
+                        case RewardTypeEnum.UnlockLocation:
+                            if (TryGetRequiredRegistry(report, registry.Map, "Map Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Map.LocationIds, "Map Configs / MapLocations.location_id");
+                            break;
+                        default:
+                            AddIssue(report, quests.Source.DisplayName, table.Name, row.RowNumber, "reward_type", raw, $"Reward type '{raw}' is not supported by RewardBatchPipeline.");
+                            break;
+                    }
+                }
+            }
+
+            private static void ValidateBuildingStageReferences(QuestRegistry quests, ConfigRegistry registry, ConfigPipelineReport report)
+            {
+                var buildings = registry.Buildings;
+                if (buildings == null) return;
+                foreach (var sheet in new[] { "SettlementStageSlots", "SettlementStageStarterHeroes", "SettlementStageStarterEquipment" })
+                {
+                    if (!buildings.Source.TryGetTable(sheet, out var table)) continue;
+                    foreach (var row in table.DataRows)
+                    {
+                        if (IsDisabled(row.Get("enabled"))) continue;
+                        ValidateIdSet(report, buildings.Source.DisplayName, sheet, row, "stage_id", quests.EnabledStageIds, "Quest Configs / enabled Stages.stage_id");
                     }
                 }
             }

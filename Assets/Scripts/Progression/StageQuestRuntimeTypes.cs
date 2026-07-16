@@ -1,235 +1,130 @@
 using System;
 using System.Collections.Generic;
+using GuildIdle.Configs;
 
 namespace GuildIdle.Progression
 {
-    public sealed class StageQuestIssue
+    public sealed class ProgressionIssue
     {
-        public StageQuestIssue(string code, string questId, string stepId, string message)
-        {
-            Code = code ?? string.Empty;
-            QuestId = questId;
-            StepId = stepId;
-            Message = message ?? string.Empty;
-        }
-
+        public ProgressionIssue(string code, string message, string questId = null, string instanceId = null, string stepId = null)
+        { Code = code ?? string.Empty; Message = message ?? string.Empty; QuestId = questId; InstanceId = instanceId; StepId = stepId; }
         public string Code { get; }
-        public string QuestId { get; }
-        public string StepId { get; }
         public string Message { get; }
-    }
-
-    public sealed class StageQuestRewardGrant
-    {
-        public StageQuestRewardGrant(string questId, string rewardType, string targetId, long amount, bool applied)
-        {
-            QuestId = questId;
-            RewardType = rewardType;
-            TargetId = targetId;
-            Amount = amount;
-            Applied = applied;
-        }
-
         public string QuestId { get; }
-        public string RewardType { get; }
-        public string TargetId { get; }
-        public long Amount { get; }
-        public bool Applied { get; }
-    }
-
-    public sealed class TransitionResult
-    {
-        public static readonly TransitionResult None = new TransitionResult(false, null, null);
-
-        public TransitionResult(bool occurred, string fromStageId, string toStageId)
-        {
-            Occurred = occurred;
-            FromStageId = fromStageId;
-            ToStageId = toStageId;
-        }
-
-        public bool Occurred { get; }
-        public string FromStageId { get; }
-        public string ToStageId { get; }
+        public string InstanceId { get; }
+        public string StepId { get; }
     }
 
     public sealed class QuestStepSnapshot
     {
-        public QuestStepSnapshot(
-            string stepId,
-            int stepOrder,
-            string objectiveType,
-            string targetId,
-            int targetValue,
-            int currentValue,
-            string descriptionId,
-            bool required,
-            bool completed)
-        {
-            StepId = stepId;
-            StepOrder = stepOrder;
-            ObjectiveType = objectiveType;
-            TargetId = targetId;
-            TargetValue = targetValue;
-            CurrentValue = currentValue;
-            DescriptionId = descriptionId;
-            Required = required;
-            Completed = completed;
-        }
-
-        public string StepId { get; }
-        public int StepOrder { get; }
-        public string ObjectiveType { get; }
-        public string TargetId { get; }
-        public int TargetValue { get; }
-        public int CurrentValue { get; }
-        public string DescriptionId { get; }
-        public bool Required { get; }
-        public bool Completed { get; }
+        public string StepId { get; internal set; }
+        public int StepOrder { get; internal set; }
+        public string ObjectiveType { get; internal set; }
+        public string TargetId { get; internal set; }
+        public string CompareOperator { get; internal set; }
+        public int TargetValue { get; internal set; }
+        public int CurrentValue { get; internal set; }
+        public string DescriptionId { get; internal set; }
+        public bool Required { get; internal set; }
+        public bool Completed { get; internal set; }
     }
 
-    public sealed class QuestSnapshot
+    public sealed class QuestInstanceSnapshot
     {
-        public QuestSnapshot(
-            string questId,
-            string nameId,
-            string descriptionId,
-            int sortOrder,
-            bool isTutorial,
-            bool required,
-            bool completed,
-            IReadOnlyList<QuestStepSnapshot> steps)
-        {
-            QuestId = questId;
-            NameId = nameId;
-            DescriptionId = descriptionId;
-            SortOrder = sortOrder;
-            IsTutorial = isTutorial;
-            Required = required;
-            Completed = completed;
-            Steps = ReadOnly.Copy(steps);
-        }
-
-        public string QuestId { get; }
-        public string NameId { get; }
-        public string DescriptionId { get; }
-        public int SortOrder { get; }
-        public bool IsTutorial { get; }
-        public bool Required { get; }
-        public bool Optional => !Required;
-        public bool Completed { get; }
-        public IReadOnlyList<QuestStepSnapshot> Steps { get; }
+        public string InstanceId { get; internal set; }
+        public string QuestId { get; internal set; }
+        public string CycleId { get; internal set; }
+        public string Status { get; internal set; }
+        public QuestDefinitionKind DefinitionKind { get; internal set; }
+        public string NameId { get; internal set; }
+        public string DescriptionId { get; internal set; }
+        public string IconId { get; internal set; }
+        public string JournalCategory { get; internal set; }
+        public int SortOrder { get; internal set; }
+        public bool IsTutorial { get; internal set; }
+        public bool RewardsGranted { get; internal set; }
+        public IReadOnlyList<QuestStepSnapshot> Steps { get; internal set; } = Array.AsReadOnly(Array.Empty<QuestStepSnapshot>());
     }
 
-    public sealed class StageObjectiveSnapshot
+    public sealed class QuestRuntimeSnapshot
     {
-        public StageObjectiveSnapshot(string questId, int weightPercent, bool required, int sortOrder, bool active, bool completed)
-        {
-            QuestId = questId;
-            WeightPercent = weightPercent;
-            Required = required;
-            SortOrder = sortOrder;
-            Active = active;
-            Completed = completed;
-        }
-
-        public string QuestId { get; }
-        public int WeightPercent { get; }
-        public bool Required { get; }
-        public int SortOrder { get; }
-        public bool Active { get; }
-        public bool Completed { get; }
+        public IReadOnlyList<QuestInstanceSnapshot> ActiveInstances { get; internal set; } = Array.AsReadOnly(Array.Empty<QuestInstanceSnapshot>());
+        public IReadOnlyList<QuestInstanceSnapshot> CompletedInstances { get; internal set; } = Array.AsReadOnly(Array.Empty<QuestInstanceSnapshot>());
     }
 
-    public sealed class CurrentStageSnapshot
+    public sealed class StageQuestInstanceSnapshot
     {
-        public CurrentStageSnapshot(
-            string stageId,
-            string nameId,
-            string descriptionId,
-            string completionRule,
-            string nextStageId,
-            int requiredProgressPercent,
-            IReadOnlyList<StageObjectiveSnapshot> objectives)
-        {
-            StageId = stageId;
-            NameId = nameId;
-            DescriptionId = descriptionId;
-            CompletionRule = completionRule;
-            NextStageId = nextStageId;
-            RequiredProgressPercent = requiredProgressPercent;
-            Objectives = ReadOnly.Copy(objectives);
-        }
-
-        public string StageId { get; }
-        public string NameId { get; }
-        public string DescriptionId { get; }
-        public string CompletionRule { get; }
-        public string NextStageId { get; }
-        public int RequiredProgressPercent { get; }
-        public IReadOnlyList<StageObjectiveSnapshot> Objectives { get; }
+        public string InstanceId { get; internal set; }
+        public string QuestId { get; internal set; }
+        public string Status { get; internal set; }
+        public int WeightPercent { get; internal set; }
+        public bool Required { get; internal set; }
+        public int SortOrder { get; internal set; }
     }
 
-    public sealed class StageQuestSnapshot
+    public sealed class StageProgressionSnapshot
     {
-        public StageQuestSnapshot(
-            CurrentStageSnapshot currentStage,
-            IReadOnlyList<QuestSnapshot> activeQuests,
-            IReadOnlyList<QuestSnapshot> completedQuests)
-        {
-            CurrentStage = currentStage;
-            ActiveQuests = ReadOnly.Copy(activeQuests);
-            CompletedQuests = ReadOnly.Copy(completedQuests);
-        }
-
-        public CurrentStageSnapshot CurrentStage { get; }
-        public IReadOnlyList<QuestSnapshot> ActiveQuests { get; }
-        public IReadOnlyList<QuestSnapshot> CompletedQuests { get; }
+        public string StageId { get; internal set; }
+        public string NameId { get; internal set; }
+        public string DescriptionId { get; internal set; }
+        public string StagePrefabId { get; internal set; }
+        public string CompletionRule { get; internal set; }
+        public string NextStageId { get; internal set; }
+        public int RequiredProgressPercent { get; internal set; }
+        public IReadOnlyList<StageQuestInstanceSnapshot> VisibleInstances { get; internal set; } = Array.AsReadOnly(Array.Empty<StageQuestInstanceSnapshot>());
     }
 
-    public sealed class StageQuestUpdate
+    public sealed class QuestRewardGrant
     {
-        public StageQuestUpdate(
-            StageQuestSnapshot snapshot,
-            IReadOnlyList<StageQuestIssue> issues,
-            IReadOnlyList<string> activatedQuestIds,
-            IReadOnlyList<string> completedQuestIds,
-            IReadOnlyList<StageQuestRewardGrant> rewards,
-            TransitionResult transition,
-            bool changed,
-            bool saved)
-        {
-            Snapshot = snapshot;
-            Issues = ReadOnly.Copy(issues);
-            ActivatedQuestIds = ReadOnly.Copy(activatedQuestIds);
-            CompletedQuestIds = ReadOnly.Copy(completedQuestIds);
-            Rewards = ReadOnly.Copy(rewards);
-            Transition = transition ?? TransitionResult.None;
-            Changed = changed;
-            Saved = saved;
-        }
-
-        public StageQuestSnapshot Snapshot { get; }
-        public IReadOnlyList<StageQuestIssue> Issues { get; }
-        public IReadOnlyList<string> ActivatedQuestIds { get; }
-        public IReadOnlyList<string> CompletedQuestIds { get; }
-        public IReadOnlyList<StageQuestRewardGrant> Rewards { get; }
-        public TransitionResult Transition { get; }
-        public bool Changed { get; }
-        public bool Saved { get; }
+        public string InstanceId { get; internal set; }
+        public string QuestId { get; internal set; }
+        public string RewardType { get; internal set; }
+        public string TargetId { get; internal set; }
+        public long Amount { get; internal set; }
+        public bool Applied { get; internal set; }
     }
 
-    internal static class ReadOnly
+    public sealed class StageTransitionResult
     {
-        public static IReadOnlyList<T> Copy<T>(IReadOnlyList<T> source)
-        {
-            if (source == null || source.Count == 0)
-                return Array.AsReadOnly(Array.Empty<T>());
+        public static readonly StageTransitionResult None = new StageTransitionResult();
+        public bool Occurred { get; internal set; }
+        public string FromStageId { get; internal set; }
+        public string ToStageId { get; internal set; }
+    }
 
-            var copy = new T[source.Count];
-            for (var i = 0; i < source.Count; i++)
-                copy[i] = source[i];
-            return Array.AsReadOnly(copy);
-        }
+    public sealed class ProgressionRuntimeUpdate
+    {
+        public QuestRuntimeSnapshot QuestSnapshot { get; internal set; }
+        public StageProgressionSnapshot StageSnapshot { get; internal set; }
+        public IReadOnlyList<ProgressionIssue> Issues { get; internal set; } = Array.AsReadOnly(Array.Empty<ProgressionIssue>());
+        public IReadOnlyList<string> ActivatedInstanceIds { get; internal set; } = Array.AsReadOnly(Array.Empty<string>());
+        public IReadOnlyList<string> CompletedInstanceIds { get; internal set; } = Array.AsReadOnly(Array.Empty<string>());
+        public IReadOnlyList<QuestCompleted> PublishedQuestCompletedEvents { get; internal set; } = Array.AsReadOnly(Array.Empty<QuestCompleted>());
+        public IReadOnlyList<QuestRewardGrant> Rewards { get; internal set; } = Array.AsReadOnly(Array.Empty<QuestRewardGrant>());
+        public StageTransitionResult Transition { get; internal set; } = StageTransitionResult.None;
+        public bool Changed { get; internal set; }
+        public bool Saved { get; internal set; }
+    }
+
+    public sealed class QuestRuntimeResult
+    {
+        internal bool ChangedValue;
+        internal readonly List<ProgressionIssue> IssueValues = new List<ProgressionIssue>();
+        internal readonly List<string> ActivatedValues = new List<string>();
+        internal readonly List<string> CompletedValues = new List<string>();
+        internal readonly List<QuestCompleted> CompletionEventValues = new List<QuestCompleted>();
+        internal readonly List<QuestRewardGrant> RewardValues = new List<QuestRewardGrant>();
+
+        public bool Changed => ChangedValue;
+        public IReadOnlyList<ProgressionIssue> Issues => SnapshotLists.ReadOnly(IssueValues);
+        public IReadOnlyList<string> ActivatedInstanceIds => SnapshotLists.ReadOnly(ActivatedValues);
+        public IReadOnlyList<string> CompletedInstanceIds => SnapshotLists.ReadOnly(CompletedValues);
+        public IReadOnlyList<QuestCompleted> QuestCompletedEvents => SnapshotLists.ReadOnly(CompletionEventValues);
+        public IReadOnlyList<QuestRewardGrant> Rewards => SnapshotLists.ReadOnly(RewardValues);
+    }
+
+    internal static class SnapshotLists
+    {
+        public static IReadOnlyList<T> ReadOnly<T>(List<T> values) => Array.AsReadOnly(values?.ToArray() ?? Array.Empty<T>());
     }
 }

@@ -29,22 +29,25 @@ namespace GuildIdle.Player
                 new PlayerStateActivityAdapter(state));
         }
 
-        public static StageQuestRuntimeService CreateStageQuestRuntimeService()
+        public static ProgressionRuntimeService CreateProgressionRuntimeService()
         {
             var state = Player.State;
             if (state == null)
                 throw new InvalidOperationException("Player state is not loaded yet. Call Player.Load() or wait for config load.");
 
-            return CreateStageQuestRuntimeService(state);
+            return CreateProgressionRuntimeService(state);
         }
 
-        public static StageQuestRuntimeService CreateStageQuestRuntimeService(PlayerState state)
+        public static ProgressionRuntimeService CreateProgressionRuntimeService(PlayerState state)
         {
             if (state == null)
                 throw new ArgumentNullException(nameof(state));
-            return new StageQuestRuntimeService(
-                new RepositoryStageQuestConfigAdapter(RuntimeConfigs.Activities, RuntimeConfigs.Buildings),
-                new PlayerStateStageQuestAdapter(state));
+            var configs = new RepositoryProgressionConfigAdapter(RuntimeConfigs.Quests);
+            var store = new PlayerStateProgressionAdapter(state);
+            return new ProgressionRuntimeService(
+                new QuestRuntimeService(configs, store),
+                new StageProgressionService(configs, store),
+                store);
         }
 
         internal static PlayerBootstrapService CreateBootstrapService(
@@ -59,9 +62,9 @@ namespace GuildIdle.Player
                 handleConfigLoadFailed);
         }
 
-        internal static PlayerState LoadPlayerState()
+        internal static PlayerState LoadPlayerState(out SaveLoadOrigin origin)
         {
-            return SaveService.Load(GetPlayerStateFactory());
+            return SaveService.Load(GetPlayerStateFactory(), null, out origin);
         }
 
         internal static PlayerState ResetPlayerState()
@@ -88,6 +91,7 @@ namespace GuildIdle.Player
                 RuntimeConfigs.Heroes,
                 RuntimeConfigs.Activities,
                 RuntimeConfigs.Buildings,
+                RuntimeConfigs.Quests,
                 RuntimeConfigs.Storage);
             var heroStats = new HeroStatsService(heroStatsConfigs);
             _playerStateFactory = new PlayerStateFactory(

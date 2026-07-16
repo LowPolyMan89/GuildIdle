@@ -6,7 +6,7 @@ namespace GuildIdle.Player
     [Serializable]
     public sealed class SaveData
     {
-        public const int CurrentSaveVersion = 5;
+        public const int CurrentSaveVersion = 6;
 
         public int saveVersion = CurrentSaveVersion;
         public string currentStageId;
@@ -17,7 +17,7 @@ namespace GuildIdle.Player
         public string[] unlockedHeroes = Array.Empty<string>();
         public string[] acquiredHeroes = Array.Empty<string>();
         public HeroSaveData[] heroes = Array.Empty<HeroSaveData>();
-        public QuestSaveData[] quests = Array.Empty<QuestSaveData>();
+        public QuestInstanceSaveData[] questInstances = Array.Empty<QuestInstanceSaveData>();
         public string[] unlockedBuildings = Array.Empty<string>();
         public BuildingLevelSaveEntry[] buildingLevels = Array.Empty<BuildingLevelSaveEntry>();
         public string[] unlockedLocations = Array.Empty<string>();
@@ -85,10 +85,25 @@ namespace GuildIdle.Player
     }
 
     [Serializable]
-    public sealed class QuestSaveData
+    public static class QuestInstanceStatus
     {
+        public const string Active = "Active";
+        public const string Completed = "Completed";
+        public const string Expired = "Expired";
+
+        public static bool IsValid(string value) =>
+            string.Equals(value, Active, StringComparison.Ordinal) ||
+            string.Equals(value, Completed, StringComparison.Ordinal) ||
+            string.Equals(value, Expired, StringComparison.Ordinal);
+    }
+
+    [Serializable]
+    public sealed class QuestInstanceSaveData
+    {
+        public string instanceId;
         public string questId;
-        public bool completed;
+        public string cycleId;
+        public string status = QuestInstanceStatus.Active;
         public bool rewardsGranted;
         public QuestStepSaveData[] steps = Array.Empty<QuestStepSaveData>();
     }
