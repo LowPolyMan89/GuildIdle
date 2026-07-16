@@ -22,6 +22,7 @@ namespace GuildIdle.Progression
 
     public interface IProgressionRuntimeStore
     {
+        IPendingResultService PendingResults { get; }
         string CurrentStageId { get; }
         bool SetCurrentStage(string stageId);
         QuestInstanceSaveData GetQuestInstance(string instanceId);
@@ -30,7 +31,6 @@ namespace GuildIdle.Progression
         int GetItem(string itemId);
         int GetBuildingLevel(string buildingId);
         bool IsActivityCompleted(string activityId);
-        bool TryCommitQuestRewardBatch(QuestInstanceSaveData instance, RewardMutation[] mutations, out RewardMutationResult[] results, out string error);
         bool Save();
     }
 
@@ -52,6 +52,7 @@ namespace GuildIdle.Progression
         private readonly PlayerState _state;
         public PlayerStateProgressionAdapter(PlayerState state) { _state = state ?? throw new System.ArgumentNullException(nameof(state)); }
         public string CurrentStageId => _state.CurrentStageId;
+        public IPendingResultService PendingResults => _state.PendingResults;
         public bool SetCurrentStage(string stageId) => _state.SetCurrentStage(stageId);
         public QuestInstanceSaveData GetQuestInstance(string instanceId) => _state.GetQuestInstance(instanceId);
         public QuestInstanceSaveData[] GetQuestInstances() => _state.GetQuestInstances();
@@ -59,7 +60,6 @@ namespace GuildIdle.Progression
         public int GetItem(string itemId) => _state.GetItem(itemId);
         public int GetBuildingLevel(string buildingId) => _state.GetBuildingLevel(buildingId);
         public bool IsActivityCompleted(string activityId) => _state.IsActivityCompleted(activityId);
-        public bool TryCommitQuestRewardBatch(QuestInstanceSaveData instance, RewardMutation[] mutations, out RewardMutationResult[] results, out string error) => _state.TryCommitQuestRewardBatch(instance, mutations, out results, out error);
         public bool Save() => _state.Save();
     }
 }

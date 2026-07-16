@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
 using GuildIdle.Core;
+using GuildIdle.Player;
 using UnityEngine;
 using CoreActivityRuntimeStatus = GuildIdle.Core.ActivityRuntimeStatus;
 
@@ -60,7 +61,7 @@ namespace GuildIdle.Activities
                 if (info.isRepeatable)
                     ProcessRepeatableTick(execution, info, issues, rewards, result, ref changed);
                 else
-                    ProcessOneShotCompletion(execution, info, issues, rewards, ref changed);
+                    ProcessOneShotCompletion(execution, issues, rewards, ref changed);
             }
 
             return FinishTick(result, issues, rewards, changed);
@@ -74,7 +75,7 @@ namespace GuildIdle.Activities
             var changed = false;
 
             var execution = GetExecution(executionId);
-            if (execution == null)
+            if (execution == null || execution.status != CoreActivityRuntimeStatus.Running)
             {
                 AddIssue(issues, string.Empty, "ActivityExecution", executionId, 1, 0, false, false, $"Activity execution '{executionId}' is not running.");
                 return FinishComplete(result, issues, rewards, changed);
@@ -89,7 +90,7 @@ namespace GuildIdle.Activities
             if (info.isRepeatable)
                 ProcessRepeatableTick(execution, info, issues, rewards, new ActivityTickResult(), ref changed);
             else
-                ProcessOneShotCompletion(execution, info, issues, rewards, ref changed);
+                ProcessOneShotCompletion(execution, issues, rewards, ref changed);
 
             return FinishComplete(result, issues, rewards, changed);
         }
@@ -113,6 +114,12 @@ namespace GuildIdle.Activities
             if (execution == null)
             {
                 AddIssue(issues, string.Empty, "ActivityExecution", executionId, 1, 0, false, false, $"Activity execution '{executionId}' is not running.");
+                return FinishCancel(result, issues, changed);
+            }
+
+            if (!string.IsNullOrWhiteSpace(execution.pendingResultId))
+            {
+                AddIssue(issues, execution.activityId, "PendingResult", execution.pendingResultId, 0, 0, false, false, "Activity with a non-empty result bag cannot be cancelled by the base runtime.");
                 return FinishCancel(result, issues, changed);
             }
 
@@ -231,14 +238,7 @@ namespace GuildIdle.Activities
             var cycles = 0;
             while (execution.elapsedSeconds >= info.durationSeconds && cycles < MaxCyclesPerTick)
             {
-                var preview = PreviewRewards(execution, "OnCycle");
-                if (!preview.success)
-                {
-                    issues.AddRange(preview.issues);
-                    break;
-                }
-
-                var reward = ApplyRewards(execution, "OnCycle", markCompletion: false);
+                var reward = PreparePendingRewards(execution, "OnCycle");
                 rewards.Add(reward);
                 if (!reward.success)
                 {
@@ -246,8 +246,32 @@ namespace GuildIdle.Activities
                     break;
                 }
 
+                var previousElapsed = execution.elapsedSeconds;
+                var previousCycles = execution.completedCycles;
                 execution.completedCycles++;
                 execution.elapsedSeconds -= info.durationSeconds;
+                if (!UpdateExecution(execution))
+                {
+                    execution.completedCycles = previousCycles;
+                    execution.elapsedSeconds = previousElapsed;
+                    AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1, 0, true, false, "Failed to advance activity cycle state before result formation.");
+                    break;
+                }
+                var formation = _activityState.PendingResults.CreateOrAppend(
+                    $"activity:{execution.executionId}:cycle:{execution.completedCycles}",
+                    BuildPendingDraft(execution, reward),
+                    false,
+                    GetPendingResultRevision(execution));
+                if (!formation.Success)
+                {
+                    execution.completedCycles = previousCycles;
+                    execution.elapsedSeconds = previousElapsed;
+                    UpdateExecution(execution);
+                    AddIssue(issues, execution.activityId, "PendingResult", execution.executionId, 1, 0, true, false, formation.Message ?? "Failed to append cycle rewards to ActivityBag.");
+                    break;
+                }
+
+                execution.pendingResultId = formation.Result?.resultId ?? execution.pendingResultId;
                 cycles++;
                 tickResult.processedCycles++;
                 changed = true;
@@ -264,32 +288,12 @@ namespace GuildIdle.Activities
 
         private void ProcessOneShotCompletion(
             ActivityExecutionSaveData execution,
-            ActivityRuntimeInfo info,
             List<ActivityRequirementIssue> issues,
             List<ActivityRewardResult> rewards,
             ref bool changed)
         {
             var wasCompleted = _activityState.IsActivityCompleted(execution.activityId);
-            var completePreview = PreviewRewards(execution, "OnComplete");
-            if (!completePreview.success)
-            {
-                issues.AddRange(completePreview.issues);
-                changed |= UpdateExecution(execution);
-                return;
-            }
-
-            if (!wasCompleted)
-            {
-                var firstCompletePreview = PreviewRewards(execution, "OnFirstComplete");
-                if (!firstCompletePreview.success)
-                {
-                    issues.AddRange(firstCompletePreview.issues);
-                    changed |= UpdateExecution(execution);
-                    return;
-                }
-            }
-
-            var complete = ApplyRewards(execution, "OnComplete", markCompletion: false);
+            var complete = PreparePendingRewards(execution, "OnComplete");
             rewards.Add(complete);
             if (!complete.success)
             {
@@ -298,9 +302,10 @@ namespace GuildIdle.Activities
                 return;
             }
 
+            ActivityRewardResult firstComplete = null;
             if (!wasCompleted)
             {
-                var firstComplete = ApplyRewards(execution, "OnFirstComplete", markCompletion: false);
+                firstComplete = PreparePendingRewards(execution, "OnFirstComplete");
                 rewards.Add(firstComplete);
                 if (!firstComplete.success)
                 {
@@ -308,26 +313,66 @@ namespace GuildIdle.Activities
                     changed |= UpdateExecution(execution);
                     return;
                 }
-
-                if (!_activityState.CompleteActivity(execution.activityId))
-                {
-                    AddIssue(issues, execution.activityId, "ActivityCompleted", execution.activityId, 1, 0, true, false, $"Failed to mark activity '{execution.activityId}' completed.");
-                    changed |= UpdateExecution(execution);
-                    return;
-                }
             }
 
-            changed |= RemoveExecution(execution.executionId);
+            var previousStatus = execution.status;
+            var previousResultId = execution.pendingResultId;
+            execution.status = CoreActivityRuntimeStatus.ResultPending;
+            execution.pendingResultId = $"result:{PendingResultSourceType.Activity}:{execution.executionId}";
+            if (!UpdateExecution(execution))
+            {
+                execution.status = previousStatus;
+                execution.pendingResultId = previousResultId;
+                AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1, 0, true, false, "Failed to enter ResultPending before result formation.");
+                return;
+            }
+            var formation = _activityState.PendingResults.CreateOrAppend(
+                $"activity:{execution.executionId}:completion",
+                BuildPendingDraft(execution, complete, firstComplete),
+                true,
+                0);
+            if (!formation.Success)
+            {
+                execution.status = previousStatus;
+                execution.pendingResultId = previousResultId;
+                UpdateExecution(execution);
+                AddIssue(issues, execution.activityId, "PendingResult", execution.executionId, 1, 0, true, false, formation.Message ?? "Failed to form ActivityBag.");
+                return;
+            }
+            changed = true;
         }
 
-        private ActivityRewardResult ApplyRewards(ActivityExecutionSaveData execution, string grantMoment, bool markCompletion)
+        private ActivityRewardResult PreparePendingRewards(ActivityExecutionSaveData execution, string grantMoment)
         {
-            return ActivityResolver.ApplyRewards(ToContext(execution), grantMoment, _activityState, ActivityResolverUtilities.DefaultRandom(), markCompletion);
+            return ActivityRewardResolver.PreparePendingRewards(ToContext(execution), grantMoment, _activityState, ActivityResolverUtilities.DefaultRandom());
         }
 
-        private ActivityRewardResult PreviewRewards(ActivityExecutionSaveData execution, string grantMoment)
+        private static PendingResultDraft BuildPendingDraft(ActivityExecutionSaveData execution, params ActivityRewardResult[] rewardResults)
         {
-            return ActivityRewardResolver.PreviewRewards(ToContext(execution), grantMoment, _activityState);
+            var entries = new List<PendingResultEntryDraft>();
+            foreach (var rewards in rewardResults ?? Array.Empty<ActivityRewardResult>())
+            {
+                foreach (var entry in PendingResultEntryFactory.FromActivityRewards(rewards?.rewards, PendingResultOrigin.ActivityReward))
+                {
+                    entry.SortOrder = entries.Count;
+                    entries.Add(entry);
+                }
+            }
+            return new PendingResultDraft
+            {
+                SourceType = PendingResultSourceType.Activity,
+                SourceId = execution.activityId,
+                SourceExecutionId = execution.executionId,
+                OwnerHeroId = execution.heroId,
+                Entries = entries.ToArray()
+            };
+        }
+
+        private long GetPendingResultRevision(ActivityExecutionSaveData execution)
+        {
+            if (execution == null || string.IsNullOrWhiteSpace(execution.pendingResultId))
+                return 0;
+            return _activityState.PendingResults.Get(execution.pendingResultId)?.revision ?? 0;
         }
 
         private ActivityExecutionContext ToContext(ActivityExecutionSaveData execution)
@@ -356,6 +401,8 @@ namespace GuildIdle.Activities
                 progress = progress,
                 remainingSeconds = Math.Max(0f, duration - execution.elapsedSeconds),
                 completedCycles = execution.completedCycles,
+                plannedCycles = execution.plannedCycles,
+                pendingResultId = execution.pendingResultId,
                 startedAtUnixSeconds = execution.startedAtUnixSeconds
             };
         }
@@ -423,7 +470,7 @@ namespace GuildIdle.Activities
             foreach (var execution in GetExecutions())
             {
                 if (execution == null ||
-                    execution.status != CoreActivityRuntimeStatus.Running ||
+                    (execution.status != CoreActivityRuntimeStatus.Running && execution.status != CoreActivityRuntimeStatus.ResultPending) ||
                     string.IsNullOrWhiteSpace(execution.heroId))
                 {
                     continue;

@@ -25,6 +25,8 @@ namespace GuildIdle.Activities
         public float progress;
         public float remainingSeconds;
         public int completedCycles;
+        public int plannedCycles;
+        public string pendingResultId;
         public long startedAtUnixSeconds;
     }
 

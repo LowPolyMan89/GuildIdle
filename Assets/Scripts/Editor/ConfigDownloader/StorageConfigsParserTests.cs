@@ -39,6 +39,10 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"maxStack\": 100"));
             Assert.That(runtimeJson, Does.Contain("\"occupiesSlot\": true"));
             Assert.That(runtimeJson, Does.Contain("\"allowInstanceId\": false"));
+            Assert.That(runtimeJson, Does.Contain("\"isInStorage\": true"));
+            Assert.That(runtimeJson, Does.Contain("\"occupiesCapacity\": true"));
+            Assert.That(runtimeJson, Does.Contain("\"requiresOwner\": true"));
+            Assert.That(runtimeJson, Does.Contain("\"availabilityMode\": \"reserved\""));
             Assert.That(runtimeJson, Does.Not.Contain("README"));
             Assert.That(runtimeJson, Does.Not.Contain("notes"));
             Assert.That(runtimeJson, Does.Not.Contain("cells"));
@@ -84,7 +88,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Row("building_warehouse", "0", "40", "0", "FALSE", "FALSE", "duplicate"));
             FindSheet(download, "ItemStates").rows = Append(
                 FindSheet(download, "ItemStates").rows,
-                Row("on_storage", "storage_item_state_on_storage_name_id", "TRUE", "TRUE", "TRUE", "TRUE", "duplicate"));
+                Row("on_storage", "storage_item_state_on_storage_name_id", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "FALSE", "available", "duplicate"));
             FindSheet(download, "Enums").rows = Append(
                 FindSheet(download, "Enums").rows,
                 Row("StorageMode", "stack", "duplicate"));
@@ -169,6 +173,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             var download = CreateValidDownload();
             FindSheet(download, "ItemStates").rows[1].cells[2] = "FALSE";
+            FindSheet(download, "ItemStates").rows[1].cells[6] = "FALSE";
             FindSheet(download, "ItemStates").rows[2].cells[3] = "TRUE";
             WriteRaw(download);
 
@@ -176,21 +181,35 @@ namespace GuildIdle.Editor.ConfigDownloader
             var message = report.ToDisplayMessage();
 
             Assert.That(report.Success, Is.False);
-            Assert.That(message, Does.Contain("on_storage must be available for craft."));
+            Assert.That(message, Does.Contain("available state must be available for craft."));
+            Assert.That(message, Does.Contain("available availability requires is_in_storage to be TRUE."));
             Assert.That(message, Does.Contain("Busy or terminal states must not be available for sale."));
         }
 
         [Test]
-        public void BuildRuntimeJson_ReportsMissingOnStorageState()
+        public void BuildRuntimeJson_ReportsMissingAvailableState()
         {
             var download = CreateValidDownload();
-            FindSheet(download, "ItemStates").rows[1].cells[0] = "available";
+            FindSheet(download, "ItemStates").rows[1].cells[9] = "unavailable";
             WriteRaw(download);
 
             var report = new StorageConfigsParser().BuildRuntimeJson(CreateSource(), out _);
 
             Assert.That(report.Success, Is.False);
-            Assert.That(report.ToDisplayMessage(), Does.Contain("Required state_id 'on_storage' is missing."));
+            Assert.That(report.ToDisplayMessage(), Does.Contain("At least one available item state is required."));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RequiresAllAvailabilityModes()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "Enums").rows[8].cells[1] = "unavailable";
+            WriteRaw(download);
+
+            var report = new StorageConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("ItemAvailabilityMode must declare 'reserved'."));
         }
 
         [Test]
@@ -275,14 +294,14 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("building_id", "level", "slot_count", "resource_stack_bonus", "auto_sort_enabled", "filters_enabled", "notes"),
                         Row("building_warehouse", "0", "20", "0", "FALSE", "FALSE", "Stage 1 storage.")),
                     Sheet("ItemStates",
-                        Row("state_id", "storage_item_state_name_id", "available_for_craft", "available_for_sale", "available_for_order", "available_for_equip", "notes"),
-                        Row("on_storage", "storage_item_state_on_storage_name_id", "TRUE", "TRUE", "TRUE", "TRUE", "Free item."),
-                        Row("equipped", "storage_item_state_equipped_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "Equipped by hero."),
-                        Row("reserved_for_task", "storage_item_state_reserved_for_task_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "Reserved."),
-                        Row("in_task", "storage_item_state_in_task_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "In task."),
-                        Row("handed_to_order", "storage_item_state_handed_to_order_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "Handed to order."),
-                        Row("sold", "storage_item_state_sold_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "Sold."),
-                        Row("deleted", "storage_item_state_deleted_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "Deleted.")),
+                        Row("state_id", "storage_item_state_name_id", "available_for_craft", "available_for_sale", "available_for_order", "available_for_equip", "is_in_storage", "occupies_capacity", "requires_owner", "availability_mode", "notes"),
+                        Row("on_storage", "storage_item_state_on_storage_name_id", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "FALSE", "available", "Free item."),
+                        Row("equipped", "storage_item_state_equipped_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "TRUE", "equipped", "Equipped by hero."),
+                        Row("reserved_for_task", "storage_item_state_reserved_for_task_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "TRUE", "TRUE", "FALSE", "reserved", "Reserved."),
+                        Row("in_task", "storage_item_state_in_task_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "in_action", "In task."),
+                        Row("handed_to_order", "storage_item_state_handed_to_order_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "unavailable", "Handed to order."),
+                        Row("sold", "storage_item_state_sold_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "unavailable", "Sold."),
+                        Row("deleted", "storage_item_state_deleted_name_id", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "FALSE", "unavailable", "Deleted.")),
                     Sheet("Enums",
                         Row("enum_group", "value", "description"),
                         Row("StorageMode", "stack", "Stacked items."),
@@ -290,7 +309,12 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("ItemKind", "resource", "Resource from Items Configs."),
                         Row("ItemKind", "consumable", "Consumable from Items Configs."),
                         Row("ItemKind", "recipe", "Recipe from Items Configs."),
-                        Row("ItemKind", "equipment", "Equipment from Items Configs.")),
+                        Row("ItemKind", "equipment", "Equipment from Items Configs."),
+                        Row("ItemAvailabilityMode", "available", "Available."),
+                        Row("ItemAvailabilityMode", "reserved", "Reserved."),
+                        Row("ItemAvailabilityMode", "in_action", "In action."),
+                        Row("ItemAvailabilityMode", "equipped", "Equipped."),
+                        Row("ItemAvailabilityMode", "unavailable", "Unavailable.")),
                     Sheet("README", Row("README"), Row("This sheet must not be emitted"))
                 }
             };

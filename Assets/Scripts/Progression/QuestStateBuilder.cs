@@ -74,6 +74,7 @@ namespace GuildIdle.Progression
                 cycleId = existing.cycleId,
                 status = existing.status,
                 rewardsGranted = existing.rewardsGranted,
+                pendingResultId = existing.pendingResultId,
                 steps = output.ToArray()
             };
             return result;

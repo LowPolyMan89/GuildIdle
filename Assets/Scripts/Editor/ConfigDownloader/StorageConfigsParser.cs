@@ -23,7 +23,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             ["StorageRules"] = new[] { "storage_rule_id", "item_kind", "mode", "max_stack", "occupies_slot", "allow_quality", "allow_instance_id", "notes" },
             ["StorageBuildings"] = new[] { "building_id", "level", "slot_count", "resource_stack_bonus", "auto_sort_enabled", "filters_enabled", "notes" },
-            ["ItemStates"] = new[] { "state_id", "storage_item_state_name_id", "available_for_craft", "available_for_sale", "available_for_order", "available_for_equip", "notes" },
+            ["ItemStates"] = new[] { "state_id", "storage_item_state_name_id", "available_for_craft", "available_for_sale", "available_for_order", "available_for_equip", "is_in_storage", "occupies_capacity", "requires_owner", "availability_mode", "notes" },
             ["Enums"] = new[] { "enum_group", "value", "description" }
         };
 
@@ -58,23 +58,17 @@ namespace GuildIdle.Editor.ConfigDownloader
             "available_for_craft",
             "available_for_sale",
             "available_for_order",
-            "available_for_equip"
+            "available_for_equip",
+            "is_in_storage",
+            "occupies_capacity",
+            "requires_owner"
         };
 
         private static readonly Dictionary<string, string> EnumColumns = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["item_kind"] = "ItemKind",
-            ["mode"] = "StorageMode"
-        };
-
-        private static readonly string[] BusyStateIds =
-        {
-            "equipped",
-            "reserved_for_task",
-            "in_task",
-            "handed_to_order",
-            "sold",
-            "deleted"
+            ["mode"] = "StorageMode",
+            ["availability_mode"] = "ItemAvailabilityMode"
         };
 
         public bool Supports(ConfigSourceSettings source)
@@ -151,6 +145,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly Dictionary<string, HashSet<string>> _enumValues = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _storageRuleIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _stateIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            private bool _hasAvailableState;
 
             public StorageConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
             {
@@ -502,16 +497,46 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (string.IsNullOrWhiteSpace(stateId))
                     return;
 
-                if (string.Equals(stateId, "on_storage", StringComparison.OrdinalIgnoreCase))
-                    ValidateOnStorageState(row);
+                var hasInStorage = TryParseBool(row, "is_in_storage", out var isInStorage);
+                var hasCapacity = TryParseBool(row, "occupies_capacity", out var occupiesCapacity);
+                var hasOwner = TryParseBool(row, "requires_owner", out var requiresOwner);
+                var availabilityMode = row.Get("availability_mode");
 
-                foreach (var busyStateId in BusyStateIds)
+                if (hasCapacity && occupiesCapacity && hasInStorage && !isInStorage)
+                    AddIssue("ItemStates", row.RowNumber, "occupies_capacity", row.Get("occupies_capacity"), "occupies_capacity requires is_in_storage to be TRUE.");
+
+                if (string.Equals(availabilityMode, "reserved", StringComparison.OrdinalIgnoreCase) && (!hasInStorage || !isInStorage))
+                    AddIssue("ItemStates", row.RowNumber, "availability_mode", availabilityMode, "reserved availability requires is_in_storage to be TRUE.");
+                if (string.Equals(availabilityMode, "reserved", StringComparison.OrdinalIgnoreCase) && hasOwner && requiresOwner)
+                    AddIssue("ItemStates", row.RowNumber, "requires_owner", row.Get("requires_owner"), "reserved availability uses context and must not require owner.");
+
+                if (string.Equals(availabilityMode, "in_action", StringComparison.OrdinalIgnoreCase) && hasInStorage && isInStorage)
+                    AddIssue("ItemStates", row.RowNumber, "availability_mode", availabilityMode, "in_action availability requires is_in_storage to be FALSE.");
+                if (string.Equals(availabilityMode, "in_action", StringComparison.OrdinalIgnoreCase) && hasOwner && requiresOwner)
+                    AddIssue("ItemStates", row.RowNumber, "requires_owner", row.Get("requires_owner"), "in_action availability uses context and must not require owner.");
+
+                if (string.Equals(availabilityMode, "equipped", StringComparison.OrdinalIgnoreCase) && hasOwner && !requiresOwner)
+                    AddIssue("ItemStates", row.RowNumber, "requires_owner", row.Get("requires_owner"), "equipped availability requires requires_owner to be TRUE.");
+                if (string.Equals(availabilityMode, "equipped", StringComparison.OrdinalIgnoreCase) && hasInStorage && isInStorage)
+                    AddIssue("ItemStates", row.RowNumber, "is_in_storage", row.Get("is_in_storage"), "equipped availability requires is_in_storage to be FALSE.");
+                if (string.Equals(availabilityMode, "equipped", StringComparison.OrdinalIgnoreCase) && hasCapacity && occupiesCapacity)
+                    AddIssue("ItemStates", row.RowNumber, "occupies_capacity", row.Get("occupies_capacity"), "equipped availability must not occupy Storage capacity.");
+
+                if (string.Equals(availabilityMode, "available", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (string.Equals(stateId, busyStateId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        ValidateUnavailableState(row);
-                        return;
-                    }
+                    _hasAvailableState = true;
+                    ValidateExpectedBool(row, "available_for_craft", true, "available state must be available for craft.");
+                    ValidateExpectedBool(row, "available_for_sale", true, "available state must be available for sale.");
+                    ValidateExpectedBool(row, "available_for_order", true, "available state must be available for order.");
+                    ValidateExpectedBool(row, "available_for_equip", true, "available state must be available for equip.");
+                    if (hasInStorage && !isInStorage)
+                        AddIssue("ItemStates", row.RowNumber, "is_in_storage", row.Get("is_in_storage"), "available availability requires is_in_storage to be TRUE.");
+                    if (hasOwner && requiresOwner)
+                        AddIssue("ItemStates", row.RowNumber, "requires_owner", row.Get("requires_owner"), "available availability must not require owner.");
+                }
+                else
+                {
+                    ValidateUnavailableState(row);
                 }
             }
 
@@ -529,16 +554,18 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private void ValidateItemStateSet()
             {
-                if (!_stateIds.Contains("on_storage"))
-                    AddIssue("ItemStates", 0, "state_id", "on_storage", "Required state_id 'on_storage' is missing.");
-            }
+                if (!_hasAvailableState)
+                    AddIssue("ItemStates", 0, "availability_mode", "available", "At least one available item state is required.");
 
-            private void ValidateOnStorageState(ConfigSheetDataRow row)
-            {
-                ValidateExpectedBool(row, "available_for_craft", true, "on_storage must be available for craft.");
-                ValidateExpectedBool(row, "available_for_sale", true, "on_storage must be available for sale.");
-                ValidateExpectedBool(row, "available_for_order", true, "on_storage must be available for order.");
-                ValidateExpectedBool(row, "available_for_equip", true, "on_storage must be available for equip.");
+                var requiredModes = new[] { "available", "reserved", "in_action", "equipped", "unavailable" };
+                if (!_enumValues.TryGetValue("ItemAvailabilityMode", out var configuredModes))
+                {
+                    AddIssue("Enums", 0, "enum_group", "ItemAvailabilityMode", "ItemAvailabilityMode enum group is required.");
+                    return;
+                }
+                foreach (var mode in requiredModes)
+                    if (!configuredModes.Contains(mode))
+                        AddIssue("Enums", 0, "value", mode, $"ItemAvailabilityMode must declare '{mode}'.");
             }
 
             private void ValidateUnavailableState(ConfigSheetDataRow row)

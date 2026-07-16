@@ -106,7 +106,7 @@ namespace GuildIdle.Editor.Player
         {
             var state = _factory.Create(new SaveData
             {
-                saveVersion = 6,
+                saveVersion = SaveData.CurrentSaveVersion,
                 currentStageId = "stage_arrival",
                 questInstances = new[]
                 {
@@ -238,7 +238,7 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
-        public void SaveLoadRoundtripPreservesV6Contracts()
+        public void SaveLoadRoundtripPreservesV7Contracts()
         {
             var state = _factory.CreateDefault();
             var maxFatigue = state.GetHeroMaxFatigue("ren");
@@ -292,7 +292,7 @@ namespace GuildIdle.Editor.Player
             Assert.That(restored.IsActivityCompleted("combat_first_map_node"), Is.True);
             Assert.That(restored.IsActivityAvailable("combat_clear_hall_forest"), Is.True);
             Assert.That(restored.GetQuestInstance("story:quest_build_hut").status, Is.EqualTo(QuestInstanceStatus.Completed));
-            Assert.That(restored.GetQuestInstance("story:quest_build_hut").rewardsGranted, Is.False);
+            Assert.That(restored.GetQuestInstance("story:quest_build_hut").rewardsGranted, Is.True);
             Assert.That(restored.GetQuestInstance("story:quest_build_hut").steps[0].completed, Is.True);
         }
 
@@ -358,7 +358,7 @@ namespace GuildIdle.Editor.Player
             using (var logs = new CapturingLogHandler())
             {
                 state = SaveService.Load(_factory, storage);
-                logs.AssertWarningContains("Player save version '4' is older than supported version '6'. Creating default save.");
+                logs.AssertWarningContains("Player save version '4' is older than supported version '7'. Creating default save.");
             }
 
             Assert.That(state.CurrentStageId, Is.EqualTo("stage_arrival"));
@@ -366,52 +366,75 @@ namespace GuildIdle.Editor.Player
             Assert.That(state.GetItem("resource_pine_wood"), Is.Zero);
             Assert.That(state.HasHero("ren"), Is.True);
             Assert.That(state.GetEquippedItem("ren", "weapon").itemId, Is.EqualTo("item_wooden_club"));
-            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"saveVersion\":6"));
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"saveVersion\":7"));
         }
 
         [Test]
-        public void Load_CurrentV6DoesNotApplyNewGameBootstrapOrConvertItemStacks()
+        public void Load_CurrentV7DoesNotApplyNewGameBootstrap()
         {
             var state = _factory.Create(new SaveData
             {
                 saveVersion = SaveData.CurrentSaveVersion,
                 currentStageId = "stage_arrival",
-                items = new[] { new ItemSaveEntry { itemId = "item_wooden_club", amount = 2 } }
+                itemStacks = new[] { new ItemStackSaveData { stackId = "stack-a", itemId = "resource_pine_wood", quantity = 2, stateId = PlayerState.OnStorageItemStateId } }
             });
 
             Assert.That(state.HasHero("ren"), Is.False);
-            Assert.That(state.GetItem("item_wooden_club"), Is.EqualTo(2));
+            Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(2));
             Assert.That(state.GetItemInstances(), Is.Empty);
             Assert.That(state.GetEquipmentSlots(), Is.Empty);
         }
 
         [Test]
-        public void SaveService_MigratesV5QuestStateToStoryInstanceAndPersistsV6()
+        public void SaveService_ResetsV5WithoutMigratingQuestState()
         {
             var storage = new MemorySaveStorage();
             storage.SetString(
                 SaveService.SaveKey,
                 "{\"saveVersion\":5,\"currentStageId\":\"stage_arrival\",\"quests\":[{\"questId\":\"quest_build_hut\",\"completed\":true,\"rewardsGranted\":false,\"steps\":[{\"stepId\":\"step_collect_wood\",\"currentValue\":8,\"completed\":true}]}]}");
 
-            var state = SaveService.Load(_factory, storage, out var origin);
+            PlayerState state;
+            SaveLoadOrigin origin;
+            using (var logs = new CapturingLogHandler())
+            {
+                state = SaveService.Load(_factory, storage, out origin);
+                logs.AssertWarningContains("Player save version '5' is older than supported version '7'. Creating default save.");
+            }
 
-            var instance = state.GetQuestInstance("story:quest_build_hut");
-            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.MigratedV5));
-            Assert.That(instance.questId, Is.EqualTo("quest_build_hut"));
-            Assert.That(instance.cycleId, Is.Null);
-            Assert.That(instance.status, Is.EqualTo(QuestInstanceStatus.Completed));
-            Assert.That(instance.rewardsGranted, Is.False);
-            Assert.That(instance.steps[0].currentValue, Is.EqualTo(8));
-            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"saveVersion\":6"));
-            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"instanceId\":\"story:quest_build_hut\""));
+            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.Fresh));
+            Assert.That(state.GetQuestInstance("story:quest_build_hut"), Is.Null);
+            Assert.That(state.HasHero("ren"), Is.True);
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"saveVersion\":7"));
         }
 
         [Test]
-        public void V6RoundtripPreservesUnknownInstanceAndTwoDailyCycles()
+        public void SaveService_ResetsV6ToDefaultState()
+        {
+            var storage = new MemorySaveStorage();
+            storage.SetString(
+                SaveService.SaveKey,
+                "{\"saveVersion\":6,\"currentStageId\":\"stage_2\",\"currencies\":[{\"currencyId\":\"gold_id\",\"amount\":99}]}");
+
+            PlayerState state;
+            SaveLoadOrigin origin;
+            using (var logs = new CapturingLogHandler())
+            {
+                state = SaveService.Load(_factory, storage, out origin);
+                logs.AssertWarningContains("Player save version '6' is older than supported version '7'. Creating default save.");
+            }
+
+            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.Fresh));
+            Assert.That(state.CurrentStageId, Is.EqualTo("stage_arrival"));
+            Assert.That(state.GetCurrency("gold_id"), Is.Zero);
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"saveVersion\":7"));
+        }
+
+        [Test]
+        public void V7RoundtripPreservesUnknownInstanceAndTwoDailyCycles()
         {
             var state = _factory.Create(new SaveData
             {
-                saveVersion = 6,
+                saveVersion = SaveData.CurrentSaveVersion,
                 currentStageId = "stage_arrival",
                 questInstances = new[]
                 {
@@ -489,7 +512,7 @@ namespace GuildIdle.Editor.Player
         {
             var state = _factory.Create(new SaveData
             {
-                saveVersion = 6,
+                saveVersion = SaveData.CurrentSaveVersion,
                 currentStageId = "stage_arrival",
                 unlockedHeroes = new[] { "ren", "aska" },
                 acquiredHeroes = new[] { "ren", "aska" },
@@ -517,12 +540,12 @@ namespace GuildIdle.Editor.Player
                 }
             });
 
-            Assert.That(state.GetItemInstances(), Has.Length.EqualTo(4));
+            Assert.That(state.GetItemInstances(), Has.Length.EqualTo(3));
             Assert.That(InstanceIds(state.GetItemInstances()), Is.Unique);
             Assert.That(state.GetEquipmentSlots(), Has.Length.EqualTo(1));
             Assert.That(state.GetEquippedItem("ren", "weapon").instanceId, Is.EqualTo("duplicate"));
             Assert.That(state.GetEquippedItem("aska", "weapon"), Is.Null);
-            Assert.That(state.GetItemInstance("resource").stateId, Is.EqualTo(PlayerState.OnStorageItemStateId));
+            Assert.That(state.GetItemInstance("resource"), Is.Null);
             Assert.That(state.GetItemInstance("orphan").stateId, Is.EqualTo(PlayerState.OnStorageItemStateId));
         }
 
@@ -532,7 +555,7 @@ namespace GuildIdle.Editor.Player
             var storage = new MemorySaveStorage();
             storage.SetString(
                 SaveService.SaveKey,
-                "{\"saveVersion\":5,\"currentStageId\":\"stage_arrival\",\"unlockedHeroes\":[\"ren\"],\"acquiredHeroes\":[\"ren\"],\"heroes\":[{\"heroId\":\"ren\",\"level\":1}],\"itemInstances\":[{\"instanceId\":\"broken\",\"itemId\":\"item_wooden_club\",\"stateId\":\"broken_state\"},{\"instanceId\":\"missing\",\"itemId\":\"item_wooden_club\"}],\"equipmentSlots\":[{\"heroId\":\"ren\",\"equipmentSlot\":\"weapon\",\"itemInstanceId\":\"broken\"}]}");
+                "{\"saveVersion\":7,\"currentStageId\":\"stage_arrival\",\"unlockedHeroes\":[\"ren\"],\"acquiredHeroes\":[\"ren\"],\"heroes\":[{\"heroId\":\"ren\",\"level\":1}],\"itemInstances\":[{\"instanceId\":\"broken\",\"itemId\":\"item_wooden_club\",\"stateId\":\"broken_state\"},{\"instanceId\":\"missing\",\"itemId\":\"item_wooden_club\"}],\"equipmentSlots\":[{\"heroId\":\"ren\",\"equipmentSlot\":\"weapon\",\"itemInstanceId\":\"broken\"}]}");
 
             var repaired = SaveService.Load(_factory, storage);
 
@@ -547,10 +570,24 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
-        public void SaveService_IncompatibleV5StageDoesNotOverwriteRawSave()
+        public void SaveService_RemovesCorruptEmptyPendingResultAndPersistsRepair()
         {
             var storage = new MemorySaveStorage();
-            const string json = "{\"saveVersion\":5,\"currentStageId\":\"stage_missing\"}";
+            storage.SetString(
+                SaveService.SaveKey,
+                "{\"saveVersion\":7,\"currentStageId\":\"stage_arrival\",\"pendingResults\":[{\"resultId\":\"result:Combat:broken\",\"sourceType\":\"Combat\",\"sourceExecutionId\":\"broken\",\"revision\":0,\"entries\":[]}]}");
+
+            var repaired = SaveService.Load(_factory, storage);
+
+            Assert.That(repaired.PendingResults.GetAll(), Is.Empty);
+            Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"pendingResults\":[]"));
+        }
+
+        [Test]
+        public void SaveService_IncompatibleV7StageDoesNotOverwriteRawSave()
+        {
+            var storage = new MemorySaveStorage();
+            const string json = "{\"saveVersion\":7,\"currentStageId\":\"stage_missing\"}";
             storage.SetString(SaveService.SaveKey, json);
 
             PlayerState state;
@@ -568,7 +605,7 @@ namespace GuildIdle.Editor.Player
         public void SaveService_NewerVersionDoesNotOverwriteRawSave()
         {
             var storage = new MemorySaveStorage();
-            const string json = "{\"saveVersion\":7,\"currentStageId\":\"stage_arrival\"}";
+            const string json = "{\"saveVersion\":8,\"currentStageId\":\"stage_arrival\"}";
             storage.SetString(SaveService.SaveKey, json);
 
             PlayerState state;
@@ -586,7 +623,7 @@ namespace GuildIdle.Editor.Player
         public void SaveService_LoadsEnabledEmptyStageTwoWithoutBootstrap()
         {
             var storage = new MemorySaveStorage();
-            storage.SetString(SaveService.SaveKey, "{\"saveVersion\":5,\"currentStageId\":\"stage_2\"}");
+            storage.SetString(SaveService.SaveKey, "{\"saveVersion\":7,\"currentStageId\":\"stage_2\"}");
 
             var state = SaveService.Load(_factory, storage);
 

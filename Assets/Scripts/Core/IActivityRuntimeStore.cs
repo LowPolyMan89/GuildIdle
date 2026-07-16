@@ -7,7 +7,9 @@ namespace GuildIdle.Core
         None = 0,
         Running = 1,
         Completed = 2,
-        Cancelled = 3
+        Cancelled = 3,
+        Paused = 4,
+        ResultPending = 5
     }
 
     [Serializable]
@@ -25,6 +27,10 @@ namespace GuildIdle.Core
         public ActivityRuntimeStatus status;
         public float elapsedSeconds;
         public int completedCycles;
+        public int plannedCycles;
+        public bool materialsPaid;
+        public float accumulatedBuildPoints;
+        public string pendingResultId;
         public long startedAtUnixSeconds;
     }
 

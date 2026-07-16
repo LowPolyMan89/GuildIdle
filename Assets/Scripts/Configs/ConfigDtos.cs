@@ -1000,6 +1000,10 @@ namespace GuildIdle.Configs
         public bool availableForSale;
         public bool availableForOrder;
         public bool availableForEquip;
+        public bool isInStorage;
+        public bool occupiesCapacity;
+        public bool requiresOwner;
+        public string availabilityMode;
     }
 
     [Serializable]

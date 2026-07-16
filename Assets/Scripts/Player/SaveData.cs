@@ -6,12 +6,13 @@ namespace GuildIdle.Player
     [Serializable]
     public sealed class SaveData
     {
-        public const int CurrentSaveVersion = 6;
+        public const int CurrentSaveVersion = 7;
 
         public int saveVersion = CurrentSaveVersion;
         public string currentStageId;
         public CurrencySaveEntry[] currencies = Array.Empty<CurrencySaveEntry>();
-        public ItemSaveEntry[] items = Array.Empty<ItemSaveEntry>();
+        public long storageRevision;
+        public ItemStackSaveData[] itemStacks = Array.Empty<ItemStackSaveData>();
         public ItemInstanceSaveData[] itemInstances = Array.Empty<ItemInstanceSaveData>();
         public EquipmentSlotSaveData[] equipmentSlots = Array.Empty<EquipmentSlotSaveData>();
         public string[] unlockedHeroes = Array.Empty<string>();
@@ -24,6 +25,9 @@ namespace GuildIdle.Player
         public string[] completedActivities = Array.Empty<string>();
         public string[] availableActivities = Array.Empty<string>();
         public ActivityRuntimeSaveData activityRuntime = new ActivityRuntimeSaveData();
+        public PendingResultSaveData[] pendingResults = Array.Empty<PendingResultSaveData>();
+        public PendingResultSourceReferenceSaveData[] resultSources = Array.Empty<PendingResultSourceReferenceSaveData>();
+        public OperationReceiptSaveData[] operationReceipts = Array.Empty<OperationReceiptSaveData>();
     }
 
     [Serializable]
@@ -34,10 +38,16 @@ namespace GuildIdle.Player
     }
 
     [Serializable]
-    public sealed class ItemSaveEntry
+    public sealed class ItemStackSaveData
     {
+        public string stackId;
         public string itemId;
-        public int amount;
+        public int quantity;
+        public string stateId;
+        public string ownerType;
+        public string ownerId;
+        public string contextType;
+        public string contextId;
     }
 
     [Serializable]
@@ -45,7 +55,12 @@ namespace GuildIdle.Player
     {
         public string instanceId;
         public string itemId;
+        public int quality;
         public string stateId;
+        public string ownerType;
+        public string ownerId;
+        public string contextType;
+        public string contextId;
     }
 
     [Serializable]
@@ -88,11 +103,13 @@ namespace GuildIdle.Player
     public static class QuestInstanceStatus
     {
         public const string Active = "Active";
+        public const string RewardPending = "RewardPending";
         public const string Completed = "Completed";
         public const string Expired = "Expired";
 
         public static bool IsValid(string value) =>
             string.Equals(value, Active, StringComparison.Ordinal) ||
+            string.Equals(value, RewardPending, StringComparison.Ordinal) ||
             string.Equals(value, Completed, StringComparison.Ordinal) ||
             string.Equals(value, Expired, StringComparison.Ordinal);
     }
@@ -105,6 +122,7 @@ namespace GuildIdle.Player
         public string cycleId;
         public string status = QuestInstanceStatus.Active;
         public bool rewardsGranted;
+        public string pendingResultId;
         public QuestStepSaveData[] steps = Array.Empty<QuestStepSaveData>();
     }
 
@@ -121,5 +139,75 @@ namespace GuildIdle.Player
     {
         public string buildingId;
         public int level;
+    }
+
+    public static class PendingResultState
+    {
+        public const string ResultPending = "ResultPending";
+    }
+
+    public static class PendingResultSourceType
+    {
+        public const string Activity = "Activity";
+        public const string Combat = "Combat";
+        public const string Craft = "Craft";
+        public const string Quest = "Quest";
+    }
+
+    [Serializable]
+    public sealed class PendingResultSaveData
+    {
+        public string resultId;
+        public string sourceType;
+        public string sourceId;
+        public string sourceExecutionId;
+        public string ownerHeroId;
+        public string state = PendingResultState.ResultPending;
+        public long revision;
+        public PendingResultEntrySaveData[] entries = Array.Empty<PendingResultEntrySaveData>();
+    }
+
+    [Serializable]
+    public sealed class PendingResultEntrySaveData
+    {
+        public string entryId;
+        public int sortOrder;
+        public string rewardType;
+        public string targetId;
+        public long quantity;
+        public string origin;
+        public int quality;
+    }
+
+    public static class PendingResultSourceState
+    {
+        public const string Pending = "Pending";
+        public const string Resolved = "Resolved";
+    }
+
+    [Serializable]
+    public sealed class PendingResultSourceReferenceSaveData
+    {
+        public string sourceType;
+        public string sourceId;
+        public string sourceExecutionId;
+        public string resultId;
+        public string state = PendingResultSourceState.Pending;
+    }
+
+    [Serializable]
+    public sealed class OperationReceiptSaveData
+    {
+        public string aggregateId;
+        public string operationId;
+        public string fingerprint;
+        public bool success;
+        public string code;
+        public long storageRevision;
+        public long resultRevision;
+        public string stackId;
+        public string instanceId;
+        public int quantity;
+        public bool resolved;
     }
 }

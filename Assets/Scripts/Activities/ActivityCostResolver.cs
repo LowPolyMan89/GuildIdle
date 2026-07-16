@@ -52,7 +52,7 @@ namespace GuildIdle.Activities
                 AddConsumableRequirementCost(requirement, issues, itemCosts, currencyCosts);
             }
 
-            AddAggregatedItemCosts(activityId, itemCosts, state, apply, issues, costs);
+            AddAggregatedItemCosts(activityId, itemCosts, state, apply, issues, costs, null);
             AddAggregatedCurrencyCosts(activityId, currencyCosts, state, apply, issues, costs);
 
             return Finish(activityId, issues, costs);
@@ -89,7 +89,8 @@ namespace GuildIdle.Activities
                 AddConsumableRequirementCost(requirement, issues, itemCosts, currencyCosts);
             }
 
-            AddAggregatedItemCosts(activityId, itemCosts, state, apply, issues, costs);
+            var actionContext = context == null ? null : new GuildIdle.Player.StorageActionContext(GuildIdle.Player.StorageContextType.ActivityExecution, context.executionId);
+            AddAggregatedItemCosts(activityId, itemCosts, state, apply, issues, costs, actionContext);
             AddAggregatedCurrencyCosts(activityId, currencyCosts, state, apply, issues, costs);
 
             return Finish(activityId, issues, costs);
@@ -195,18 +196,19 @@ namespace GuildIdle.Activities
             IActivityPlayerState state,
             bool apply,
             List<ActivityRequirementIssue> issues,
-            List<ActivityAppliedCost> costs)
+            List<ActivityAppliedCost> costs,
+            GuildIdle.Player.StorageActionContext actionContext)
         {
             foreach (var itemCost in itemCosts)
             {
-                var current = state.GetItem(itemCost.Key);
+                var current = state.GetAvailableForActionCount(itemCost.Key, actionContext);
                 if (current < itemCost.Value)
                 {
                     ActivityResolverUtilities.AddIssue(issues, activityId, "Item", itemCost.Key, itemCost.Value, current, false, false, $"Cannot pay Item '{itemCost.Key}': {current}/{itemCost.Value}.");
                     continue;
                 }
 
-                var applied = apply && state.SpendItem(itemCost.Key, itemCost.Value);
+                var applied = apply && state.SpendItem(itemCost.Key, itemCost.Value, actionContext);
                 costs.Add(new ActivityAppliedCost { costType = "Item", targetId = itemCost.Key, ownerType = ActivityResolverUtilities.OwnerProfile, amount = itemCost.Value, applied = applied, message = apply ? "Spent item cost." : "Can spend item cost." });
             }
         }

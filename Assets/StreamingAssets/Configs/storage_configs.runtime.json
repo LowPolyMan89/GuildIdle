@@ -54,7 +54,11 @@
       "availableForCraft": true,
       "availableForSale": true,
       "availableForOrder": true,
-      "availableForEquip": true
+      "availableForEquip": true,
+      "isInStorage": true,
+      "occupiesCapacity": true,
+      "requiresOwner": false,
+      "availabilityMode": "available"
     },
     {
       "stateId": "equipped",
@@ -62,7 +66,11 @@
       "availableForCraft": false,
       "availableForSale": false,
       "availableForOrder": false,
-      "availableForEquip": false
+      "availableForEquip": false,
+      "isInStorage": false,
+      "occupiesCapacity": false,
+      "requiresOwner": true,
+      "availabilityMode": "equipped"
     },
     {
       "stateId": "reserved_for_task",
@@ -70,7 +78,11 @@
       "availableForCraft": false,
       "availableForSale": false,
       "availableForOrder": false,
-      "availableForEquip": false
+      "availableForEquip": false,
+      "isInStorage": true,
+      "occupiesCapacity": true,
+      "requiresOwner": false,
+      "availabilityMode": "reserved"
     },
     {
       "stateId": "in_task",
@@ -78,7 +90,11 @@
       "availableForCraft": false,
       "availableForSale": false,
       "availableForOrder": false,
-      "availableForEquip": false
+      "availableForEquip": false,
+      "isInStorage": false,
+      "occupiesCapacity": false,
+      "requiresOwner": false,
+      "availabilityMode": "in_action"
     },
     {
       "stateId": "handed_to_order",
@@ -86,7 +102,11 @@
       "availableForCraft": false,
       "availableForSale": false,
       "availableForOrder": false,
-      "availableForEquip": false
+      "availableForEquip": false,
+      "isInStorage": false,
+      "occupiesCapacity": false,
+      "requiresOwner": false,
+      "availabilityMode": "unavailable"
     },
     {
       "stateId": "sold",
@@ -94,7 +114,11 @@
       "availableForCraft": false,
       "availableForSale": false,
       "availableForOrder": false,
-      "availableForEquip": false
+      "availableForEquip": false,
+      "isInStorage": false,
+      "occupiesCapacity": false,
+      "requiresOwner": false,
+      "availabilityMode": "unavailable"
     },
     {
       "stateId": "deleted",
@@ -102,7 +126,11 @@
       "availableForCraft": false,
       "availableForSale": false,
       "availableForOrder": false,
-      "availableForEquip": false
+      "availableForEquip": false,
+      "isInStorage": false,
+      "occupiesCapacity": false,
+      "requiresOwner": false,
+      "availabilityMode": "unavailable"
     }
   ],
   "enumValues": [
@@ -135,6 +163,31 @@
       "enumGroup": "ItemKind",
       "value": "equipment",
       "description": "Экипировка из Items Configs."
+    },
+    {
+      "enumGroup": "ItemAvailabilityMode",
+      "value": "available",
+      "description": "Доступен новым действиям."
+    },
+    {
+      "enumGroup": "ItemAvailabilityMode",
+      "value": "reserved",
+      "description": "Доступен только совпадающему context."
+    },
+    {
+      "enumGroup": "ItemAvailabilityMode",
+      "value": "in_action",
+      "description": "Передан действию и недоступен Storage operations."
+    },
+    {
+      "enumGroup": "ItemAvailabilityMode",
+      "value": "equipped",
+      "description": "Принадлежит owner и экипирован."
+    },
+    {
+      "enumGroup": "ItemAvailabilityMode",
+      "value": "unavailable",
+      "description": "Недоступен действиям."
     }
   ]
 }

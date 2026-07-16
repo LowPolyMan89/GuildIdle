@@ -158,6 +158,7 @@ namespace GuildIdle.Editor.Player
             public BuildingConfigDto[] Buildings => Array.Empty<BuildingConfigDto>();
             public SkillConfigDto[] Skills => Array.Empty<SkillConfigDto>();
             public HeroSkillEffectConfigDto[] HeroSkillEffects => Array.Empty<HeroSkillEffectConfigDto>();
+            public StorageBuildingConfigDto[] StorageBuildings => Array.Empty<StorageBuildingConfigDto>();
 
             public bool TryGetHero(string heroId, out HeroConfigDto hero)
             {
@@ -191,6 +192,10 @@ namespace GuildIdle.Editor.Player
 
             public QuestStepConfigDto[] GetQuestSteps(string questId) => Array.Empty<QuestStepConfigDto>();
             public bool IsKnownItemState(string stateId) => false;
+            public bool TryGetStorageRuleForItemKind(string itemKind, out StorageRuleConfigDto rule) { rule = null; return false; }
+            public bool TryGetItemState(string stateId, out ItemStateConfigDto state) { state = null; return false; }
+            public bool TryGetItemStateByAvailabilityMode(string availabilityMode, out ItemStateConfigDto state) { state = null; return false; }
+            public bool TryGetActivity(string activityId, out ActivityConfigDto activity) { activity = null; return false; }
         }
     }
 }

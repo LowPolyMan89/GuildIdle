@@ -87,8 +87,9 @@ namespace GuildIdle.Editor.Activities
             Assert.That(firstTick.processedCycles, Is.EqualTo(2));
             Assert.That(execution.completedCycles, Is.EqualTo(2));
             Assert.That(execution.elapsedSeconds, Is.EqualTo(5f));
-            Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(2));
-            Assert.That(state.GetHeroSkillExp("ren", "skill_gathering"), Is.EqualTo(2));
+            Assert.That(state.GetItem("resource_pine_wood"), Is.Zero);
+            Assert.That(state.GetHeroSkillExp("ren", "skill_gathering"), Is.Zero);
+            Assert.That(state.PendingResults.GetAll(), Has.Length.EqualTo(1));
             Assert.That(state.IsHeroBusy("ren"), Is.True);
 
             var limitedTick = runtime.Tick(2000f);
@@ -121,7 +122,7 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
-        public void Tick_OneShotCompletesBothMomentsAndReleasesHero()
+        public void Tick_OneShotCreatesPendingResultAndClaimCompletesSource()
         {
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
@@ -130,12 +131,22 @@ namespace GuildIdle.Editor.Activities
             var result = runtime.Tick(5f);
 
             Assert.That(result.success, Is.True);
+            var execution = state.GetActivityExecutions()[0];
+            Assert.That(execution.status, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.ResultPending));
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
+            Assert.That(state.IsActivityCompleted("one_shot_new"), Is.False);
+            Assert.That(state.GetItem("resource_pine_wood"), Is.Zero);
+            Assert.That(state.GetCurrency("gold_id"), Is.Zero);
+            var pending = state.PendingResults.GetAll()[0];
+            var claimed = state.PendingResults.ClaimAll("test-claim", pending.resultId, pending.revision, state.Storage.GetSnapshot().Revision);
+            Assert.That(claimed.Success, Is.True);
+            Assert.That(claimed.Resolved, Is.True);
             Assert.That(state.GetActivityExecutions(), Is.Empty);
             Assert.That(state.IsHeroBusy("ren"), Is.False);
             Assert.That(state.IsActivityCompleted("one_shot_new"), Is.True);
             Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(1));
             Assert.That(state.GetCurrency("gold_id"), Is.EqualTo(2));
-            foreach (var item in state.ToSaveData().items)
+            foreach (var item in state.ToSaveData().itemStacks)
                 Assert.That(item.itemId, Is.Not.EqualTo("gold_id"));
         }
 
@@ -203,6 +214,8 @@ namespace GuildIdle.Editor.Activities
         {
             var state = _factory.Create(new SaveData { currentStageId = "stage_arrival" });
             state.AddHero("ren");
+            state.UnlockBuilding("building_warehouse");
+            state.SetBuildingLevel("building_warehouse", 0);
             return state;
         }
 
@@ -269,12 +282,14 @@ namespace GuildIdle.Editor.Activities
                 {
                     buildings = new[]
                     {
-                        new BuildingConfigDto { buildingId = "building_hall", levels = 1, startLevel = 0, visibleAtStart = true }
+                        new BuildingConfigDto { buildingId = "building_hall", levels = 1, startLevel = 0, visibleAtStart = true },
+                        new BuildingConfigDto { buildingId = "building_warehouse", levels = 0, startLevel = 0, visibleAtStart = true }
                     },
                     buildingLevels = new[]
                     {
                         new BuildingLevelConfigDto { buildingId = "building_hall", level = 0, activeHeroLimit = 1 },
-                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 1, activeHeroLimit = 1 }
+                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 1, activeHeroLimit = 1 },
+                        new BuildingLevelConfigDto { buildingId = "building_warehouse", level = 0 }
                     }
                 },
                 new QuestRuntimeConfigDto
@@ -285,7 +300,24 @@ namespace GuildIdle.Editor.Activities
                 null,
                 null,
                 null,
-                null,
+                new StorageRuntimeConfigDto
+                {
+                    storageRules = new[]
+                    {
+                        new StorageRuleConfigDto { storageRuleId = "storage_resource", itemKind = "resource", mode = "stack", maxStack = 100, occupiesSlot = true }
+                    },
+                    storageBuildings = new[]
+                    {
+                        new StorageBuildingConfigDto { buildingId = "building_warehouse", level = 0, slotCount = 20 }
+                    },
+                    itemStates = new[]
+                    {
+                        new ItemStateConfigDto { stateId = "on_storage", isInStorage = true, occupiesCapacity = true, availabilityMode = ItemAvailabilityMode.Available },
+                        new ItemStateConfigDto { stateId = "equipped", requiresOwner = true, availabilityMode = ItemAvailabilityMode.Equipped },
+                        new ItemStateConfigDto { stateId = "reserved_for_task", isInStorage = true, occupiesCapacity = true, availabilityMode = ItemAvailabilityMode.Reserved },
+                        new ItemStateConfigDto { stateId = "in_task", availabilityMode = ItemAvailabilityMode.InAction }
+                    }
+                },
                 null);
         }
 

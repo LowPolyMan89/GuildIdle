@@ -28,6 +28,11 @@ namespace GuildIdle.Player
         SettlementStageStarterEquipmentConfigDto[] GetSettlementStageStarterEquipment(string stageId);
         QuestStepConfigDto[] GetQuestSteps(string questId);
         bool IsKnownItemState(string stateId);
+        StorageBuildingConfigDto[] StorageBuildings { get; }
+        bool TryGetStorageRuleForItemKind(string itemKind, out StorageRuleConfigDto rule);
+        bool TryGetItemState(string stateId, out ItemStateConfigDto state);
+        bool TryGetItemStateByAvailabilityMode(string availabilityMode, out ItemStateConfigDto state);
+        bool TryGetActivity(string activityId, out ActivityConfigDto activity);
     }
 
     public sealed class RepositoryHeroStatsConfigAdapter : IHeroStatsConfigProvider
@@ -90,6 +95,23 @@ namespace GuildIdle.Player
             _buildings.GetSettlementStageStarterEquipment(stageId);
         public QuestStepConfigDto[] GetQuestSteps(string questId) => _quests.GetSteps(questId);
         public bool IsKnownItemState(string stateId) => _storage.TryGetItemState(stateId, out _);
+        public StorageBuildingConfigDto[] StorageBuildings => _storage.StorageBuildings;
+        public bool TryGetStorageRuleForItemKind(string itemKind, out StorageRuleConfigDto rule) => _storage.TryGetRuleForItemKind(itemKind, out rule);
+        public bool TryGetItemState(string stateId, out ItemStateConfigDto state) => _storage.TryGetItemState(stateId, out state);
+        public bool TryGetItemStateByAvailabilityMode(string availabilityMode, out ItemStateConfigDto state)
+        {
+            state = null;
+            foreach (var candidate in _storage.ItemStates)
+            {
+                if (candidate != null && string.Equals(candidate.availabilityMode, availabilityMode, StringComparison.Ordinal))
+                {
+                    state = candidate;
+                    return true;
+                }
+            }
+            return false;
+        }
+        public bool TryGetActivity(string activityId, out ActivityConfigDto activity) => _activities.TryGet(activityId, out activity);
 
         public bool TryGetEquipmentSlot(string itemId, out string equipmentSlot)
         {

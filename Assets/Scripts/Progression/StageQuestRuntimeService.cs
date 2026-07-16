@@ -27,7 +27,6 @@ namespace GuildIdle.Progression
             ActivateDefinitions(null, stateOnly: true, result);
             ApplyStateBackedSteps(result);
             CompleteReadyInstances(result);
-            ApplyPendingRewards(result);
             return result;
         }
 
@@ -38,7 +37,6 @@ namespace GuildIdle.Progression
             ActivateDefinitions(progressionEvent, stateOnly: false, result);
             ApplyEventToActiveInstances(progressionEvent, result);
             CompleteReadyInstances(result);
-            ApplyPendingRewards(result);
             return result;
         }
 
@@ -50,7 +48,7 @@ namespace GuildIdle.Progression
             {
                 if (!_configs.TryGetDefinition(instance.questId, out var definition) || !IsValidInstanceForDefinition(instance, definition)) continue;
                 var snapshot = BuildSnapshot(instance, definition);
-                if (instance.status == QuestInstanceStatus.Active) active.Add(snapshot);
+                if (instance.status == QuestInstanceStatus.Active || instance.status == QuestInstanceStatus.RewardPending) active.Add(snapshot);
                 else if (instance.status == QuestInstanceStatus.Completed) completed.Add(snapshot);
             }
             return new QuestRuntimeSnapshot { ActiveInstances = SnapshotLists.ReadOnly(active), CompletedInstances = SnapshotLists.ReadOnly(completed) };
@@ -237,19 +235,6 @@ namespace GuildIdle.Progression
                     if (step.required && (!states.TryGetValue(step.stepId, out var state) || !state.completed)) blocks = true;
                 }
                 if (blocks) continue;
-                instance.status = QuestInstanceStatus.Completed;
-                if (!_store.SetQuestInstance(instance)) continue;
-                result.ChangedValue = true; result.CompletedValues.Add(instance.instanceId);
-                var completed = new QuestCompleted(instance.instanceId, instance.questId);
-                result.CompletionEventValues.Add(completed);
-            }
-        }
-
-        private void ApplyPendingRewards(QuestRuntimeResult result)
-        {
-            foreach (var instance in _store.GetQuestInstances() ?? Array.Empty<QuestInstanceSaveData>())
-            {
-                if (instance.status != QuestInstanceStatus.Completed || instance.rewardsGranted || !_configs.TryGetDefinition(instance.questId, out var definition) || !IsValidInstanceForDefinition(instance, definition)) continue;
                 var definitions = new List<RewardDefinition>(); var valid = true;
                 foreach (var reward in _configs.GetRewards(instance.questId) ?? Array.Empty<QuestRewardConfigDto>())
                 {
@@ -266,12 +251,30 @@ namespace GuildIdle.Progression
                     foreach (var issue in prepared.issues) result.IssueValues.Add(new ProgressionIssue("InvalidQuestReward", issue.message, instance.questId, instance.instanceId));
                     continue;
                 }
-                if (!_store.TryCommitQuestRewardBatch(instance, prepared.mutations, out var applied, out var error))
+                var formation = _store.PendingResults.CreateOrAppend(
+                    $"quest:{instance.instanceId}:reward",
+                    new PendingResultDraft
+                    {
+                        SourceType = PendingResultSourceType.Quest,
+                        SourceId = instance.questId,
+                        SourceExecutionId = instance.instanceId,
+                        Entries = PendingResultEntryFactory.FromActivityRewards(prepared.rewards, PendingResultOrigin.QuestReward)
+                    },
+                    true);
+                if (!formation.Success)
                 {
-                    result.IssueValues.Add(new ProgressionIssue("QuestRewardCommitFailed", error ?? "Atomic quest reward commit failed.", instance.questId, instance.instanceId)); continue;
+                    result.IssueValues.Add(new ProgressionIssue("QuestRewardFormationFailed", formation.Message ?? "Quest PendingResult formation failed.", instance.questId, instance.instanceId));
+                    continue;
                 }
-                prepared.ApplyResults(applied); result.ChangedValue = true;
-                foreach (var reward in prepared.rewards) result.RewardValues.Add(new QuestRewardGrant { InstanceId = instance.instanceId, QuestId = instance.questId, RewardType = reward.rewardType, TargetId = reward.targetId, Amount = reward.amount, Applied = reward.applied });
+                result.ChangedValue = true;
+                foreach (var reward in prepared.rewards)
+                    if (reward != null && reward.amount > 0 && !reward.isResultOnly && reward.lootRoll == null)
+                        result.RewardValues.Add(new QuestRewardGrant { InstanceId = instance.instanceId, QuestId = instance.questId, RewardType = reward.rewardType, TargetId = reward.targetId, Amount = reward.amount, Applied = false });
+                if (formation.ResolvedImmediately)
+                {
+                    result.CompletedValues.Add(instance.instanceId);
+                    result.CompletionEventValues.Add(new QuestCompleted(instance.instanceId, instance.questId));
+                }
             }
         }
 
@@ -395,12 +398,30 @@ namespace GuildIdle.Progression
         private readonly StageProgressionService _stages;
         private readonly IProgressionRuntimeStore _store;
         private bool _savePending;
-        public ProgressionRuntimeService(QuestRuntimeService quests, StageProgressionService stages, IProgressionRuntimeStore store) { _quests = quests ?? throw new ArgumentNullException(nameof(quests)); _stages = stages ?? throw new ArgumentNullException(nameof(stages)); _store = store ?? throw new ArgumentNullException(nameof(store)); }
+        public ProgressionRuntimeService(QuestRuntimeService quests, StageProgressionService stages, IProgressionRuntimeStore store)
+        {
+            _quests = quests ?? throw new ArgumentNullException(nameof(quests));
+            _stages = stages ?? throw new ArgumentNullException(nameof(stages));
+            _store = store ?? throw new ArgumentNullException(nameof(store));
+            if (_store.PendingResults != null)
+                _store.PendingResults.Resolved += HandlePendingResultResolved;
+        }
         public event Action<ProgressionRuntimeUpdate> Updated;
         public ProgressionRuntimeUpdate Initialize() => CompleteTransaction(_quests.Initialize());
         public ProgressionRuntimeUpdate Handle(ProgressionEvent progressionEvent) => CompleteTransaction(_quests.Handle(progressionEvent ?? throw new ArgumentNullException(nameof(progressionEvent))));
         public QuestRuntimeSnapshot GetQuestSnapshot() => _quests.GetSnapshot();
         public StageProgressionSnapshot GetStageSnapshot() => _stages.GetSnapshot();
+
+        private void HandlePendingResultResolved(PendingResultResolvedEvent resolved)
+        {
+            if (resolved == null || !string.Equals(resolved.SourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
+                return;
+            var completed = new QuestCompleted(resolved.SourceExecutionId, resolved.SourceId);
+            var aggregate = new QuestRuntimeResult { ChangedValue = true };
+            aggregate.CompletedValues.Add(resolved.SourceExecutionId);
+            aggregate.CompletionEventValues.Add(completed);
+            CompleteTransaction(aggregate);
+        }
 
         private ProgressionRuntimeUpdate CompleteTransaction(QuestRuntimeResult aggregate)
         {

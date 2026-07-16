@@ -806,6 +806,7 @@ namespace GuildIdle.Configs
     public sealed class StorageConfigRepository
     {
         private readonly Dictionary<string, StorageRuleConfigDto> _rulesById = ItemsConfigRepository.NewIndex<StorageRuleConfigDto>();
+        private readonly Dictionary<string, StorageRuleConfigDto> _rulesByItemKind = ItemsConfigRepository.NewIndex<StorageRuleConfigDto>();
         private readonly Dictionary<string, ItemStateConfigDto> _statesById = ItemsConfigRepository.NewIndex<ItemStateConfigDto>();
         private readonly Dictionary<string, StorageBuildingConfigDto> _buildingsByKey = ItemsConfigRepository.NewIndex<StorageBuildingConfigDto>();
 
@@ -824,7 +825,10 @@ namespace GuildIdle.Configs
             EnumValues = dto.enumValues ?? Array.Empty<EnumValueConfigDto>();
 
             foreach (var rule in StorageRules)
+            {
                 ItemsConfigRepository.AddUnique(_rulesById, rule.storageRuleId, rule, "Storage/storageRules");
+                ItemsConfigRepository.AddUnique(_rulesByItemKind, rule.itemKind, rule, "Storage/storageRules/itemKind");
+            }
             foreach (var state in ItemStates)
                 ItemsConfigRepository.AddUnique(_statesById, state.stateId, state, "Storage/itemStates");
             foreach (var building in StorageBuildings)
@@ -844,6 +848,12 @@ namespace GuildIdle.Configs
         {
             rule = null;
             return !string.IsNullOrWhiteSpace(storageRuleId) && _rulesById.TryGetValue(storageRuleId, out rule);
+        }
+
+        public bool TryGetRuleForItemKind(string itemKind, out StorageRuleConfigDto rule)
+        {
+            rule = null;
+            return !string.IsNullOrWhiteSpace(itemKind) && _rulesByItemKind.TryGetValue(itemKind, out rule);
         }
 
         public ItemStateConfigDto GetItemState(string stateId)

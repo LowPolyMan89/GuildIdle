@@ -205,8 +205,9 @@ namespace GuildIdle.Progression.Editor
         {
             private readonly Dictionary<string, QuestInstanceSaveData> _instances = new Dictionary<string, QuestInstanceSaveData>(StringComparer.Ordinal);
             private readonly Dictionary<string, int> _items = new Dictionary<string, int>(StringComparer.Ordinal);
-            public TestStore(string stageId) { CurrentStageId = stageId; }
+            public TestStore(string stageId) { CurrentStageId = stageId; PendingResults = new TestPendingResults(this); }
             public string CurrentStageId { get; private set; }
+            public IPendingResultService PendingResults { get; }
             public int SaveCalls { get; set; }
             public bool SaveSucceeds { get; set; } = true;
             public bool SetCurrentStage(string stageId) { if (CurrentStageId == stageId) return false; CurrentStageId = stageId; return true; }
@@ -216,15 +217,44 @@ namespace GuildIdle.Progression.Editor
             public int GetItem(string itemId) => _items.TryGetValue(itemId, out var value) ? value : 0;
             public int GetBuildingLevel(string buildingId) => 0;
             public bool IsActivityCompleted(string activityId) => false;
-            public bool TryCommitQuestRewardBatch(QuestInstanceSaveData instance, RewardMutation[] mutations, out RewardMutationResult[] results, out string error)
-            {
-                instance.rewardsGranted = true;
-                _instances[instance.instanceId] = instance;
-                results = Array.Empty<RewardMutationResult>();
-                error = null;
-                return true;
-            }
             public bool Save() { SaveCalls++; return SaveSucceeds; }
+        }
+
+        private sealed class TestPendingResults : IPendingResultService
+        {
+            private readonly TestStore _store;
+            private readonly Dictionary<string, PendingResultSaveData> _results = new Dictionary<string, PendingResultSaveData>(StringComparer.Ordinal);
+            public TestPendingResults(TestStore store) { _store = store; }
+            public event Action<PendingResultResolvedEvent> Resolved;
+            public PendingResultSaveData Get(string resultId) => _results.TryGetValue(resultId, out var value) ? value : null;
+            public PendingResultSaveData[] GetAll() { var values = new PendingResultSaveData[_results.Count]; _results.Values.CopyTo(values, 0); return values; }
+            public PendingResultSaveData[] GetSaveData() => GetAll();
+            public void Load(PendingResultSaveData[] results) { _results.Clear(); foreach (var result in results ?? Array.Empty<PendingResultSaveData>()) if (result != null) _results[result.resultId] = result; }
+            public PendingResultFormationResult CreateOrAppend(string operationId, PendingResultDraft draft, bool makeClaimable, long expectedResultRevision = 0)
+            {
+                var resultId = $"result:{draft.SourceType}:{draft.SourceExecutionId}";
+                var entries = new List<PendingResultEntrySaveData>();
+                foreach (var entry in draft.Entries ?? Array.Empty<PendingResultEntryDraft>())
+                    if (entry != null && entry.Quantity > 0) entries.Add(new PendingResultEntrySaveData { entryId = Guid.NewGuid().ToString("N"), sortOrder = entry.SortOrder, rewardType = entry.RewardType, targetId = entry.TargetId, quantity = entry.Quantity, origin = entry.Origin });
+                if (entries.Count == 0 && makeClaimable)
+                {
+                    var quest = _store.GetQuestInstance(draft.SourceExecutionId);
+                    quest.status = QuestInstanceStatus.Completed; quest.rewardsGranted = true; quest.pendingResultId = null; _store.SetQuestInstance(quest);
+                    return new PendingResultFormationResult { Success = true, ResolvedImmediately = true };
+                }
+                var result = new PendingResultSaveData { resultId = resultId, sourceType = draft.SourceType, sourceId = draft.SourceId, sourceExecutionId = draft.SourceExecutionId, revision = 1, entries = entries.ToArray() };
+                _results[resultId] = result;
+                var pending = _store.GetQuestInstance(draft.SourceExecutionId);
+                if (pending != null) { pending.status = QuestInstanceStatus.RewardPending; pending.pendingResultId = resultId; _store.SetQuestInstance(pending); }
+                return new PendingResultFormationResult { Success = true, Result = result };
+            }
+            public PendingResultFormationResult CreateCombatResult(string operationId, PendingResultDraft calculatedResult, string broughtStackId, StorageActionContext combatContext, long expectedStorageRevision) => CreateOrAppend(operationId, calculatedResult, true);
+            public PendingResultMutationResult ClaimAll(string operationId, string resultId, long expectedResultRevision, long expectedStorageRevision) => Unsupported();
+            public PendingResultMutationResult ClaimAvailable(string operationId, string resultId, long expectedResultRevision, long expectedStorageRevision) => Unsupported();
+            public PendingResultMutationResult ClaimQuantity(string operationId, string resultId, string entryId, long quantity, long expectedResultRevision, long expectedStorageRevision) => Unsupported();
+            public PendingResultMutationResult DiscardAll(string operationId, string resultId, long expectedResultRevision) => Unsupported();
+            public PendingResultMutationResult DiscardQuantity(string operationId, string resultId, string entryId, long quantity, long expectedResultRevision) => Unsupported();
+            private static PendingResultMutationResult Unsupported() => new PendingResultMutationResult { Success = false, Code = "Unsupported" };
         }
     }
 }

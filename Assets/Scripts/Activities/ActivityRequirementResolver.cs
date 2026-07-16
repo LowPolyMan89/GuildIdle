@@ -107,7 +107,8 @@ namespace GuildIdle.Activities
                         return;
                     }
 
-                    var resourceCount = state.GetItem(targetId);
+                    var actionContext = context == null ? null : new GuildIdle.Player.StorageActionContext(GuildIdle.Player.StorageContextType.ActivityExecution, context.executionId);
+                    var resourceCount = state.GetAvailableForActionCount(targetId, actionContext);
                     if (resourceCount < required)
                         Missing(issues, activityId, type, targetId, required, resourceCount);
                     return;
@@ -120,7 +121,8 @@ namespace GuildIdle.Activities
                         return;
                     }
 
-                    var itemCount = state.GetItem(targetId);
+                    var itemActionContext = context == null ? null : new GuildIdle.Player.StorageActionContext(GuildIdle.Player.StorageContextType.ActivityExecution, context.executionId);
+                    var itemCount = state.GetAvailableForActionCount(targetId, itemActionContext);
                     if (itemCount < required)
                         Missing(issues, activityId, type, targetId, required, itemCount);
                     return;

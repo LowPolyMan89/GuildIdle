@@ -4,6 +4,7 @@ namespace GuildIdle.Activities
 {
     public interface IActivityPlayerState : IRewardBatchStore
     {
+        GuildIdle.Player.IPendingResultService PendingResults { get; }
         bool HasHero(string heroId);
         bool AddHero(string heroId);
         bool HasHeroState(string heroId);
@@ -14,9 +15,11 @@ namespace GuildIdle.Activities
         bool IsHeroBusy(string heroId);
         string GetHeroCurrentActivityExecutionId(string heroId);
         int GetItem(string itemId);
+        int GetAvailableForActionCount(string itemId, GuildIdle.Player.StorageActionContext actionContext);
         bool HasItem(string itemId, int amount);
         bool AddItem(string itemId, int amount);
         bool SpendItem(string itemId, int amount);
+        bool SpendItem(string itemId, int amount, GuildIdle.Player.StorageActionContext actionContext);
         long GetCurrency(string currencyId);
         bool AddCurrency(string currencyId, long amount);
         bool SpendCurrency(string currencyId, long amount);

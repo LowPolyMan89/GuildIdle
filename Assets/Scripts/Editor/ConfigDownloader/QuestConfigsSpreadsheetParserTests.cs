@@ -29,6 +29,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(json, Does.Contain("\"dailyQuests\": []"));
             Assert.That(json, Does.Contain("\"questRewards\": []"));
             Assert.That(json, Does.Contain("\"compareOperator\": \"GreaterOrEqual\""));
+            Assert.That(json, Does.Contain("\"enumGroup\": \"QuestInstanceStatus\""));
+            Assert.That(json, Does.Contain("\"value\": \"RewardPending\""));
             Assert.That(json, Does.Not.Contain("notes"));
         }
 
@@ -81,6 +83,19 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void RewardPendingQuestStatusIsRequired()
+        {
+            var download = CreateValidDownload();
+            download.sheets[7].rows[9].cells[1] = "Active";
+            Write(download);
+
+            var report = new QuestConfigsSpreadsheetParser().BuildRuntimeJson(Source(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("QuestInstanceStatus must declare 'RewardPending'."));
+        }
+
+        [Test]
         public void CrossValidatorRejectsQuestCompletedInstanceId()
         {
             var download = CreateValidDownload();
@@ -130,7 +145,11 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("ConditionType", "QuestCompleted", ""),
                         Row("ObjectiveType", "ResourceCount", ""),
                         Row("CompareOperator", "GreaterOrEqual", ""),
-                        Row("GrantMoment", "OnComplete", ""))
+                        Row("GrantMoment", "OnComplete", ""),
+                        Row("QuestInstanceStatus", "Active", ""),
+                        Row("QuestInstanceStatus", "RewardPending", ""),
+                        Row("QuestInstanceStatus", "Completed", ""),
+                        Row("QuestInstanceStatus", "Expired", ""))
                 }
             };
         }

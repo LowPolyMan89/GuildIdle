@@ -96,9 +96,11 @@ namespace GuildIdle.Player
 
         private void ApplyStarterEquipment(PlayerState state, string stageId)
         {
+            if (!_configs.TryGetItemStateByAvailabilityMode(ItemAvailabilityMode.Available, out var availableState))
+                throw new InvalidOperationException("Storage config has no available item state.");
             foreach (var loadout in _configs.GetSettlementStageStarterEquipment(stageId))
             {
-                var instanceId = state.AddItemInstance(loadout.itemId, PlayerState.OnStorageItemStateId);
+                var instanceId = state.AddItemInstance(loadout.itemId, availableState.stateId);
                 state.EquipItemInstance(loadout.heroId, loadout.equipmentSlot, instanceId);
             }
         }
@@ -130,10 +132,10 @@ namespace GuildIdle.Player
                 }
             }
 
-            if (!_configs.IsKnownItemState(PlayerState.EquippedItemStateId) ||
-                !_configs.IsKnownItemState(PlayerState.OnStorageItemStateId))
+            if (!_configs.TryGetItemStateByAvailabilityMode(ItemAvailabilityMode.Equipped, out _) ||
+                !_configs.TryGetItemStateByAvailabilityMode(ItemAvailabilityMode.Available, out _))
             {
-                throw new InvalidOperationException("Required item states 'equipped' and 'on_storage' are missing.");
+                throw new InvalidOperationException("Required available and equipped item states are missing.");
             }
         }
 

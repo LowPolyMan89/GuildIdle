@@ -310,10 +310,21 @@ namespace GuildIdle.Editor.Configs
         {
             _storage = new StorageRuntimeConfigDto
             {
+                storageRules = new[]
+                {
+                    new StorageRuleConfigDto { storageRuleId = "storage_resource", itemKind = "resource", mode = "stack", maxStack = 100, occupiesSlot = true },
+                    new StorageRuleConfigDto { storageRuleId = "storage_consumable", itemKind = "consumable", mode = "stack", maxStack = 20, occupiesSlot = true },
+                    new StorageRuleConfigDto { storageRuleId = "storage_recipe", itemKind = "recipe", mode = "stack", maxStack = 20, occupiesSlot = true },
+                    new StorageRuleConfigDto { storageRuleId = "storage_equipment", itemKind = "equipment", mode = "single", maxStack = 1, occupiesSlot = true, allowQuality = true, allowInstanceId = true }
+                },
+                storageBuildings = new[] { new StorageBuildingConfigDto { buildingId = "building_warehouse", level = 0, slotCount = 20 } },
                 itemStates = new[]
                 {
-                    new ItemStateConfigDto { stateId = "on_storage" },
-                    new ItemStateConfigDto { stateId = "equipped" }
+                    new ItemStateConfigDto { stateId = "on_storage", isInStorage = true, occupiesCapacity = true, availabilityMode = "available", availableForCraft = true, availableForSale = true, availableForOrder = true, availableForEquip = true },
+                    new ItemStateConfigDto { stateId = "equipped", requiresOwner = true, availabilityMode = "equipped" },
+                    new ItemStateConfigDto { stateId = "reserved_for_task", isInStorage = true, occupiesCapacity = true, availabilityMode = "reserved" },
+                    new ItemStateConfigDto { stateId = "in_task", availabilityMode = "in_action" },
+                    new ItemStateConfigDto { stateId = "unavailable", availabilityMode = "unavailable" }
                 }
             };
             return this;
@@ -337,7 +348,12 @@ namespace GuildIdle.Editor.Configs
             {
                 buildings = new[]
                 {
-                    new BuildingConfigDto { buildingId = "building_underwood", levels = 2 }
+                    new BuildingConfigDto { buildingId = "building_underwood", levels = 2 },
+                    new BuildingConfigDto { buildingId = "building_warehouse", levels = 0 }
+                },
+                buildingLevels = new[]
+                {
+                    new BuildingLevelConfigDto { buildingId = "building_warehouse", level = 0 }
                 }
             };
             _quests ??= new QuestRuntimeConfigDto();

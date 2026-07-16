@@ -11,17 +11,22 @@ namespace GuildIdle.Activities
     {
         public static ActivityRewardResult PreviewRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state)
         {
-            return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), false, false);
+            return ResolveRewards(context?.activityId, context, grantMoment, state, ActivityResolverUtilities.DefaultRandom(), false, false, false);
+        }
+
+        public static ActivityRewardResult PreparePendingRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random)
+        {
+            return ResolveRewards(context?.activityId, context, grantMoment, state, random, false, false, true);
         }
 
         public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random)
         {
-            return ResolveRewards(context?.activityId, context, grantMoment, state, random, true, true);
+            return ResolveRewards(context?.activityId, context, grantMoment, state, random, true, true, true);
         }
 
         public static ActivityRewardResult ApplyRewards(ActivityExecutionContext context, string grantMoment, IActivityPlayerState state, IActivityRandom random, bool markCompletion)
         {
-            return ResolveRewards(context?.activityId, context, grantMoment, state, random, true, markCompletion);
+            return ResolveRewards(context?.activityId, context, grantMoment, state, random, true, markCompletion, true);
         }
 
         private static ActivityRewardResult ResolveRewards(
@@ -31,7 +36,8 @@ namespace GuildIdle.Activities
             IActivityPlayerState state,
             IActivityRandom random,
             bool apply,
-            bool markCompletion)
+            bool markCompletion,
+            bool rollLoot)
         {
             var issues = new List<ActivityRequirementIssue>();
             if (!ActivityResolverUtilities.TryGetActivity(activityId, issues, out var activity))
@@ -60,7 +66,7 @@ namespace GuildIdle.Activities
                 });
             }
 
-            var prepared = RewardBatchPipeline.Prepare(definitions, grantMoment, context?.heroId, random, apply);
+            var prepared = RewardBatchPipeline.Prepare(definitions, grantMoment, context?.heroId, random, rollLoot);
             issues.AddRange(prepared.issues);
             foreach (var issue in prepared.issues)
             {

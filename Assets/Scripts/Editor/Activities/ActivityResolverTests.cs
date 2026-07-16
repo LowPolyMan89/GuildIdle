@@ -138,7 +138,7 @@ namespace GuildIdle.Editor.Activities
             Assert.That(HasHeroSkillExpReward(result.rewards), Is.True);
 
             var saveData = state.ToSaveData();
-            foreach (var item in saveData.items)
+            foreach (var item in saveData.itemStacks)
                 Assert.That(item.itemId, Is.Not.EqualTo("gold_id"));
         }
 
@@ -218,6 +218,8 @@ namespace GuildIdle.Editor.Activities
         {
             var state = _factory.Create(new SaveData { currentStageId = "stage_arrival" });
             state.AddHero("ren");
+            state.UnlockBuilding("building_warehouse");
+            state.SetBuildingLevel("building_warehouse", 0);
             return state;
         }
 

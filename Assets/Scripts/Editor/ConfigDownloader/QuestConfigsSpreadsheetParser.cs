@@ -119,6 +119,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 ValidateHeaders();
                 CollectEnums();
+                ValidateQuestStatusEnums();
                 CollectStages();
                 CollectDefinitions("StoryQuests", _storyIds);
                 CollectDefinitions("DailyQuests", null);
@@ -210,6 +211,18 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 if (!_tables.TryGetValue("Stages", out var table)) return;
                 CollectIds(table, "stage_id", _stageIds, (row, id) => { if (ReadBool(row, "enabled", false)) _enabledStageIds.Add(id); });
+            }
+
+            private void ValidateQuestStatusEnums()
+            {
+                var required = new[] { "Active", "RewardPending", "Completed", "Expired" };
+                if (!_enums.TryGetValue("QuestInstanceStatus", out var values))
+                {
+                    Issue("EnumValues", 0, "enum_group", "QuestInstanceStatus", "QuestInstanceStatus enum group is required.");
+                    return;
+                }
+                foreach (var value in required)
+                    if (!values.Contains(value)) Issue("EnumValues", 0, "value", value, $"QuestInstanceStatus must declare '{value}'.");
             }
 
             private void CollectDefinitions(string sheet, HashSet<string> kindIds)

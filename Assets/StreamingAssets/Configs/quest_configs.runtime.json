@@ -284,6 +284,11 @@
     },
     {
       "enumGroup": "QuestInstanceStatus",
+      "value": "RewardPending",
+      "description": "Required steps выполнены; PendingResult ожидает полного Claim/Discard."
+    },
+    {
+      "enumGroup": "QuestInstanceStatus",
       "value": "Completed",
       "description": "Экземпляр завершён; rewards_granted хранится отдельно для atomic retry."
     },

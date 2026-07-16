@@ -13,6 +13,7 @@ namespace GuildIdle.Player
             _state = state ?? throw new ArgumentNullException(nameof(state));
         }
 
+        public IPendingResultService PendingResults => _state.PendingResults;
         public bool HasHero(string heroId) => _state.HasHero(heroId);
         public bool AddHero(string heroId) => _state.AddHero(heroId);
         public bool HasHeroState(string heroId) => _state.HasHeroState(heroId);
@@ -23,9 +24,12 @@ namespace GuildIdle.Player
         public bool IsHeroBusy(string heroId) => _state.IsHeroBusy(heroId);
         public string GetHeroCurrentActivityExecutionId(string heroId) => _state.GetHeroCurrentActivityExecutionId(heroId);
         public int GetItem(string itemId) => _state.GetItem(itemId);
+        public int GetAvailableForActionCount(string itemId, StorageActionContext actionContext) => _state.GetAvailableForActionCount(itemId, actionContext);
         public bool HasItem(string itemId, int amount) => _state.HasItem(itemId, amount);
         public bool AddItem(string itemId, int amount) => _state.AddItem(itemId, amount);
         public bool SpendItem(string itemId, int amount) => _state.SpendItem(itemId, amount);
+        public bool SpendItem(string itemId, int amount, StorageActionContext actionContext) =>
+            _state.Storage.Consume($"activity-cost:{actionContext?.ContextId}:{itemId}:{Guid.NewGuid():N}", _state.Storage.GetSnapshot().Revision, itemId, amount, actionContext).Success;
         public long GetCurrency(string currencyId) => _state.GetCurrency(currencyId);
         public bool AddCurrency(string currencyId, long amount) => _state.AddCurrency(currencyId, amount);
         public bool SpendCurrency(string currencyId, long amount) => _state.SpendCurrency(currencyId, amount);

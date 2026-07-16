@@ -7,7 +7,7 @@ using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Player
 {
-    public sealed class PlayerState : IActivityRuntimeStore, IRewardBatchStore
+    public sealed class PlayerState : IActivityRuntimeStore, IRewardBatchStore, IPendingResultSourceLifecycle
     {
         public const string EquippedItemStateId = "equipped";
         public const string OnStorageItemStateId = "on_storage";
@@ -15,7 +15,7 @@ namespace GuildIdle.Player
         private readonly HeroStatsService _heroStats;
         private readonly IPlayerBootstrapConfigProvider _configs;
         private readonly Dictionary<string, long> _currencies = new Dictionary<string, long>(StringComparer.Ordinal);
-        private readonly Dictionary<string, int> _items = new Dictionary<string, int>(StringComparer.Ordinal);
+        private readonly Dictionary<string, ItemStackSaveData> _itemStacks = new Dictionary<string, ItemStackSaveData>(StringComparer.Ordinal);
         private readonly Dictionary<string, ItemInstanceSaveData> _itemInstances = new Dictionary<string, ItemInstanceSaveData>(StringComparer.Ordinal);
         private readonly Dictionary<string, EquipmentSlotSaveData> _equipmentSlots = new Dictionary<string, EquipmentSlotSaveData>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedHeroes = new HashSet<string>(StringComparer.Ordinal);
@@ -28,6 +28,9 @@ namespace GuildIdle.Player
         private readonly HashSet<string> _availableActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, ActivityExecutionSaveData> _activityExecutions = new Dictionary<string, ActivityExecutionSaveData>(StringComparer.Ordinal);
         private readonly Dictionary<string, QuestInstanceSaveData> _questInstances = new Dictionary<string, QuestInstanceSaveData>(StringComparer.Ordinal);
+        private readonly Dictionary<string, PendingResultSourceReferenceSaveData> _resultSources = new Dictionary<string, PendingResultSourceReferenceSaveData>(StringComparer.Ordinal);
+        private readonly List<OperationReceiptSaveData> _operationReceipts = new List<OperationReceiptSaveData>();
+        private Func<bool> _saveHandler;
         private string _currentStageId;
 
         public PlayerState(
@@ -37,11 +40,21 @@ namespace GuildIdle.Player
         {
             _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
             _configs = configs ?? throw new ArgumentNullException(nameof(configs));
+            var storage = new StorageService(this, _configs);
+            Storage = storage;
+            PendingResults = new PendingResultService(this, storage);
             Load(saveData);
         }
 
         internal bool WasNormalized { get; private set; }
         public string CurrentStageId => _currentStageId;
+        public IStorageService Storage { get; }
+        public IPendingResultService PendingResults { get; }
+        internal long StorageRevision { get; set; }
+        internal Dictionary<string, ItemStackSaveData> MutableItemStacks => _itemStacks;
+        internal Dictionary<string, ItemInstanceSaveData> MutableItemInstances => _itemInstances;
+        internal Dictionary<string, EquipmentSlotSaveData> MutableEquipmentSlots => _equipmentSlots;
+        internal IPlayerBootstrapConfigProvider ConfigProvider => _configs;
 
         public SaveData ToSaveData()
         {
@@ -50,7 +63,8 @@ namespace GuildIdle.Player
                 saveVersion = SaveData.CurrentSaveVersion,
                 currentStageId = _currentStageId,
                 currencies = BuildCurrencyEntries(),
-                items = BuildItemEntries(),
+                storageRevision = StorageRevision,
+                itemStacks = GetItemStacks(),
                 itemInstances = GetItemInstances(),
                 equipmentSlots = GetEquipmentSlots(),
                 unlockedHeroes = BuildSortedArray(_unlockedHeroes),
@@ -62,7 +76,10 @@ namespace GuildIdle.Player
                 unlockedLocations = BuildSortedArray(_unlockedLocations),
                 completedActivities = BuildSortedArray(_completedActivities),
                 availableActivities = BuildSortedArray(_availableActivities),
-                activityRuntime = BuildActivityRuntimeSaveData()
+                activityRuntime = BuildActivityRuntimeSaveData(),
+                pendingResults = PendingResults.GetSaveData(),
+                resultSources = BuildResultSourceReferences(),
+                operationReceipts = BuildOperationReceipts()
             };
         }
 
@@ -130,36 +147,6 @@ namespace GuildIdle.Player
             results = applied;
             error = null;
             return true;
-        }
-
-        public bool TryCommitQuestRewardBatch(
-            QuestInstanceSaveData quest,
-            RewardMutation[] mutations,
-            out RewardMutationResult[] results,
-            out string error)
-        {
-            var before = ToSaveData();
-            var wasNormalized = WasNormalized;
-            if (!TryApplyRewardBatch(mutations, out results, out error))
-                return false;
-
-            if (quest == null)
-            {
-                Restore(before, wasNormalized);
-                results = Array.Empty<RewardMutationResult>();
-                error = "Quest reward commit requires quest state.";
-                return false;
-            }
-
-            var committedQuest = CloneQuestInstance(quest);
-            committedQuest.rewardsGranted = true;
-            if (SetQuestInstance(committedQuest))
-                return true;
-
-            Restore(before, wasNormalized);
-            results = Array.Empty<RewardMutationResult>();
-            error = $"Failed to persist reward state for quest instance '{quest.instanceId}'.";
-            return false;
         }
 
         public bool HasHero(string heroId)
@@ -353,7 +340,7 @@ namespace GuildIdle.Player
 
         public int GetItem(string itemId)
         {
-            return ValidateItemId(itemId) ? GetItemAmount(itemId) : 0;
+            return ValidateItemId(itemId) ? Storage.GetOwnedInStorageCount(itemId) : 0;
         }
 
         public bool HasItem(string itemId, int amount)
@@ -361,7 +348,7 @@ namespace GuildIdle.Player
             if (!ValidateItemId(itemId))
                 return false;
 
-            return amount <= 0 || GetItemAmount(itemId) >= amount;
+            return amount <= 0 || Storage.GetAvailableForActionCount(itemId, null) >= amount;
         }
 
         public bool AddItem(string itemId, int amount)
@@ -369,9 +356,7 @@ namespace GuildIdle.Player
             if (!ValidateItemId(itemId) || !ValidatePositiveAmount(amount, "item"))
                 return false;
 
-            var current = GetItemAmount(itemId);
-            _items[itemId] = AddClamped(current, amount);
-            return true;
+            return Storage.Add($"legacy:add:{Guid.NewGuid():N}", Storage.GetSnapshot().Revision, itemId, amount).Success;
         }
 
         public bool SpendItem(string itemId, int amount)
@@ -379,17 +364,18 @@ namespace GuildIdle.Player
             if (!ValidateItemId(itemId) || !ValidatePositiveAmount(amount, "item"))
                 return false;
 
-            var current = GetItemAmount(itemId);
-            if (current < amount)
-                return false;
+            return Storage.Consume($"legacy:consume:{Guid.NewGuid():N}", Storage.GetSnapshot().Revision, itemId, amount).Success;
+        }
 
-            var next = current - amount;
-            if (next == 0)
-                _items.Remove(itemId);
-            else
-                _items[itemId] = next;
+        public int GetAvailableForActionCount(string itemId, StorageActionContext actionContext) => Storage.GetAvailableForActionCount(itemId, actionContext);
 
-            return true;
+        public ItemStackSaveData[] GetItemStacks()
+        {
+            var keys = SortedKeys(_itemStacks);
+            var entries = new ItemStackSaveData[keys.Count];
+            for (var index = 0; index < keys.Count; index++)
+                entries[index] = CloneItemStack(_itemStacks[keys[index]]);
+            return entries;
         }
 
         public ItemInstanceSaveData GetItemInstance(string instanceId)
@@ -433,7 +419,9 @@ namespace GuildIdle.Player
 
         public string AddItemInstance(string itemId, string stateId)
         {
-            if (!_configs.TryGetItem(itemId, out _) || !_configs.IsKnownItemState(stateId))
+            if (!_configs.TryGetItem(itemId, out var item) || item == null || !_configs.TryGetStorageRuleForItemKind(item.Kind, out var rule) ||
+                !string.Equals(rule.mode, "single", StringComparison.Ordinal) || !_configs.TryGetItemState(stateId, out var itemState) ||
+                !string.Equals(itemState.availabilityMode, ItemAvailabilityMode.Available, StringComparison.Ordinal))
             {
                 Debug.LogError($"[PlayerState] Cannot create item instance '{itemId}' with state '{stateId}'.");
                 return null;
@@ -444,6 +432,7 @@ namespace GuildIdle.Player
             {
                 instanceId = instanceId,
                 itemId = itemId,
+                quality = 0,
                 stateId = stateId
             });
             return instanceId;
@@ -451,34 +440,7 @@ namespace GuildIdle.Player
 
         public bool EquipItemInstance(string heroId, string equipmentSlot, string instanceId)
         {
-            if (!_acquiredHeroes.Contains(heroId) || !_heroes.ContainsKey(heroId))
-                return false;
-
-            if (!_itemInstances.TryGetValue(instanceId, out var instance) ||
-                !_configs.TryGetEquipmentSlot(instance.itemId, out var configuredSlot) ||
-                !string.Equals(configuredSlot, equipmentSlot, StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            var slotKey = EquipmentSlotKey(heroId, equipmentSlot);
-            if (_equipmentSlots.ContainsKey(slotKey) || IsInstanceEquipped(instanceId))
-                return false;
-
-            if (!string.Equals(instance.stateId, OnStorageItemStateId, StringComparison.Ordinal) &&
-                !string.Equals(instance.stateId, EquippedItemStateId, StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            instance.stateId = EquippedItemStateId;
-            _equipmentSlots.Add(slotKey, new EquipmentSlotSaveData
-            {
-                heroId = heroId,
-                equipmentSlot = equipmentSlot,
-                itemInstanceId = instanceId
-            });
-            return true;
+            return Storage.Equip($"legacy:equip:{Guid.NewGuid():N}", Storage.GetSnapshot().Revision, heroId, equipmentSlot, instanceId).Success;
         }
 
         public long GetCurrency(string currencyId)
@@ -548,11 +510,7 @@ namespace GuildIdle.Player
             if (!ValidateBuildingId(buildingId))
                 return false;
 
-            var added = _unlockedBuildings.Add(buildingId);
-            if (!_buildingLevels.ContainsKey(buildingId))
-                _buildingLevels[buildingId] = GetConfiguredStartLevel(buildingId);
-
-            return added;
+            return _unlockedBuildings.Add(buildingId);
         }
 
         public int GetBuildingLevel(string buildingId)
@@ -579,6 +537,12 @@ namespace GuildIdle.Player
 
             _buildingLevels[buildingId] = level;
             return true;
+        }
+
+        public bool TryGetBuildingLevelState(string buildingId, out int level)
+        {
+            level = 0;
+            return ValidateBuildingId(buildingId) && _buildingLevels.TryGetValue(buildingId, out level);
         }
 
         public bool IsLocationUnlocked(string locationId)
@@ -652,7 +616,7 @@ namespace GuildIdle.Player
 
         public bool AddActivityExecution(ActivityExecutionSaveData execution)
         {
-            if (!ValidateActivityExecution(execution, requireRunning: true))
+            if (!ValidateActivityExecution(execution, requireRunning: false))
                 return false;
 
             if (_activityExecutions.ContainsKey(execution.executionId))
@@ -680,7 +644,7 @@ namespace GuildIdle.Player
 
         public bool UpdateActivityExecution(ActivityExecutionSaveData execution)
         {
-            if (!ValidateActivityExecution(execution, requireRunning: true))
+            if (!ValidateActivityExecution(execution, requireRunning: false))
                 return false;
 
             if (!_activityExecutions.ContainsKey(execution.executionId))
@@ -719,8 +683,11 @@ namespace GuildIdle.Player
             saveData ??= new SaveData();
 
             _currentStageId = string.IsNullOrWhiteSpace(saveData.currentStageId) ? null : saveData.currentStageId;
+            if (saveData.storageRevision < 0)
+                WasNormalized = true;
+            StorageRevision = Math.Max(0, saveData.storageRevision);
             LoadCurrencies(saveData.currencies);
-            LoadItems(saveData.items);
+            LoadItemStacks(saveData.itemStacks);
             LoadItemInstances(saveData.itemInstances);
             LoadHeroes(saveData.unlockedHeroes, _unlockedHeroes);
             LoadHeroes(saveData.acquiredHeroes, _acquiredHeroes);
@@ -735,12 +702,53 @@ namespace GuildIdle.Player
             LoadEquipmentSlots(saveData.equipmentSlots);
             NormalizeOrphanEquippedInstances();
             LoadActivityRuntime(saveData.activityRuntime);
+            LoadResultSourceReferences(saveData.resultSources);
+            LoadOperationReceipts(saveData.operationReceipts);
+            PendingResults.Load(saveData.pendingResults);
+            NormalizeOrphanPendingSources();
+        }
+
+        private void NormalizeOrphanPendingSources()
+        {
+            foreach (var quest in _questInstances.Values)
+            {
+                var hasResult = !string.IsNullOrWhiteSpace(quest.pendingResultId) && PendingResults.Get(quest.pendingResultId) != null;
+                if (hasResult)
+                    continue;
+                if (!string.IsNullOrWhiteSpace(quest.pendingResultId))
+                {
+                    quest.pendingResultId = null;
+                    WasNormalized = true;
+                }
+                if (string.Equals(quest.status, QuestInstanceStatus.RewardPending, StringComparison.Ordinal))
+                {
+                    quest.status = QuestInstanceStatus.Active;
+                    WasNormalized = true;
+                }
+            }
+
+            foreach (var execution in _activityExecutions.Values)
+            {
+                var hasResult = !string.IsNullOrWhiteSpace(execution.pendingResultId) && PendingResults.Get(execution.pendingResultId) != null;
+                if (hasResult)
+                    continue;
+                if (!string.IsNullOrWhiteSpace(execution.pendingResultId))
+                {
+                    execution.pendingResultId = null;
+                    WasNormalized = true;
+                }
+                if (execution.status == ActivityRuntimeStatus.ResultPending)
+                {
+                    execution.status = ActivityRuntimeStatus.Running;
+                    WasNormalized = true;
+                }
+            }
         }
 
         private void Restore(SaveData saveData, bool wasNormalized)
         {
             _currencies.Clear();
-            _items.Clear();
+            _itemStacks.Clear();
             _itemInstances.Clear();
             _equipmentSlots.Clear();
             _unlockedHeroes.Clear();
@@ -753,6 +761,9 @@ namespace GuildIdle.Player
             _availableActivities.Clear();
             _activityExecutions.Clear();
             _questInstances.Clear();
+            _resultSources.Clear();
+            _operationReceipts.Clear();
+            PendingResults.Load(Array.Empty<PendingResultSaveData>());
             WasNormalized = false;
             Load(saveData);
             WasNormalized = wasNormalized;
@@ -773,17 +784,58 @@ namespace GuildIdle.Player
             }
         }
 
-        private void LoadItems(ItemSaveEntry[] entries)
+        private void LoadItemStacks(ItemStackSaveData[] entries)
         {
             if (entries == null)
                 return;
 
             foreach (var entry in entries)
             {
-                if (entry == null || entry.amount <= 0 || !ValidateItemId(entry.itemId))
+                if (entry == null || entry.quantity <= 0 || !ValidateItemId(entry.itemId) ||
+                    !_configs.TryGetItem(entry.itemId, out var item) || item == null || !_configs.TryGetStorageRuleForItemKind(item.Kind, out var rule) || !string.Equals(rule.mode, "stack", StringComparison.Ordinal))
                     continue;
-
-                _items[entry.itemId] = AddClamped(GetItemAmount(entry.itemId), entry.amount);
+                var stackId = string.IsNullOrWhiteSpace(entry.stackId) || _itemStacks.ContainsKey(entry.stackId) ? NewUniqueStackId() : entry.stackId;
+                if (!string.Equals(stackId, entry.stackId, StringComparison.Ordinal))
+                    WasNormalized = true;
+                var stateId = _configs.IsKnownItemState(entry.stateId) ? entry.stateId : GetAvailableStateId();
+                if (!string.Equals(stateId, entry.stateId, StringComparison.Ordinal))
+                    WasNormalized = true;
+                var ownershipNormalized = NormalizeOwnership(entry.ownerType, entry.ownerId, entry.contextType, entry.contextId, out var ownerType, out var ownerId, out var contextType, out var contextId);
+                WasNormalized |= ownershipNormalized;
+                var bindingsChanged = false;
+                if (_configs.TryGetItemState(stateId, out var state) &&
+                    !TryNormalizeStateBindings(state, ref ownerType, ref ownerId, ref contextType, ref contextId, out bindingsChanged))
+                {
+                    stateId = GetAvailableStateId();
+                    ownerType = ownerId = contextType = contextId = null;
+                    WasNormalized = true;
+                }
+                else
+                {
+                    WasNormalized |= bindingsChanged;
+                }
+                var remaining = entry.quantity;
+                var first = true;
+                while (remaining > 0)
+                {
+                    var partId = first ? stackId : NewUniqueStackId();
+                    var partQuantity = Math.Min(remaining, rule.maxStack);
+                    _itemStacks.Add(partId, new ItemStackSaveData
+                    {
+                        stackId = partId,
+                        itemId = entry.itemId,
+                        quantity = partQuantity,
+                        stateId = stateId,
+                        ownerType = ownerType,
+                        ownerId = ownerId,
+                        contextType = contextType,
+                        contextId = contextId
+                    });
+                    remaining -= partQuantity;
+                    first = false;
+                }
+                if (entry.quantity > rule.maxStack)
+                    WasNormalized = true;
             }
         }
 
@@ -794,7 +846,8 @@ namespace GuildIdle.Player
 
             foreach (var entry in entries)
             {
-                if (entry == null || !_configs.TryGetItem(entry.itemId, out _))
+                if (entry == null || !_configs.TryGetItem(entry.itemId, out var item) || item == null ||
+                    !_configs.TryGetStorageRuleForItemKind(item.Kind, out var rule) || !string.Equals(rule.mode, "single", StringComparison.Ordinal))
                     continue;
 
                 var instanceId = entry.instanceId;
@@ -807,16 +860,38 @@ namespace GuildIdle.Player
                 var stateId = entry.stateId;
                 if (!_configs.IsKnownItemState(stateId))
                 {
-                    stateId = OnStorageItemStateId;
+                    stateId = GetAvailableStateId();
                     WasNormalized = true;
+                }
+
+                var ownershipNormalized = NormalizeOwnership(entry.ownerType, entry.ownerId, entry.contextType, entry.contextId, out var ownerType, out var ownerId, out var contextType, out var contextId);
+                WasNormalized |= ownershipNormalized;
+                var bindingsChanged = false;
+                if (_configs.TryGetItemState(stateId, out var state) &&
+                    !TryNormalizeStateBindings(state, ref ownerType, ref ownerId, ref contextType, ref contextId, out bindingsChanged))
+                {
+                    stateId = GetAvailableStateId();
+                    ownerType = ownerId = contextType = contextId = null;
+                    WasNormalized = true;
+                }
+                else
+                {
+                    WasNormalized |= bindingsChanged;
                 }
 
                 _itemInstances.Add(instanceId, new ItemInstanceSaveData
                 {
                     instanceId = instanceId,
                     itemId = entry.itemId,
-                    stateId = stateId
+                    quality = Math.Max(0, entry.quality),
+                    stateId = stateId,
+                    ownerType = ownerType,
+                    ownerId = ownerId,
+                    contextType = contextType,
+                    contextId = contextId
                 });
+                if (entry.quality < 0)
+                    WasNormalized = true;
             }
         }
 
@@ -932,15 +1007,27 @@ namespace GuildIdle.Player
                 }
 
                 var instance = _itemInstances[slot.itemInstanceId];
-                if (string.Equals(instance.stateId, OnStorageItemStateId, StringComparison.Ordinal))
+                _configs.TryGetItemState(instance.stateId, out var instanceState);
+                if (string.Equals(instanceState?.availabilityMode, ItemAvailabilityMode.Available, StringComparison.Ordinal) &&
+                    _configs.TryGetItemStateByAvailabilityMode(ItemAvailabilityMode.Equipped, out var equippedState))
                 {
-                    instance.stateId = EquippedItemStateId;
+                    instance.stateId = equippedState.stateId;
+                    instance.ownerType = StorageOwnerType.Hero;
+                    instance.ownerId = slot.heroId;
                     WasNormalized = true;
                 }
-                else if (!string.Equals(instance.stateId, EquippedItemStateId, StringComparison.Ordinal))
+                else if (!string.Equals(instanceState?.availabilityMode, ItemAvailabilityMode.Equipped, StringComparison.Ordinal))
                 {
                     WasNormalized = true;
                     continue;
+                }
+                else if (!string.Equals(instance.ownerType, StorageOwnerType.Hero, StringComparison.Ordinal) || !string.Equals(instance.ownerId, slot.heroId, StringComparison.Ordinal))
+                {
+                    instance.ownerType = StorageOwnerType.Hero;
+                    instance.ownerId = slot.heroId;
+                    instance.contextType = null;
+                    instance.contextId = null;
+                    WasNormalized = true;
                 }
 
                 _equipmentSlots.Add(key, slot);
@@ -977,10 +1064,13 @@ namespace GuildIdle.Player
 
             foreach (var instance in _itemInstances.Values)
             {
-                if (string.Equals(instance.stateId, EquippedItemStateId, StringComparison.Ordinal) &&
+                if (_configs.TryGetItemState(instance.stateId, out var state) && string.Equals(state.availabilityMode, ItemAvailabilityMode.Equipped, StringComparison.Ordinal) &&
                     !assigned.Contains(instance.instanceId))
                 {
-                    instance.stateId = OnStorageItemStateId;
+                    if (_configs.TryGetItemStateByAvailabilityMode(ItemAvailabilityMode.Available, out var availableState))
+                        instance.stateId = availableState.stateId;
+                    instance.ownerType = null;
+                    instance.ownerId = null;
                     WasNormalized = true;
                 }
             }
@@ -1053,13 +1143,19 @@ namespace GuildIdle.Player
 
             foreach (var execution in runtime.executions)
             {
-                if (!ValidateActivityExecution(execution, requireRunning: true))
+                if (!ValidateActivityExecution(execution, requireRunning: false))
                     continue;
+                if (execution.status == ActivityRuntimeStatus.Completed || execution.status == ActivityRuntimeStatus.Cancelled)
+                {
+                    WasNormalized = true;
+                    continue;
+                }
 
                 if (!_heroes.TryGetValue(execution.heroId, out var hero))
                     continue;
 
-                if (!string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
+                var keepsHeroBusy = execution.status == ActivityRuntimeStatus.Running || execution.status == ActivityRuntimeStatus.ResultPending;
+                if (keepsHeroBusy && !string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
                 {
                     Debug.LogError($"[PlayerState] Ignoring activity execution '{execution.executionId}': hero '{execution.heroId}' is already busy.");
                     continue;
@@ -1067,8 +1163,170 @@ namespace GuildIdle.Player
 
                 var stored = CloneExecution(execution);
                 _activityExecutions[stored.executionId] = stored;
-                hero.CurrentActivityExecutionId = stored.executionId;
+                if (keepsHeroBusy)
+                    hero.CurrentActivityExecutionId = stored.executionId;
             }
+        }
+
+        private void LoadOperationReceipts(OperationReceiptSaveData[] receipts)
+        {
+            _operationReceipts.Clear();
+            if (receipts == null)
+                return;
+            if (receipts.Length > 64)
+                WasNormalized = true;
+            var start = Math.Max(0, receipts.Length - 64);
+            for (var index = start; index < receipts.Length; index++)
+            {
+                var receipt = receipts[index];
+                if (receipt == null || string.IsNullOrWhiteSpace(receipt.aggregateId) || string.IsNullOrWhiteSpace(receipt.operationId) || string.IsNullOrWhiteSpace(receipt.fingerprint))
+                {
+                    WasNormalized = true;
+                    continue;
+                }
+                _operationReceipts.Add(CloneOperationReceipt(receipt));
+            }
+        }
+
+        private void LoadResultSourceReferences(PendingResultSourceReferenceSaveData[] sources)
+        {
+            _resultSources.Clear();
+            foreach (var source in sources ?? Array.Empty<PendingResultSourceReferenceSaveData>())
+            {
+                if (source == null || string.IsNullOrWhiteSpace(source.sourceType) || string.IsNullOrWhiteSpace(source.sourceExecutionId) ||
+                    string.IsNullOrWhiteSpace(source.resultId) ||
+                    (source.state != PendingResultSourceState.Pending && source.state != PendingResultSourceState.Resolved))
+                {
+                    WasNormalized = true;
+                    continue;
+                }
+                var key = ResultSourceKey(source.sourceType, source.sourceExecutionId);
+                if (_resultSources.ContainsKey(key))
+                {
+                    WasNormalized = true;
+                    continue;
+                }
+                _resultSources.Add(key, CloneResultSourceReference(source));
+            }
+        }
+
+        internal bool TryGetOperationReceipt(string aggregateId, string operationId, out OperationReceiptSaveData receipt)
+        {
+            for (var index = _operationReceipts.Count - 1; index >= 0; index--)
+            {
+                var candidate = _operationReceipts[index];
+                if (string.Equals(candidate.aggregateId, aggregateId, StringComparison.Ordinal) && string.Equals(candidate.operationId, operationId, StringComparison.Ordinal))
+                {
+                    receipt = CloneOperationReceipt(candidate);
+                    return true;
+                }
+            }
+            receipt = null;
+            return false;
+        }
+
+        internal void RecordOperationReceipt(OperationReceiptSaveData receipt)
+        {
+            if (receipt == null)
+                return;
+            _operationReceipts.Add(CloneOperationReceipt(receipt));
+            while (_operationReceipts.Count > 64)
+                _operationReceipts.RemoveAt(0);
+        }
+
+        internal void RestoreTransactional(SaveData saveData) => Restore(saveData, WasNormalized);
+        internal void MarkNormalized() => WasNormalized = true;
+
+        internal bool TryBindPendingResult(PendingResultSaveData result, bool makeClaimable)
+        {
+            if (result == null)
+                return false;
+            if (string.Equals(result.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
+            {
+                if (!_activityExecutions.TryGetValue(result.sourceExecutionId, out var execution))
+                    return false;
+                if (execution.status == ActivityRuntimeStatus.Completed || execution.status == ActivityRuntimeStatus.Cancelled)
+                    return false;
+                if (!string.IsNullOrWhiteSpace(execution.pendingResultId) && !string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal))
+                    return false;
+                execution.pendingResultId = result.resultId;
+                if (makeClaimable)
+                    execution.status = ActivityRuntimeStatus.ResultPending;
+                return true;
+            }
+            if (string.Equals(result.sourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
+            {
+                if (!_questInstances.TryGetValue(result.sourceExecutionId, out var quest))
+                    return false;
+                if (quest.rewardsGranted || string.Equals(quest.status, QuestInstanceStatus.Completed, StringComparison.Ordinal) || string.Equals(quest.status, QuestInstanceStatus.Expired, StringComparison.Ordinal))
+                    return false;
+                if (!string.IsNullOrWhiteSpace(quest.pendingResultId) && !string.Equals(quest.pendingResultId, result.resultId, StringComparison.Ordinal))
+                    return false;
+                quest.pendingResultId = result.resultId;
+                quest.status = QuestInstanceStatus.RewardPending;
+                return true;
+            }
+            var sourceKey = ResultSourceKey(result.sourceType, result.sourceExecutionId);
+            if (_resultSources.TryGetValue(sourceKey, out var source))
+            {
+                return string.Equals(source.state, PendingResultSourceState.Pending, StringComparison.Ordinal) &&
+                       string.Equals(source.resultId, result.resultId, StringComparison.Ordinal) &&
+                       string.Equals(source.sourceId, result.sourceId, StringComparison.Ordinal);
+            }
+            _resultSources[sourceKey] = new PendingResultSourceReferenceSaveData
+            {
+                sourceType = result.sourceType,
+                sourceId = result.sourceId,
+                sourceExecutionId = result.sourceExecutionId,
+                resultId = result.resultId,
+                state = PendingResultSourceState.Pending
+            };
+            return true;
+        }
+
+        bool IPendingResultSourceLifecycle.TryBind(PendingResultSaveData result, bool makeClaimable) => TryBindPendingResult(result, makeClaimable);
+        bool IPendingResultSourceLifecycle.CanClaim(PendingResultSaveData result) => CanClaimPendingResult(result);
+        bool IPendingResultSourceLifecycle.Resolve(PendingResultSaveData result) => ResolvePendingSource(result);
+
+        internal bool CanClaimPendingResult(PendingResultSaveData result)
+        {
+            if (result == null)
+                return false;
+            if (string.Equals(result.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
+                return _activityExecutions.TryGetValue(result.sourceExecutionId, out var execution) && execution.status == ActivityRuntimeStatus.ResultPending && string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal);
+            if (string.Equals(result.sourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
+                return _questInstances.TryGetValue(result.sourceExecutionId, out var quest) && quest.status == QuestInstanceStatus.RewardPending && string.Equals(quest.pendingResultId, result.resultId, StringComparison.Ordinal);
+            return _resultSources.TryGetValue(ResultSourceKey(result.sourceType, result.sourceExecutionId), out var source) &&
+                   string.Equals(source.state, PendingResultSourceState.Pending, StringComparison.Ordinal) &&
+                   string.Equals(source.resultId, result.resultId, StringComparison.Ordinal);
+        }
+
+        internal bool ResolvePendingSource(PendingResultSaveData result)
+        {
+            if (!CanClaimPendingResult(result))
+                return false;
+            if (string.Equals(result.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
+            {
+                var execution = _activityExecutions[result.sourceExecutionId];
+                if (_configs.TryGetActivity(execution.activityId, out var activity) && activity != null && !activity.isRepeatable)
+                    CompleteActivity(execution.activityId);
+                _activityExecutions.Remove(execution.executionId);
+                ClearHeroBusy(execution.heroId, execution.executionId);
+                return true;
+            }
+            if (string.Equals(result.sourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
+            {
+                var quest = _questInstances[result.sourceExecutionId];
+                quest.status = QuestInstanceStatus.Completed;
+                quest.rewardsGranted = true;
+                quest.pendingResultId = null;
+                return true;
+            }
+            if (!_resultSources.TryGetValue(ResultSourceKey(result.sourceType, result.sourceExecutionId), out var source))
+                return false;
+            source.state = PendingResultSourceState.Resolved;
+            source.resultId = result.resultId;
+            return true;
         }
 
         private static bool ValidateConfigsReady(string action)
@@ -1142,11 +1400,6 @@ namespace GuildIdle.Player
 
             Debug.LogError($"[PlayerState] Level '{level}' is not available for building '{buildingId}'.");
             return false;
-        }
-
-        private static int GetConfiguredStartLevel(string buildingId)
-        {
-            return RuntimeConfigs.Buildings.TryGet(buildingId, out var building) ? Math.Max(0, building.startLevel) : 0;
         }
 
         private static string GetBuildingClickableRequirement(string buildingId)
@@ -1264,11 +1517,6 @@ namespace GuildIdle.Player
             };
         }
 
-        private int GetItemAmount(string itemId)
-        {
-            return _items.TryGetValue(itemId, out var amount) ? amount : 0;
-        }
-
         private long GetCurrencyAmount(string currencyId)
         {
             return _currencies.TryGetValue(currencyId, out var amount) ? amount : 0L;
@@ -1298,19 +1546,6 @@ namespace GuildIdle.Player
             {
                 var key = keys[i];
                 entries[i] = new CurrencySaveEntry { currencyId = key, amount = _currencies[key] };
-            }
-
-            return entries;
-        }
-
-        private ItemSaveEntry[] BuildItemEntries()
-        {
-            var keys = SortedKeys(_items);
-            var entries = new ItemSaveEntry[keys.Count];
-            for (var i = 0; i < keys.Count; i++)
-            {
-                var key = keys[i];
-                entries[i] = new ItemSaveEntry { itemId = key, amount = _items[key] };
             }
 
             return entries;
@@ -1347,9 +1582,38 @@ namespace GuildIdle.Player
             };
         }
 
+        private string GetAvailableStateId()
+        {
+            return _configs.TryGetItemStateByAvailabilityMode(ItemAvailabilityMode.Available, out var state) && state != null
+                ? state.stateId
+                : null;
+        }
+
+        private OperationReceiptSaveData[] BuildOperationReceipts()
+        {
+            var result = new OperationReceiptSaveData[_operationReceipts.Count];
+            for (var index = 0; index < result.Length; index++)
+                result[index] = CloneOperationReceipt(_operationReceipts[index]);
+            return result;
+        }
+
+        private PendingResultSourceReferenceSaveData[] BuildResultSourceReferences()
+        {
+            var keys = SortedKeys(_resultSources);
+            var result = new PendingResultSourceReferenceSaveData[keys.Count];
+            for (var index = 0; index < keys.Count; index++)
+                result[index] = CloneResultSourceReference(_resultSources[keys[index]]);
+            return result;
+        }
+
         public bool Save()
         {
-            return SaveService.Save(this);
+            return _saveHandler != null ? _saveHandler() : SaveService.Save(this);
+        }
+
+        internal void BindSaveStorage(ISaveStorage storage)
+        {
+            _saveHandler = () => SaveService.Save(this, storage);
         }
 
         private bool TryApplyRewardMutation(RewardMutation mutation, out bool changed, out string error)
@@ -1474,6 +1738,19 @@ namespace GuildIdle.Player
                 return false;
             }
 
+            if (execution.status != ActivityRuntimeStatus.Running && execution.status != ActivityRuntimeStatus.Paused &&
+                execution.status != ActivityRuntimeStatus.ResultPending && execution.status != ActivityRuntimeStatus.Completed &&
+                execution.status != ActivityRuntimeStatus.Cancelled)
+            {
+                Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' has unknown status '{execution.status}'.");
+                return false;
+            }
+            if (execution.status == ActivityRuntimeStatus.ResultPending && string.IsNullOrWhiteSpace(execution.pendingResultId))
+            {
+                Debug.LogError($"[PlayerState] ResultPending execution '{execution.executionId}' has no pending result id.");
+                return false;
+            }
+
             return true;
         }
 
@@ -1490,6 +1767,10 @@ namespace GuildIdle.Player
                 status = execution.status,
                 elapsedSeconds = Math.Max(0f, execution.elapsedSeconds),
                 completedCycles = Math.Max(0, execution.completedCycles),
+                plannedCycles = Math.Max(0, execution.plannedCycles),
+                materialsPaid = execution.materialsPaid,
+                accumulatedBuildPoints = Math.Max(0f, execution.accumulatedBuildPoints),
+                pendingResultId = execution.pendingResultId,
                 startedAtUnixSeconds = execution.startedAtUnixSeconds
             };
         }
@@ -1557,13 +1838,25 @@ namespace GuildIdle.Player
             }
             if (string.IsNullOrWhiteSpace(source.cycleId) && source.cycleId != null)
                 changed = true;
+            var rewardsGranted = source.rewardsGranted;
+            if (string.Equals(source.status, QuestInstanceStatus.Completed, StringComparison.Ordinal) && !rewardsGranted)
+            {
+                rewardsGranted = true;
+                changed = true;
+            }
+            if (!string.Equals(source.status, QuestInstanceStatus.Completed, StringComparison.Ordinal) && rewardsGranted)
+            {
+                rewardsGranted = false;
+                changed = true;
+            }
             quest = new QuestInstanceSaveData
             {
                 instanceId = source.instanceId,
                 questId = source.questId,
                 cycleId = string.IsNullOrWhiteSpace(source.cycleId) ? null : source.cycleId,
                 status = source.status,
-                rewardsGranted = source.rewardsGranted,
+                rewardsGranted = rewardsGranted,
+                pendingResultId = source.pendingResultId,
                 steps = steps.ToArray()
             };
             return true;
@@ -1596,6 +1889,7 @@ namespace GuildIdle.Player
                 cycleId = source.cycleId,
                 status = source.status,
                 rewardsGranted = source.rewardsGranted,
+                pendingResultId = source.pendingResultId,
                 steps = steps
             };
         }
@@ -1622,7 +1916,29 @@ namespace GuildIdle.Player
             {
                 instanceId = source.instanceId,
                 itemId = source.itemId,
-                stateId = source.stateId
+                quality = source.quality,
+                stateId = source.stateId,
+                ownerType = source.ownerType,
+                ownerId = source.ownerId,
+                contextType = source.contextType,
+                contextId = source.contextId
+            };
+        }
+
+        private static ItemStackSaveData CloneItemStack(ItemStackSaveData source)
+        {
+            if (source == null)
+                return null;
+            return new ItemStackSaveData
+            {
+                stackId = source.stackId,
+                itemId = source.itemId,
+                quantity = source.quantity,
+                stateId = source.stateId,
+                ownerType = source.ownerType,
+                ownerId = source.ownerId,
+                contextType = source.contextType,
+                contextId = source.contextId
             };
         }
 
@@ -1644,16 +1960,7 @@ namespace GuildIdle.Player
             return $"{heroId}\n{equipmentSlot}";
         }
 
-        private bool IsInstanceEquipped(string instanceId)
-        {
-            foreach (var slot in _equipmentSlots.Values)
-            {
-                if (string.Equals(slot.itemInstanceId, instanceId, StringComparison.Ordinal))
-                    return true;
-            }
-
-            return false;
-        }
+        internal static string EquipmentSlotKeyForStorage(string heroId, string equipmentSlot) => EquipmentSlotKey(heroId, equipmentSlot);
 
         private string NewUniqueInstanceId()
         {
@@ -1666,6 +1973,114 @@ namespace GuildIdle.Player
 
             return instanceId;
         }
+
+        private string NewUniqueStackId()
+        {
+            string stackId;
+            do stackId = Guid.NewGuid().ToString("N"); while (_itemStacks.ContainsKey(stackId));
+            return stackId;
+        }
+
+        private static bool NormalizeOwnership(
+            string sourceOwnerType,
+            string sourceOwnerId,
+            string sourceContextType,
+            string sourceContextId,
+            out string ownerType,
+            out string ownerId,
+            out string contextType,
+            out string contextId)
+        {
+            var ownerValid = !string.IsNullOrWhiteSpace(sourceOwnerType) && !string.IsNullOrWhiteSpace(sourceOwnerId);
+            var contextValid = !string.IsNullOrWhiteSpace(sourceContextType) && !string.IsNullOrWhiteSpace(sourceContextId);
+            ownerType = ownerValid ? sourceOwnerType : null;
+            ownerId = ownerValid ? sourceOwnerId : null;
+            contextType = contextValid ? sourceContextType : null;
+            contextId = contextValid ? sourceContextId : null;
+            return ownerValid != (!string.IsNullOrWhiteSpace(sourceOwnerType) || !string.IsNullOrWhiteSpace(sourceOwnerId)) ||
+                   contextValid != (!string.IsNullOrWhiteSpace(sourceContextType) || !string.IsNullOrWhiteSpace(sourceContextId));
+        }
+
+        private static bool TryNormalizeStateBindings(
+            ItemStateConfigDto state,
+            ref string ownerType,
+            ref string ownerId,
+            ref string contextType,
+            ref string contextId,
+            out bool changed)
+        {
+            changed = false;
+            if (state == null)
+                return false;
+
+            var needsContext = string.Equals(state.availabilityMode, ItemAvailabilityMode.Reserved, StringComparison.Ordinal) ||
+                               string.Equals(state.availabilityMode, ItemAvailabilityMode.InAction, StringComparison.Ordinal);
+            var needsOwner = state.requiresOwner || string.Equals(state.availabilityMode, ItemAvailabilityMode.Equipped, StringComparison.Ordinal);
+            if (needsContext && contextType == null || needsOwner && ownerType == null)
+                return false;
+
+            if (needsContext)
+            {
+                if (ownerType != null)
+                {
+                    ownerType = null;
+                    ownerId = null;
+                    changed = true;
+                }
+                return true;
+            }
+
+            if (needsOwner)
+            {
+                if (contextType != null)
+                {
+                    contextType = null;
+                    contextId = null;
+                    changed = true;
+                }
+                return true;
+            }
+
+            if (ownerType != null)
+            {
+                ownerType = null;
+                ownerId = null;
+                changed = true;
+            }
+            if (contextType != null)
+            {
+                contextType = null;
+                contextId = null;
+                changed = true;
+            }
+            return true;
+        }
+
+        private static OperationReceiptSaveData CloneOperationReceipt(OperationReceiptSaveData source) => new OperationReceiptSaveData
+        {
+            aggregateId = source.aggregateId,
+            operationId = source.operationId,
+            fingerprint = source.fingerprint,
+            success = source.success,
+            code = source.code,
+            storageRevision = source.storageRevision,
+            resultRevision = source.resultRevision,
+            stackId = source.stackId,
+            instanceId = source.instanceId,
+            quantity = source.quantity,
+            resolved = source.resolved
+        };
+
+        private static PendingResultSourceReferenceSaveData CloneResultSourceReference(PendingResultSourceReferenceSaveData source) => new PendingResultSourceReferenceSaveData
+        {
+            sourceType = source.sourceType,
+            sourceId = source.sourceId,
+            sourceExecutionId = source.sourceExecutionId,
+            resultId = source.resultId,
+            state = source.state
+        };
+
+        private static string ResultSourceKey(string sourceType, string sourceExecutionId) => $"{sourceType}\n{sourceExecutionId}";
 
         private static List<string> SortedKeys<T>(Dictionary<string, T> dictionary)
         {

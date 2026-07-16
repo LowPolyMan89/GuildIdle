@@ -29,6 +29,22 @@ namespace GuildIdle.Player
                 new PlayerStateActivityAdapter(state));
         }
 
+        public static IStorageService CreateStorageService()
+        {
+            var state = Player.State;
+            if (state == null)
+                throw new InvalidOperationException("Player state is not loaded yet. Call Player.Load() or wait for config load.");
+            return state.Storage;
+        }
+
+        public static IPendingResultService CreatePendingResultService()
+        {
+            var state = Player.State;
+            if (state == null)
+                throw new InvalidOperationException("Player state is not loaded yet. Call Player.Load() or wait for config load.");
+            return state.PendingResults;
+        }
+
         public static ProgressionRuntimeService CreateProgressionRuntimeService()
         {
             var state = Player.State;
