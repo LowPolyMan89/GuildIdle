@@ -808,6 +808,7 @@ namespace GuildIdle.Configs
         private readonly Dictionary<string, StorageRuleConfigDto> _rulesById = ItemsConfigRepository.NewIndex<StorageRuleConfigDto>();
         private readonly Dictionary<string, StorageRuleConfigDto> _rulesByItemKind = ItemsConfigRepository.NewIndex<StorageRuleConfigDto>();
         private readonly Dictionary<string, ItemStateConfigDto> _statesById = ItemsConfigRepository.NewIndex<ItemStateConfigDto>();
+        private readonly Dictionary<string, ItemStateConfigDto> _workingStatesByAvailabilityMode = ItemsConfigRepository.NewIndex<ItemStateConfigDto>();
         private readonly Dictionary<string, StorageBuildingConfigDto> _buildingsByKey = ItemsConfigRepository.NewIndex<StorageBuildingConfigDto>();
 
         public StorageRuleConfigDto[] StorageRules { get; }
@@ -830,7 +831,11 @@ namespace GuildIdle.Configs
                 ItemsConfigRepository.AddUnique(_rulesByItemKind, rule.itemKind, rule, "Storage/storageRules/itemKind");
             }
             foreach (var state in ItemStates)
+            {
                 ItemsConfigRepository.AddUnique(_statesById, state.stateId, state, "Storage/itemStates");
+                if (state != null && !string.Equals(state.availabilityMode, "unavailable", StringComparison.OrdinalIgnoreCase))
+                    ItemsConfigRepository.AddUnique(_workingStatesByAvailabilityMode, state.availabilityMode, state, "Storage/itemStates/availabilityMode");
+            }
             foreach (var building in StorageBuildings)
                 ItemsConfigRepository.AddUnique(_buildingsByKey, BuildingKey(building.buildingId, building.level), building, "Storage/storageBuildings");
         }
@@ -869,6 +874,12 @@ namespace GuildIdle.Configs
         {
             state = null;
             return !string.IsNullOrWhiteSpace(stateId) && _statesById.TryGetValue(stateId, out state);
+        }
+
+        public bool TryGetWorkingItemStateByAvailabilityMode(string availabilityMode, out ItemStateConfigDto state)
+        {
+            state = null;
+            return !string.IsNullOrWhiteSpace(availabilityMode) && _workingStatesByAvailabilityMode.TryGetValue(availabilityMode, out state);
         }
 
         public StorageBuildingConfigDto GetBuilding(string buildingId, int level)

@@ -414,7 +414,14 @@ namespace GuildIdle.Progression
 
         private void HandlePendingResultResolved(PendingResultResolvedEvent resolved)
         {
-            if (resolved == null || !string.Equals(resolved.SourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
+            if (resolved == null)
+                return;
+            if (string.Equals(resolved.SourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
+            {
+                CompleteTransaction(_quests.Handle(new ActivityCompleted(resolved.SourceId)));
+                return;
+            }
+            if (!string.Equals(resolved.SourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
                 return;
             var completed = new QuestCompleted(resolved.SourceExecutionId, resolved.SourceId);
             var aggregate = new QuestRuntimeResult { ChangedValue = true };

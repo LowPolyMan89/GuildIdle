@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using GuildIdle.Activities;
 using GuildIdle.Core;
+using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Player
 {
@@ -23,6 +24,7 @@ namespace GuildIdle.Player
         public long Quantity { get; set; }
         public string Origin { get; set; }
         public int Quality { get; set; }
+        public string InstanceId { get; set; }
     }
 
     public sealed class PendingResultDraft
@@ -78,32 +80,196 @@ namespace GuildIdle.Player
         PendingResultMutationResult ClaimQuantity(string operationId, string resultId, string entryId, long quantity, long expectedResultRevision, long expectedStorageRevision);
         PendingResultMutationResult DiscardAll(string operationId, string resultId, long expectedResultRevision);
         PendingResultMutationResult DiscardQuantity(string operationId, string resultId, string entryId, long quantity, long expectedResultRevision);
+        void RegisterSourceHandler(IPendingResultSourceHandler handler);
         PendingResultSaveData[] GetSaveData();
         void Load(PendingResultSaveData[] results);
     }
 
-    public interface IPendingResultSourceLifecycle
+    public interface IPendingResultSourceHandler
     {
-        bool TryBind(PendingResultSaveData result, bool makeClaimable);
+        string SourceType { get; }
+        bool AcceptsOrigin(string origin);
+        bool TryBind(PendingResultSaveData result, bool makeClaimable, PendingResultBindMode mode);
         bool CanClaim(PendingResultSaveData result);
         bool Resolve(PendingResultSaveData result);
+    }
+
+    public enum PendingResultBindMode
+    {
+        Create,
+        Append,
+        Restore
+    }
+
+    public sealed class PendingResultSourceRegistry
+    {
+        private readonly Dictionary<string, IPendingResultSourceHandler> _handlers = new Dictionary<string, IPendingResultSourceHandler>(StringComparer.Ordinal);
+
+        public void Register(IPendingResultSourceHandler handler)
+        {
+            if (handler == null || string.IsNullOrWhiteSpace(handler.SourceType))
+                throw new ArgumentException("PendingResult source handler and source type are required.", nameof(handler));
+            _handlers[handler.SourceType] = handler;
+        }
+
+        public bool TryBind(PendingResultSaveData result, bool makeClaimable, PendingResultBindMode mode) =>
+            TryGet(result, out var handler) && handler.TryBind(result, makeClaimable, mode);
+
+        public bool CanClaim(PendingResultSaveData result) =>
+            TryGet(result, out var handler) && handler.CanClaim(result);
+
+        public bool Resolve(PendingResultSaveData result) =>
+            TryGet(result, out var handler) && handler.Resolve(result);
+
+        public bool HasHandler(string sourceType) => !string.IsNullOrWhiteSpace(sourceType) && _handlers.ContainsKey(sourceType);
+
+        public bool AcceptsOrigin(string sourceType, string origin) =>
+            !string.IsNullOrWhiteSpace(sourceType) && _handlers.TryGetValue(sourceType, out var handler) && handler.AcceptsOrigin(origin);
+
+        private bool TryGet(PendingResultSaveData result, out IPendingResultSourceHandler handler)
+        {
+            handler = null;
+            return result != null && !string.IsNullOrWhiteSpace(result.sourceType) && _handlers.TryGetValue(result.sourceType, out handler);
+        }
+    }
+
+    internal sealed class ActivityPendingResultSourceHandler : IPendingResultSourceHandler
+    {
+        private readonly PlayerState _state;
+
+        public ActivityPendingResultSourceHandler(PlayerState state) => _state = state ?? throw new ArgumentNullException(nameof(state));
+        public string SourceType => PendingResultSourceType.Activity;
+        public bool AcceptsOrigin(string origin) => string.Equals(origin, PendingResultOrigin.ActivityReward, StringComparison.Ordinal);
+
+        public bool TryBind(PendingResultSaveData result, bool makeClaimable, PendingResultBindMode mode)
+        {
+            var execution = result == null ? null : _state.GetActivityExecution(result.sourceExecutionId);
+            if (execution == null || _state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) ||
+                execution.status == ActivityRuntimeStatus.Completed || execution.status == ActivityRuntimeStatus.Cancelled ||
+                !string.Equals(execution.activityId, result.sourceId, StringComparison.Ordinal) ||
+                (!string.IsNullOrWhiteSpace(execution.pendingResultId) && !string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal)))
+                return false;
+            if (mode == PendingResultBindMode.Create &&
+                (execution.status != ActivityRuntimeStatus.Running || !string.IsNullOrWhiteSpace(execution.pendingResultId)))
+                return false;
+            execution.pendingResultId = result.resultId;
+            if (makeClaimable)
+                execution.status = ActivityRuntimeStatus.ResultPending;
+            return _state.UpdateActivityExecution(execution);
+        }
+
+        public bool CanClaim(PendingResultSaveData result)
+        {
+            var execution = result == null ? null : _state.GetActivityExecution(result.sourceExecutionId);
+            return execution != null && !_state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) &&
+                   execution.status == ActivityRuntimeStatus.ResultPending &&
+                   string.Equals(execution.activityId, result.sourceId, StringComparison.Ordinal) &&
+                   string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal);
+        }
+
+        public bool Resolve(PendingResultSaveData result)
+        {
+            if (!CanClaim(result))
+                return false;
+            var execution = _state.GetActivityExecution(result.sourceExecutionId);
+            if (_state.ConfigProvider.TryGetActivity(execution.activityId, out var activity) && activity != null && !activity.isRepeatable)
+                _state.CompleteActivity(execution.activityId);
+            return _state.RemoveActivityExecution(execution.executionId);
+        }
+    }
+
+    internal sealed class QuestPendingResultSourceHandler : IPendingResultSourceHandler
+    {
+        private readonly PlayerState _state;
+
+        public QuestPendingResultSourceHandler(PlayerState state) => _state = state ?? throw new ArgumentNullException(nameof(state));
+        public string SourceType => PendingResultSourceType.Quest;
+        public bool AcceptsOrigin(string origin) => string.Equals(origin, PendingResultOrigin.QuestReward, StringComparison.Ordinal);
+
+        public bool TryBind(PendingResultSaveData result, bool makeClaimable, PendingResultBindMode mode)
+        {
+            var quest = result == null ? null : _state.GetQuestInstance(result.sourceExecutionId);
+            if (quest == null || _state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) ||
+                quest.rewardsGranted || quest.status == QuestInstanceStatus.Completed || quest.status == QuestInstanceStatus.Expired ||
+                !string.Equals(quest.questId, result.sourceId, StringComparison.Ordinal) ||
+                (!string.IsNullOrWhiteSpace(quest.pendingResultId) && !string.Equals(quest.pendingResultId, result.resultId, StringComparison.Ordinal)))
+                return false;
+            if (mode == PendingResultBindMode.Create &&
+                (quest.status != QuestInstanceStatus.Active || !string.IsNullOrWhiteSpace(quest.pendingResultId)))
+                return false;
+            quest.pendingResultId = result.resultId;
+            quest.status = QuestInstanceStatus.RewardPending;
+            return _state.SetQuestInstance(quest);
+        }
+
+        public bool CanClaim(PendingResultSaveData result)
+        {
+            var quest = result == null ? null : _state.GetQuestInstance(result.sourceExecutionId);
+            return quest != null && !_state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) &&
+                   quest.status == QuestInstanceStatus.RewardPending &&
+                   string.Equals(quest.questId, result.sourceId, StringComparison.Ordinal) &&
+                   string.Equals(quest.pendingResultId, result.resultId, StringComparison.Ordinal);
+        }
+
+        public bool Resolve(PendingResultSaveData result)
+        {
+            if (!CanClaim(result))
+                return false;
+            var quest = _state.GetQuestInstance(result.sourceExecutionId);
+            quest.status = QuestInstanceStatus.Completed;
+            quest.rewardsGranted = true;
+            quest.pendingResultId = null;
+            return _state.SetQuestInstance(quest);
+        }
+    }
+
+    internal sealed class PersistentPendingResultSourceHandler : IPendingResultSourceHandler
+    {
+        private readonly PlayerState _state;
+
+        private readonly HashSet<string> _origins;
+
+        public PersistentPendingResultSourceHandler(string sourceType, PlayerState state, params string[] origins)
+        {
+            SourceType = string.IsNullOrWhiteSpace(sourceType) ? throw new ArgumentException("Source type is required.", nameof(sourceType)) : sourceType;
+            _state = state ?? throw new ArgumentNullException(nameof(state));
+            _origins = new HashSet<string>(origins ?? Array.Empty<string>(), StringComparer.Ordinal);
+        }
+
+        public string SourceType { get; }
+        public bool AcceptsOrigin(string origin) => !string.IsNullOrWhiteSpace(origin) && _origins.Contains(origin);
+        public bool TryBind(PendingResultSaveData result, bool makeClaimable, PendingResultBindMode mode) =>
+            _state.TryBindPersistentResultSource(result, mode != PendingResultBindMode.Create);
+        public bool CanClaim(PendingResultSaveData result) => _state.CanClaimPersistentResultSource(result);
+        public bool Resolve(PendingResultSaveData result) => _state.ResolvePersistentResultSource(result);
     }
 
     public sealed class PendingResultService : IPendingResultService
     {
         private readonly PlayerState _state;
         private readonly StorageService _storage;
-        private readonly IPendingResultSourceLifecycle _sourceLifecycle;
+        private readonly PendingResultSourceRegistry _sourceLifecycle;
         private readonly Dictionary<string, PendingResultSaveData> _results = new Dictionary<string, PendingResultSaveData>(StringComparer.Ordinal);
 
         internal PendingResultService(PlayerState state, StorageService storage)
         {
             _state = state ?? throw new ArgumentNullException(nameof(state));
             _storage = storage ?? throw new ArgumentNullException(nameof(storage));
-            _sourceLifecycle = state;
+            _sourceLifecycle = new PendingResultSourceRegistry();
+            _sourceLifecycle.Register(new ActivityPendingResultSourceHandler(state));
+            _sourceLifecycle.Register(new QuestPendingResultSourceHandler(state));
+            _sourceLifecycle.Register(new PersistentPendingResultSourceHandler(
+                PendingResultSourceType.Combat,
+                state,
+                PendingResultOrigin.CombatLoot,
+                PendingResultOrigin.ActivityLootInCombat,
+                PendingResultOrigin.BroughtConsumable));
+            _sourceLifecycle.Register(new PersistentPendingResultSourceHandler(PendingResultSourceType.Craft, state, PendingResultOrigin.CraftOutput));
         }
 
         public event Action<PendingResultResolvedEvent> Resolved;
+
+        public void RegisterSourceHandler(IPendingResultSourceHandler handler) => _sourceLifecycle.Register(handler);
 
         public PendingResultSaveData Get(string resultId) => !string.IsNullOrWhiteSpace(resultId) && _results.TryGetValue(resultId, out var value) ? CloneResult(value) : null;
 
@@ -128,31 +294,36 @@ namespace GuildIdle.Player
                 if (!TryNormalize(source, out var normalized) || _results.ContainsKey(normalized.resultId))
                 {
                     _state.MarkNormalized();
+                    _state.QuarantinePendingResultSource(source);
+                    UnityEngine.Debug.LogError($"[PendingResult] Corrupt result '{source?.resultId ?? "<missing>"}' was quarantined; its source remains blocked to prevent reward reroll.");
                     continue;
                 }
                 var sourceKey = $"{normalized.sourceType}\n{normalized.sourceExecutionId}";
                 if (!sourceKeys.Add(sourceKey))
                 {
                     _state.MarkNormalized();
+                    _state.QuarantinePendingResultSource(normalized);
+                    UnityEngine.Debug.LogError($"[PendingResult] Duplicate source result '{normalized.resultId}' was quarantined; its source remains blocked.");
                     continue;
                 }
                 _results.Add(normalized.resultId, normalized);
                 var makeClaimable = string.Equals(normalized.sourceType, PendingResultSourceType.Quest, StringComparison.Ordinal);
                 if (string.Equals(normalized.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
                     makeClaimable = _state.GetActivityExecution(normalized.sourceExecutionId)?.status == ActivityRuntimeStatus.ResultPending;
-                if (!_sourceLifecycle.TryBind(normalized, makeClaimable))
+                if (!_sourceLifecycle.TryBind(normalized, makeClaimable, PendingResultBindMode.Restore))
                 {
-                    _results.Remove(normalized.resultId);
-                    sourceKeys.Remove(sourceKey);
                     _state.MarkNormalized();
+                    _state.QuarantinePendingResultSource(normalized);
+                    UnityEngine.Debug.LogError($"[PendingResult] Result '{normalized.resultId}' could not bind to source and remains blocked for manual recovery.");
                 }
             }
         }
 
         public PendingResultFormationResult CreateOrAppend(string operationId, PendingResultDraft draft, bool makeClaimable, long expectedResultRevision = 0)
         {
-            if (draft == null || string.IsNullOrWhiteSpace(draft.SourceType) || string.IsNullOrWhiteSpace(draft.SourceExecutionId) || string.IsNullOrWhiteSpace(operationId))
-                return FormationFailure("InvalidFormation", "Source type, execution id and operation id are required.");
+            if (draft == null || string.IsNullOrWhiteSpace(draft.SourceType) || string.IsNullOrWhiteSpace(draft.SourceId) ||
+                string.IsNullOrWhiteSpace(draft.SourceExecutionId) || string.IsNullOrWhiteSpace(operationId) || !_sourceLifecycle.HasHandler(draft.SourceType))
+                return FormationFailure("InvalidFormation", "Registered source type, source id, execution id and operation id are required.");
 
             var resultId = BuildResultId(draft.SourceType, draft.SourceExecutionId);
             var aggregateId = resultId;
@@ -165,7 +336,8 @@ namespace GuildIdle.Player
             }
 
             var before = _state.ToSaveData();
-            if (!_results.TryGetValue(resultId, out var result))
+            var aggregateExisted = _results.TryGetValue(resultId, out var result);
+            if (!aggregateExisted)
             {
                 if (expectedResultRevision != 0)
                     return FormationFailure("StaleResultRevision", "A new result must start at revision 0.");
@@ -196,6 +368,9 @@ namespace GuildIdle.Player
             }
 
             var entries = new List<PendingResultEntrySaveData>(result.entries ?? Array.Empty<PendingResultEntrySaveData>());
+            var equipmentInstanceIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var existingEntry in entries)
+                if (existingEntry != null && !string.IsNullOrWhiteSpace(existingEntry.instanceId)) equipmentInstanceIds.Add(existingEntry.instanceId);
             foreach (var entry in draft.Entries ?? Array.Empty<PendingResultEntryDraft>())
             {
                 if (entry == null || entry.Quantity <= 0 || string.IsNullOrWhiteSpace(entry.RewardType) || string.IsNullOrWhiteSpace(entry.TargetId) || string.IsNullOrWhiteSpace(entry.Origin))
@@ -208,6 +383,25 @@ namespace GuildIdle.Player
                     _state.RestoreTransactional(before);
                     return FormationFailure(validationCode, validationError);
                 }
+                if (!_sourceLifecycle.AcceptsOrigin(draft.SourceType, entry.Origin))
+                {
+                    _state.RestoreTransactional(before);
+                    return FormationFailure("InvalidOrigin", $"Origin '{entry.Origin}' is not valid for source type '{draft.SourceType}'.");
+                }
+                if (IsSkillExp(entry.RewardType) && (string.IsNullOrWhiteSpace(draft.OwnerHeroId) || !_state.HasHero(draft.OwnerHeroId)))
+                {
+                    _state.RestoreTransactional(before);
+                    return FormationFailure("InvalidOwner", "SkillExp result entry requires an acquired owner hero.");
+                }
+                var instanceId = entry.InstanceId;
+                if (string.IsNullOrWhiteSpace(instanceId) && IsSingleItemEntry(entry))
+                    instanceId = Guid.NewGuid().ToString("N");
+                if (!string.IsNullOrWhiteSpace(instanceId) &&
+                    (!equipmentInstanceIds.Add(instanceId) || _state.MutableItemInstances.ContainsKey(instanceId)))
+                {
+                    _state.RestoreTransactional(before);
+                    return FormationFailure("InstanceConflict", $"Equipment instance id '{instanceId}' is already in use.");
+                }
                 entries.Add(new PendingResultEntrySaveData
                 {
                     entryId = Guid.NewGuid().ToString("N"),
@@ -216,13 +410,14 @@ namespace GuildIdle.Player
                     targetId = entry.TargetId,
                     quantity = entry.Quantity,
                     origin = entry.Origin,
-                    quality = entry.Quality
+                    quality = entry.Quality,
+                    instanceId = instanceId
                 });
             }
             result.entries = entries.ToArray();
             result.revision++;
 
-            if (!_sourceLifecycle.TryBind(result, makeClaimable))
+            if (!_sourceLifecycle.TryBind(result, makeClaimable, aggregateExisted ? PendingResultBindMode.Append : PendingResultBindMode.Create))
             {
                 _state.RestoreTransactional(before);
                 return FormationFailure("SourceTransitionFailed", "Could not bind PendingResult to its source.");
@@ -425,12 +620,35 @@ namespace GuildIdle.Player
 
         private string ClaimEntries(PendingResultSaveData result, List<PendingResultEntrySaveData> entries, bool allowPartial, HashSet<string> changedEntries)
         {
+            var nonItemEntries = new List<PendingResultEntrySaveData>();
+            var nonItemMutations = new List<RewardMutation>();
             foreach (var entry in entries)
             {
-                if (entry == null || entry.quantity <= 0)
+                if (entry == null || entry.quantity <= 0 || IsItemReward(entry.rewardType))
+                    continue;
+                if (!TryBuildRewardMutation(result, entry, entry.quantity, out var mutation, out var mutationError))
+                    return mutationError;
+                nonItemEntries.Add(entry);
+                nonItemMutations.Add(mutation);
+            }
+
+            if (nonItemMutations.Count > 0)
+            {
+                if (!_state.TryApplyRewardBatch(nonItemMutations.ToArray(), out _, out var applyError))
+                    return applyError ?? "Reward mutation batch failed.";
+                foreach (var entry in nonItemEntries)
+                {
+                    entry.quantity = 0;
+                    changedEntries.Add(entry.entryId);
+                }
+            }
+
+            foreach (var entry in entries)
+            {
+                if (entry == null || entry.quantity <= 0 || !IsItemReward(entry.rewardType))
                     continue;
                 var error = ClaimOne(result, entry, entry.quantity, allowPartial, changedEntries);
-                if (error != null && !allowPartial)
+                if (error != null)
                     return error;
             }
             return null;
@@ -444,7 +662,7 @@ namespace GuildIdle.Player
                     return "Item entry quantity exceeds the supported range.";
                 if (!_state.ConfigProvider.TryGetItem(entry.targetId, out _))
                     return $"Unknown item reward target '{entry.targetId}'.";
-                if (!_storage.TryAddResultItem(entry.targetId, (int)quantity, entry.quality, allowPartial, out var accepted, out _, out _, out var error))
+                if (!_storage.TryAddResultItem(entry.targetId, (int)quantity, entry.quality, allowPartial, entry.instanceId, out var accepted, out _, out _, out var error))
                     return error;
                 if (accepted <= 0)
                     return allowPartial ? null : "Storage capacity is insufficient.";
@@ -569,11 +787,12 @@ namespace GuildIdle.Player
             }
             if (IsItemReward(entry.RewardType))
             {
-                if (!_state.ConfigProvider.TryGetItem(entry.TargetId, out var item) || item == null ||
+                if (!TryValidateItemTarget(type, entry.TargetId) ||
+                    !_state.ConfigProvider.TryGetItem(entry.TargetId, out var item) || item == null ||
                     !_state.ConfigProvider.TryGetStorageRuleForItemKind(item.Kind, out var rule))
                 {
                     code = "UnknownItemReward";
-                    error = $"Unknown item reward target '{entry.TargetId}'.";
+                    error = $"Item reward target '{entry.TargetId}' is invalid for type '{entry.RewardType}'.";
                     return false;
                 }
                 var single = string.Equals(rule.mode, "single", StringComparison.Ordinal);
@@ -581,6 +800,12 @@ namespace GuildIdle.Player
                 {
                     code = "InvalidEquipmentQuantity";
                     error = "Single equipment result entries must have quantity 1.";
+                    return false;
+                }
+                if (!single && !string.IsNullOrWhiteSpace(entry.InstanceId))
+                {
+                    code = "InvalidInstancePayload";
+                    error = "Only single-item result entries can specify instanceId.";
                     return false;
                 }
                 if (!single && entry.Quality != 0)
@@ -592,26 +817,87 @@ namespace GuildIdle.Player
                 return true;
             }
 
-            if (entry.Quality != 0)
+            if (entry.Quality != 0 || !string.IsNullOrWhiteSpace(entry.InstanceId))
             {
-                code = "InvalidQuality";
-                error = "Only single-item result entries can specify quality.";
+                code = "InvalidInstancePayload";
+                error = "Only single-item result entries can specify quality or instanceId.";
                 return false;
             }
             switch (type)
             {
                 case RewardTypeEnum.Gold:
+                    if (!RuntimeConfigs.Items.TryGetCurrency(entry.TargetId, out _))
+                        return InvalidTarget(entry, out code, out error);
+                    return true;
                 case RewardTypeEnum.Currency:
+                    if (!RuntimeConfigs.Items.TryGetCurrency(entry.TargetId, out _))
+                        return InvalidTarget(entry, out code, out error);
+                    return true;
                 case RewardTypeEnum.SkillExp:
+                    if (string.IsNullOrWhiteSpace(entry.TargetId) || !IsKnownSkill(entry.TargetId))
+                        return InvalidTarget(entry, out code, out error);
+                    return true;
                 case RewardTypeEnum.Hero:
+                    if (!RuntimeConfigs.Heroes.TryGet(entry.TargetId, out _))
+                        return InvalidTarget(entry, out code, out error);
+                    return true;
                 case RewardTypeEnum.UnlockBuilding:
+                    if (!RuntimeConfigs.Buildings.TryGet(entry.TargetId, out _))
+                        return InvalidTarget(entry, out code, out error);
+                    return true;
                 case RewardTypeEnum.UnlockLocation:
+                    if (!RuntimeConfigs.Map.TryGetLocation(entry.TargetId, out _))
+                        return InvalidTarget(entry, out code, out error);
                     return true;
                 default:
                     code = "UnsupportedRewardType";
                     error = $"Reward type '{entry.RewardType}' is not claimable by PendingResult.";
                     return false;
             }
+        }
+
+        private static bool InvalidTarget(PendingResultEntryDraft entry, out string code, out string error)
+        {
+            code = "InvalidRewardTarget";
+            error = $"Reward target '{entry.TargetId}' is invalid for type '{entry.RewardType}'.";
+            return false;
+        }
+
+        private static bool TryValidateItemTarget(RewardTypeEnum type, string targetId)
+        {
+            switch (type)
+            {
+                case RewardTypeEnum.Resource:
+                    return RuntimeConfigs.Items.TryGetResource(targetId, out _);
+                case RewardTypeEnum.Equipment:
+                    return RuntimeConfigs.Items.TryGetEquipmentWeapon(targetId, out _) || RuntimeConfigs.Items.TryGetEquipmentArmor(targetId, out _);
+                case RewardTypeEnum.Consumable:
+                    return RuntimeConfigs.Items.TryGetConsumable(targetId, out _);
+                case RewardTypeEnum.Recipe:
+                    return RuntimeConfigs.Items.TryGetRecipe(targetId, out _);
+                case RewardTypeEnum.Item:
+                    return RuntimeConfigs.Items.TryGet(targetId, out _);
+                default:
+                    return false;
+            }
+        }
+
+        private static bool IsKnownSkill(string skillId)
+        {
+            foreach (var skill in RuntimeConfigs.Activities.Skills)
+                if (skill != null && string.Equals(skill.skillId, skillId, StringComparison.Ordinal)) return true;
+            return false;
+        }
+
+        private static bool IsSkillExp(string rewardType) =>
+            ActivityTypeParser.TryParseRewardType(rewardType, out var type) && type == RewardTypeEnum.SkillExp;
+
+        private bool IsSingleItemEntry(PendingResultEntryDraft entry)
+        {
+            return entry != null && IsItemReward(entry.RewardType) &&
+                   _state.ConfigProvider.TryGetItem(entry.TargetId, out var item) && item != null &&
+                   _state.ConfigProvider.TryGetStorageRuleForItemKind(item.Kind, out var rule) &&
+                   string.Equals(rule.mode, "single", StringComparison.Ordinal);
         }
 
         private static void NormalizeEntries(PendingResultSaveData result)
@@ -636,7 +922,7 @@ namespace GuildIdle.Player
             if (!string.IsNullOrWhiteSpace(draft.OperationContext))
                 return value + "|" + draft.OperationContext;
             foreach (var entry in draft.Entries ?? Array.Empty<PendingResultEntryDraft>())
-                if (entry != null) value += $"|{entry.SortOrder}:{entry.RewardType}:{entry.TargetId}:{entry.Quantity}:{entry.Origin}:{entry.Quality}";
+                if (entry != null) value += $"|{entry.SortOrder}:{entry.RewardType}:{entry.TargetId}:{entry.Quantity}:{entry.Origin}:{entry.Quality}:{entry.InstanceId}";
             return value;
         }
 
@@ -644,7 +930,7 @@ namespace GuildIdle.Player
         {
             var value = string.Empty;
             foreach (var entry in entries ?? Array.Empty<PendingResultEntryDraft>())
-                if (entry != null) value += $"{entry.SortOrder}:{entry.RewardType}:{entry.TargetId}:{entry.Quantity}:{entry.Origin}:{entry.Quality}|";
+                if (entry != null) value += $"{entry.SortOrder}:{entry.RewardType}:{entry.TargetId}:{entry.Quantity}:{entry.Origin}:{entry.Quality}:{entry.InstanceId}|";
             return value;
         }
 
@@ -673,38 +959,48 @@ namespace GuildIdle.Player
         private bool TryNormalize(PendingResultSaveData source, out PendingResultSaveData result)
         {
             result = null;
-            if (source == null || string.IsNullOrWhiteSpace(source.resultId) || string.IsNullOrWhiteSpace(source.sourceType) || string.IsNullOrWhiteSpace(source.sourceExecutionId))
+            if (source == null || string.IsNullOrWhiteSpace(source.resultId) || string.IsNullOrWhiteSpace(source.sourceType) ||
+                string.IsNullOrWhiteSpace(source.sourceId) || string.IsNullOrWhiteSpace(source.sourceExecutionId) ||
+                !_sourceLifecycle.HasHandler(source.sourceType) ||
+                !string.Equals(source.resultId, BuildResultId(source.sourceType, source.sourceExecutionId), StringComparison.Ordinal) ||
+                !string.Equals(source.state, PendingResultState.ResultPending, StringComparison.Ordinal) ||
+                source.revision < 1 || source.entries == null || source.entries.Length == 0)
                 return false;
             result = CloneResult(source);
-            if (!string.Equals(source.state, PendingResultState.ResultPending, StringComparison.Ordinal))
-                _state.MarkNormalized();
-            if (result.revision < 1)
-                _state.MarkNormalized();
-            result.revision = Math.Max(1, result.revision);
-            var entryCount = result.entries?.Length ?? 0;
-            NormalizeEntries(result);
-            if (result.entries.Length != entryCount)
-                _state.MarkNormalized();
             var entryIds = new HashSet<string>(StringComparer.Ordinal);
+            var instanceIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var entry in result.entries)
             {
-                if (string.IsNullOrWhiteSpace(entry.entryId) || !entryIds.Add(entry.entryId))
+                if (entry == null || entry.quantity <= 0 || string.IsNullOrWhiteSpace(entry.entryId) || !entryIds.Add(entry.entryId) ||
+                    string.IsNullOrWhiteSpace(entry.rewardType) || string.IsNullOrWhiteSpace(entry.targetId) ||
+                    !_sourceLifecycle.AcceptsOrigin(result.sourceType, entry.origin))
+                    return false;
+                var draft = new PendingResultEntryDraft
                 {
-                    entry.entryId = Guid.NewGuid().ToString("N");
-                    entryIds.Add(entry.entryId);
+                    RewardType = entry.rewardType,
+                    TargetId = entry.targetId,
+                    Quantity = entry.quantity,
+                    Origin = entry.origin,
+                    Quality = entry.quality,
+                    InstanceId = entry.instanceId
+                };
+                if (!TryValidateDraftEntry(draft, out _, out _))
+                    return false;
+                if (IsSkillExp(entry.rewardType) && (string.IsNullOrWhiteSpace(result.ownerHeroId) || !_state.HasHero(result.ownerHeroId)))
+                    return false;
+                var instanceId = draft.InstanceId;
+                if (string.IsNullOrWhiteSpace(instanceId) && IsSingleItemEntry(draft))
+                    instanceId = Guid.NewGuid().ToString("N");
+                if (!string.Equals(entry.instanceId, instanceId, StringComparison.Ordinal))
+                {
+                    entry.instanceId = instanceId;
                     _state.MarkNormalized();
                 }
-                if (entry.quality < 0)
-                {
-                    entry.quality = 0;
-                    _state.MarkNormalized();
-                }
-                if (_state.ConfigProvider.TryGetItem(entry.targetId, out var item) && item != null &&
-                    _state.ConfigProvider.TryGetStorageRuleForItemKind(item.Kind, out var rule) &&
-                    string.Equals(rule.mode, "single", StringComparison.Ordinal) && entry.quantity != 1)
+                if (!string.IsNullOrWhiteSpace(entry.instanceId) &&
+                    (!instanceIds.Add(entry.instanceId) || _state.MutableItemInstances.ContainsKey(entry.instanceId)))
                     return false;
             }
-            return result.entries.Length > 0;
+            return true;
         }
 
         private static PendingResultSaveData CloneResult(PendingResultSaveData source)
@@ -723,7 +1019,8 @@ namespace GuildIdle.Player
                     targetId = entry.targetId,
                     quantity = entry.quantity,
                     origin = entry.origin,
-                    quality = entry.quality
+                    quality = entry.quality,
+                    instanceId = entry.instanceId
                 };
             }
             return new PendingResultSaveData

@@ -570,17 +570,54 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
-        public void SaveService_RemovesCorruptEmptyPendingResultAndPersistsRepair()
+        public void SaveService_QuarantinesCorruptPendingResultWithoutAllowingReroll()
         {
             var storage = new MemorySaveStorage();
             storage.SetString(
                 SaveService.SaveKey,
                 "{\"saveVersion\":7,\"currentStageId\":\"stage_arrival\",\"pendingResults\":[{\"resultId\":\"result:Combat:broken\",\"sourceType\":\"Combat\",\"sourceExecutionId\":\"broken\",\"revision\":0,\"entries\":[]}]}");
 
-            var repaired = SaveService.Load(_factory, storage);
+            PlayerState repaired;
+            using (var logs = new CapturingLogHandler())
+            {
+                repaired = SaveService.Load(_factory, storage);
+                logs.AssertErrorContains("was quarantined; its source remains blocked to prevent reward reroll");
+            }
 
             Assert.That(repaired.PendingResults.GetAll(), Is.Empty);
+            Assert.That(repaired.ToSaveData().resultSources, Has.Length.EqualTo(1));
+            Assert.That(repaired.ToSaveData().resultSources[0].state, Is.EqualTo(PendingResultSourceState.Blocked));
+            var retry = repaired.PendingResults.CreateCombatResult(
+                "retry-corrupt-combat",
+                new PendingResultDraft { SourceId = "combat-source", SourceExecutionId = "broken" },
+                null,
+                null,
+                repaired.Storage.GetSnapshot().Revision);
+            Assert.That(retry.Success, Is.False);
+            Assert.That(retry.Code, Is.EqualTo("SourceTransitionFailed"));
             Assert.That(storage.GetString(SaveService.SaveKey, string.Empty), Does.Contain("\"pendingResults\":[]"));
+        }
+
+        [Test]
+        public void CorruptQuestResultKeepsQuestBlockedInRewardPending()
+        {
+            var storage = new MemorySaveStorage();
+            storage.SetString(
+                SaveService.SaveKey,
+                "{\"saveVersion\":7,\"currentStageId\":\"stage_arrival\",\"questInstances\":[{\"instanceId\":\"story:quest_build_hut\",\"questId\":\"quest_build_hut\",\"status\":\"RewardPending\",\"pendingResultId\":\"result:Quest:story:quest_build_hut\"}],\"pendingResults\":[{\"resultId\":\"result:Quest:story:quest_build_hut\",\"sourceType\":\"Quest\",\"sourceId\":\"quest_build_hut\",\"sourceExecutionId\":\"story:quest_build_hut\",\"state\":\"ResultPending\",\"revision\":1,\"entries\":[{\"entryId\":\"broken-entry\",\"rewardType\":\"UnknownReward\",\"targetId\":\"gold_id\",\"quantity\":1,\"origin\":\"quest_reward\"}]}]}");
+
+            PlayerState repaired;
+            using (var logs = new CapturingLogHandler())
+            {
+                repaired = SaveService.Load(_factory, storage);
+                logs.AssertErrorContains("was quarantined; its source remains blocked to prevent reward reroll");
+            }
+
+            var quest = repaired.GetQuestInstance("story:quest_build_hut");
+            Assert.That(quest.status, Is.EqualTo(QuestInstanceStatus.RewardPending));
+            Assert.That(quest.pendingResultId, Is.EqualTo("result:Quest:story:quest_build_hut"));
+            Assert.That(quest.rewardsGranted, Is.False);
+            Assert.That(repaired.ToSaveData().resultSources[0].state, Is.EqualTo(PendingResultSourceState.Blocked));
         }
 
         [Test]

@@ -78,6 +78,92 @@ namespace GuildIdle.Player.Editor
         }
 
         [Test]
+        public void EquipmentResultPreservesConcreteInstanceIdThroughClaim()
+        {
+            var execution = new ActivityExecutionSaveData
+            {
+                executionId = "execution-equipment-payload",
+                activityId = "combat_first_map_node",
+                heroId = "ren",
+                status = ActivityRuntimeStatus.Running
+            };
+            Assert.That(_state.AddActivityExecution(execution), Is.True);
+            var formed = _state.PendingResults.CreateOrAppend(
+                "form-equipment-payload",
+                new PendingResultDraft
+                {
+                    SourceType = PendingResultSourceType.Activity,
+                    SourceId = execution.activityId,
+                    SourceExecutionId = execution.executionId,
+                    OwnerHeroId = execution.heroId,
+                    Entries = new[]
+                    {
+                        new PendingResultEntryDraft
+                        {
+                            RewardType = "Equipment",
+                            TargetId = "item_wooden_club",
+                            Quantity = 1,
+                            Quality = 9,
+                            Origin = PendingResultOrigin.ActivityReward,
+                            InstanceId = "equipment-reward-instance"
+                        }
+                    }
+                },
+                true);
+
+            Assert.That(formed.Success, Is.True);
+            Assert.That(formed.Result.entries[0].instanceId, Is.EqualTo("equipment-reward-instance"));
+            var claimed = _state.PendingResults.ClaimAll(
+                "claim-equipment-payload",
+                formed.Result.resultId,
+                formed.Result.revision,
+                _state.Storage.GetSnapshot().Revision);
+
+            Assert.That(claimed.Success, Is.True);
+            Assert.That(_state.GetItemInstance("equipment-reward-instance"), Is.Not.Null);
+            Assert.That(_state.GetItemInstance("equipment-reward-instance").quality, Is.EqualTo(9));
+        }
+
+        [Test]
+        public void GeneratedEquipmentPayloadDoesNotMutateDraftAndReplaysByOperationId()
+        {
+            var execution = new ActivityExecutionSaveData
+            {
+                executionId = "execution-generated-equipment-payload",
+                activityId = "combat_first_map_node",
+                heroId = "ren",
+                status = ActivityRuntimeStatus.Running
+            };
+            Assert.That(_state.AddActivityExecution(execution), Is.True);
+            var entry = new PendingResultEntryDraft
+            {
+                RewardType = "Equipment",
+                TargetId = "item_wooden_club",
+                Quantity = 1,
+                Quality = 4,
+                Origin = PendingResultOrigin.ActivityReward
+            };
+            var draft = new PendingResultDraft
+            {
+                SourceType = PendingResultSourceType.Activity,
+                SourceId = execution.activityId,
+                SourceExecutionId = execution.executionId,
+                OwnerHeroId = execution.heroId,
+                Entries = new[] { entry }
+            };
+
+            var formed = _state.PendingResults.CreateOrAppend("form-generated-equipment-payload", draft, true);
+            var replay = _state.PendingResults.CreateOrAppend("form-generated-equipment-payload", draft, true);
+
+            Assert.That(formed.Success, Is.True);
+            Assert.That(formed.Result.entries[0].instanceId, Is.Not.Empty);
+            Assert.That(entry.InstanceId, Is.Null);
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(replay.Result.entries[0].instanceId, Is.EqualTo(formed.Result.entries[0].instanceId));
+        }
+
+        [Test]
         public void LoadNormalizesOwnerContextPairsAgainstConfiguredStateSemantics()
         {
             var loaded = _factory.Create(new SaveData
@@ -195,6 +281,45 @@ namespace GuildIdle.Player.Editor
             Assert.That(_state.GetItemStacks(), Has.Length.EqualTo(20));
             Assert.That(_state.GetItem("resource_pine_wood"), Is.EqualTo(2000));
             Assert.That(_state.Storage.GetSnapshot().Revision, Is.EqualTo(filled.StorageRevision));
+        }
+
+        [Test]
+        public void PartialReleaseMergesIntoAvailableStackWhenStorageIsFull()
+        {
+            var stacks = new ItemStackSaveData[20];
+            stacks[0] = new ItemStackSaveData { stackId = "available", itemId = "resource_pine_wood", quantity = 50, stateId = "on_storage" };
+            stacks[1] = new ItemStackSaveData
+            {
+                stackId = "reserved",
+                itemId = "resource_pine_wood",
+                quantity = 50,
+                stateId = "reserved_for_task",
+                contextType = StorageContextType.ActivityExecution,
+                contextId = "activity-release"
+            };
+            for (var index = 2; index < stacks.Length; index++)
+                stacks[index] = new ItemStackSaveData { stackId = $"full-{index:D2}", itemId = "resource_pine_wood", quantity = 100, stateId = "on_storage" };
+            var state = _factory.Create(new SaveData
+            {
+                saveVersion = SaveData.CurrentSaveVersion,
+                currentStageId = "stage_arrival",
+                unlockedBuildings = new[] { "building_warehouse" },
+                buildingLevels = new[] { new BuildingLevelSaveEntry { buildingId = "building_warehouse", level = 0 } },
+                itemStacks = stacks
+            });
+            Assert.That(state.Storage.GetSnapshot().FreeSlots, Is.Zero);
+
+            var released = state.Storage.Release(
+                "release-into-existing",
+                state.Storage.GetSnapshot().Revision,
+                "reserved",
+                25,
+                new StorageActionContext(StorageContextType.ActivityExecution, "activity-release"));
+
+            Assert.That(released.Success, Is.True);
+            Assert.That(Array.Find(state.GetItemStacks(), stack => stack.stackId == "available").quantity, Is.EqualTo(75));
+            Assert.That(Array.Find(state.GetItemStacks(), stack => stack.stackId == "reserved").quantity, Is.EqualTo(25));
+            Assert.That(state.Storage.GetSnapshot().OccupiedSlots, Is.EqualTo(20));
         }
 
         [Test]
@@ -321,6 +446,47 @@ namespace GuildIdle.Player.Editor
         }
 
         [Test]
+        public void ClaimAvailableRollsBackAllNonItemsWhenOneGrantFails()
+        {
+            var execution = new ActivityExecutionSaveData
+            {
+                executionId = "execution-non-item-rollback",
+                activityId = "combat_first_map_node",
+                heroId = "ren",
+                status = ActivityRuntimeStatus.Running
+            };
+            Assert.That(_state.AddActivityExecution(execution), Is.True);
+            var formed = _state.PendingResults.CreateOrAppend(
+                "form-non-item-rollback",
+                new PendingResultDraft
+                {
+                    SourceType = PendingResultSourceType.Activity,
+                    SourceId = execution.activityId,
+                    SourceExecutionId = execution.executionId,
+                    OwnerHeroId = execution.heroId,
+                    Entries = new[]
+                    {
+                        new PendingResultEntryDraft { SortOrder = 0, RewardType = "Currency", TargetId = "gold_id", Quantity = 3, Origin = PendingResultOrigin.ActivityReward },
+                        new PendingResultEntryDraft { SortOrder = 1, RewardType = "SkillExp", TargetId = "skill_gathering", Quantity = (long)int.MaxValue + 1, Origin = PendingResultOrigin.ActivityReward }
+                    }
+                },
+                true);
+
+            var claim = _state.PendingResults.ClaimAvailable(
+                "claim-non-item-rollback",
+                formed.Result.resultId,
+                formed.Result.revision,
+                _state.Storage.GetSnapshot().Revision);
+
+            Assert.That(claim.Success, Is.False);
+            Assert.That(claim.Code, Is.EqualTo("Rejected"));
+            Assert.That(_state.GetCurrency("gold_id"), Is.Zero);
+            Assert.That(_state.GetHeroSkillExp("ren", "skill_gathering"), Is.Zero);
+            Assert.That(_state.PendingResults.Get(formed.Result.resultId).revision, Is.EqualTo(formed.Result.revision));
+            Assert.That(_state.PendingResults.Get(formed.Result.resultId).entries, Has.Length.EqualTo(2));
+        }
+
+        [Test]
         public void CraftDefinitionRewardIsRejectedInsteadOfEnteringItemPath()
         {
             var execution = new ActivityExecutionSaveData
@@ -347,6 +513,71 @@ namespace GuildIdle.Player.Editor
             Assert.That(formed.Code, Is.EqualTo("UnsupportedRewardType"));
             Assert.That(_state.PendingResults.GetAll(), Is.Empty);
             Assert.That(_state.GetActivityExecution(execution.executionId).status, Is.EqualTo(ActivityRuntimeStatus.Running));
+        }
+
+        [Test]
+        public void CustomSourceHandlerCanBeRegisteredWithoutChangingPlayerState()
+        {
+            var handler = new TestPendingResultSourceHandler();
+            _state.PendingResults.RegisterSourceHandler(handler);
+            var formed = _state.PendingResults.CreateOrAppend(
+                "form-custom-source",
+                new PendingResultDraft
+                {
+                    SourceType = handler.SourceType,
+                    SourceId = "future-source",
+                    SourceExecutionId = "future-execution",
+                    Entries = new[] { new PendingResultEntryDraft { RewardType = "Currency", TargetId = "gold_id", Quantity = 1, Origin = PendingResultOrigin.CraftOutput } }
+                },
+                true);
+            var discarded = _state.PendingResults.DiscardAll("discard-custom-source", formed.Result.resultId, formed.Result.revision);
+
+            Assert.That(formed.Success, Is.True);
+            Assert.That(handler.BindCalls, Is.EqualTo(1));
+            Assert.That(discarded.Success, Is.True);
+            Assert.That(handler.ResolveCalls, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void CustomSourceHandlerCanBeComposedBeforePendingResultsAreLoaded()
+        {
+            var database = new TestConfigDatabaseBuilder().WithFullPlayerStateTestData().Build();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            var handler = new TestPendingResultSourceHandler();
+            var factory = TestPlayerComposition.CreatePlayerStateFactory(
+                database,
+                new Func<PlayerState, IPendingResultSourceHandler>[] { _ => handler });
+            var state = factory.Create(new SaveData
+            {
+                saveVersion = SaveData.CurrentSaveVersion,
+                currentStageId = "stage_arrival",
+                pendingResults = new[]
+                {
+                    new PendingResultSaveData
+                    {
+                        resultId = "result:FutureSource:future-load",
+                        sourceType = handler.SourceType,
+                        sourceId = "future-source",
+                        sourceExecutionId = "future-load",
+                        state = PendingResultState.ResultPending,
+                        revision = 1,
+                        entries = new[]
+                        {
+                            new PendingResultEntrySaveData
+                            {
+                                entryId = "future-entry",
+                                rewardType = "Currency",
+                                targetId = "gold_id",
+                                quantity = 1,
+                                origin = PendingResultOrigin.CraftOutput
+                            }
+                        }
+                    }
+                }
+            });
+
+            Assert.That(state.PendingResults.Get("result:FutureSource:future-load"), Is.Not.Null);
+            Assert.That(handler.BindCalls, Is.EqualTo(1));
         }
 
         [Test]
@@ -477,10 +708,15 @@ namespace GuildIdle.Player.Editor
                     SourceId = execution.activityId,
                     SourceExecutionId = execution.executionId,
                     OwnerHeroId = execution.heroId,
-                    Entries = new[] { new PendingResultEntryDraft { RewardType = "Resource", TargetId = "resource_pine_wood", Quantity = 4, Origin = PendingResultOrigin.ActivityReward } }
+                    Entries = new[]
+                    {
+                        new PendingResultEntryDraft { RewardType = "Resource", TargetId = "resource_pine_wood", Quantity = 4, Origin = PendingResultOrigin.ActivityReward },
+                        new PendingResultEntryDraft { RewardType = "Equipment", TargetId = "item_wooden_club", Quantity = 1, Quality = 6, Origin = PendingResultOrigin.ActivityReward }
+                    }
                 },
                 true);
             Assert.That(formed.Success, Is.True);
+            var equipmentInstanceId = formed.Result.entries[1].instanceId;
             Assert.That(_state.Save(), Is.True);
 
             var restored = SaveService.Load(_factory, _storage, out var origin);
@@ -490,12 +726,17 @@ namespace GuildIdle.Player.Editor
                 SourceId = execution.activityId,
                 SourceExecutionId = execution.executionId,
                 OwnerHeroId = execution.heroId,
-                Entries = new[] { new PendingResultEntryDraft { RewardType = "Resource", TargetId = "resource_pine_wood", Quantity = 4, Origin = PendingResultOrigin.ActivityReward } }
+                Entries = new[]
+                {
+                    new PendingResultEntryDraft { RewardType = "Resource", TargetId = "resource_pine_wood", Quantity = 4, Origin = PendingResultOrigin.ActivityReward },
+                    new PendingResultEntryDraft { RewardType = "Equipment", TargetId = "item_wooden_club", Quantity = 1, Quality = 6, Origin = PendingResultOrigin.ActivityReward }
+                }
             }, true);
 
             Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV7));
             Assert.That(restored.GetActivityExecution(execution.executionId).status, Is.EqualTo(ActivityRuntimeStatus.ResultPending));
             Assert.That(restored.PendingResults.Get(formed.Result.resultId).entries[0].quantity, Is.EqualTo(4));
+            Assert.That(restored.PendingResults.Get(formed.Result.resultId).entries[1].instanceId, Is.EqualTo(equipmentInstanceId));
             Assert.That(replay.Success, Is.True);
             Assert.That(replay.Replayed, Is.True);
         }
@@ -591,6 +832,28 @@ namespace GuildIdle.Player.Editor
             }
             public void DeleteKey(string key) => _values.Remove(key);
             public void Save() { }
+        }
+
+        private sealed class TestPendingResultSourceHandler : IPendingResultSourceHandler
+        {
+            private string _resultId;
+            public string SourceType => "FutureSource";
+            public int BindCalls { get; private set; }
+            public int ResolveCalls { get; private set; }
+            public bool AcceptsOrigin(string origin) => origin == PendingResultOrigin.CraftOutput;
+            public bool TryBind(PendingResultSaveData result, bool makeClaimable, PendingResultBindMode mode)
+            {
+                BindCalls++;
+                _resultId = result?.resultId;
+                return true;
+            }
+            public bool CanClaim(PendingResultSaveData result) => result != null && result.resultId == _resultId;
+            public bool Resolve(PendingResultSaveData result)
+            {
+                if (!CanClaim(result)) return false;
+                ResolveCalls++;
+                return true;
+            }
         }
     }
 }

@@ -100,16 +100,7 @@ namespace GuildIdle.Player
         public bool TryGetItemState(string stateId, out ItemStateConfigDto state) => _storage.TryGetItemState(stateId, out state);
         public bool TryGetItemStateByAvailabilityMode(string availabilityMode, out ItemStateConfigDto state)
         {
-            state = null;
-            foreach (var candidate in _storage.ItemStates)
-            {
-                if (candidate != null && string.Equals(candidate.availabilityMode, availabilityMode, StringComparison.Ordinal))
-                {
-                    state = candidate;
-                    return true;
-                }
-            }
-            return false;
+            return _storage.TryGetWorkingItemStateByAvailabilityMode(availabilityMode, out state);
         }
         public bool TryGetActivity(string activityId, out ActivityConfigDto activity) => _activities.TryGet(activityId, out activity);
 

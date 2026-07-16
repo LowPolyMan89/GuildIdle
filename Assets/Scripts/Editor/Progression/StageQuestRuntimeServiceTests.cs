@@ -146,6 +146,34 @@ namespace GuildIdle.Progression.Editor
             Assert.That(store.SaveCalls, Is.EqualTo(2));
         }
 
+        [Test]
+        public void ResolvedActivityResultPublishesActivityCompletedIntoQuestRuntime()
+        {
+            var store = new TestStore("stage_1");
+            var configs = Configs(
+                stories: new[] { Story("quest_activity") },
+                conditions: new[] { Condition("quest_activity", "NewGame") },
+                steps: new[] { Step("quest_activity", "complete_activity", "ActivityCompleted", "activity_a", 1) },
+                stages: new[] { Stage("stage_1", null) });
+            var runtime = Runtime(configs, store);
+            runtime.Handle(new NewGame());
+            ProgressionRuntimeUpdate update = null;
+            runtime.Updated += value => update = value;
+
+            ((TestPendingResults)store.PendingResults).RaiseResolved(new PendingResultResolvedEvent
+            {
+                SourceType = PendingResultSourceType.Activity,
+                SourceId = "activity_a",
+                SourceExecutionId = "activity-execution-a",
+                ResultId = "result:Activity:activity-execution-a"
+            });
+
+            Assert.That(store.GetQuestInstance("story:quest_activity").status, Is.EqualTo(QuestInstanceStatus.Completed));
+            Assert.That(store.GetQuestInstance("story:quest_activity").rewardsGranted, Is.True);
+            Assert.That(update, Is.Not.Null);
+            Assert.That(update.CompletedInstanceIds, Has.Member("story:quest_activity"));
+        }
+
         private static ProgressionRuntimeService Runtime(RepositoryProgressionConfigAdapter configs, TestStore store)
         {
             return new ProgressionRuntimeService(
@@ -226,6 +254,8 @@ namespace GuildIdle.Progression.Editor
             private readonly Dictionary<string, PendingResultSaveData> _results = new Dictionary<string, PendingResultSaveData>(StringComparer.Ordinal);
             public TestPendingResults(TestStore store) { _store = store; }
             public event Action<PendingResultResolvedEvent> Resolved;
+            public void RegisterSourceHandler(IPendingResultSourceHandler handler) { }
+            public void RaiseResolved(PendingResultResolvedEvent value) => Resolved?.Invoke(value);
             public PendingResultSaveData Get(string resultId) => _results.TryGetValue(resultId, out var value) ? value : null;
             public PendingResultSaveData[] GetAll() { var values = new PendingResultSaveData[_results.Count]; _results.Values.CopyTo(values, 0); return values; }
             public PendingResultSaveData[] GetSaveData() => GetAll();

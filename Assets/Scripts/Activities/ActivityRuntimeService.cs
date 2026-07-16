@@ -119,7 +119,10 @@ namespace GuildIdle.Activities
 
             if (!string.IsNullOrWhiteSpace(execution.pendingResultId))
             {
-                AddIssue(issues, execution.activityId, "PendingResult", execution.pendingResultId, 0, 0, false, false, "Activity with a non-empty result bag cannot be cancelled by the base runtime.");
+                execution.status = CoreActivityRuntimeStatus.ResultPending;
+                changed = UpdateExecution(execution);
+                if (!changed)
+                    AddIssue(issues, execution.activityId, "PendingResult", execution.pendingResultId, 1, 0, true, false, "Failed to stop activity in ResultPending state.");
                 return FinishCancel(result, issues, changed);
             }
 
@@ -315,17 +318,6 @@ namespace GuildIdle.Activities
                 }
             }
 
-            var previousStatus = execution.status;
-            var previousResultId = execution.pendingResultId;
-            execution.status = CoreActivityRuntimeStatus.ResultPending;
-            execution.pendingResultId = $"result:{PendingResultSourceType.Activity}:{execution.executionId}";
-            if (!UpdateExecution(execution))
-            {
-                execution.status = previousStatus;
-                execution.pendingResultId = previousResultId;
-                AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1, 0, true, false, "Failed to enter ResultPending before result formation.");
-                return;
-            }
             var formation = _activityState.PendingResults.CreateOrAppend(
                 $"activity:{execution.executionId}:completion",
                 BuildPendingDraft(execution, complete, firstComplete),
@@ -333,9 +325,6 @@ namespace GuildIdle.Activities
                 0);
             if (!formation.Success)
             {
-                execution.status = previousStatus;
-                execution.pendingResultId = previousResultId;
-                UpdateExecution(execution);
                 AddIssue(issues, execution.activityId, "PendingResult", execution.executionId, 1, 0, true, false, formation.Message ?? "Failed to form ActivityBag.");
                 return;
             }

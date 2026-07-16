@@ -296,7 +296,7 @@ namespace GuildIdle.Player
 
         public StorageMutationResult Release(string operationId, long expectedStorageRevision, string stackId, int quantity, StorageActionContext actionContext)
         {
-            return MoveStack(operationId, expectedStorageRevision, "release", stackId, quantity, actionContext, ItemAvailabilityMode.Available);
+            return ReleaseStack(operationId, expectedStorageRevision, stackId, quantity, actionContext);
         }
 
         public StorageMutationResult TransferToAction(string operationId, long expectedStorageRevision, string stackId, int quantity, StorageActionContext actionContext)
@@ -374,6 +374,11 @@ namespace GuildIdle.Player
 
         internal bool TryAddResultItem(string itemId, int requested, int quality, bool allowPartial, out int accepted, out string stackId, out string instanceId, out string error)
         {
+            return TryAddResultItem(itemId, requested, quality, allowPartial, null, out accepted, out stackId, out instanceId, out error);
+        }
+
+        internal bool TryAddResultItem(string itemId, int requested, int quality, bool allowPartial, string preferredInstanceId, out int accepted, out string stackId, out string instanceId, out string error)
+        {
             accepted = 0;
             stackId = null;
             instanceId = null;
@@ -396,9 +401,14 @@ namespace GuildIdle.Player
 
             if (string.Equals(rule.mode, "single", StringComparison.Ordinal))
             {
+                if (!string.IsNullOrWhiteSpace(preferredInstanceId) && (accepted != 1 || _state.MutableItemInstances.ContainsKey(preferredInstanceId)))
+                {
+                    error = "Equipment instance id is invalid or already exists.";
+                    return false;
+                }
                 for (var index = 0; index < accepted; index++)
                 {
-                    instanceId = NewInstanceId();
+                    instanceId = string.IsNullOrWhiteSpace(preferredInstanceId) ? NewInstanceId() : preferredInstanceId;
                     _state.MutableItemInstances.Add(instanceId, new ItemInstanceSaveData
                     {
                         instanceId = instanceId,
@@ -497,6 +507,65 @@ namespace GuildIdle.Player
                     moved.contextId = context.ContextId;
                 }
                 return Success(quantity, moved.stackId);
+            });
+        }
+
+        private StorageMutationResult ReleaseStack(string operationId, long expectedStorageRevision, string stackId, int quantity, StorageActionContext context)
+        {
+            return Mutate(operationId, expectedStorageRevision, $"release|{stackId}|{quantity}|{ContextFingerprint(context)}", () =>
+            {
+                if (context == null || quantity <= 0 || !_state.MutableItemStacks.TryGetValue(stackId, out var source) || quantity > source.quantity ||
+                    !TryGetState(source.stateId, out var sourceState) ||
+                    !string.Equals(sourceState.availabilityMode, ItemAvailabilityMode.Reserved, StringComparison.Ordinal) ||
+                    !context.Matches(source.contextType, source.contextId) ||
+                    !TryGetStateByMode(ItemAvailabilityMode.Available, out var availableState) ||
+                    !TryGetRule(source.itemId, out var rule))
+                {
+                    return Failure("Only a reservation owned by this context can be released.");
+                }
+
+                if (quantity == source.quantity)
+                {
+                    source.stateId = availableState.stateId;
+                    source.ownerType = null;
+                    source.ownerId = null;
+                    source.contextType = null;
+                    source.contextId = null;
+                    return Success(quantity, source.stackId);
+                }
+
+                var remaining = quantity;
+                string targetStackId = null;
+                foreach (var target in OrderedStacks(source.itemId))
+                {
+                    if (!IsAvailableState(target.stateId) || string.Equals(target.stackId, source.stackId, StringComparison.Ordinal))
+                        continue;
+                    var moved = Math.Min(remaining, Math.Max(0, rule.maxStack - target.quantity));
+                    if (moved <= 0)
+                        continue;
+                    target.quantity += moved;
+                    remaining -= moved;
+                    targetStackId = target.stackId;
+                    if (remaining == 0)
+                        break;
+                }
+
+                if (remaining > 0)
+                {
+                    if (availableState.occupiesCapacity && rule.occupiesSlot && GetOccupiedSlots() >= GetCapacity())
+                        return Failure("Storage capacity is insufficient for the released split stack.");
+                    targetStackId = NewStackId();
+                    _state.MutableItemStacks.Add(targetStackId, new ItemStackSaveData
+                    {
+                        stackId = targetStackId,
+                        itemId = source.itemId,
+                        quantity = remaining,
+                        stateId = availableState.stateId
+                    });
+                }
+
+                source.quantity -= quantity;
+                return Success(quantity, targetStackId);
             });
         }
 

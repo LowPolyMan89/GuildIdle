@@ -104,6 +104,33 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void CancelRepeatableWithBagStopsInResultPendingAndAllowsClaim()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start("work_pine_wood", "ren");
+            Assert.That(runtime.Tick(10f).success, Is.True);
+            var bag = state.PendingResults.GetAll()[0];
+
+            var blockedClaim = state.PendingResults.ClaimAll("claim-before-stop", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision);
+            var stopped = runtime.Cancel(started.executionId);
+            var execution = state.GetActivityExecution(started.executionId);
+            var claimed = state.PendingResults.ClaimAll("claim-after-stop", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision);
+
+            Assert.That(blockedClaim.Success, Is.False);
+            Assert.That(blockedClaim.Code, Is.EqualTo("SourceNotClaimable"));
+            Assert.That(stopped.success, Is.True);
+            Assert.That(execution.status, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.ResultPending));
+            Assert.That(execution.pendingResultId, Is.EqualTo(bag.resultId));
+            Assert.That(claimed.Success, Is.True);
+            Assert.That(claimed.Resolved, Is.True);
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+            Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(1));
+            Assert.That(state.GetHeroSkillExp("ren", "skill_gathering"), Is.EqualTo(1));
+        }
+
+        [Test]
         public void Tick_RewardFailureKeepsRepeatableExecution()
         {
             var state = NewState();

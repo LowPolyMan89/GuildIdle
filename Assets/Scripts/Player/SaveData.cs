@@ -177,12 +177,14 @@ namespace GuildIdle.Player
         public long quantity;
         public string origin;
         public int quality;
+        public string instanceId;
     }
 
     public static class PendingResultSourceState
     {
         public const string Pending = "Pending";
         public const string Resolved = "Resolved";
+        public const string Blocked = "Blocked";
     }
 
     [Serializable]

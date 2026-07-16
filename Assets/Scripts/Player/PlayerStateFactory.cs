@@ -17,15 +17,20 @@ namespace GuildIdle.Player
         private readonly IPlayerBootstrapConfigProvider _configs;
         private readonly HeroStatsService _heroStats;
         private readonly PlayerBootstrapDefinition _bootstrap;
+        private readonly Func<PlayerState, IPendingResultSourceHandler>[] _pendingResultSourceHandlerFactories;
 
         public PlayerStateFactory(
             IPlayerBootstrapConfigProvider configs,
             HeroStatsService heroStats,
-            PlayerBootstrapDefinition bootstrap)
+            PlayerBootstrapDefinition bootstrap,
+            Func<PlayerState, IPendingResultSourceHandler>[] pendingResultSourceHandlerFactories = null)
         {
             _configs = configs ?? throw new ArgumentNullException(nameof(configs));
             _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
             _bootstrap = bootstrap ?? throw new ArgumentNullException(nameof(bootstrap));
+            _pendingResultSourceHandlerFactories = pendingResultSourceHandlerFactories == null
+                ? Array.Empty<Func<PlayerState, IPendingResultSourceHandler>>()
+                : (Func<PlayerState, IPendingResultSourceHandler>[])pendingResultSourceHandlerFactories.Clone();
         }
 
         public PlayerState Create(SaveData saveData)
@@ -33,7 +38,7 @@ namespace GuildIdle.Player
             saveData ??= new SaveData();
             ValidateSaveVersion(saveData.saveVersion);
             ValidateLoadedStage(saveData.currentStageId);
-            return new PlayerState(saveData, _heroStats, _configs);
+            return new PlayerState(saveData, _heroStats, _configs, _pendingResultSourceHandlerFactories);
         }
 
         public PlayerState CreateDefault()
@@ -42,7 +47,8 @@ namespace GuildIdle.Player
             var state = new PlayerState(
                 new SaveData { currentStageId = _bootstrap.InitialStageId },
                 _heroStats,
-                _configs);
+                _configs,
+                _pendingResultSourceHandlerFactories);
             ApplyStarterHeroes(state, _bootstrap.InitialStageId);
             ApplyDefaultBuildings(state);
             ApplyStarterEquipment(state, _bootstrap.InitialStageId);

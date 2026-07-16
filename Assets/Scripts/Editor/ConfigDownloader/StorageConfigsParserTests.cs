@@ -213,6 +213,21 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void BuildRuntimeJson_RejectsDuplicateWorkingAvailabilityMode()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "ItemStates").rows = Append(
+                FindSheet(download, "ItemStates").rows,
+                Row("another_available", "storage_item_state_on_storage_name_id", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "FALSE", "available", "duplicate working mode"));
+            WriteRaw(download);
+
+            var report = new StorageConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Working availability_mode must be unique"));
+        }
+
+        [Test]
         public void BuildRuntimeJson_RejectsForbiddenLegacyItemGold()
         {
             var download = CreateValidDownload();

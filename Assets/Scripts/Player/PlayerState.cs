@@ -7,7 +7,7 @@ using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Player
 {
-    public sealed class PlayerState : IActivityRuntimeStore, IRewardBatchStore, IPendingResultSourceLifecycle
+    public sealed class PlayerState : IActivityRuntimeStore, IRewardBatchStore
     {
         public const string EquippedItemStateId = "equipped";
         public const string OnStorageItemStateId = "on_storage";
@@ -36,13 +36,20 @@ namespace GuildIdle.Player
         public PlayerState(
             SaveData saveData,
             HeroStatsService heroStats,
-            IPlayerBootstrapConfigProvider configs)
+            IPlayerBootstrapConfigProvider configs,
+            IEnumerable<Func<PlayerState, IPendingResultSourceHandler>> pendingResultSourceHandlerFactories = null)
         {
             _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
             _configs = configs ?? throw new ArgumentNullException(nameof(configs));
             var storage = new StorageService(this, _configs);
             Storage = storage;
             PendingResults = new PendingResultService(this, storage);
+            foreach (var factory in pendingResultSourceHandlerFactories ?? Array.Empty<Func<PlayerState, IPendingResultSourceHandler>>())
+            {
+                var handler = factory?.Invoke(this);
+                if (handler != null)
+                    PendingResults.RegisterSourceHandler(handler);
+            }
             Load(saveData);
         }
 
@@ -705,44 +712,6 @@ namespace GuildIdle.Player
             LoadResultSourceReferences(saveData.resultSources);
             LoadOperationReceipts(saveData.operationReceipts);
             PendingResults.Load(saveData.pendingResults);
-            NormalizeOrphanPendingSources();
-        }
-
-        private void NormalizeOrphanPendingSources()
-        {
-            foreach (var quest in _questInstances.Values)
-            {
-                var hasResult = !string.IsNullOrWhiteSpace(quest.pendingResultId) && PendingResults.Get(quest.pendingResultId) != null;
-                if (hasResult)
-                    continue;
-                if (!string.IsNullOrWhiteSpace(quest.pendingResultId))
-                {
-                    quest.pendingResultId = null;
-                    WasNormalized = true;
-                }
-                if (string.Equals(quest.status, QuestInstanceStatus.RewardPending, StringComparison.Ordinal))
-                {
-                    quest.status = QuestInstanceStatus.Active;
-                    WasNormalized = true;
-                }
-            }
-
-            foreach (var execution in _activityExecutions.Values)
-            {
-                var hasResult = !string.IsNullOrWhiteSpace(execution.pendingResultId) && PendingResults.Get(execution.pendingResultId) != null;
-                if (hasResult)
-                    continue;
-                if (!string.IsNullOrWhiteSpace(execution.pendingResultId))
-                {
-                    execution.pendingResultId = null;
-                    WasNormalized = true;
-                }
-                if (execution.status == ActivityRuntimeStatus.ResultPending)
-                {
-                    execution.status = ActivityRuntimeStatus.Running;
-                    WasNormalized = true;
-                }
-            }
         }
 
         private void Restore(SaveData saveData, bool wasNormalized)
@@ -1195,7 +1164,7 @@ namespace GuildIdle.Player
             {
                 if (source == null || string.IsNullOrWhiteSpace(source.sourceType) || string.IsNullOrWhiteSpace(source.sourceExecutionId) ||
                     string.IsNullOrWhiteSpace(source.resultId) ||
-                    (source.state != PendingResultSourceState.Pending && source.state != PendingResultSourceState.Resolved))
+                    (source.state != PendingResultSourceState.Pending && source.state != PendingResultSourceState.Resolved && source.state != PendingResultSourceState.Blocked))
                 {
                     WasNormalized = true;
                     continue;
@@ -1237,39 +1206,32 @@ namespace GuildIdle.Player
         internal void RestoreTransactional(SaveData saveData) => Restore(saveData, WasNormalized);
         internal void MarkNormalized() => WasNormalized = true;
 
-        internal bool TryBindPendingResult(PendingResultSaveData result, bool makeClaimable)
+        internal void QuarantinePendingResultSource(PendingResultSaveData result)
+        {
+            if (result == null || string.IsNullOrWhiteSpace(result.sourceType) || string.IsNullOrWhiteSpace(result.sourceExecutionId))
+                return;
+            _resultSources[ResultSourceKey(result.sourceType, result.sourceExecutionId)] = new PendingResultSourceReferenceSaveData
+            {
+                sourceType = result.sourceType,
+                sourceId = result.sourceId,
+                sourceExecutionId = result.sourceExecutionId,
+                resultId = string.IsNullOrWhiteSpace(result.resultId) ? $"result:{result.sourceType}:{result.sourceExecutionId}" : result.resultId,
+                state = PendingResultSourceState.Blocked
+            };
+        }
+
+        internal bool IsPendingResultSourceQuarantined(string sourceType, string sourceExecutionId) =>
+            _resultSources.TryGetValue(ResultSourceKey(sourceType, sourceExecutionId), out var source) &&
+            string.Equals(source.state, PendingResultSourceState.Blocked, StringComparison.Ordinal);
+
+        internal bool TryBindPersistentResultSource(PendingResultSaveData result, bool allowExisting)
         {
             if (result == null)
                 return false;
-            if (string.Equals(result.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
-            {
-                if (!_activityExecutions.TryGetValue(result.sourceExecutionId, out var execution))
-                    return false;
-                if (execution.status == ActivityRuntimeStatus.Completed || execution.status == ActivityRuntimeStatus.Cancelled)
-                    return false;
-                if (!string.IsNullOrWhiteSpace(execution.pendingResultId) && !string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal))
-                    return false;
-                execution.pendingResultId = result.resultId;
-                if (makeClaimable)
-                    execution.status = ActivityRuntimeStatus.ResultPending;
-                return true;
-            }
-            if (string.Equals(result.sourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
-            {
-                if (!_questInstances.TryGetValue(result.sourceExecutionId, out var quest))
-                    return false;
-                if (quest.rewardsGranted || string.Equals(quest.status, QuestInstanceStatus.Completed, StringComparison.Ordinal) || string.Equals(quest.status, QuestInstanceStatus.Expired, StringComparison.Ordinal))
-                    return false;
-                if (!string.IsNullOrWhiteSpace(quest.pendingResultId) && !string.Equals(quest.pendingResultId, result.resultId, StringComparison.Ordinal))
-                    return false;
-                quest.pendingResultId = result.resultId;
-                quest.status = QuestInstanceStatus.RewardPending;
-                return true;
-            }
             var sourceKey = ResultSourceKey(result.sourceType, result.sourceExecutionId);
             if (_resultSources.TryGetValue(sourceKey, out var source))
             {
-                return string.Equals(source.state, PendingResultSourceState.Pending, StringComparison.Ordinal) &&
+                return allowExisting && string.Equals(source.state, PendingResultSourceState.Pending, StringComparison.Ordinal) &&
                        string.Equals(source.resultId, result.resultId, StringComparison.Ordinal) &&
                        string.Equals(source.sourceId, result.sourceId, StringComparison.Ordinal);
             }
@@ -1284,44 +1246,19 @@ namespace GuildIdle.Player
             return true;
         }
 
-        bool IPendingResultSourceLifecycle.TryBind(PendingResultSaveData result, bool makeClaimable) => TryBindPendingResult(result, makeClaimable);
-        bool IPendingResultSourceLifecycle.CanClaim(PendingResultSaveData result) => CanClaimPendingResult(result);
-        bool IPendingResultSourceLifecycle.Resolve(PendingResultSaveData result) => ResolvePendingSource(result);
-
-        internal bool CanClaimPendingResult(PendingResultSaveData result)
+        internal bool CanClaimPersistentResultSource(PendingResultSaveData result)
         {
             if (result == null)
                 return false;
-            if (string.Equals(result.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
-                return _activityExecutions.TryGetValue(result.sourceExecutionId, out var execution) && execution.status == ActivityRuntimeStatus.ResultPending && string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal);
-            if (string.Equals(result.sourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
-                return _questInstances.TryGetValue(result.sourceExecutionId, out var quest) && quest.status == QuestInstanceStatus.RewardPending && string.Equals(quest.pendingResultId, result.resultId, StringComparison.Ordinal);
             return _resultSources.TryGetValue(ResultSourceKey(result.sourceType, result.sourceExecutionId), out var source) &&
                    string.Equals(source.state, PendingResultSourceState.Pending, StringComparison.Ordinal) &&
                    string.Equals(source.resultId, result.resultId, StringComparison.Ordinal);
         }
 
-        internal bool ResolvePendingSource(PendingResultSaveData result)
+        internal bool ResolvePersistentResultSource(PendingResultSaveData result)
         {
-            if (!CanClaimPendingResult(result))
+            if (!CanClaimPersistentResultSource(result))
                 return false;
-            if (string.Equals(result.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
-            {
-                var execution = _activityExecutions[result.sourceExecutionId];
-                if (_configs.TryGetActivity(execution.activityId, out var activity) && activity != null && !activity.isRepeatable)
-                    CompleteActivity(execution.activityId);
-                _activityExecutions.Remove(execution.executionId);
-                ClearHeroBusy(execution.heroId, execution.executionId);
-                return true;
-            }
-            if (string.Equals(result.sourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
-            {
-                var quest = _questInstances[result.sourceExecutionId];
-                quest.status = QuestInstanceStatus.Completed;
-                quest.rewardsGranted = true;
-                quest.pendingResultId = null;
-                return true;
-            }
             if (!_resultSources.TryGetValue(ResultSourceKey(result.sourceType, result.sourceExecutionId), out var source))
                 return false;
             source.state = PendingResultSourceState.Resolved;

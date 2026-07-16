@@ -145,6 +145,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly Dictionary<string, HashSet<string>> _enumValues = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _storageRuleIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _stateIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            private readonly Dictionary<string, int> _workingAvailabilityModes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             private bool _hasAvailableState;
 
             public StorageConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
@@ -501,6 +502,15 @@ namespace GuildIdle.Editor.ConfigDownloader
                 var hasCapacity = TryParseBool(row, "occupies_capacity", out var occupiesCapacity);
                 var hasOwner = TryParseBool(row, "requires_owner", out var requiresOwner);
                 var availabilityMode = row.Get("availability_mode");
+
+                if (!string.IsNullOrWhiteSpace(availabilityMode) &&
+                    !string.Equals(availabilityMode, "unavailable", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_workingAvailabilityModes.TryGetValue(availabilityMode, out var firstRow))
+                        AddIssue("ItemStates", row.RowNumber, "availability_mode", availabilityMode, $"Working availability_mode must be unique; first declared at row {firstRow}.");
+                    else
+                        _workingAvailabilityModes.Add(availabilityMode, row.RowNumber);
+                }
 
                 if (hasCapacity && occupiesCapacity && hasInStorage && !isInStorage)
                     AddIssue("ItemStates", row.RowNumber, "occupies_capacity", row.Get("occupies_capacity"), "occupies_capacity requires is_in_storage to be TRUE.");
