@@ -20,14 +20,16 @@ namespace GuildIdle.Player
             return new ActivityRuntimeService(
                 state,
                 new PlayerStateActivityAdapter(state),
-                eventSink: HandleActivityRuntimeEvent);
+                eventSink: HandleActivityRuntimeEvent,
+                progressionProcessor: CreateActivityProgressionProcessor(state));
         }
 
         public static ActivityRuntimeService CreateRuntimeService(PlayerState state)
         {
             return new ActivityRuntimeService(
                 state ?? throw new System.ArgumentNullException(nameof(state)),
-                new PlayerStateActivityAdapter(state));
+                new PlayerStateActivityAdapter(state),
+                progressionProcessor: CreateActivityProgressionProcessor(state));
         }
 
         public static IStorageService CreateStorageService()
@@ -66,6 +68,41 @@ namespace GuildIdle.Player
                 new StageProgressionService(configs, store),
                 store,
                 new RepositoryNonBuildTransitionAdapter(RuntimeConfigs.Buildings));
+        }
+
+        private static IActivityRuntimeProgressionProcessor CreateActivityProgressionProcessor(PlayerState state)
+        {
+            var configs = new RepositoryProgressionConfigAdapter(RuntimeConfigs.Quests);
+            var store = new PlayerStateProgressionAdapter(state);
+            var progression = new ProgressionRuntimeService(
+                new QuestRuntimeService(configs, store),
+                new StageProgressionService(configs, store),
+                store,
+                new RepositoryNonBuildTransitionAdapter(RuntimeConfigs.Buildings),
+                subscribePendingResults: false);
+            return new ActivityProgressionProcessor(progression);
+        }
+
+        private sealed class ActivityProgressionProcessor : IActivityRuntimeProgressionProcessor
+        {
+            private readonly ProgressionRuntimeService _progression;
+            public ActivityProgressionProcessor(ProgressionRuntimeService progression) => _progression = progression ?? throw new ArgumentNullException(nameof(progression));
+
+            public ActivityRuntimeProgressionResult ProcessBuildingLevelChanged(string buildingId, int level) =>
+                ToResult(_progression.ApplyWithinOuterTransaction(new BuildingLevelChanged(buildingId, level)));
+
+            public ActivityRuntimeProgressionResult ProcessActivityCompleted(string activityId) =>
+                ToResult(_progression.ApplyActivityCompletedWithinOuterTransaction(activityId));
+
+            private static ActivityRuntimeProgressionResult ToResult(ProgressionRuntimeUpdate update)
+            {
+                if (update?.Issues != null && update.Issues.Count > 0)
+                {
+                    var issue = update.Issues[0];
+                    return new ActivityRuntimeProgressionResult { success = false, code = issue.Code, message = issue.Message };
+                }
+                return new ActivityRuntimeProgressionResult { success = true, code = "Applied" };
+            }
         }
 
         internal static PlayerBootstrapService CreateBootstrapService(

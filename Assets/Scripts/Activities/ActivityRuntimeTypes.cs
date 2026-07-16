@@ -224,6 +224,7 @@ namespace GuildIdle.Activities
         public int plannedCycles;
         public bool currentCycleFatiguePaid;
         public string cyclePhase;
+        public string completionPhase;
         public string endReason;
         public float accumulatedBuildPoints;
         public LinkedCombatStartRequestSaveData linkedCombat;
@@ -241,6 +242,19 @@ namespace GuildIdle.Activities
     public sealed class ActivityRuntimeSnapshot
     {
         public ActivityExecutionSnapshot[] executions = Array.Empty<ActivityExecutionSnapshot>();
+    }
+
+    public sealed class ActivityRuntimeProgressionResult
+    {
+        public bool success;
+        public string code;
+        public string message;
+    }
+
+    public interface IActivityRuntimeProgressionProcessor
+    {
+        ActivityRuntimeProgressionResult ProcessBuildingLevelChanged(string buildingId, int level);
+        ActivityRuntimeProgressionResult ProcessActivityCompleted(string activityId);
     }
 
     public sealed class ActivityStartResult

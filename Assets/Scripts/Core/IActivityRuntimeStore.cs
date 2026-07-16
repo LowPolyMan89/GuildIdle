@@ -42,6 +42,7 @@ namespace GuildIdle.Core
         public bool buildingLevelApplied;
         public bool buildingEventPending;
         public bool buildingEventPublished;
+        public string completionPhase;
         public LinkedCombatStartRequestSaveData linkedCombat;
         public string pendingResultId;
         public long startedAtUnixSeconds;

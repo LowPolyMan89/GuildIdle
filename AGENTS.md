@@ -156,6 +156,40 @@ Changes to code, configs, assets, documentation, or project files should be perf
 - For default verification, inspect the resulting diff and run `git diff --check`.
 - Run additional verification only when explicitly requested by the user.
 
+### Unity test runs when explicitly requested
+
+Run Unity tests only when the user explicitly asks for them. If the Unity Editor is already open, ask the user to close it first, then verify with `Get-Process Unity -ErrorAction SilentlyContinue`.
+
+Use the Unity executable path already known for this workspace:
+
+`F:\Unity\6000.3.12f1\Editor\Unity.exe`
+
+Do not search for Unity in PATH, Program Files, or the registry. If the path stops working, ask the user for the installed Unity path.
+
+Important: do not pass `-quit` to Unity Test Framework command-line runs in this project. The local `com.unity.test-framework` warns that command-line tests do not work when `-quit` is specified. Unity exits by itself when the test run completes.
+
+Targeted EditMode test example:
+
+```powershell
+$results = 'E:\repo\GuildIdle\TestResults_codex_activity_runtime.xml'
+$log = 'E:\repo\GuildIdle\Logs\codex-editmode-activity-runtime.log'
+if (Test-Path $results) { Remove-Item $results -Force }
+if (Test-Path $log) { Remove-Item $log -Force }
+& 'F:\Unity\6000.3.12f1\Editor\Unity.exe' -batchmode -projectPath 'E:\repo\GuildIdle' -runTests -testPlatform EditMode -runSynchronously -testFilter 'GuildIdle.Editor.Activities.ActivityRuntimeServiceTests' -testResults $results -logFile $log
+```
+
+Full EditMode suite example:
+
+```powershell
+$results = 'E:\repo\GuildIdle\TestResults_codex_editmode_all.xml'
+$log = 'E:\repo\GuildIdle\Logs\codex-editmode-all.log'
+if (Test-Path $results) { Remove-Item $results -Force }
+if (Test-Path $log) { Remove-Item $log -Force }
+& 'F:\Unity\6000.3.12f1\Editor\Unity.exe' -batchmode -projectPath 'E:\repo\GuildIdle' -runTests -testPlatform EditMode -runSynchronously -testResults $results -logFile $log
+```
+
+After launch, wait for Unity to exit, then parse the XML results. Unity also writes a copy to `C:\Users\Andrew\AppData\LocalLow\DefaultCompany\GuildIdle\TestResults.xml`. Remove temporary `TestResults_codex*.xml` files from the repo root before finishing.
+
 ## Unity Assets
 
 - **DO NOT** edit Unity scenes or prefabs unless the user explicitly asks for scene or prefab changes.

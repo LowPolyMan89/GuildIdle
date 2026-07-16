@@ -163,6 +163,9 @@ namespace GuildIdle.Player
         public bool CanClaim(PendingResultSaveData result)
         {
             var execution = result == null ? null : _state.GetActivityExecution(result.sourceExecutionId);
+            if (execution != null && string.Equals(execution.runtimeKind, "Build", StringComparison.Ordinal) &&
+                execution.buildingLevelApplied && execution.buildingEventPending && !execution.buildingEventPublished)
+                return false;
             return execution != null && !_state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) &&
                    execution.status == ActivityRuntimeStatus.ResultPending &&
                    string.Equals(execution.activityId, result.sourceId, StringComparison.Ordinal) &&

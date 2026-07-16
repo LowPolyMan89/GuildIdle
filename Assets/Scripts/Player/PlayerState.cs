@@ -1747,6 +1747,7 @@ namespace GuildIdle.Player
                 buildingLevelApplied = execution.buildingLevelApplied,
                 buildingEventPending = execution.buildingEventPending,
                 buildingEventPublished = execution.buildingEventPublished,
+                completionPhase = execution.completionPhase,
                 linkedCombat = CloneLinkedCombat(execution.linkedCombat),
                 pendingResultId = execution.pendingResultId,
                 startedAtUnixSeconds = execution.startedAtUnixSeconds

@@ -59,7 +59,7 @@ namespace GuildIdle.Editor.Activities
         public void Start_UnknownActivityAndEmptySlotFailWithoutStateChange()
         {
             var state = NewState();
-            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: new RecordingProgressionProcessor());
             var fatigue = state.GetHeroFatigue("ren");
             LogAssert.Expect(LogType.Error, "[ActivityResolver] Unknown activity id 'missing_activity'.");
 
@@ -183,15 +183,13 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
             Assert.That(runtime.Start(WorkStart("bad_cycle", "ren", 1)).success, Is.True);
-            LogAssert.Expect(LogType.Error, "[ActivityRewardResolver] Unsupported reward type 'Unsupported'.");
-            LogAssert.Expect(LogType.Error, "[ActivityRewardResolver] Unsupported reward type 'Unsupported' for activity 'bad_cycle'.");
 
             var result = runtime.Tick(5f);
             var execution = state.GetActivityExecutions()[0];
 
             Assert.That(result.success, Is.False);
             Assert.That(execution.completedCycles, Is.EqualTo(0));
-            Assert.That(execution.elapsedSeconds, Is.EqualTo(5f));
+            Assert.That(execution.elapsedSeconds, Is.Zero);
             Assert.That(state.IsHeroBusy("ren"), Is.True);
         }
 
@@ -267,7 +265,7 @@ namespace GuildIdle.Editor.Activities
         {
             var state = NewState();
             Assert.That(state.AddHero("test_builder_hero"), Is.True);
-            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: new RecordingProgressionProcessor());
 
             var first = runtime.Start(WorkStart("work_pine_wood", "ren", 2));
             var limited = runtime.Start(WorkStart("work_pine_wood", "test_builder_hero", 2));
@@ -385,6 +383,44 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void WorkEffectValidationFailureDoesNotPersistCompletedCycleOrStagedPhase()
+        {
+            var state = NewState();
+            Assert.That(state.SetHeroEffectCounter("ren", "test_reliable_hands_effect", 1), Is.True);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new FixedRandom(1));
+            var started = runtime.Start(WorkStart("bad_effect_target_work", "ren", 1));
+
+            var ticked = runtime.Tick(10f);
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(ticked.success, Is.False);
+            Assert.That(HasIssue(ticked.issues, "HeroEffectTarget"), Is.True);
+            Assert.That(execution.completedCycles, Is.Zero);
+            Assert.That(execution.cyclePhase, Is.EqualTo("Running"));
+            Assert.That(execution.stagedRewards, Is.Empty);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.GetHeroEffectCounter("ren", "test_reliable_hands_effect"), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void MissingDangerFormulaDoesNotCompleteCycleOrGrantReward()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new FixedRandom(1));
+            var started = runtime.Start(WorkStart("bad_danger_work", "ren", 1));
+
+            var ticked = runtime.Tick(10f);
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(ticked.success, Is.False);
+            Assert.That(HasIssue(ticked.issues, "DangerFormula"), Is.True);
+            Assert.That(execution.completedCycles, Is.Zero);
+            Assert.That(execution.cyclePhase, Is.EqualTo("Running"));
+            Assert.That(execution.stagedRewards, Is.Empty);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+        }
+
+        [Test]
         public void DangerHandoffMovesOnlyCycleLootAndKeepsRootOccupation()
         {
             var state = NewState();
@@ -436,7 +472,7 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.IsHeroBusy("ren"), Is.False);
             Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
             state = SaveService.Load(_factory, storage);
-            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: new RecordingProgressionProcessor());
             var replay = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
             Assert.That(replay.success, Is.True);
             Assert.That(replay.replayed, Is.True);
@@ -448,7 +484,7 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             state.UnlockBuilding("building_campfire");
             state.SetBuildingLevel("building_campfire", 0);
-            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: new RecordingProgressionProcessor());
             var fatigue = state.GetHeroFatigue("ren");
 
             var started = runtime.Start(new ActivityStartRequest { activityId = "test_build_campfire", heroId = "ren" });
@@ -499,7 +535,7 @@ namespace GuildIdle.Editor.Activities
             var saveStorage = new MemorySaveStorage();
             Assert.That(SaveService.Save(state, saveStorage), Is.True);
             state = SaveService.Load(_factory, saveStorage);
-            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: new RecordingProgressionProcessor());
             runtime.Tick(100f);
             Assert.That(state.GetActivityExecution(started.executionId).accumulatedBuildPoints, Is.EqualTo(beforePause));
             Assert.That(state.GetActivityExecution(started.executionId).status, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.Paused));
@@ -589,7 +625,7 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             state.UnlockBuilding("building_hall");
             state.SetBuildingLevel("building_hall", 0);
-            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: new RecordingProgressionProcessor());
             var started = runtime.Start(new ActivityStartRequest { activityId = "test_build_empty", heroId = "ren" });
 
             var completed = runtime.Tick(1f);
@@ -617,20 +653,74 @@ namespace GuildIdle.Editor.Activities
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
             var started = runtime.Start(new ActivityStartRequest { activityId = "test_build_campfire", heroId = "ren" });
             Assert.That(started.success, Is.True);
-            Assert.That(runtime.Tick(2f).success, Is.True);
+            var ticked = runtime.Tick(2f);
+            Assert.That(ticked.success, Is.False);
+            Assert.That(HasIssue(ticked.issues, "BuildingEventProcessorMissing"), Is.True);
             Assert.That(state.GetActivityExecution(started.executionId).buildingEventPending, Is.True);
             var storage = new MemorySaveStorage();
             Assert.That(SaveService.Save(state, storage), Is.True);
             state = SaveService.Load(_factory, storage);
 
             var delivered = new List<ActivityRuntimeEvent>();
-            _ = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), eventSink: delivered.Add);
-            _ = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), eventSink: delivered.Add);
+            var progression = new RecordingProgressionProcessor();
+            _ = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), eventSink: delivered.Add, progressionProcessor: progression);
+            _ = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), eventSink: delivered.Add, progressionProcessor: progression);
 
             Assert.That(delivered, Has.Count.EqualTo(1));
             Assert.That(delivered[0].eventType, Is.EqualTo(ActivityRuntimeEventType.BuildingLevelChanged));
             Assert.That(state.GetActivityExecution(started.executionId).buildingEventPending, Is.False);
             Assert.That(state.GetActivityExecution(started.executionId).buildingEventPublished, Is.True);
+        }
+
+        [Test]
+        public void EmptyConstructionKeepsOutboxWhenBuildingEventProcessorFails()
+        {
+            var state = NewState();
+            state.UnlockBuilding("building_hall");
+            state.SetBuildingLevel("building_hall", 0);
+            var progression = new RecordingProgressionProcessor { FailBuildingLevelChanged = true };
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: progression);
+            var started = runtime.Start(new ActivityStartRequest { activityId = "test_build_empty", heroId = "ren" });
+
+            var completed = runtime.Tick(1f);
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(completed.success, Is.False);
+            Assert.That(HasIssue(completed.issues, "TestBuildingFailed"), Is.True);
+            Assert.That(execution, Is.Not.Null);
+            Assert.That(execution.buildingLevelApplied, Is.True);
+            Assert.That(execution.buildingEventPending, Is.True);
+            Assert.That(execution.completionPhase, Is.EqualTo("BuildingEventPending"));
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+            Assert.That(state.IsActivityCompleted("test_build_empty"), Is.False);
+        }
+
+        [Test]
+        public void BuildingEventAckSaveFailureLeavesOutboxRetryable()
+        {
+            var storage = new MemorySaveStorage();
+            var state = NewState();
+            state.UnlockBuilding("building_hall");
+            state.SetBuildingLevel("building_hall", 0);
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            var progression = new RecordingProgressionProcessor();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), progressionProcessor: progression);
+            var started = runtime.Start(new ActivityStartRequest { activityId = "test_build_empty", heroId = "ren" });
+            storage.ThrowOnSaveCall = storage.SaveCalls + 2;
+            LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save failure");
+
+            var completed = runtime.Tick(1f);
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(completed.success, Is.False);
+            Assert.That(HasIssue(completed.issues, "BuildingEventAck"), Is.True);
+            Assert.That(progression.BuildingLevelChangedCount, Is.EqualTo(1));
+            Assert.That(execution, Is.Not.Null);
+            Assert.That(execution.buildingEventPending, Is.True);
+            Assert.That(execution.buildingEventPublished, Is.False);
+            Assert.That(execution.completionPhase, Is.EqualTo("BuildingEventPending"));
+            Assert.That(state.IsActivityCompleted("test_build_empty"), Is.False);
         }
 
         private PlayerState NewState()
@@ -713,6 +803,8 @@ namespace GuildIdle.Editor.Activities
                     {
                         new ActivityConfigDto { id = "work_pine_wood", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 2, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "test_multi_loot_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
+                        new ActivityConfigDto { id = "bad_effect_target_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
+                        new ActivityConfigDto { id = "bad_danger_work", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
                         new ActivityConfigDto { id = "hunt_rabbits", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
                         new ActivityConfigDto { id = "empty_repeat", type = "Work", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_cycle", type = "Work", cycleSec = 5, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
@@ -735,6 +827,8 @@ namespace GuildIdle.Editor.Activities
                         Reward("work_pine_wood", "SkillExp", "skill_gathering", 1, "OnCycle"),
                         Reward("test_multi_loot_work", "Consumable", "test_work_consumable", 1, "OnCycle"),
                         Reward("test_multi_loot_work", "Resource", "resource_pine_wood", 1, "OnCycle"),
+                        Reward("bad_effect_target_work", "Consumable", "test_work_consumable", 1, "OnCycle"),
+                        Reward("bad_danger_work", "Resource", "resource_pine_wood", 1, "OnCycle"),
                         Reward("hunt_rabbits", "Resource", "resource_rabbit_meat", 1, "OnCycle"),
                         Reward("hunt_rabbits", "SkillExp", "skill_hunting", 2, "OnCycle"),
                         Reward("bad_cycle", "Unsupported", "bad_reward", 1, "OnCycle"),
@@ -743,6 +837,16 @@ namespace GuildIdle.Editor.Activities
                     },
                     dangerEncounters = new[]
                     {
+                        new DangerEncounterConfigDto
+                        {
+                            dangerEncounterId = "danger_bad_formula",
+                            activityId = "bad_danger_work",
+                            riskPercent = 25,
+                            enemyGroupId = "enemy_group_test_rabbits",
+                            combatMode = "Queue_1v1",
+                            defeatLossRule = "CombatDefeatLootLoss25To50",
+                            riskFormulaId = "missing_danger_formula"
+                        },
                         new DangerEncounterConfigDto
                         {
                             dangerEncounterId = "danger_test_rabbits",
@@ -879,12 +983,44 @@ namespace GuildIdle.Editor.Activities
         private sealed class MemorySaveStorage : ISaveStorage
         {
             private readonly Dictionary<string, string> _values = new Dictionary<string, string>();
+            public bool ThrowOnSave { get; set; }
+            public int SaveCalls { get; private set; }
+            public int ThrowOnSaveCall { get; set; } = -1;
 
             public bool HasKey(string key) => _values.ContainsKey(key);
             public string GetString(string key, string defaultValue) => _values.TryGetValue(key, out var value) ? value : defaultValue;
             public void SetString(string key, string value) => _values[key] = value;
             public void DeleteKey(string key) => _values.Remove(key);
-            public void Save() { }
+            public void Save()
+            {
+                SaveCalls++;
+                if (ThrowOnSave || (ThrowOnSaveCall > 0 && SaveCalls >= ThrowOnSaveCall))
+                    throw new System.InvalidOperationException("simulated save failure");
+            }
+        }
+
+        private sealed class RecordingProgressionProcessor : IActivityRuntimeProgressionProcessor
+        {
+            public int BuildingLevelChangedCount { get; private set; }
+            public int ActivityCompletedCount { get; private set; }
+            public bool FailBuildingLevelChanged { get; set; }
+            public bool FailActivityCompleted { get; set; }
+
+            public ActivityRuntimeProgressionResult ProcessBuildingLevelChanged(string buildingId, int level)
+            {
+                if (FailBuildingLevelChanged)
+                    return new ActivityRuntimeProgressionResult { success = false, code = "TestBuildingFailed", message = "test failure" };
+                BuildingLevelChangedCount++;
+                return new ActivityRuntimeProgressionResult { success = true, code = "Applied" };
+            }
+
+            public ActivityRuntimeProgressionResult ProcessActivityCompleted(string activityId)
+            {
+                if (FailActivityCompleted)
+                    return new ActivityRuntimeProgressionResult { success = false, code = "TestActivityFailed", message = "test failure" };
+                ActivityCompletedCount++;
+                return new ActivityRuntimeProgressionResult { success = true, code = "Applied" };
+            }
         }
 
         private sealed class FixedRandom : IActivityRandom

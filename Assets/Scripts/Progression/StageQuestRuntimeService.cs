@@ -399,19 +399,21 @@ namespace GuildIdle.Progression
         private readonly IProgressionRuntimeStore _store;
         private readonly INonBuildTransitionProvider _nonBuildTransitions;
         private bool _savePending;
-        public ProgressionRuntimeService(QuestRuntimeService quests, StageProgressionService stages, IProgressionRuntimeStore store, INonBuildTransitionProvider nonBuildTransitions = null)
+        public ProgressionRuntimeService(QuestRuntimeService quests, StageProgressionService stages, IProgressionRuntimeStore store, INonBuildTransitionProvider nonBuildTransitions = null, bool subscribePendingResults = true)
         {
             _quests = quests ?? throw new ArgumentNullException(nameof(quests));
             _stages = stages ?? throw new ArgumentNullException(nameof(stages));
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _nonBuildTransitions = nonBuildTransitions;
-            if (_store.PendingResults != null)
+            if (subscribePendingResults && _store.PendingResults != null)
                 _store.PendingResults.Resolved += HandlePendingResultResolved;
         }
         public event Action<ProgressionRuntimeUpdate> Updated;
-        public ProgressionRuntimeUpdate Initialize() => CompleteTransaction(_quests.Initialize());
-        public ProgressionRuntimeUpdate Handle(ProgressionEvent progressionEvent) => CompleteTransaction(_quests.Handle(progressionEvent ?? throw new ArgumentNullException(nameof(progressionEvent))));
-        public ProgressionRuntimeUpdate HandleActivityCompleted(string activityId) => CompleteTransaction(BuildActivityCompletion(activityId));
+        public ProgressionRuntimeUpdate Initialize() => CompleteTransaction(_quests.Initialize(), true, true);
+        public ProgressionRuntimeUpdate Handle(ProgressionEvent progressionEvent) => CompleteTransaction(_quests.Handle(progressionEvent ?? throw new ArgumentNullException(nameof(progressionEvent))), true, true);
+        public ProgressionRuntimeUpdate HandleActivityCompleted(string activityId) => CompleteTransaction(BuildActivityCompletion(activityId), true, true);
+        internal ProgressionRuntimeUpdate ApplyWithinOuterTransaction(ProgressionEvent progressionEvent) => CompleteTransaction(_quests.Handle(progressionEvent ?? throw new ArgumentNullException(nameof(progressionEvent))), false, false);
+        internal ProgressionRuntimeUpdate ApplyActivityCompletedWithinOuterTransaction(string activityId) => CompleteTransaction(BuildActivityCompletion(activityId), false, false);
         public QuestRuntimeSnapshot GetQuestSnapshot() => _quests.GetSnapshot();
         public StageProgressionSnapshot GetStageSnapshot() => _stages.GetSnapshot();
 
@@ -434,7 +436,7 @@ namespace GuildIdle.Progression
             var aggregate = new QuestRuntimeResult { ChangedValue = true };
             aggregate.CompletedValues.Add(resolved.SourceExecutionId);
             aggregate.CompletionEventValues.Add(completed);
-            CompleteTransaction(aggregate);
+            CompleteTransaction(aggregate, true, true);
         }
 
         private QuestRuntimeResult BuildActivityCompletion(string activityId)
@@ -452,7 +454,7 @@ namespace GuildIdle.Progression
             return aggregate;
         }
 
-        private ProgressionRuntimeUpdate CompleteTransaction(QuestRuntimeResult aggregate)
+        private ProgressionRuntimeUpdate CompleteTransaction(QuestRuntimeResult aggregate, bool persist, bool publish)
         {
             DrainQuestCompleted(aggregate);
             var transition = _stages.TryTransition(aggregate.IssueValues);
@@ -463,8 +465,9 @@ namespace GuildIdle.Progression
                 DrainQuestCompleted(aggregate);
             }
             var mustSave = aggregate.ChangedValue || _savePending;
-            var saved = !mustSave || _store.Save();
-            _savePending = mustSave && !saved;
+            var saved = !persist || !mustSave || _store.Save();
+            if (persist)
+                _savePending = mustSave && !saved;
             if (!saved) aggregate.IssueValues.Add(new ProgressionIssue("ProgressionSaveFailed", "Failed to save the coordinated progression transaction."));
             var update = new ProgressionRuntimeUpdate
             {
@@ -473,7 +476,8 @@ namespace GuildIdle.Progression
                 PublishedQuestCompletedEvents = SnapshotLists.ReadOnly(aggregate.CompletionEventValues), Rewards = SnapshotLists.ReadOnly(aggregate.RewardValues),
                 Transition = transition, Changed = aggregate.ChangedValue, Saved = saved
             };
-            Updated?.Invoke(update);
+            if (publish)
+                Updated?.Invoke(update);
             return update;
         }
 

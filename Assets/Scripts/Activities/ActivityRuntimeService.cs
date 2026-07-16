@@ -21,6 +21,8 @@ namespace GuildIdle.Activities
         private const string EndReasonPlanCompleted = "PlanCompleted";
         private const string EndReasonManualStop = "ManualStop";
         private const string EndReasonDangerTriggered = "DangerTriggered";
+        private const string CompletionPhaseBuildingEventPending = "BuildingEventPending";
+        private const string CompletionPhaseCompletionReady = "CompletionReady";
         private const string WorkEffectTrigger = "OnWorkCycleComplete";
         private const string AddExtraBaseResourceEffect = "AddExtraBaseResource";
         private const string CompletedWorkBaseResourceTarget = "completed_work_base_resource";
@@ -30,6 +32,7 @@ namespace GuildIdle.Activities
         private readonly IActivityRandom _random;
         private readonly FormulaRuntime _formulas;
         private readonly Action<ActivityRuntimeEvent> _eventSink;
+        private readonly IActivityRuntimeProgressionProcessor _progressionProcessor;
         private readonly Dictionary<string, Func<HeroSkillEffectConfigDto, ActivityStagedRewardSaveData[], bool>> _workEffectHandlers;
 
         public ActivityRuntimeService(
@@ -37,13 +40,15 @@ namespace GuildIdle.Activities
             IActivityPlayerState activityState,
             IActivityRandom random = null,
             FormulaRuntime formulas = null,
-            Action<ActivityRuntimeEvent> eventSink = null)
+            Action<ActivityRuntimeEvent> eventSink = null,
+            IActivityRuntimeProgressionProcessor progressionProcessor = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _activityState = activityState ?? throw new ArgumentNullException(nameof(activityState));
             _random = random ?? new SystemActivityRandom();
             _formulas = formulas ?? new FormulaRuntime();
             _eventSink = eventSink;
+            _progressionProcessor = progressionProcessor;
             _workEffectHandlers = new Dictionary<string, Func<HeroSkillEffectConfigDto, ActivityStagedRewardSaveData[], bool>>(StringComparer.OrdinalIgnoreCase)
             {
                 [AddExtraBaseResourceEffect] = ApplyExtraBaseResource
@@ -308,6 +313,11 @@ namespace GuildIdle.Activities
                 AddIssue(issues, execution.activityId, "ConstructionState", execution.executionId, 1, 0, false, false, "Only Paused construction can be resumed.");
                 return FinishStart(result, issues, false);
             }
+            if (!string.IsNullOrWhiteSpace(execution.completionPhase))
+            {
+                AddIssue(issues, execution.activityId, "ConstructionCompletionPending", execution.executionId, 1, 0, false, false, "Construction completion is pending and cannot be resumed.");
+                return FinishStart(result, issues, false);
+            }
             if (!RuntimeConfigs.Buildings.TryGetBuildAction(execution.activityId, out var action))
             {
                 AddIssue(issues, execution.activityId, "BuildAction", execution.activityId, 1, 0, true, false, "Saved build action is no longer configured.");
@@ -439,7 +449,7 @@ namespace GuildIdle.Activities
                 return GatewayFailure("SaveFailed", "Failed to persist linked combat resolution.");
             }
             if (!string.IsNullOrWhiteSpace(completedActivityId))
-                _eventSink?.Invoke(new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.ActivityCompleted, targetId = completedActivityId, value = 1 });
+                NotifyEventSink(new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.ActivityCompleted, targetId = completedActivityId, value = 1 });
             return GatewaySuccess(execution, false, completedActivityId);
         }
 
@@ -569,11 +579,13 @@ namespace GuildIdle.Activities
             var existing = FindConstruction(action);
             if (existing != null)
             {
-                var code = existing.status == CoreActivityRuntimeStatus.Paused
-                    ? "ConstructionResumeRequired"
-                    : existing.status == CoreActivityRuntimeStatus.ResultPending
-                        ? "ConstructionResultPending"
-                        : "ConstructionAlreadyRunning";
+                var code = !string.IsNullOrWhiteSpace(existing.completionPhase)
+                    ? "ConstructionCompletionPending"
+                    : existing.status == CoreActivityRuntimeStatus.Paused
+                        ? "ConstructionResumeRequired"
+                        : existing.status == CoreActivityRuntimeStatus.ResultPending
+                            ? "ConstructionResultPending"
+                            : "ConstructionAlreadyRunning";
                 AddIssue(issues, request.activityId, code, existing.executionId, 1, 1, false, false, $"Construction '{action.targetBuildingId}:{action.targetLevel}' already has unfinished execution '{existing.executionId}'.");
                 return FinishStart(result, issues, false);
             }
@@ -643,14 +655,20 @@ namespace GuildIdle.Activities
             execution.elapsedSeconds += deltaTime;
             changed = true;
             var cycles = 0;
+            var aborted = false;
             while (execution.elapsedSeconds >= info.durationSeconds && cycles < MaxCyclesPerTick &&
                    execution.status == CoreActivityRuntimeStatus.Running && execution.completedCycles < execution.plannedCycles)
             {
                 if (!CompleteWorkCycle(execution, info, issues, rewards, ref changed))
+                {
+                    aborted = true;
                     break;
+                }
                 cycles++;
                 tickResult.processedCycles++;
             }
+            if (aborted)
+                return;
             if (execution.status == CoreActivityRuntimeStatus.Running && execution.elapsedSeconds >= info.durationSeconds && cycles >= MaxCyclesPerTick)
             {
                 tickResult.cycleLimitReached = true;
@@ -670,42 +688,50 @@ namespace GuildIdle.Activities
             if (string.Equals(execution.cyclePhase, CyclePhaseResultStaged, StringComparison.Ordinal))
                 return FinalizeStagedWorkCycle(execution, info, issues, ref changed);
 
+            if (!ValidateWorkCyclePreparation(execution, info, issues))
+                return false;
+
             var checkpoint = _activityState.CaptureCheckpoint();
-            var reward = ActivityRewardResolver.PreparePendingRewards(ToContext(execution), GrantMoment.OnCycle, _activityState, _random);
+            var draft = CloneExecution(execution);
+            var reward = ActivityRewardResolver.PreparePendingRewards(ToContext(draft), GrantMoment.OnCycle, _activityState, _random);
             rewards.Add(reward);
             if (!reward.success)
             {
+                _activityState.RestoreCheckpoint(checkpoint);
                 issues.AddRange(reward.issues);
                 return false;
             }
 
             var staged = ToStagedRewards(reward, PendingResultOrigin.ActivityReward);
-            execution.cyclePhase = CyclePhaseResultStaged;
-            execution.stagedRewards = staged;
-            execution.completedCycles++;
-            execution.elapsedSeconds = Math.Max(0f, execution.elapsedSeconds - info.durationSeconds);
-            execution.currentCycleFatiguePaid = false;
-            if (!ApplyWorkHeroEffects(execution, info, staged, issues))
+            draft.cyclePhase = CyclePhaseResultStaged;
+            draft.stagedRewards = staged;
+            draft.completedCycles++;
+            draft.elapsedSeconds = Math.Max(0f, draft.elapsedSeconds - info.durationSeconds);
+            draft.currentCycleFatiguePaid = false;
+            if (!ApplyWorkHeroEffects(draft, info, staged, issues))
             {
                 _activityState.RestoreCheckpoint(checkpoint);
                 return false;
             }
 
-            var danger = EvaluateDanger(execution, info, issues);
+            var danger = EvaluateDanger(draft, info, issues);
             if (danger == DangerOutcome.Failed)
             {
                 _activityState.RestoreCheckpoint(checkpoint);
                 return false;
             }
 
-            if (!UpdateExecution(execution) || !Save())
+            if (!UpdateExecution(draft) || !Save())
             {
                 _activityState.RestoreCheckpoint(checkpoint);
-                AddIssue(issues, execution.activityId, "SaveFailed", execution.executionId, 1, 0, true, false, "Failed to persist staged work-cycle result.");
+                AddIssue(issues, draft.activityId, "SaveFailed", draft.executionId, 1, 0, true, false, "Failed to persist staged work-cycle result.");
                 return false;
             }
             changed = true;
-            return FinalizeStagedWorkCycle(execution, info, issues, ref changed);
+            var finalized = FinalizeStagedWorkCycle(draft, info, issues, ref changed);
+            if (finalized)
+                CopyExecutionState(draft, execution);
+            return finalized;
         }
 
         private bool FinalizeStagedWorkCycle(
@@ -841,6 +867,8 @@ namespace GuildIdle.Activities
             ActivityTickResult tickResult,
             ref bool changed)
         {
+            if (TryResumeBuildCompletionLifecycle(execution, issues, events, ref changed))
+                return;
             if (!RuntimeConfigs.Buildings.TryGetBuildAction(execution.activityId, out var action))
             {
                 AddIssue(issues, execution.activityId, "BuildAction", execution.activityId, 1, 0, true, false, "Saved build action is no longer configured.");
@@ -881,6 +909,9 @@ namespace GuildIdle.Activities
             List<ActivityRuntimeEvent> events,
             ref bool changed)
         {
+            if (TryResumeBuildCompletionLifecycle(execution, issues, events, ref changed))
+                return;
+
             var checkpoint = _activityState.CaptureCheckpoint();
             execution.accumulatedBuildPoints = Math.Max(execution.accumulatedBuildPoints, action.buildPointsRequired);
             if (!execution.buildingLevelApplied)
@@ -895,31 +926,25 @@ namespace GuildIdle.Activities
             }
             if (!execution.buildingEventPublished && !execution.buildingEventPending)
             {
-                events.Add(new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.BuildingLevelChanged, targetId = action.targetBuildingId, value = action.targetLevel });
                 execution.buildingEventPending = true;
+                execution.completionPhase = CompletionPhaseBuildingEventPending;
             }
             var staged = action.skillExp > 0
                 ? new[] { new ActivityStagedRewardSaveData { rewardType = RewardType.SkillExp, targetId = action.skillId, quantity = action.skillExp, origin = PendingResultOrigin.ActivityReward } }
                 : Array.Empty<ActivityStagedRewardSaveData>();
             if (staged.Length == 0)
             {
+                execution.heroId = null;
+                execution.status = CoreActivityRuntimeStatus.Paused;
                 if (!UpdateExecution(execution) || !Save())
                 {
                     _activityState.RestoreCheckpoint(checkpoint);
                     AddIssue(issues, execution.activityId, "BuildCompletion", execution.executionId, 1, 0, true, false, "Failed to persist construction event outbox.");
                     return;
                 }
-                DeliverPendingBuildingEvent(execution);
-                if (!_activityState.CompleteActivity(execution.activityId) || !RemoveExecution(execution.executionId) || !Save())
-                {
-                    _activityState.RestoreCheckpoint(checkpoint);
-                    AddIssue(issues, execution.activityId, "BuildCompletion", execution.executionId, 1, 0, true, false, "Failed to finalize construction with an empty result.");
-                    return;
-                }
-                var activityCompleted = new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.ActivityCompleted, targetId = execution.activityId, value = 1 };
-                events.Add(activityCompleted);
-                _eventSink?.Invoke(activityCompleted);
                 changed = true;
+                TryProcessPendingBuildingEvent(execution.executionId, issues, events, ref changed);
+                TryFinalizeCompletionReady(execution.executionId, issues, events, ref changed);
                 return;
             }
             execution.stagedRewards = Array.Empty<ActivityStagedRewardSaveData>();
@@ -940,7 +965,7 @@ namespace GuildIdle.Activities
                 AddIssue(issues, execution.activityId, "PendingResult", execution.executionId, 1, 0, true, false, formation.Message ?? "Failed to form construction result.");
                 return;
             }
-            DeliverPendingBuildingEvent(execution);
+            TryProcessPendingBuildingEvent(execution.executionId, issues, events, ref changed);
             changed = true;
         }
 
@@ -1069,6 +1094,110 @@ namespace GuildIdle.Activities
             if (!RuntimeConfigs.Formulas.TryGetFormula(action.buildFormulaId, out var formula))
                 return new FormulaEvaluationResult { success = false, code = "BuildFormulaMissing", message = $"Build formula '{action.buildFormulaId}' is missing." };
             return _formulas.Evaluate(formula, BuildFormulaContext(heroId, action.skillId, 0f, false, formula));
+        }
+
+        private bool ValidateWorkCyclePreparation(ActivityExecutionSaveData execution, ActivityRuntimeInfo info, List<ActivityRequirementIssue> issues)
+        {
+            var rewardDescriptorsValid = ValidateWorkCycleRewardDescriptors(execution, issues);
+            var dangerValid = ValidateDangerDescriptor(execution, info, issues);
+            var effectsValid = ValidateWorkEffectDescriptors(execution, info, issues);
+            return rewardDescriptorsValid && dangerValid && effectsValid;
+        }
+
+        private bool ValidateWorkCycleRewardDescriptors(ActivityExecutionSaveData execution, List<ActivityRequirementIssue> issues)
+        {
+            var valid = true;
+            foreach (var reward in RuntimeConfigs.Activities.GetRewards(execution.activityId))
+            {
+                if (reward == null || !ActivityResolverUtilities.MomentMatches(reward.grantMoment, GrantMoment.OnCycle))
+                    continue;
+                if (!ActivityTypeParser.TryParseRewardType(reward.rewardType, out var type))
+                {
+                    AddIssue(issues, execution.activityId, "RewardType", reward.rewardType, 1, 0, true, false, $"Unsupported reward type '{reward.rewardType}'.");
+                    valid = false;
+                    continue;
+                }
+                if (!ValidateRewardTarget(type, reward.targetId))
+                {
+                    AddIssue(issues, execution.activityId, "RewardTarget", reward.targetId, 1, 0, true, false, $"Reward target '{reward.targetId}' is not valid for type '{reward.rewardType}'.");
+                    valid = false;
+                }
+            }
+            return valid;
+        }
+
+        private bool ValidateDangerDescriptor(ActivityExecutionSaveData execution, ActivityRuntimeInfo info, List<ActivityRequirementIssue> issues)
+        {
+            var encounters = RuntimeConfigs.Activities.GetDangerEncounters(execution.activityId);
+            if (encounters.Length == 0)
+                return true;
+            var encounter = encounters[0];
+            if (!RuntimeConfigs.Formulas.TryGetFormula(encounter.riskFormulaId, out var formula))
+            {
+                AddIssue(issues, execution.activityId, "DangerFormula", encounter.riskFormulaId, 1, 0, true, false, "DangerEncounter formula is missing.");
+                return false;
+            }
+            var evaluated = _formulas.Evaluate(formula, BuildFormulaContext(execution.heroId, info.activity.mainSkillId, encounter.riskPercent, true, formula));
+            if (evaluated.success)
+                return true;
+            AddIssue(issues, execution.activityId, evaluated.code, formula.formulaId, 1, 0, true, false, evaluated.message);
+            return false;
+        }
+
+        private bool ValidateWorkEffectDescriptors(ActivityExecutionSaveData execution, ActivityRuntimeInfo info, List<ActivityRequirementIssue> issues)
+        {
+            if (!RuntimeConfigs.Heroes.TryGet(execution.heroId, out var hero))
+                return true;
+            var valid = true;
+            foreach (var effect in RuntimeConfigs.Heroes.GetEffectsByTrigger(WorkEffectTrigger))
+            {
+                if (effect == null || !HeroOwnsSkill(hero, effect.skillId) || !ConditionMatchesCategory(effect.condition, info.activity.category))
+                    continue;
+                if (!_workEffectHandlers.ContainsKey(effect.effect ?? string.Empty))
+                {
+                    AddIssue(issues, execution.activityId, "HeroEffectUnsupported", effect.effectId, 1, 0, true, false, $"Unsupported work effect handler '{effect.effect}'.");
+                    valid = false;
+                    continue;
+                }
+                var counter = _activityState.GetHeroEffectCounter(execution.heroId, effect.effectId) + 1;
+                if (!int.TryParse(effect.interval, out var interval) || interval <= 0 || counter % interval != 0)
+                    continue;
+                if (string.Equals(effect.effect, AddExtraBaseResourceEffect, StringComparison.OrdinalIgnoreCase) &&
+                    !ValidateCompletedWorkBaseResourceTarget(execution.activityId, effect, issues))
+                    valid = false;
+            }
+            return valid;
+        }
+
+        private bool ValidateCompletedWorkBaseResourceTarget(string activityId, HeroSkillEffectConfigDto effect, List<ActivityRequirementIssue> issues)
+        {
+            if (!string.Equals(effect?.target, CompletedWorkBaseResourceTarget, StringComparison.OrdinalIgnoreCase))
+            {
+                AddIssue(issues, activityId, "HeroEffectTarget", effect?.effectId, 1, 0, true, false, $"Work effect target '{effect?.target}' could not be resolved.");
+                return false;
+            }
+            ActivityRewardConfigDto baseResource = null;
+            foreach (var reward in RuntimeConfigs.Activities.GetRewards(activityId))
+            {
+                if (reward == null || !ActivityResolverUtilities.MomentMatches(reward.grantMoment, GrantMoment.OnCycle) ||
+                    !ActivityTypeParser.TryParseRewardType(reward.rewardType, out var type) || type != RewardTypeEnum.Resource)
+                    continue;
+                if (reward.chance < 100f)
+                {
+                    AddIssue(issues, activityId, "HeroEffectTarget", effect.effectId, 1, 0, true, false, "completed_work_base_resource requires a guaranteed OnCycle Resource reward.");
+                    return false;
+                }
+                if (baseResource != null)
+                {
+                    AddIssue(issues, activityId, "HeroEffectTarget", effect.effectId, 1, 0, true, false, "completed_work_base_resource requires exactly one OnCycle Resource reward.");
+                    return false;
+                }
+                baseResource = reward;
+            }
+            if (baseResource != null)
+                return true;
+            AddIssue(issues, activityId, "HeroEffectTarget", effect.effectId, 1, 0, true, false, "completed_work_base_resource requires an OnCycle Resource reward.");
+            return false;
         }
 
         private FormulaEvaluationContext BuildFormulaContext(string heroId, string skillId, float contextBase, bool hasContextBase, FormulaConfigDto formula)
@@ -1222,34 +1351,125 @@ namespace GuildIdle.Activities
 
         private void ReconcilePendingBuildingEvents()
         {
-            if (_eventSink == null)
-                return;
             foreach (var execution in GetExecutions())
-                if (execution != null && string.Equals(execution.runtimeKind, RuntimeKindBuild, StringComparison.Ordinal) &&
-                    execution.buildingLevelApplied && execution.buildingEventPending && !execution.buildingEventPublished)
-                    DeliverPendingBuildingEvent(execution);
+            {
+                var changed = false;
+                TryResumeBuildCompletionLifecycle(execution, null, null, ref changed);
+            }
         }
 
-        private bool DeliverPendingBuildingEvent(ActivityExecutionSaveData execution)
+        private bool TryResumeBuildCompletionLifecycle(
+            ActivityExecutionSaveData execution,
+            List<ActivityRequirementIssue> issues,
+            List<ActivityRuntimeEvent> events,
+            ref bool changed)
         {
-            if (_eventSink == null || execution == null)
+            if (execution == null || !string.Equals(execution.runtimeKind, RuntimeKindBuild, StringComparison.Ordinal))
                 return false;
+            var handled = false;
+            if (string.Equals(execution.completionPhase, CompletionPhaseBuildingEventPending, StringComparison.Ordinal) ||
+                (execution.buildingLevelApplied && execution.buildingEventPending && !execution.buildingEventPublished))
+                handled |= TryProcessPendingBuildingEvent(execution.executionId, issues, events, ref changed);
             var current = GetExecution(execution.executionId);
+            if (current != null && string.Equals(current.completionPhase, CompletionPhaseCompletionReady, StringComparison.Ordinal))
+                handled |= TryFinalizeCompletionReady(current.executionId, issues, events, ref changed);
+            return handled;
+        }
+
+        private bool TryProcessPendingBuildingEvent(
+            string executionId,
+            List<ActivityRequirementIssue> issues,
+            List<ActivityRuntimeEvent> events,
+            ref bool changed)
+        {
+            var current = GetExecution(executionId);
             if (current == null || !current.buildingEventPending || current.buildingEventPublished ||
                 !RuntimeConfigs.Buildings.TryGetBuildAction(current.activityId, out var action))
                 return false;
-            try
+            if (_progressionProcessor == null)
             {
-                _eventSink(new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.BuildingLevelChanged, targetId = action.targetBuildingId, value = action.targetLevel });
-            }
-            catch (Exception exception)
-            {
-                Debug.LogError($"[ActivityRuntime] Building event delivery failed for '{current.executionId}': {exception.Message}");
+                AddIssue(issues, current.activityId, "BuildingEventProcessorMissing", current.executionId, 1, 0, true, false, "BuildingLevelChanged requires a transaction-aware progression processor.");
                 return false;
             }
+            var checkpoint = _activityState.CaptureCheckpoint();
+            var progression = _progressionProcessor.ProcessBuildingLevelChanged(action.targetBuildingId, action.targetLevel);
+            if (!progression.success)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, current.activityId, progression.code ?? "BuildingEventProcessor", action.targetBuildingId, action.targetLevel, 0, true, false, progression.message ?? "BuildingLevelChanged processor failed.");
+                return false;
+            }
+            current = GetExecution(executionId);
+            if (current == null)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, action.id, "ActivityExecution", executionId, 1, 0, true, false, "Construction execution disappeared while processing BuildingLevelChanged.");
+                return false;
+            }
+            var emptyCompletion = current.status == CoreActivityRuntimeStatus.Paused && string.IsNullOrWhiteSpace(current.pendingResultId);
             current.buildingEventPending = false;
             current.buildingEventPublished = true;
-            return UpdateExecution(current) && Save();
+            current.completionPhase = emptyCompletion ? CompletionPhaseCompletionReady : null;
+            if (!UpdateExecution(current) || !Save())
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, current.activityId, "BuildingEventAck", current.executionId, 1, 0, true, false, "Failed to persist BuildingLevelChanged acknowledgment.");
+                return false;
+            }
+            changed = true;
+            var runtimeEvent = new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.BuildingLevelChanged, targetId = action.targetBuildingId, value = action.targetLevel };
+            events?.Add(runtimeEvent);
+            NotifyEventSink(runtimeEvent);
+            return true;
+        }
+
+        private bool TryFinalizeCompletionReady(
+            string executionId,
+            List<ActivityRequirementIssue> issues,
+            List<ActivityRuntimeEvent> events,
+            ref bool changed)
+        {
+            var current = GetExecution(executionId);
+            if (current == null || !string.Equals(current.completionPhase, CompletionPhaseCompletionReady, StringComparison.Ordinal))
+                return false;
+            if (_progressionProcessor == null)
+            {
+                AddIssue(issues, current.activityId, "ActivityCompletedProcessorMissing", current.executionId, 1, 0, true, false, "ActivityCompleted requires a transaction-aware progression processor.");
+                return false;
+            }
+            var checkpoint = _activityState.CaptureCheckpoint();
+            var progression = _progressionProcessor.ProcessActivityCompleted(current.activityId);
+            if (!progression.success)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, current.activityId, progression.code ?? "ActivityCompletedProcessor", current.activityId, 1, 0, true, false, progression.message ?? "ActivityCompleted processor failed.");
+                return false;
+            }
+            current = GetExecution(executionId);
+            if (current == null)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, string.Empty, "ActivityExecution", executionId, 1, 0, true, false, "Construction execution disappeared while finalizing completion.");
+                return false;
+            }
+            if (!_activityState.IsActivityCompleted(current.activityId) && !_activityState.CompleteActivity(current.activityId))
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, current.activityId, "ActivityCompleted", current.activityId, 1, 0, true, false, "Failed to mark construction activity completed.");
+                return false;
+            }
+            var completedActivityId = current.activityId;
+            if (!RemoveExecution(current.executionId) || !Save())
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, completedActivityId, "BuildCompletion", current.executionId, 1, 0, true, false, "Failed to finalize construction completion.");
+                return false;
+            }
+            changed = true;
+            var runtimeEvent = new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.ActivityCompleted, targetId = completedActivityId, value = 1 };
+            events?.Add(runtimeEvent);
+            NotifyEventSink(runtimeEvent);
+            return true;
         }
 
         private int CountActiveHeroes()
@@ -1298,11 +1518,154 @@ namespace GuildIdle.Activities
             };
         }
 
+        private static ActivityExecutionSaveData CloneExecution(ActivityExecutionSaveData execution)
+        {
+            if (execution == null)
+                return null;
+            return new ActivityExecutionSaveData
+            {
+                executionId = execution.executionId,
+                activityId = execution.activityId,
+                runtimeKind = execution.runtimeKind,
+                heroId = execution.heroId,
+                status = execution.status,
+                elapsedSeconds = execution.elapsedSeconds,
+                completedCycles = execution.completedCycles,
+                plannedCycles = execution.plannedCycles,
+                currentCycleFatiguePaid = execution.currentCycleFatiguePaid,
+                cyclePhase = execution.cyclePhase,
+                stagedRewards = CloneStagedRewards(execution.stagedRewards),
+                endReason = execution.endReason,
+                dangerRollCompleted = execution.dangerRollCompleted,
+                dangerRiskPercent = execution.dangerRiskPercent,
+                dangerRoll = execution.dangerRoll,
+                activityBagResolved = execution.activityBagResolved,
+                materialsPaid = execution.materialsPaid,
+                accumulatedBuildPoints = execution.accumulatedBuildPoints,
+                buildingLevelApplied = execution.buildingLevelApplied,
+                buildingEventPending = execution.buildingEventPending,
+                buildingEventPublished = execution.buildingEventPublished,
+                completionPhase = execution.completionPhase,
+                linkedCombat = CloneLinkedCombat(execution.linkedCombat),
+                pendingResultId = execution.pendingResultId,
+                startedAtUnixSeconds = execution.startedAtUnixSeconds
+            };
+        }
+
+        private static void CopyExecutionState(ActivityExecutionSaveData source, ActivityExecutionSaveData target)
+        {
+            if (source == null || target == null)
+                return;
+            target.executionId = source.executionId;
+            target.activityId = source.activityId;
+            target.runtimeKind = source.runtimeKind;
+            target.heroId = source.heroId;
+            target.status = source.status;
+            target.elapsedSeconds = source.elapsedSeconds;
+            target.completedCycles = source.completedCycles;
+            target.plannedCycles = source.plannedCycles;
+            target.currentCycleFatiguePaid = source.currentCycleFatiguePaid;
+            target.cyclePhase = source.cyclePhase;
+            target.stagedRewards = CloneStagedRewards(source.stagedRewards);
+            target.endReason = source.endReason;
+            target.dangerRollCompleted = source.dangerRollCompleted;
+            target.dangerRiskPercent = source.dangerRiskPercent;
+            target.dangerRoll = source.dangerRoll;
+            target.activityBagResolved = source.activityBagResolved;
+            target.materialsPaid = source.materialsPaid;
+            target.accumulatedBuildPoints = source.accumulatedBuildPoints;
+            target.buildingLevelApplied = source.buildingLevelApplied;
+            target.buildingEventPending = source.buildingEventPending;
+            target.buildingEventPublished = source.buildingEventPublished;
+            target.completionPhase = source.completionPhase;
+            target.linkedCombat = CloneLinkedCombat(source.linkedCombat);
+            target.pendingResultId = source.pendingResultId;
+            target.startedAtUnixSeconds = source.startedAtUnixSeconds;
+        }
+
+        private static ActivityStagedRewardSaveData[] CloneStagedRewards(ActivityStagedRewardSaveData[] source)
+        {
+            var entries = source ?? Array.Empty<ActivityStagedRewardSaveData>();
+            var result = new ActivityStagedRewardSaveData[entries.Length];
+            for (var index = 0; index < entries.Length; index++)
+            {
+                var entry = entries[index];
+                result[index] = entry == null ? null : new ActivityStagedRewardSaveData
+                {
+                    rewardType = entry.rewardType,
+                    targetId = entry.targetId,
+                    quantity = entry.quantity,
+                    origin = entry.origin,
+                    quality = entry.quality,
+                    instanceId = entry.instanceId
+                };
+            }
+            return result;
+        }
+
+        private static LinkedCombatStartRequestSaveData CloneLinkedCombat(LinkedCombatStartRequestSaveData source)
+        {
+            if (source == null)
+                return null;
+            return new LinkedCombatStartRequestSaveData
+            {
+                requestId = source.requestId,
+                rootExecutionId = source.rootExecutionId,
+                occupationOwnerId = source.occupationOwnerId,
+                heroId = source.heroId,
+                dangerEncounterId = source.dangerEncounterId,
+                enemyGroupId = source.enemyGroupId,
+                combatMode = source.combatMode,
+                defeatLossRule = source.defeatLossRule,
+                suppressFatigueCost = source.suppressFatigueCost,
+                combatExecutionId = source.combatExecutionId,
+                resolved = source.resolved,
+                loot = CloneStagedRewards(source.loot)
+            };
+        }
+
         private static bool IsLootRewardType(string rewardType)
         {
             if (!ActivityTypeParser.TryParseRewardType(rewardType, out var type))
                 return false;
             return type == RewardTypeEnum.Resource || type == RewardTypeEnum.Item || type == RewardTypeEnum.Consumable || type == RewardTypeEnum.Equipment;
+        }
+
+        private static bool ValidateRewardTarget(RewardTypeEnum type, string targetId)
+        {
+            switch (type)
+            {
+                case RewardTypeEnum.Resource:
+                    return RuntimeConfigs.Items.TryGetResource(targetId, out _);
+                case RewardTypeEnum.Equipment:
+                    return RuntimeConfigs.Items.TryGetEquipmentWeapon(targetId, out _) || RuntimeConfigs.Items.TryGetEquipmentArmor(targetId, out _);
+                case RewardTypeEnum.Consumable:
+                    return RuntimeConfigs.Items.TryGetConsumable(targetId, out _);
+                case RewardTypeEnum.Recipe:
+                    return RuntimeConfigs.Items.TryGetRecipe(targetId, out _);
+                case RewardTypeEnum.Item:
+                    return RuntimeConfigs.Items.TryGetResource(targetId, out _) ||
+                           RuntimeConfigs.Items.TryGetEquipmentWeapon(targetId, out _) ||
+                           RuntimeConfigs.Items.TryGetEquipmentArmor(targetId, out _) ||
+                           RuntimeConfigs.Items.TryGetConsumable(targetId, out _) ||
+                           RuntimeConfigs.Items.TryGetRecipe(targetId, out _);
+                case RewardTypeEnum.SkillExp:
+                    return ActivityResolverUtilities.IsKnownSkill(targetId);
+                case RewardTypeEnum.Gold:
+                    return RuntimeConfigs.Items.TryGetCurrency(ActivityResolverUtilities.GoldCurrencyId, out _);
+                case RewardTypeEnum.Currency:
+                    return RuntimeConfigs.Items.TryGetCurrency(targetId, out _);
+                case RewardTypeEnum.Hero:
+                    return RuntimeConfigs.Heroes.TryGet(targetId, out _);
+                case RewardTypeEnum.UnlockBuilding:
+                    return RuntimeConfigs.Buildings.TryGet(targetId, out _);
+                case RewardTypeEnum.UnlockLocation:
+                    return RuntimeConfigs.Map.TryGetLocation(targetId, out _);
+                case RewardTypeEnum.LootTable:
+                    return RuntimeConfigs.Loot.TryGet(targetId, out _);
+                default:
+                    return false;
+            }
         }
 
         private static bool HeroOwnsSkill(HeroConfigDto hero, string skillId)
@@ -1368,6 +1731,7 @@ namespace GuildIdle.Activities
                 plannedCycles = execution.plannedCycles,
                 currentCycleFatiguePaid = execution.currentCycleFatiguePaid,
                 cyclePhase = execution.cyclePhase,
+                completionPhase = execution.completionPhase,
                 endReason = execution.endReason,
                 accumulatedBuildPoints = execution.accumulatedBuildPoints,
                 linkedCombat = execution.linkedCombat,
@@ -1412,6 +1776,20 @@ namespace GuildIdle.Activities
         private bool RemoveExecution(string executionId) => _store.RemoveActivityExecution(executionId);
         private bool Save() => _store.Save();
 
+        private void NotifyEventSink(ActivityRuntimeEvent runtimeEvent)
+        {
+            if (_eventSink == null || runtimeEvent == null)
+                return;
+            try
+            {
+                _eventSink(runtimeEvent);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"[ActivityRuntime] Event sink failed for '{runtimeEvent.eventType}:{runtimeEvent.targetId}': {exception.Message}");
+            }
+        }
+
         private ActivityStartResult FinishStart(ActivityStartResult result, List<ActivityRequirementIssue> issues, bool success)
         {
             result.success = success && !HasBlockingIssues(issues);
@@ -1426,7 +1804,7 @@ namespace GuildIdle.Activities
             result.issues = issues.ToArray();
             result.rewardResults = rewards.ToArray();
             result.events = events.ToArray();
-            result.saved = changed && Save();
+            result.saved = result.success && changed && Save();
             result.snapshot = GetSnapshot();
             return result;
         }
@@ -1461,6 +1839,8 @@ namespace GuildIdle.Activities
 
         private static void AddIssue(List<ActivityRequirementIssue> issues, string activityId, string issueType, string targetId, int requiredAmount, long currentAmount, bool isError, bool isNotImplemented, string message)
         {
+            if (issues == null)
+                return;
             ActivityResolverUtilities.AddIssue(issues, activityId, issueType, targetId, requiredAmount, currentAmount, isError, isNotImplemented, message);
         }
 
