@@ -131,6 +131,54 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void EmptyRepeatableCycleStopsWithoutBagAndSurvivesSaveLoad()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start("empty_repeat", "ren");
+
+            var ticked = runtime.Tick(10f);
+            var afterCycle = state.GetActivityExecution(started.executionId);
+            var stopped = runtime.Cancel(started.executionId);
+            var storage = new MemorySaveStorage();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            var restored = SaveService.Load(_factory, storage);
+
+            Assert.That(ticked.success, Is.True);
+            Assert.That(ticked.processedCycles, Is.EqualTo(1));
+            Assert.That(afterCycle.completedCycles, Is.EqualTo(1));
+            Assert.That(afterCycle.pendingResultId, Is.Null);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(stopped.success, Is.True);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+            Assert.That(restored.PendingResults.GetAll(), Is.Empty);
+            Assert.That(restored.GetActivityExecutions(), Is.Empty);
+            Assert.That(restored.IsHeroBusy("ren"), Is.False);
+            Assert.That(restored.ToSaveData().resultSources, Is.Empty);
+        }
+
+        [Test]
+        public void EmptyOneShotPublishesResolvedEventExactlyOnce()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var resolved = new List<PendingResultResolvedEvent>();
+            state.PendingResults.Resolved += resolved.Add;
+            Assert.That(runtime.Start("one_shot", "ren").success, Is.True);
+
+            var ticked = runtime.Tick(5f);
+
+            Assert.That(ticked.success, Is.True);
+            Assert.That(resolved, Has.Count.EqualTo(1));
+            Assert.That(resolved[0].SourceType, Is.EqualTo(PendingResultSourceType.Activity));
+            Assert.That(resolved[0].SourceId, Is.EqualTo("one_shot"));
+            Assert.That(resolved[0].ResolvedImmediately, Is.True);
+            Assert.That(state.IsActivityCompleted("one_shot"), Is.True);
+            Assert.That(state.GetActivityExecutions(), Is.Empty);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+        }
+
+        [Test]
         public void Tick_RewardFailureKeepsRepeatableExecution()
         {
             var state = NewState();
@@ -284,6 +332,7 @@ namespace GuildIdle.Editor.Activities
                     activities = new[]
                     {
                         new ActivityConfigDto { id = "work_pine_wood", type = "Work", cycleSec = 10, fatigueCost = 2, isRepeatable = true },
+                        new ActivityConfigDto { id = "empty_repeat", type = "Work", cycleSec = 10, isRepeatable = true },
                         new ActivityConfigDto { id = "bad_cycle", type = "Work", cycleSec = 5, isRepeatable = true },
                         new ActivityConfigDto { id = "one_shot", type = "Explore", durationSec = 5, fatigueCost = 5, isRepeatable = false },
                         new ActivityConfigDto { id = "one_shot_new", type = "Explore", durationSec = 5, isRepeatable = false }

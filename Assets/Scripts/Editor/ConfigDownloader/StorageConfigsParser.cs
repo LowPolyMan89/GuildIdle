@@ -146,7 +146,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly HashSet<string> _storageRuleIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _stateIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly Dictionary<string, int> _workingAvailabilityModes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            private bool _hasAvailableState;
+            private readonly Dictionary<string, int> _availabilityModeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             public StorageConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
             {
@@ -503,13 +503,17 @@ namespace GuildIdle.Editor.ConfigDownloader
                 var hasOwner = TryParseBool(row, "requires_owner", out var requiresOwner);
                 var availabilityMode = row.Get("availability_mode");
 
-                if (!string.IsNullOrWhiteSpace(availabilityMode) &&
-                    !string.Equals(availabilityMode, "unavailable", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(availabilityMode))
                 {
-                    if (_workingAvailabilityModes.TryGetValue(availabilityMode, out var firstRow))
-                        AddIssue("ItemStates", row.RowNumber, "availability_mode", availabilityMode, $"Working availability_mode must be unique; first declared at row {firstRow}.");
-                    else
-                        _workingAvailabilityModes.Add(availabilityMode, row.RowNumber);
+                    _availabilityModeCounts.TryGetValue(availabilityMode, out var count);
+                    _availabilityModeCounts[availabilityMode] = count + 1;
+                    if (!string.Equals(availabilityMode, "unavailable", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (_workingAvailabilityModes.TryGetValue(availabilityMode, out var firstRow))
+                            AddIssue("ItemStates", row.RowNumber, "availability_mode", availabilityMode, $"Working availability_mode must be unique; first declared at row {firstRow}.");
+                        else
+                            _workingAvailabilityModes.Add(availabilityMode, row.RowNumber);
+                    }
                 }
 
                 if (hasCapacity && occupiesCapacity && hasInStorage && !isInStorage)
@@ -534,7 +538,6 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 if (string.Equals(availabilityMode, "available", StringComparison.OrdinalIgnoreCase))
                 {
-                    _hasAvailableState = true;
                     ValidateExpectedBool(row, "available_for_craft", true, "available state must be available for craft.");
                     ValidateExpectedBool(row, "available_for_sale", true, "available state must be available for sale.");
                     ValidateExpectedBool(row, "available_for_order", true, "available state must be available for order.");
@@ -564,8 +567,21 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private void ValidateItemStateSet()
             {
-                if (!_hasAvailableState)
-                    AddIssue("ItemStates", 0, "availability_mode", "available", "At least one available item state is required.");
+                var requiredWorkingModes = new[] { "available", "reserved", "in_action", "equipped" };
+                foreach (var mode in requiredWorkingModes)
+                {
+                    _availabilityModeCounts.TryGetValue(mode, out var count);
+                    if (count == 0)
+                    {
+                        var message = mode == "available"
+                            ? "At least one available item state is required."
+                            : $"Exactly one ItemStates row with availability_mode '{mode}' is required.";
+                        AddIssue("ItemStates", 0, "availability_mode", mode, message);
+                    }
+                }
+                _availabilityModeCounts.TryGetValue("unavailable", out var unavailableCount);
+                if (unavailableCount == 0)
+                    AddIssue("ItemStates", 0, "availability_mode", "unavailable", "At least one ItemStates row with availability_mode 'unavailable' is required.");
 
                 var requiredModes = new[] { "available", "reserved", "in_action", "equipped", "unavailable" };
                 if (!_enumValues.TryGetValue("ItemAvailabilityMode", out var configuredModes))

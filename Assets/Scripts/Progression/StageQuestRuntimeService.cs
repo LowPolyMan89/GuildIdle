@@ -423,6 +423,8 @@ namespace GuildIdle.Progression
             }
             if (!string.Equals(resolved.SourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
                 return;
+            if (resolved.ResolvedImmediately)
+                return; // Empty quest rewards are already folded into the active QuestRuntime transaction.
             var completed = new QuestCompleted(resolved.SourceExecutionId, resolved.SourceId);
             var aggregate = new QuestRuntimeResult { ChangedValue = true };
             aggregate.CompletedValues.Add(resolved.SourceExecutionId);

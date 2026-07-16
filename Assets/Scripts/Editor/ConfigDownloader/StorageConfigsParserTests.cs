@@ -228,6 +228,33 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void BuildRuntimeJson_RequiresConcreteStateForEveryWorkingAvailabilityMode()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "ItemStates").rows[3].cells[9] = "unavailable";
+            WriteRaw(download);
+
+            var report = new StorageConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Exactly one ItemStates row with availability_mode 'reserved' is required."));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RequiresAtLeastOneUnavailableState()
+        {
+            var download = CreateValidDownload();
+            for (var row = 5; row <= 7; row++)
+                FindSheet(download, "ItemStates").rows[row].cells[9] = string.Empty;
+            WriteRaw(download);
+
+            var report = new StorageConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("At least one ItemStates row with availability_mode 'unavailable' is required."));
+        }
+
+        [Test]
         public void BuildRuntimeJson_RejectsForbiddenLegacyItemGold()
         {
             var download = CreateValidDownload();

@@ -66,6 +66,7 @@ namespace GuildIdle.Player
         public string SourceId { get; set; }
         public string SourceExecutionId { get; set; }
         public string OwnerHeroId { get; set; }
+        public bool ResolvedImmediately { get; set; }
     }
 
     public interface IPendingResultService
@@ -397,7 +398,8 @@ namespace GuildIdle.Player
                 if (string.IsNullOrWhiteSpace(instanceId) && IsSingleItemEntry(entry))
                     instanceId = Guid.NewGuid().ToString("N");
                 if (!string.IsNullOrWhiteSpace(instanceId) &&
-                    (!equipmentInstanceIds.Add(instanceId) || _state.MutableItemInstances.ContainsKey(instanceId)))
+                    (!equipmentInstanceIds.Add(instanceId) || _state.MutableItemInstances.ContainsKey(instanceId) ||
+                     IsInstanceIdInAnotherPendingResult(instanceId, resultId)))
                 {
                     _state.RestoreTransactional(before);
                     return FormationFailure("InstanceConflict", $"Equipment instance id '{instanceId}' is already in use.");
@@ -451,6 +453,8 @@ namespace GuildIdle.Player
                 _state.RestoreTransactional(before);
                 return FormationFailure("SaveFailed", "PendingResult formation could not be saved and was rolled back.");
             }
+            if (resolvedImmediately)
+                Resolved?.Invoke(ToResolvedEvent(result, true));
             return new PendingResultFormationResult { Success = true, Code = resolvedImmediately ? "Resolved" : "Formed", Result = resolvedImmediately ? null : CloneResult(result), ResolvedImmediately = resolvedImmediately };
         }
 
@@ -900,6 +904,21 @@ namespace GuildIdle.Player
                    string.Equals(rule.mode, "single", StringComparison.Ordinal);
         }
 
+        private bool IsInstanceIdInAnotherPendingResult(string instanceId, string excludedResultId)
+        {
+            if (string.IsNullOrWhiteSpace(instanceId))
+                return false;
+            foreach (var pending in _results.Values)
+            {
+                if (pending == null || string.Equals(pending.resultId, excludedResultId, StringComparison.Ordinal))
+                    continue;
+                foreach (var entry in pending.entries ?? Array.Empty<PendingResultEntrySaveData>())
+                    if (entry != null && string.Equals(entry.instanceId, instanceId, StringComparison.Ordinal))
+                        return true;
+            }
+            return false;
+        }
+
         private static void NormalizeEntries(PendingResultSaveData result)
         {
             var entries = new List<PendingResultEntrySaveData>();
@@ -997,7 +1016,8 @@ namespace GuildIdle.Player
                     _state.MarkNormalized();
                 }
                 if (!string.IsNullOrWhiteSpace(entry.instanceId) &&
-                    (!instanceIds.Add(entry.instanceId) || _state.MutableItemInstances.ContainsKey(entry.instanceId)))
+                    (!instanceIds.Add(entry.instanceId) || _state.MutableItemInstances.ContainsKey(entry.instanceId) ||
+                     IsInstanceIdInAnotherPendingResult(entry.instanceId, result.resultId)))
                     return false;
             }
             return true;
@@ -1036,13 +1056,14 @@ namespace GuildIdle.Player
             };
         }
 
-        private static PendingResultResolvedEvent ToResolvedEvent(PendingResultSaveData result) => new PendingResultResolvedEvent
+        private static PendingResultResolvedEvent ToResolvedEvent(PendingResultSaveData result, bool resolvedImmediately = false) => new PendingResultResolvedEvent
         {
             ResultId = result.resultId,
             SourceType = result.sourceType,
             SourceId = result.sourceId,
             SourceExecutionId = result.sourceExecutionId,
-            OwnerHeroId = result.ownerHeroId
+            OwnerHeroId = result.ownerHeroId,
+            ResolvedImmediately = resolvedImmediately
         };
 
         private static PendingResultFormationResult FormationFailure(string code, string message) => new PendingResultFormationResult { Success = false, Code = code, Message = message };

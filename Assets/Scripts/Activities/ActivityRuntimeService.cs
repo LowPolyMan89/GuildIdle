@@ -260,9 +260,18 @@ namespace GuildIdle.Activities
                     AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1, 0, true, false, "Failed to advance activity cycle state before result formation.");
                     break;
                 }
+                var pendingDraft = BuildPendingDraft(execution, reward);
+                if (pendingDraft.Entries.Length == 0)
+                {
+                    cycles++;
+                    tickResult.processedCycles++;
+                    changed = true;
+                    continue;
+                }
+
                 var formation = _activityState.PendingResults.CreateOrAppend(
                     $"activity:{execution.executionId}:cycle:{execution.completedCycles}",
-                    BuildPendingDraft(execution, reward),
+                    pendingDraft,
                     false,
                     GetPendingResultRevision(execution));
                 if (!formation.Success)

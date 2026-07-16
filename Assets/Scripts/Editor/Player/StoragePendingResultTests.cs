@@ -125,6 +125,58 @@ namespace GuildIdle.Player.Editor
         }
 
         [Test]
+        public void ConcreteEquipmentInstanceIdMustBeUniqueAcrossPendingResults()
+        {
+            var first = _state.PendingResults.CreateCombatResult(
+                "form-first-concrete-equipment",
+                new PendingResultDraft
+                {
+                    SourceId = "combat-source-a",
+                    SourceExecutionId = "combat-execution-a",
+                    Entries = new[]
+                    {
+                        new PendingResultEntryDraft
+                        {
+                            RewardType = "Equipment",
+                            TargetId = "item_wooden_club",
+                            Quantity = 1,
+                            Origin = PendingResultOrigin.CombatLoot,
+                            InstanceId = "shared-equipment-instance"
+                        }
+                    }
+                },
+                null,
+                null,
+                _state.Storage.GetSnapshot().Revision);
+            var second = _state.PendingResults.CreateCombatResult(
+                "form-second-concrete-equipment",
+                new PendingResultDraft
+                {
+                    SourceId = "combat-source-b",
+                    SourceExecutionId = "combat-execution-b",
+                    Entries = new[]
+                    {
+                        new PendingResultEntryDraft
+                        {
+                            RewardType = "Equipment",
+                            TargetId = "item_wooden_club",
+                            Quantity = 1,
+                            Origin = PendingResultOrigin.CombatLoot,
+                            InstanceId = "shared-equipment-instance"
+                        }
+                    }
+                },
+                null,
+                null,
+                _state.Storage.GetSnapshot().Revision);
+
+            Assert.That(first.Success, Is.True);
+            Assert.That(second.Success, Is.False);
+            Assert.That(second.Code, Is.EqualTo("InstanceConflict"));
+            Assert.That(_state.PendingResults.GetAll(), Has.Length.EqualTo(1));
+        }
+
+        [Test]
         public void GeneratedEquipmentPayloadDoesNotMutateDraftAndReplaysByOperationId()
         {
             var execution = new ActivityExecutionSaveData
