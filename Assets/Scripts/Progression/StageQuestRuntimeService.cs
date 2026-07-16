@@ -397,18 +397,21 @@ namespace GuildIdle.Progression
         private readonly QuestRuntimeService _quests;
         private readonly StageProgressionService _stages;
         private readonly IProgressionRuntimeStore _store;
+        private readonly INonBuildTransitionProvider _nonBuildTransitions;
         private bool _savePending;
-        public ProgressionRuntimeService(QuestRuntimeService quests, StageProgressionService stages, IProgressionRuntimeStore store)
+        public ProgressionRuntimeService(QuestRuntimeService quests, StageProgressionService stages, IProgressionRuntimeStore store, INonBuildTransitionProvider nonBuildTransitions = null)
         {
             _quests = quests ?? throw new ArgumentNullException(nameof(quests));
             _stages = stages ?? throw new ArgumentNullException(nameof(stages));
             _store = store ?? throw new ArgumentNullException(nameof(store));
+            _nonBuildTransitions = nonBuildTransitions;
             if (_store.PendingResults != null)
                 _store.PendingResults.Resolved += HandlePendingResultResolved;
         }
         public event Action<ProgressionRuntimeUpdate> Updated;
         public ProgressionRuntimeUpdate Initialize() => CompleteTransaction(_quests.Initialize());
         public ProgressionRuntimeUpdate Handle(ProgressionEvent progressionEvent) => CompleteTransaction(_quests.Handle(progressionEvent ?? throw new ArgumentNullException(nameof(progressionEvent))));
+        public ProgressionRuntimeUpdate HandleActivityCompleted(string activityId) => CompleteTransaction(BuildActivityCompletion(activityId));
         public QuestRuntimeSnapshot GetQuestSnapshot() => _quests.GetSnapshot();
         public StageProgressionSnapshot GetStageSnapshot() => _stages.GetSnapshot();
 
@@ -418,7 +421,9 @@ namespace GuildIdle.Progression
                 return;
             if (string.Equals(resolved.SourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
             {
-                CompleteTransaction(_quests.Handle(new ActivityCompleted(resolved.SourceId)));
+                if (!resolved.SourceCompleted)
+                    return;
+                HandleActivityCompleted(resolved.SourceId);
                 return;
             }
             if (!string.Equals(resolved.SourceType, PendingResultSourceType.Quest, StringComparison.Ordinal))
@@ -430,6 +435,21 @@ namespace GuildIdle.Progression
             aggregate.CompletedValues.Add(resolved.SourceExecutionId);
             aggregate.CompletionEventValues.Add(completed);
             CompleteTransaction(aggregate);
+        }
+
+        private QuestRuntimeResult BuildActivityCompletion(string activityId)
+        {
+            var aggregate = _quests.Handle(new ActivityCompleted(activityId));
+            foreach (var level in _nonBuildTransitions?.GetLevelsBySourceActivity(activityId) ?? Array.Empty<BuildingLevelConfigDto>())
+            {
+                if (level == null || !string.IsNullOrWhiteSpace(level.buildFormulaId) ||
+                    level.level <= _store.GetBuildingLevel(level.buildingId) ||
+                    !_store.SetBuildingLevel(level.buildingId, level.level))
+                    continue;
+                aggregate.ChangedValue = true;
+                Merge(aggregate, _quests.Handle(new BuildingLevelChanged(level.buildingId, level.level)));
+            }
+            return aggregate;
         }
 
         private ProgressionRuntimeUpdate CompleteTransaction(QuestRuntimeResult aggregate)

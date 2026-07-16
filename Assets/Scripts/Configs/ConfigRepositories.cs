@@ -164,6 +164,7 @@ namespace GuildIdle.Configs
     public sealed class HeroesConfigRepository
     {
         private readonly Dictionary<string, HeroConfigDto> _heroesById = ItemsConfigRepository.NewIndex<HeroConfigDto>();
+        private readonly Dictionary<string, List<HeroSkillEffectConfigDto>> _effectsByTrigger = new Dictionary<string, List<HeroSkillEffectConfigDto>>(StringComparer.OrdinalIgnoreCase);
 
         public HeroConfigDto[] Heroes { get; }
         public HeroGrowthConfigDto[] HeroGrowth { get; }
@@ -181,6 +182,8 @@ namespace GuildIdle.Configs
 
             foreach (var hero in Heroes)
                 ItemsConfigRepository.AddUnique(_heroesById, hero.heroId, hero, "Heroes/heroes");
+            foreach (var effect in HeroSkillEffects)
+                ItemsConfigRepository.AddGrouped(_effectsByTrigger, effect?.trigger, effect);
         }
 
         public HeroConfigDto Get(string id)
@@ -196,6 +199,13 @@ namespace GuildIdle.Configs
         {
             hero = null;
             return !string.IsNullOrWhiteSpace(id) && _heroesById.TryGetValue(id, out hero);
+        }
+
+        public HeroSkillEffectConfigDto[] GetEffectsByTrigger(string trigger)
+        {
+            return string.IsNullOrWhiteSpace(trigger) || !_effectsByTrigger.TryGetValue(trigger, out var values)
+                ? Array.Empty<HeroSkillEffectConfigDto>()
+                : values.ToArray();
         }
     }
 
@@ -430,6 +440,8 @@ namespace GuildIdle.Configs
     {
         private readonly Dictionary<string, BuildingConfigDto> _buildingsById = ItemsConfigRepository.NewIndex<BuildingConfigDto>();
         private readonly Dictionary<string, BuildingLevelConfigDto> _buildingLevelsByIdAndLevel = ItemsConfigRepository.NewIndex<BuildingLevelConfigDto>();
+        private readonly Dictionary<string, BuildActionConfigDto> _buildActionsById = ItemsConfigRepository.NewIndex<BuildActionConfigDto>();
+        private readonly Dictionary<string, List<BuildingLevelConfigDto>> _levelsBySourceActivityId = new Dictionary<string, List<BuildingLevelConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<SettlementStageStarterHeroConfigDto>> _starterHeroesByStageId = new Dictionary<string, List<SettlementStageStarterHeroConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<SettlementStageStarterEquipmentConfigDto>> _starterEquipmentByStageId = new Dictionary<string, List<SettlementStageStarterEquipmentConfigDto>>(StringComparer.Ordinal);
 
@@ -458,7 +470,12 @@ namespace GuildIdle.Configs
             foreach (var building in Buildings)
                 ItemsConfigRepository.AddUnique(_buildingsById, building.buildingId, building, "Buildings/buildings");
             foreach (var level in BuildingLevels)
+            {
                 ItemsConfigRepository.AddUnique(_buildingLevelsByIdAndLevel, BuildingLevelKey(level.buildingId, level.level), level, "Buildings/buildingLevels");
+                ItemsConfigRepository.AddGrouped(_levelsBySourceActivityId, level?.sourceActivityId, level);
+            }
+            foreach (var action in BuildActions)
+                ItemsConfigRepository.AddUnique(_buildActionsById, action.id, action, "Buildings/buildActions");
             foreach (var starterHero in SettlementStageStarterHeroes)
                 AddStageValue(_starterHeroesByStageId, starterHero?.stageId, starterHero);
             foreach (var starterEquipment in SettlementStageStarterEquipment)
@@ -498,6 +515,27 @@ namespace GuildIdle.Configs
             return !string.IsNullOrWhiteSpace(buildingId) &&
                    level >= 0 &&
                    _buildingLevelsByIdAndLevel.TryGetValue(BuildingLevelKey(buildingId, level), out buildingLevel);
+        }
+
+        public BuildActionConfigDto GetBuildAction(string actionId)
+        {
+            if (TryGetBuildAction(actionId, out var action))
+                return action;
+            ItemsConfigRepository.LogMissing("Buildings/buildActions", actionId);
+            return null;
+        }
+
+        public bool TryGetBuildAction(string actionId, out BuildActionConfigDto action)
+        {
+            action = null;
+            return !string.IsNullOrWhiteSpace(actionId) && _buildActionsById.TryGetValue(actionId, out action);
+        }
+
+        public BuildingLevelConfigDto[] GetLevelsBySourceActivity(string activityId)
+        {
+            return string.IsNullOrWhiteSpace(activityId) || !_levelsBySourceActivityId.TryGetValue(activityId, out var levels)
+                ? Array.Empty<BuildingLevelConfigDto>()
+                : levels.ToArray();
         }
 
         public SettlementStageStarterHeroConfigDto[] GetSettlementStageStarterHeroes(string stageId)

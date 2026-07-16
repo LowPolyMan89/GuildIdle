@@ -165,13 +165,41 @@ namespace GuildIdle.Progression.Editor
                 SourceType = PendingResultSourceType.Activity,
                 SourceId = "activity_a",
                 SourceExecutionId = "activity-execution-a",
-                ResultId = "result:Activity:activity-execution-a"
+                ResultId = "result:Activity:activity-execution-a",
+                SourceCompleted = true
             });
 
             Assert.That(store.GetQuestInstance("story:quest_activity").status, Is.EqualTo(QuestInstanceStatus.Completed));
             Assert.That(store.GetQuestInstance("story:quest_activity").rewardsGranted, Is.True);
             Assert.That(update, Is.Not.Null);
             Assert.That(update.CompletedInstanceIds, Has.Member("story:quest_activity"));
+        }
+
+        [Test]
+        public void ActivityCompletionAppliesConfiguredNonBuildLevelTransition()
+        {
+            var store = new TestStore("stage_1");
+            var configs = Configs(stages: new[] { Stage("stage_1", null) });
+            var runtime = new ProgressionRuntimeService(
+                new QuestRuntimeService(configs, store),
+                new StageProgressionService(configs, store),
+                store,
+                new TestTransitionProvider(new BuildingLevelConfigDto
+                {
+                    buildingId = "building_underwood",
+                    level = 1,
+                    sourceActivityId = "combat_clear",
+                    buildFormulaId = string.Empty
+                }));
+
+            ((TestPendingResults)store.PendingResults).RaiseResolved(new PendingResultResolvedEvent
+            {
+                SourceType = PendingResultSourceType.Activity,
+                SourceId = "combat_clear",
+                SourceCompleted = true
+            });
+
+            Assert.That(store.GetBuildingLevel("building_underwood"), Is.EqualTo(1));
         }
 
         private static ProgressionRuntimeService Runtime(RepositoryProgressionConfigAdapter configs, TestStore store)
@@ -233,6 +261,7 @@ namespace GuildIdle.Progression.Editor
         {
             private readonly Dictionary<string, QuestInstanceSaveData> _instances = new Dictionary<string, QuestInstanceSaveData>(StringComparer.Ordinal);
             private readonly Dictionary<string, int> _items = new Dictionary<string, int>(StringComparer.Ordinal);
+            private readonly Dictionary<string, int> _buildings = new Dictionary<string, int>(StringComparer.Ordinal);
             public TestStore(string stageId) { CurrentStageId = stageId; PendingResults = new TestPendingResults(this); }
             public string CurrentStageId { get; private set; }
             public IPendingResultService PendingResults { get; }
@@ -243,7 +272,8 @@ namespace GuildIdle.Progression.Editor
             public QuestInstanceSaveData[] GetQuestInstances() { var values = new QuestInstanceSaveData[_instances.Count]; _instances.Values.CopyTo(values, 0); return values; }
             public bool SetQuestInstance(QuestInstanceSaveData instance) { if (instance == null || string.IsNullOrWhiteSpace(instance.instanceId)) return false; _instances[instance.instanceId] = instance; return true; }
             public int GetItem(string itemId) => _items.TryGetValue(itemId, out var value) ? value : 0;
-            public int GetBuildingLevel(string buildingId) => 0;
+            public int GetBuildingLevel(string buildingId) => _buildings.TryGetValue(buildingId, out var value) ? value : 0;
+            public bool SetBuildingLevel(string buildingId, int level) { _buildings[buildingId] = level; return true; }
             public bool IsActivityCompleted(string activityId) => false;
             public bool Save() { SaveCalls++; return SaveSucceeds; }
         }
@@ -285,6 +315,13 @@ namespace GuildIdle.Progression.Editor
             public PendingResultMutationResult DiscardAll(string operationId, string resultId, long expectedResultRevision) => Unsupported();
             public PendingResultMutationResult DiscardQuantity(string operationId, string resultId, string entryId, long quantity, long expectedResultRevision) => Unsupported();
             private static PendingResultMutationResult Unsupported() => new PendingResultMutationResult { Success = false, Code = "Unsupported" };
+        }
+
+        private sealed class TestTransitionProvider : INonBuildTransitionProvider
+        {
+            private readonly BuildingLevelConfigDto[] _levels;
+            public TestTransitionProvider(params BuildingLevelConfigDto[] levels) { _levels = levels; }
+            public BuildingLevelConfigDto[] GetLevelsBySourceActivity(string activityId) => _levels;
         }
     }
 }

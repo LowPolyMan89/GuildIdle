@@ -14,6 +14,7 @@ namespace GuildIdle.Editor.Activities
         private string _activityId = "work_pine_wood";
         private string _heroId = "ren";
         private float _tickSeconds = 1f;
+        private int _plannedCycleCount = 1;
         private string _selectedExecutionId;
         private Vector2 _scroll;
         private string _lastMessage;
@@ -38,12 +39,13 @@ namespace GuildIdle.Editor.Activities
             _activityId = EditorGUILayout.TextField("Activity Id", _activityId);
             _heroId = EditorGUILayout.TextField("Hero Id", _heroId);
             _tickSeconds = Mathf.Max(0f, EditorGUILayout.FloatField("Tick Seconds", _tickSeconds));
+            _plannedCycleCount = Mathf.Max(1, EditorGUILayout.IntField("Planned Cycles", _plannedCycleCount));
             _selectedExecutionId = EditorGUILayout.TextField("Execution Id", _selectedExecutionId);
 
             EditorGUI.BeginDisabledGroup(!canUseRuntime);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Start"))
-                ShowStart(_runtime.Start(_activityId, _heroId));
+                ShowStart(_runtime.Start(new ActivityStartRequest { activityId = _activityId, heroId = _heroId, plannedCycleCount = _plannedCycleCount }));
             if (GUILayout.Button("Tick"))
                 ShowTick(_runtime.Tick(_tickSeconds));
             if (GUILayout.Button("Cancel"))

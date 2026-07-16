@@ -19,7 +19,8 @@ namespace GuildIdle.Player
 
             return new ActivityRuntimeService(
                 state,
-                new PlayerStateActivityAdapter(state));
+                new PlayerStateActivityAdapter(state),
+                eventSink: HandleActivityRuntimeEvent);
         }
 
         public static ActivityRuntimeService CreateRuntimeService(PlayerState state)
@@ -63,7 +64,8 @@ namespace GuildIdle.Player
             return new ProgressionRuntimeService(
                 new QuestRuntimeService(configs, store),
                 new StageProgressionService(configs, store),
-                store);
+                store,
+                new RepositoryNonBuildTransitionAdapter(RuntimeConfigs.Buildings));
         }
 
         internal static PlayerBootstrapService CreateBootstrapService(
@@ -91,6 +93,16 @@ namespace GuildIdle.Player
         internal static void InvalidatePlayerStateFactory()
         {
             _playerStateFactory = null;
+        }
+
+        private static void HandleActivityRuntimeEvent(ActivityRuntimeEvent runtimeEvent)
+        {
+            if (runtimeEvent == null || Player.Progression == null)
+                return;
+            if (string.Equals(runtimeEvent.eventType, ActivityRuntimeEventType.BuildingLevelChanged, StringComparison.Ordinal))
+                Player.Progression.Handle(new BuildingLevelChanged(runtimeEvent.targetId, runtimeEvent.value));
+            else if (string.Equals(runtimeEvent.eventType, ActivityRuntimeEventType.ActivityCompleted, StringComparison.Ordinal))
+                Player.Progression.HandleActivityCompleted(runtimeEvent.targetId);
         }
 
         private static PlayerStateFactory GetPlayerStateFactory()

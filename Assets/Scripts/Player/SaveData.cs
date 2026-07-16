@@ -6,7 +6,7 @@ namespace GuildIdle.Player
     [Serializable]
     public sealed class SaveData
     {
-        public const int CurrentSaveVersion = 7;
+        public const int CurrentSaveVersion = 8;
 
         public int saveVersion = CurrentSaveVersion;
         public string currentStageId;

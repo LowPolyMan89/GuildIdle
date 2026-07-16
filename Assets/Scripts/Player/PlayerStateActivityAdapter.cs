@@ -14,13 +14,20 @@ namespace GuildIdle.Player
         }
 
         public IPendingResultService PendingResults => _state.PendingResults;
+        public IStorageService Storage => _state.Storage;
+        public SaveData CaptureCheckpoint() => _state.ToSaveData();
+        public void RestoreCheckpoint(SaveData checkpoint) => _state.RestoreTransactional(checkpoint);
         public bool HasHero(string heroId) => _state.HasHero(heroId);
         public bool AddHero(string heroId) => _state.AddHero(heroId);
         public bool HasHeroState(string heroId) => _state.HasHeroState(heroId);
         public int GetHeroFatigue(string heroId) => _state.GetHeroFatigue(heroId);
         public bool SpendHeroFatigue(string heroId, int amount) => _state.SpendHeroFatigue(heroId, amount);
+        public int GetHeroLevel(string heroId) => _state.GetHeroState(heroId)?.level ?? 0;
+        public int GetHeroStat(string heroId, string statId) => _state.CalculateHeroStat(heroId, statId);
         public int GetHeroSkillLevel(string heroId, string skillId) => _state.GetHeroSkillLevel(heroId, skillId);
         public bool AddHeroSkillExp(string heroId, string skillId, int amount) => _state.AddHeroSkillExp(heroId, skillId, amount);
+        public long GetHeroEffectCounter(string heroId, string effectId) => _state.GetHeroEffectCounter(heroId, effectId);
+        public bool SetHeroEffectCounter(string heroId, string effectId, long value) => _state.SetHeroEffectCounter(heroId, effectId, value);
         public bool IsHeroBusy(string heroId) => _state.IsHeroBusy(heroId);
         public string GetHeroCurrentActivityExecutionId(string heroId) => _state.GetHeroCurrentActivityExecutionId(heroId);
         public int GetItem(string itemId) => _state.GetItem(itemId);
@@ -35,6 +42,7 @@ namespace GuildIdle.Player
         public bool SpendCurrency(string currencyId, long amount) => _state.SpendCurrency(currencyId, amount);
         public bool IsBuildingUnlocked(string buildingId) => _state.IsBuildingUnlocked(buildingId);
         public int GetBuildingLevel(string buildingId) => _state.GetBuildingLevel(buildingId);
+        public bool SetBuildingLevel(string buildingId, int level) => _state.SetBuildingLevel(buildingId, level);
         public bool UnlockBuilding(string buildingId) => _state.UnlockBuilding(buildingId);
         public bool IsLocationUnlocked(string locationId) => _state.IsLocationUnlocked(locationId);
         public bool UnlockLocation(string locationId) => _state.UnlockLocation(locationId);

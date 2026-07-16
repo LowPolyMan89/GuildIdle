@@ -67,6 +67,7 @@ namespace GuildIdle.Player
         public string SourceExecutionId { get; set; }
         public string OwnerHeroId { get; set; }
         public bool ResolvedImmediately { get; set; }
+        public bool SourceCompleted { get; set; }
     }
 
     public interface IPendingResultService
@@ -173,6 +174,17 @@ namespace GuildIdle.Player
             if (!CanClaim(result))
                 return false;
             var execution = _state.GetActivityExecution(result.sourceExecutionId);
+            if (execution.linkedCombat != null &&
+                !string.IsNullOrWhiteSpace(execution.linkedCombat.requestId) &&
+                string.Equals(execution.linkedCombat.rootExecutionId, execution.executionId, StringComparison.Ordinal) &&
+                string.Equals(execution.linkedCombat.occupationOwnerId, execution.executionId, StringComparison.Ordinal))
+            {
+                execution.activityBagResolved = true;
+                if (!execution.linkedCombat.resolved)
+                    return _state.UpdateActivityExecution(execution);
+            }
+            if (string.Equals(execution.runtimeKind, "Build", StringComparison.Ordinal))
+                _state.CompleteActivity(execution.activityId);
             if (_state.ConfigProvider.TryGetActivity(execution.activityId, out var activity) && activity != null && !activity.isRepeatable)
                 _state.CompleteActivity(execution.activityId);
             return _state.RemoveActivityExecution(execution.executionId);
@@ -1056,14 +1068,16 @@ namespace GuildIdle.Player
             };
         }
 
-        private static PendingResultResolvedEvent ToResolvedEvent(PendingResultSaveData result, bool resolvedImmediately = false) => new PendingResultResolvedEvent
+        private PendingResultResolvedEvent ToResolvedEvent(PendingResultSaveData result, bool resolvedImmediately = false) => new PendingResultResolvedEvent
         {
             ResultId = result.resultId,
             SourceType = result.sourceType,
             SourceId = result.sourceId,
             SourceExecutionId = result.sourceExecutionId,
             OwnerHeroId = result.ownerHeroId,
-            ResolvedImmediately = resolvedImmediately
+            ResolvedImmediately = resolvedImmediately,
+            SourceCompleted = !string.Equals(result.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal) ||
+                              _state.GetActivityExecution(result.sourceExecutionId) == null
         };
 
         private static PendingResultFormationResult FormationFailure(string code, string message) => new PendingResultFormationResult { Success = false, Code = code, Message = message };

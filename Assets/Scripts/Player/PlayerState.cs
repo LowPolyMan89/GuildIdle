@@ -209,6 +209,12 @@ namespace GuildIdle.Player
             return TryGetHeroState(heroId, out var hero) ? hero.MaxFatigue : 0;
         }
 
+        public int CalculateHeroStat(string heroId, string statId)
+        {
+            var hero = GetHeroState(heroId);
+            return hero == null ? 0 : _heroStats.CalculateHeroStat(heroId, statId, hero.level);
+        }
+
         public bool SpendHeroFatigue(string heroId, int amount)
         {
             if (!ValidatePositiveAmount(amount, "hero fatigue") || !TryGetHeroState(heroId, out var hero))
@@ -654,13 +660,31 @@ namespace GuildIdle.Player
             if (!ValidateActivityExecution(execution, requireRunning: false))
                 return false;
 
-            if (!_activityExecutions.ContainsKey(execution.executionId))
+            if (!_activityExecutions.TryGetValue(execution.executionId, out var previous))
             {
                 Debug.LogError($"[PlayerState] Cannot update missing activity execution '{execution.executionId}'.");
                 return false;
             }
 
+            var previousOccupies = OccupiesHero(previous);
+            var nextOccupies = OccupiesHero(execution);
+            if (nextOccupies && _heroes.TryGetValue(execution.heroId, out var nextHero) &&
+                !string.IsNullOrWhiteSpace(nextHero.CurrentActivityExecutionId) &&
+                !string.Equals(nextHero.CurrentActivityExecutionId, execution.executionId, StringComparison.Ordinal))
+            {
+                Debug.LogError($"[PlayerState] Hero '{execution.heroId}' is already busy with execution '{nextHero.CurrentActivityExecutionId}'.");
+                return false;
+            }
+
             _activityExecutions[execution.executionId] = CloneExecution(execution);
+            if (previousOccupies && (!nextOccupies || !string.Equals(previous.heroId, execution.heroId, StringComparison.Ordinal)) &&
+                _heroes.TryGetValue(previous.heroId, out var previousHero) &&
+                string.Equals(previousHero.CurrentActivityExecutionId, execution.executionId, StringComparison.Ordinal))
+            {
+                previousHero.CurrentActivityExecutionId = null;
+            }
+            if (nextOccupies && _heroes.TryGetValue(execution.heroId, out nextHero))
+                nextHero.CurrentActivityExecutionId = execution.executionId;
             return true;
         }
 
@@ -672,15 +696,13 @@ namespace GuildIdle.Player
                 return false;
             }
 
-            if (!_activityExecutions.TryGetValue(executionId, out var execution))
+            if (!_activityExecutions.ContainsKey(executionId))
                 return false;
 
             _activityExecutions.Remove(executionId);
-            if (_heroes.TryGetValue(execution.heroId, out var hero) &&
-                string.Equals(hero.CurrentActivityExecutionId, executionId, StringComparison.Ordinal))
-            {
-                hero.CurrentActivityExecutionId = null;
-            }
+            foreach (var hero in _heroes.Values)
+                if (string.Equals(hero.CurrentActivityExecutionId, executionId, StringComparison.Ordinal))
+                    hero.CurrentActivityExecutionId = null;
 
             return true;
         }
@@ -1120,10 +1142,10 @@ namespace GuildIdle.Player
                     continue;
                 }
 
-                if (!_heroes.TryGetValue(execution.heroId, out var hero))
-                    continue;
-
                 var keepsHeroBusy = execution.status == ActivityRuntimeStatus.Running || execution.status == ActivityRuntimeStatus.ResultPending;
+                HeroRuntimeState hero = null;
+                if (keepsHeroBusy && !_heroes.TryGetValue(execution.heroId, out hero))
+                    continue;
                 if (keepsHeroBusy && !string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
                 {
                     Debug.LogError($"[PlayerState] Ignoring activity execution '{execution.executionId}': hero '{execution.heroId}' is already busy.");
@@ -1378,7 +1400,7 @@ namespace GuildIdle.Player
             if (!ValidateConfigsReady("validate activity id"))
                 return false;
 
-            if (RuntimeConfigs.Activities.TryGet(activityId, out _))
+            if (RuntimeConfigs.Activities.TryGet(activityId, out _) || RuntimeConfigs.Buildings.TryGetBuildAction(activityId, out _))
                 return true;
 
             Debug.LogError($"[PlayerState] Unknown activity id '{activityId}'.");
@@ -1660,12 +1682,18 @@ namespace GuildIdle.Player
                 return false;
             }
 
-            if (!ValidateActivityId(execution.activityId) || !ValidateHeroId(execution.heroId))
+            if (!ValidateActivityId(execution.activityId))
                 return false;
 
-            if (!_acquiredHeroes.Contains(execution.heroId))
+            var requiresHero = execution.status == ActivityRuntimeStatus.Running || execution.status == ActivityRuntimeStatus.ResultPending;
+            if (requiresHero && (!ValidateHeroId(execution.heroId) || !_acquiredHeroes.Contains(execution.heroId)))
             {
                 Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' references non-acquired hero '{execution.heroId}'.");
+                return false;
+            }
+            if (execution.status == ActivityRuntimeStatus.Paused && !string.IsNullOrWhiteSpace(execution.heroId))
+            {
+                Debug.LogError($"[PlayerState] Paused execution '{execution.executionId}' must not retain an assigned hero.");
                 return false;
             }
 
@@ -1700,16 +1728,77 @@ namespace GuildIdle.Player
             {
                 executionId = execution.executionId,
                 activityId = execution.activityId,
+                runtimeKind = execution.runtimeKind,
                 heroId = execution.heroId,
                 status = execution.status,
                 elapsedSeconds = Math.Max(0f, execution.elapsedSeconds),
                 completedCycles = Math.Max(0, execution.completedCycles),
                 plannedCycles = Math.Max(0, execution.plannedCycles),
+                currentCycleFatiguePaid = execution.currentCycleFatiguePaid,
+                cyclePhase = execution.cyclePhase,
+                stagedRewards = CloneStagedRewards(execution.stagedRewards),
+                endReason = execution.endReason,
+                dangerRollCompleted = execution.dangerRollCompleted,
+                dangerRiskPercent = execution.dangerRiskPercent,
+                dangerRoll = execution.dangerRoll,
+                activityBagResolved = execution.activityBagResolved,
                 materialsPaid = execution.materialsPaid,
                 accumulatedBuildPoints = Math.Max(0f, execution.accumulatedBuildPoints),
+                buildingLevelApplied = execution.buildingLevelApplied,
+                buildingEventPublished = execution.buildingEventPublished,
+                linkedCombat = CloneLinkedCombat(execution.linkedCombat),
                 pendingResultId = execution.pendingResultId,
                 startedAtUnixSeconds = execution.startedAtUnixSeconds
             };
+        }
+
+        private static ActivityStagedRewardSaveData[] CloneStagedRewards(ActivityStagedRewardSaveData[] source)
+        {
+            source ??= Array.Empty<ActivityStagedRewardSaveData>();
+            var result = new ActivityStagedRewardSaveData[source.Length];
+            for (var index = 0; index < source.Length; index++)
+            {
+                var entry = source[index];
+                result[index] = entry == null ? null : new ActivityStagedRewardSaveData
+                {
+                    rewardType = entry.rewardType,
+                    targetId = entry.targetId,
+                    quantity = Math.Max(0L, entry.quantity),
+                    origin = entry.origin,
+                    quality = entry.quality,
+                    instanceId = entry.instanceId
+                };
+            }
+            return result;
+        }
+
+        private static LinkedCombatStartRequestSaveData CloneLinkedCombat(LinkedCombatStartRequestSaveData source)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(source.requestId) ||
+                string.IsNullOrWhiteSpace(source.rootExecutionId) || string.IsNullOrWhiteSpace(source.occupationOwnerId))
+                return null;
+
+            return new LinkedCombatStartRequestSaveData
+            {
+                requestId = source.requestId,
+                rootExecutionId = source.rootExecutionId,
+                occupationOwnerId = source.occupationOwnerId,
+                heroId = source.heroId,
+                dangerEncounterId = source.dangerEncounterId,
+                enemyGroupId = source.enemyGroupId,
+                combatMode = source.combatMode,
+                defeatLossRule = source.defeatLossRule,
+                suppressFatigueCost = source.suppressFatigueCost,
+                combatExecutionId = source.combatExecutionId,
+                resolved = source.resolved,
+                loot = CloneStagedRewards(source.loot)
+            };
+        }
+
+        private static bool OccupiesHero(ActivityExecutionSaveData execution)
+        {
+            return execution != null && !string.IsNullOrWhiteSpace(execution.heroId) &&
+                   (execution.status == ActivityRuntimeStatus.Running || execution.status == ActivityRuntimeStatus.ResultPending);
         }
 
         private bool TryNormalizeQuestInstance(QuestInstanceSaveData source, out QuestInstanceSaveData quest, out bool changed)

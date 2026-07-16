@@ -20,6 +20,18 @@ namespace GuildIdle.Progression
         bool TryGetDefinition(string questId, out QuestDefinition definition);
     }
 
+    public interface INonBuildTransitionProvider
+    {
+        BuildingLevelConfigDto[] GetLevelsBySourceActivity(string activityId);
+    }
+
+    public sealed class RepositoryNonBuildTransitionAdapter : INonBuildTransitionProvider
+    {
+        private readonly BuildingsConfigRepository _buildings;
+        public RepositoryNonBuildTransitionAdapter(BuildingsConfigRepository buildings) { _buildings = buildings ?? throw new System.ArgumentNullException(nameof(buildings)); }
+        public BuildingLevelConfigDto[] GetLevelsBySourceActivity(string activityId) => _buildings.GetLevelsBySourceActivity(activityId);
+    }
+
     public interface IProgressionRuntimeStore
     {
         IPendingResultService PendingResults { get; }
@@ -30,6 +42,7 @@ namespace GuildIdle.Progression
         bool SetQuestInstance(QuestInstanceSaveData instance);
         int GetItem(string itemId);
         int GetBuildingLevel(string buildingId);
+        bool SetBuildingLevel(string buildingId, int level);
         bool IsActivityCompleted(string activityId);
         bool Save();
     }
@@ -59,6 +72,7 @@ namespace GuildIdle.Progression
         public bool SetQuestInstance(QuestInstanceSaveData instance) => _state.SetQuestInstance(instance);
         public int GetItem(string itemId) => _state.GetItem(itemId);
         public int GetBuildingLevel(string buildingId) => _state.GetBuildingLevel(buildingId);
+        public bool SetBuildingLevel(string buildingId, int level) => _state.SetBuildingLevel(buildingId, level);
         public bool IsActivityCompleted(string activityId) => _state.IsActivityCompleted(activityId);
         public bool Save() => _state.Save();
     }
