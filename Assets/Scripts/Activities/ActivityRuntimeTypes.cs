@@ -57,6 +57,7 @@ namespace GuildIdle.Activities
         public string eventType;
         public string targetId;
         public int value;
+        public bool progressionAlreadyProcessed;
     }
 
     public static class ActivityRuntimeEventType

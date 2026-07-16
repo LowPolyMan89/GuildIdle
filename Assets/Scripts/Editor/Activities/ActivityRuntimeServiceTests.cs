@@ -421,6 +421,57 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void FailedWorkDescriptorValidationIsRepeatableWithoutRandomOrMutation()
+        {
+            var state = NewState();
+            var random = new CountingRandom();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
+            var fatigue = state.GetHeroFatigue("ren");
+            var started = runtime.Start(WorkStart("bad_reward_range_work", "ren", 1));
+
+            var first = runtime.Tick(10f);
+            var afterFirst = state.GetActivityExecution(started.executionId);
+            var second = runtime.Tick(10f);
+            var afterSecond = state.GetActivityExecution(started.executionId);
+
+            Assert.That(started.success, Is.True);
+            Assert.That(first.success, Is.False);
+            Assert.That(second.success, Is.False);
+            Assert.That(HasIssue(first.issues, "Resource"), Is.True);
+            Assert.That(HasIssue(second.issues, "Resource"), Is.True);
+            Assert.That(random.RangeCalls, Is.Zero);
+            Assert.That(random.PercentCalls, Is.Zero);
+            Assert.That(afterFirst.completedCycles, Is.Zero);
+            Assert.That(afterSecond.completedCycles, Is.Zero);
+            Assert.That(afterSecond.cyclePhase, Is.EqualTo("Running"));
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(fatigue - 1));
+        }
+
+        [TestCase("bad_danger_disabled_work", "FormulaDisabled")]
+        [TestCase("bad_danger_unsupported_work", "FormulaTypeUnsupported")]
+        public void InvalidDangerFormulaDescriptorFailsBeforeWorkCycleMutation(string activityId, string issueType)
+        {
+            var state = NewState();
+            var random = new CountingRandom();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
+            var started = runtime.Start(WorkStart(activityId, "ren", 1));
+
+            var ticked = runtime.Tick(10f);
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(started.success, Is.True);
+            Assert.That(ticked.success, Is.False);
+            Assert.That(HasIssue(ticked.issues, issueType), Is.True);
+            Assert.That(random.RangeCalls, Is.Zero);
+            Assert.That(random.PercentCalls, Is.Zero);
+            Assert.That(execution.completedCycles, Is.Zero);
+            Assert.That(execution.dangerRollCompleted, Is.False);
+            Assert.That(runtime.GetPendingLinkedCombatStarts(), Is.Empty);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+        }
+
+        [Test]
         public void DangerHandoffMovesOnlyCycleLootAndKeepsRootOccupation()
         {
             var state = NewState();
@@ -723,6 +774,37 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.IsActivityCompleted("test_build_empty"), Is.False);
         }
 
+        [Test]
+        public void RealProgressionStateRollsBackWhenBuildingEventAckSaveFails()
+        {
+            var storage = new MemorySaveStorage();
+            var state = NewState();
+            state.UnlockBuilding("building_hall");
+            state.SetBuildingLevel("building_hall", 0);
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            var progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(state);
+            Assert.That(progression.Handle(new GuildIdle.Progression.NewGame()).Issues, Is.Empty);
+            Assert.That(state.GetQuestInstance("story:quest_build_hall").status, Is.EqualTo(QuestInstanceStatus.Active));
+            var runtime = PlayerRuntimeComposition.CreateRuntimeService(state);
+            var started = runtime.Start(new ActivityStartRequest { activityId = "test_build_empty", heroId = "ren" });
+            storage.ThrowOnSaveCall = storage.SaveCalls + 2;
+            LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save failure");
+
+            var completed = runtime.Tick(1f);
+            var execution = state.GetActivityExecution(started.executionId);
+            var quest = state.GetQuestInstance("story:quest_build_hall");
+
+            Assert.That(completed.success, Is.False);
+            Assert.That(HasIssue(completed.issues, "BuildingEventAck"), Is.True);
+            Assert.That(execution, Is.Not.Null);
+            Assert.That(execution.buildingEventPending, Is.True);
+            Assert.That(execution.buildingEventPublished, Is.False);
+            Assert.That(quest.status, Is.EqualTo(QuestInstanceStatus.Active));
+            Assert.That(quest.steps[0].currentValue, Is.Zero);
+            Assert.That(quest.steps[0].completed, Is.False);
+        }
+
         private PlayerState NewState()
         {
             var state = _factory.Create(new SaveData { currentStageId = "stage_arrival" });
@@ -805,6 +887,9 @@ namespace GuildIdle.Editor.Activities
                         new ActivityConfigDto { id = "test_multi_loot_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_effect_target_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_danger_work", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
+                        new ActivityConfigDto { id = "bad_danger_disabled_work", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
+                        new ActivityConfigDto { id = "bad_danger_unsupported_work", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
+                        new ActivityConfigDto { id = "bad_reward_range_work", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
                         new ActivityConfigDto { id = "hunt_rabbits", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
                         new ActivityConfigDto { id = "empty_repeat", type = "Work", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_cycle", type = "Work", cycleSec = 5, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
@@ -829,6 +914,9 @@ namespace GuildIdle.Editor.Activities
                         Reward("test_multi_loot_work", "Resource", "resource_pine_wood", 1, "OnCycle"),
                         Reward("bad_effect_target_work", "Consumable", "test_work_consumable", 1, "OnCycle"),
                         Reward("bad_danger_work", "Resource", "resource_pine_wood", 1, "OnCycle"),
+                        Reward("bad_danger_disabled_work", "Resource", "resource_pine_wood", 1, "OnCycle"),
+                        Reward("bad_danger_unsupported_work", "Resource", "resource_pine_wood", 1, "OnCycle"),
+                        Reward("bad_reward_range_work", "Resource", "resource_pine_wood", 5, 1, 100, "OnCycle"),
                         Reward("hunt_rabbits", "Resource", "resource_rabbit_meat", 1, "OnCycle"),
                         Reward("hunt_rabbits", "SkillExp", "skill_hunting", 2, "OnCycle"),
                         Reward("bad_cycle", "Unsupported", "bad_reward", 1, "OnCycle"),
@@ -837,6 +925,26 @@ namespace GuildIdle.Editor.Activities
                     },
                     dangerEncounters = new[]
                     {
+                        new DangerEncounterConfigDto
+                        {
+                            dangerEncounterId = "danger_disabled_formula",
+                            activityId = "bad_danger_disabled_work",
+                            riskPercent = 25,
+                            enemyGroupId = "enemy_group_test_rabbits",
+                            combatMode = "Queue_1v1",
+                            defeatLossRule = "CombatDefeatLootLoss25To50",
+                            riskFormulaId = "test_disabled_danger_risk"
+                        },
+                        new DangerEncounterConfigDto
+                        {
+                            dangerEncounterId = "danger_unsupported_formula",
+                            activityId = "bad_danger_unsupported_work",
+                            riskPercent = 25,
+                            enemyGroupId = "enemy_group_test_rabbits",
+                            combatMode = "Queue_1v1",
+                            defeatLossRule = "CombatDefeatLootLoss25To50",
+                            riskFormulaId = "test_unsupported_danger_risk"
+                        },
                         new DangerEncounterConfigDto
                         {
                             dangerEncounterId = "danger_bad_formula",
@@ -910,7 +1018,10 @@ namespace GuildIdle.Editor.Activities
                 },
                 new QuestRuntimeConfigDto
                 {
-                    stages = new[] { new StageConfigDto { stageId = "stage_arrival", enabled = true } }
+                    stages = new[] { new StageConfigDto { stageId = "stage_arrival", enabled = true } },
+                    storyQuests = new[] { new StoryQuestConfigDto { questId = "quest_build_hall", enabled = true } },
+                    questStartConditions = new[] { new QuestStartConditionConfigDto { questId = "quest_build_hall", conditionGroup = "default", conditionType = "NewGame", compareOperator = "GreaterOrEqual", value = 1 } },
+                    questSteps = new[] { new QuestStepConfigDto { questId = "quest_build_hall", stepId = "build_hall", objectiveType = "BuildingLevel", targetId = "building_hall", compareOperator = "GreaterOrEqual", targetValue = 2, required = true } }
                 },
                 null,
                 new FormulaRuntimeConfigDto
@@ -937,6 +1048,24 @@ namespace GuildIdle.Editor.Activities
                             secondaryStatMultiplier = 0.5f,
                             levelMultiplier = 0.5f,
                             minValue = 5,
+                            rounding = "round_2",
+                            enabled = true
+                        },
+                        new FormulaConfigDto
+                        {
+                            formulaId = "test_disabled_danger_risk",
+                            formulaType = "context_base_minus_stats_and_skill_level",
+                            primaryStat = "Agility",
+                            secondaryStat = "Luck",
+                            rounding = "round_2",
+                            enabled = false
+                        },
+                        new FormulaConfigDto
+                        {
+                            formulaId = "test_unsupported_danger_risk",
+                            formulaType = "production_formula_id_switch",
+                            primaryStat = "Agility",
+                            secondaryStat = "Luck",
                             rounding = "round_2",
                             enabled = true
                         }
@@ -968,14 +1097,19 @@ namespace GuildIdle.Editor.Activities
 
         private static ActivityRewardConfigDto Reward(string activityId, string type, string targetId, int amount, string moment)
         {
+            return Reward(activityId, type, targetId, amount, amount, 100, moment);
+        }
+
+        private static ActivityRewardConfigDto Reward(string activityId, string type, string targetId, int min, int max, float chance, string moment)
+        {
             return new ActivityRewardConfigDto
             {
                 activityId = activityId,
                 rewardType = type,
                 targetId = targetId,
-                min = amount,
-                max = amount,
-                chance = 100,
+                min = min,
+                max = max,
+                chance = chance,
                 grantMoment = moment
             };
         }
@@ -1029,6 +1163,23 @@ namespace GuildIdle.Editor.Activities
             public FixedRandom(int value) { _value = value; }
             public int RangeInclusive(int min, int max) => Mathf.Clamp(_value, min, max);
             public float Percent() => 0f;
+        }
+
+        private sealed class CountingRandom : IActivityRandom
+        {
+            public int RangeCalls { get; private set; }
+            public int PercentCalls { get; private set; }
+            public int RangeInclusive(int min, int max)
+            {
+                RangeCalls++;
+                return min;
+            }
+
+            public float Percent()
+            {
+                PercentCalls++;
+                return 0f;
+            }
         }
 
         private sealed class DangerSequenceRandom : IActivityRandom

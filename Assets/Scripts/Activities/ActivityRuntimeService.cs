@@ -1106,24 +1106,25 @@ namespace GuildIdle.Activities
 
         private bool ValidateWorkCycleRewardDescriptors(ActivityExecutionSaveData execution, List<ActivityRequirementIssue> issues)
         {
-            var valid = true;
+            var definitions = new List<RewardDefinition>();
             foreach (var reward in RuntimeConfigs.Activities.GetRewards(execution.activityId))
             {
                 if (reward == null || !ActivityResolverUtilities.MomentMatches(reward.grantMoment, GrantMoment.OnCycle))
                     continue;
-                if (!ActivityTypeParser.TryParseRewardType(reward.rewardType, out var type))
+                definitions.Add(new RewardDefinition
                 {
-                    AddIssue(issues, execution.activityId, "RewardType", reward.rewardType, 1, 0, true, false, $"Unsupported reward type '{reward.rewardType}'.");
-                    valid = false;
-                    continue;
-                }
-                if (!ValidateRewardTarget(type, reward.targetId))
-                {
-                    AddIssue(issues, execution.activityId, "RewardTarget", reward.targetId, 1, 0, true, false, $"Reward target '{reward.targetId}' is not valid for type '{reward.rewardType}'.");
-                    valid = false;
-                }
+                    sourceId = execution.activityId,
+                    rewardType = reward.rewardType,
+                    targetId = reward.targetId,
+                    min = reward.min,
+                    max = reward.max,
+                    chance = reward.chance,
+                    grantMoment = reward.grantMoment
+                });
             }
-            return valid;
+            var validation = RewardBatchPipeline.Validate(definitions, GrantMoment.OnCycle, execution.heroId, true);
+            issues.AddRange(validation.issues);
+            return validation.success;
         }
 
         private bool ValidateDangerDescriptor(ActivityExecutionSaveData execution, ActivityRuntimeInfo info, List<ActivityRequirementIssue> issues)
@@ -1159,9 +1160,18 @@ namespace GuildIdle.Activities
                     valid = false;
                     continue;
                 }
-                var counter = _activityState.GetHeroEffectCounter(execution.heroId, effect.effectId) + 1;
-                if (!int.TryParse(effect.interval, out var interval) || interval <= 0 || counter % interval != 0)
+                if (!int.TryParse(effect.interval, out var interval) || interval <= 0)
+                {
+                    AddIssue(issues, execution.activityId, "HeroEffectInterval", effect.effectId, 1, 0, true, false, $"Work effect interval '{effect.interval}' must be a positive integer.");
+                    valid = false;
                     continue;
+                }
+                if (effect.chancePercent < 0f || effect.chancePercent > 100f || float.IsNaN(effect.chancePercent) || float.IsInfinity(effect.chancePercent))
+                {
+                    AddIssue(issues, execution.activityId, "HeroEffectChance", effect.effectId, 1, 0, true, false, $"Work effect chance '{effect.chancePercent}' must be in range 0..100.");
+                    valid = false;
+                    continue;
+                }
                 if (string.Equals(effect.effect, AddExtraBaseResourceEffect, StringComparison.OrdinalIgnoreCase) &&
                     !ValidateCompletedWorkBaseResourceTarget(execution.activityId, effect, issues))
                     valid = false;
@@ -1417,7 +1427,7 @@ namespace GuildIdle.Activities
                 return false;
             }
             changed = true;
-            var runtimeEvent = new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.BuildingLevelChanged, targetId = action.targetBuildingId, value = action.targetLevel };
+            var runtimeEvent = new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.BuildingLevelChanged, targetId = action.targetBuildingId, value = action.targetLevel, progressionAlreadyProcessed = true };
             events?.Add(runtimeEvent);
             NotifyEventSink(runtimeEvent);
             return true;
@@ -1466,7 +1476,7 @@ namespace GuildIdle.Activities
                 return false;
             }
             changed = true;
-            var runtimeEvent = new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.ActivityCompleted, targetId = completedActivityId, value = 1 };
+            var runtimeEvent = new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.ActivityCompleted, targetId = completedActivityId, value = 1, progressionAlreadyProcessed = true };
             events?.Add(runtimeEvent);
             NotifyEventSink(runtimeEvent);
             return true;
@@ -1629,43 +1639,6 @@ namespace GuildIdle.Activities
             if (!ActivityTypeParser.TryParseRewardType(rewardType, out var type))
                 return false;
             return type == RewardTypeEnum.Resource || type == RewardTypeEnum.Item || type == RewardTypeEnum.Consumable || type == RewardTypeEnum.Equipment;
-        }
-
-        private static bool ValidateRewardTarget(RewardTypeEnum type, string targetId)
-        {
-            switch (type)
-            {
-                case RewardTypeEnum.Resource:
-                    return RuntimeConfigs.Items.TryGetResource(targetId, out _);
-                case RewardTypeEnum.Equipment:
-                    return RuntimeConfigs.Items.TryGetEquipmentWeapon(targetId, out _) || RuntimeConfigs.Items.TryGetEquipmentArmor(targetId, out _);
-                case RewardTypeEnum.Consumable:
-                    return RuntimeConfigs.Items.TryGetConsumable(targetId, out _);
-                case RewardTypeEnum.Recipe:
-                    return RuntimeConfigs.Items.TryGetRecipe(targetId, out _);
-                case RewardTypeEnum.Item:
-                    return RuntimeConfigs.Items.TryGetResource(targetId, out _) ||
-                           RuntimeConfigs.Items.TryGetEquipmentWeapon(targetId, out _) ||
-                           RuntimeConfigs.Items.TryGetEquipmentArmor(targetId, out _) ||
-                           RuntimeConfigs.Items.TryGetConsumable(targetId, out _) ||
-                           RuntimeConfigs.Items.TryGetRecipe(targetId, out _);
-                case RewardTypeEnum.SkillExp:
-                    return ActivityResolverUtilities.IsKnownSkill(targetId);
-                case RewardTypeEnum.Gold:
-                    return RuntimeConfigs.Items.TryGetCurrency(ActivityResolverUtilities.GoldCurrencyId, out _);
-                case RewardTypeEnum.Currency:
-                    return RuntimeConfigs.Items.TryGetCurrency(targetId, out _);
-                case RewardTypeEnum.Hero:
-                    return RuntimeConfigs.Heroes.TryGet(targetId, out _);
-                case RewardTypeEnum.UnlockBuilding:
-                    return RuntimeConfigs.Buildings.TryGet(targetId, out _);
-                case RewardTypeEnum.UnlockLocation:
-                    return RuntimeConfigs.Map.TryGetLocation(targetId, out _);
-                case RewardTypeEnum.LootTable:
-                    return RuntimeConfigs.Loot.TryGet(targetId, out _);
-                default:
-                    return false;
-            }
         }
 
         private static bool HeroOwnsSkill(HeroConfigDto hero, string skillId)

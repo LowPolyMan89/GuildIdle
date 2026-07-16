@@ -136,6 +136,8 @@ namespace GuildIdle.Player
         {
             if (runtimeEvent == null || Player.Progression == null)
                 return;
+            if (runtimeEvent.progressionAlreadyProcessed)
+                return;
             if (string.Equals(runtimeEvent.eventType, ActivityRuntimeEventType.BuildingLevelChanged, StringComparison.Ordinal))
                 Player.Progression.Handle(new BuildingLevelChanged(runtimeEvent.targetId, runtimeEvent.value));
             else if (string.Equals(runtimeEvent.eventType, ActivityRuntimeEventType.ActivityCompleted, StringComparison.Ordinal))

@@ -1,5 +1,6 @@
 using System.Reflection;
 using GuildIdle.Activities;
+using GuildIdle.Configs;
 using GuildIdle.Core;
 using GuildIdle.Editor.Configs;
 using GuildIdle.Player;
@@ -67,6 +68,174 @@ namespace GuildIdle.Editor.Player
         {
             Assert.That(typeof(IRewardBatchStore).IsAssignableFrom(typeof(IActivityPlayerState)), Is.True);
             Assert.That(typeof(IRewardBatchStore).IsAssignableFrom(typeof(PlayerState)), Is.True);
+        }
+
+        [Test]
+        public void ProductionActivityRuntimeDoesNotReplayCoordinatedConstructionEventsIntoProgression()
+        {
+            var database = CreateConstructionProgressionDatabase();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
+            state.AddHero("ren");
+            state.UnlockBuilding("building_hall");
+            state.SetBuildingLevel("building_hall", 0);
+            var progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(state);
+            progression.Handle(new NewGame());
+            var updateCount = 0;
+            progression.Updated += _ => updateCount++;
+            SetPlayerRuntime(state, progression);
+
+            try
+            {
+                var runtime = PlayerRuntimeComposition.CreateRuntimeService();
+                var started = runtime.Start(new ActivityStartRequest { activityId = "test_build_empty", heroId = "ren" });
+                var completed = runtime.Tick(1f);
+                var quest = state.GetQuestInstance("story:quest_build_hall");
+
+                Assert.That(started.success, Is.True);
+                Assert.That(completed.success, Is.True);
+                Assert.That(completed.events, Has.Length.EqualTo(2));
+                Assert.That(completed.events[0].progressionAlreadyProcessed, Is.True);
+                Assert.That(completed.events[1].progressionAlreadyProcessed, Is.True);
+                Assert.That(quest.status, Is.EqualTo(QuestInstanceStatus.Active));
+                Assert.That(quest.steps[0].currentValue, Is.EqualTo(1));
+                Assert.That(quest.steps[0].completed, Is.False);
+                Assert.That(updateCount, Is.Zero, "Post-commit ActivityRuntime eventSink must be diagnostic for coordinated events.");
+            }
+            finally
+            {
+                SetPlayerRuntime(null, null);
+            }
+        }
+
+        [Test]
+        public void ProductionEventSinkStillHandlesUncoordinatedActivityCompleted()
+        {
+            var database = CreateConstructionProgressionDatabase();
+            RuntimeConfigs.SetDatabaseForTests(database);
+            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
+            var progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(state);
+            var updateCount = 0;
+            progression.Updated += _ => updateCount++;
+            SetPlayerRuntime(state, progression);
+
+            try
+            {
+                var handler = typeof(PlayerRuntimeComposition).GetMethod(
+                    "HandleActivityRuntimeEvent",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+                handler.Invoke(null, new object[]
+                {
+                    new ActivityRuntimeEvent
+                    {
+                        eventType = ActivityRuntimeEventType.ActivityCompleted,
+                        targetId = "linked_combat_root",
+                        value = 1
+                    }
+                });
+
+                Assert.That(updateCount, Is.EqualTo(1));
+            }
+            finally
+            {
+                SetPlayerRuntime(null, null);
+            }
+        }
+
+        private static void SetPlayerRuntime(PlayerState state, ProgressionRuntimeService progression)
+        {
+            typeof(global::GuildIdle.Player.Player).GetField("_state", BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, state);
+            typeof(global::GuildIdle.Player.Player).GetField("_progression", BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, progression);
+        }
+
+        private static ConfigDatabase CreateConstructionProgressionDatabase()
+        {
+            return new ConfigDatabase(
+                new ItemsRuntimeConfigDto
+                {
+                    resources = new[] { new ResourceConfigDto { id = "resource_pine_wood", kind = "resource" } },
+                    currencies = new[] { new CurrencyConfigDto { currencyId = "gold_id" } }
+                },
+                new HeroesRuntimeConfigDto
+                {
+                    heroes = new[]
+                    {
+                        new HeroConfigDto
+                        {
+                            heroId = "ren",
+                            enabled = true,
+                            baseStats = new HeroBaseStatsDto { strength = 2, agility = 2, intelligence = 2, luck = 2, endurance = 2 }
+                        }
+                    }
+                },
+                new ActivitiesRuntimeConfigDto
+                {
+                    activities = new[] { new ActivityConfigDto { id = "test_build_empty", type = "Build", durationSec = 1, fatigueCost = 1, isRepeatable = false } },
+                    skills = new[] { new SkillConfigDto { skillId = "skill_construction" } },
+                    skillsProgression = new[] { new SkillProgressionConfigDto { level = 1, totalExpRequired = 0 } }
+                },
+                new BuildingsRuntimeConfigDto
+                {
+                    buildings = new[] { new BuildingConfigDto { buildingId = "building_hall", levels = 1, startLevel = 0, visibleAtStart = true } },
+                    buildingLevels = new[]
+                    {
+                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 0, activeHeroLimit = 1 },
+                        new BuildingLevelConfigDto { buildingId = "building_hall", level = 1, sourceActivityId = "test_build_empty", buildFormulaId = "test_build_points", buildPointsRequired = 1, skillId = "skill_construction", fatigueCost = 1, activeHeroLimit = 1 }
+                    },
+                    buildActions = new[]
+                    {
+                        new BuildActionConfigDto
+                        {
+                            id = "test_build_empty",
+                            type = "Build",
+                            targetBuildingId = "building_hall",
+                            targetLevel = 1,
+                            buildFormulaId = "test_build_points",
+                            buildPointsRequired = 1,
+                            skillId = "skill_construction",
+                            fatigueCost = 1,
+                            skillExp = 0
+                        }
+                    }
+                },
+                new QuestRuntimeConfigDto
+                {
+                    stages = new[] { new StageConfigDto { stageId = "stage_arrival", enabled = true } },
+                    storyQuests = new[] { new StoryQuestConfigDto { questId = "quest_build_hall", enabled = true } },
+                    questStartConditions = new[] { new QuestStartConditionConfigDto { questId = "quest_build_hall", conditionGroup = "default", conditionType = "NewGame", compareOperator = "GreaterOrEqual", value = 1 } },
+                    questSteps = new[] { new QuestStepConfigDto { questId = "quest_build_hall", stepId = "build_hall", objectiveType = "BuildingLevel", targetId = "building_hall", compareOperator = "GreaterOrEqual", targetValue = 2, required = true } }
+                },
+                null,
+                new FormulaRuntimeConfigDto
+                {
+                    formulas = new[]
+                    {
+                        new FormulaConfigDto
+                        {
+                            formulaId = "test_build_points",
+                            formulaType = "linear_stats_with_skill_level",
+                            baseValue = 1,
+                            primaryStat = "Intelligence",
+                            secondaryStat = "Strength",
+                            rounding = "round_2",
+                            enabled = true
+                        }
+                    }
+                },
+                null,
+                null,
+                new StorageRuntimeConfigDto
+                {
+                    storageRules = new[] { new StorageRuleConfigDto { storageRuleId = "storage_resource", itemKind = "resource", mode = "stack", maxStack = 100, occupiesSlot = true } },
+                    storageBuildings = new[] { new StorageBuildingConfigDto { buildingId = "building_hall", level = 0, slotCount = 20 } },
+                    itemStates = new[]
+                    {
+                        new ItemStateConfigDto { stateId = "on_storage", isInStorage = true, occupiesCapacity = true, availabilityMode = ItemAvailabilityMode.Available },
+                        new ItemStateConfigDto { stateId = "equipped", requiresOwner = true, availabilityMode = ItemAvailabilityMode.Equipped }
+                    }
+                },
+                null);
         }
     }
 }

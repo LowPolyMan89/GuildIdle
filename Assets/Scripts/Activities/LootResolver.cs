@@ -55,6 +55,35 @@ namespace GuildIdle.Activities
             };
         }
 
+        internal static string[] ValidateLootTable(string lootTableId)
+        {
+            var issues = new List<string>();
+            if (!RuntimeConfigs.IsLoaded)
+                return new[] { "Runtime configs are not loaded." };
+            if (!RuntimeConfigs.Loot.TryGet(lootTableId, out var table))
+                return new[] { $"Unknown loot table id '{lootTableId}'." };
+            if (!table.enabled)
+                return Array.Empty<string>();
+
+            var groups = RuntimeConfigs.Loot.GetGroups(lootTableId);
+            if (groups.Length == 0)
+            {
+                ValidateEntries(lootTableId, string.Empty, table.rollMode, table.rollCountMin, table.rollCountMax, RuntimeConfigs.Loot.GetEntries(lootTableId), issues);
+            }
+            else
+            {
+                foreach (var group in groups)
+                {
+                    if (group == null)
+                        continue;
+                    if (!ValidPercent(group.chance))
+                        issues.Add($"Loot group chance '{group.chance}' must be in range 0..100 in loot table '{lootTableId}' group '{group.rollGroup}'.");
+                    ValidateEntries(lootTableId, group.rollGroup, group.rollMode, group.rollCountMin, group.rollCountMax, EntriesForGroup(lootTableId, group.rollGroup), issues);
+                }
+            }
+            return issues.ToArray();
+        }
+
         public static LootRollResult RollEnemyLoot(string lootGroupId)
         {
             return RollEnemyLoot(lootGroupId, ActivityResolverUtilities.DefaultRandom());
@@ -188,6 +217,36 @@ namespace GuildIdle.Activities
             }
         }
 
+        private static void ValidateEntries(
+            string lootTableId,
+            string rollGroup,
+            string rollMode,
+            int rollCountMin,
+            int rollCountMax,
+            LootTableEntryConfigDto[] entries,
+            List<string> issues)
+        {
+            if (!ActivityTypeParser.TryParseLootRollMode(rollMode, out var parsedRollMode))
+            {
+                issues.Add($"Unsupported roll mode '{rollMode}' in loot table '{lootTableId}' group '{rollGroup}'.");
+                return;
+            }
+            if (parsedRollMode != LootRollModeEnum.GuaranteedAll && (rollCountMin <= 0 || rollCountMax <= 0 || rollCountMax < rollCountMin))
+                issues.Add($"Loot roll count range '{rollCountMin}..{rollCountMax}' must be positive and ordered in loot table '{lootTableId}' group '{rollGroup}'.");
+            foreach (var entry in entries ?? Array.Empty<LootTableEntryConfigDto>())
+            {
+                if (entry == null)
+                    continue;
+                if (!ValidPercent(entry.chance))
+                    issues.Add($"Loot entry chance '{entry.chance}' must be in range 0..100 for '{entry.entryId}'.");
+                if (entry.min <= 0 || entry.max <= 0 || entry.max < entry.min)
+                    issues.Add($"Loot entry amount range '{entry.min}..{entry.max}' must be positive and ordered for '{entry.entryId}'.");
+                if (parsedRollMode != LootRollModeEnum.GuaranteedAll && entry.weight <= 0)
+                    issues.Add($"Loot entry weight must be positive for '{entry.entryId}'.");
+                ValidateDrop(entry.dropType, entry.targetId, entry.entryId, issues);
+            }
+        }
+
         private static LootTableEntryConfigDto SelectWeighted(LootTableEntryConfigDto[] entries, IActivityRandom random)
         {
             var candidates = new List<LootTableEntryConfigDto>();
@@ -263,6 +322,34 @@ namespace GuildIdle.Activities
             }
         }
 
+        private static void ValidateDrop(string dropType, string targetId, string sourceId, List<string> issues)
+        {
+            if (!ActivityTypeParser.TryParseDropType(dropType, out var parsedType))
+            {
+                issues.Add($"Unsupported drop type '{dropType}' from '{sourceId}'.");
+                return;
+            }
+            switch (parsedType)
+            {
+                case DropTypeEnum.Gold:
+                    if (!string.Equals(targetId, ActivityResolverUtilities.GoldCurrencyId, StringComparison.OrdinalIgnoreCase) ||
+                        !RuntimeConfigs.Items.TryGetCurrency(ActivityResolverUtilities.GoldCurrencyId, out _))
+                        issues.Add($"Unknown Gold loot target '{targetId}' from '{sourceId}'. Expected '{ActivityResolverUtilities.GoldCurrencyId}'.");
+                    return;
+                case DropTypeEnum.Resource:
+                    if (!RuntimeConfigs.Items.TryGetResource(targetId, out _))
+                        issues.Add($"Unknown Resource loot target '{targetId}' from '{sourceId}'.");
+                    return;
+                case DropTypeEnum.Item:
+                    if (!RuntimeConfigs.Items.TryGet(targetId, out _))
+                        issues.Add($"Unknown Item loot target '{targetId}' from '{sourceId}'.");
+                    return;
+                default:
+                    issues.Add($"Unsupported drop type '{dropType}' from '{sourceId}'.");
+                    return;
+            }
+        }
+
         private static void AddEnemyDrop(string targetId, int amount, List<LootDropResult> drops, List<string> issues)
         {
             if (RuntimeConfigs.Items.TryGetCurrency(targetId, out _))
@@ -301,6 +388,8 @@ namespace GuildIdle.Activities
             issues.Add(issue);
             Debug.LogError($"[LootResolver] {issue}");
         }
+
+        private static bool ValidPercent(float value) => value >= 0f && value <= 100f && !float.IsNaN(value) && !float.IsInfinity(value);
 
         private static LootRollResult FailedTable(string lootTableId, string issue)
         {

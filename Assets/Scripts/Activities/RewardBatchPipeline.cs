@@ -91,6 +91,37 @@ namespace GuildIdle.Activities
             };
         }
 
+        public static PreparedRewardBatch Validate(
+            IEnumerable<RewardDefinition> definitions,
+            string grantMoment,
+            string heroId,
+            bool rollLoot)
+        {
+            var issues = new List<ActivityRequirementIssue>();
+            foreach (var definition in definitions ?? Array.Empty<RewardDefinition>())
+            {
+                if (definition == null || !ActivityResolverUtilities.MomentMatches(definition.grantMoment, grantMoment))
+                    continue;
+                ValidateOne(definition, heroId, rollLoot, issues);
+            }
+
+            var success = true;
+            foreach (var issue in issues)
+            {
+                if (issue.isError)
+                {
+                    success = false;
+                    break;
+                }
+            }
+
+            return new PreparedRewardBatch
+            {
+                success = success,
+                issues = issues.ToArray()
+            };
+        }
+
         private static void PrepareOne(
             RewardDefinition definition,
             string heroId,
@@ -222,6 +253,99 @@ namespace GuildIdle.Activities
                     return;
                 }
                 AddMutation(mutations, rewards, indexes, new RewardMutation(RewardMutationKind.Item, targetId, amount), new ActivityAppliedReward { rewardType = type, targetId = targetId, ownerType = ActivityResolverUtilities.OwnerProfile, amount = amount, message = "Prepared item reward." }, drops);
+                return;
+            }
+
+            if (parsedType == RewardTypeEnum.HeroExp || parsedType == RewardTypeEnum.Reputation)
+            {
+                AddIssue(issues, definition, $"Reward type '{type}' is recognized but not implemented in PlayerState yet.", true);
+                return;
+            }
+
+            AddIssue(issues, definition, $"Unsupported reward type '{type}'.");
+        }
+
+        private static void ValidateOne(
+            RewardDefinition definition,
+            string heroId,
+            bool rollLoot,
+            List<ActivityRequirementIssue> issues)
+        {
+            var type = definition.rewardType ?? string.Empty;
+            var targetId = definition.targetId;
+            if (!ActivityTypeParser.TryParseRewardType(type, out var parsedType))
+            {
+                AddIssue(issues, definition, $"Unsupported reward type '{type}'.");
+                return;
+            }
+
+            if (definition.chance < 0f || definition.chance > 100f || float.IsNaN(definition.chance) || float.IsInfinity(definition.chance))
+            {
+                AddIssue(issues, definition, $"Reward chance '{definition.chance}' must be in range 0..100.");
+                return;
+            }
+
+            if (definition.min <= 0 || definition.max <= 0 || definition.max < definition.min)
+            {
+                AddIssue(issues, definition, $"Reward amount range '{definition.min}..{definition.max}' must be positive and ordered.");
+                return;
+            }
+
+            if (parsedType == RewardTypeEnum.SkillExp)
+            {
+                if (!ActivityResolverUtilities.IsKnownSkill(targetId))
+                    AddIssue(issues, definition, $"Unknown skill id '{targetId}'.");
+                if (string.IsNullOrWhiteSpace(heroId))
+                    AddIssue(issues, definition, "SkillExp reward needs an executor hero context.");
+                return;
+            }
+
+            if (parsedType == RewardTypeEnum.LootTable)
+            {
+                if (!RuntimeConfigs.Loot.TryGet(targetId, out _))
+                {
+                    AddIssue(issues, definition, $"Unknown loot table id '{targetId}'.");
+                    return;
+                }
+                if (rollLoot)
+                    foreach (var issue in LootResolver.ValidateLootTable(targetId))
+                        AddIssue(issues, definition, issue);
+                return;
+            }
+
+            if (parsedType == RewardTypeEnum.Gold || parsedType == RewardTypeEnum.Currency)
+            {
+                var currencyId = parsedType == RewardTypeEnum.Gold ? ActivityResolverUtilities.GoldCurrencyId : targetId;
+                if (!RuntimeConfigs.Items.TryGetCurrency(currencyId, out _))
+                    AddIssue(issues, definition, $"Unknown currency id '{currencyId}'.");
+                return;
+            }
+
+            if (parsedType == RewardTypeEnum.Hero)
+            {
+                if (!RuntimeConfigs.Heroes.TryGet(targetId, out _))
+                    AddIssue(issues, definition, $"Unknown hero id '{targetId}'.");
+                return;
+            }
+
+            if (parsedType == RewardTypeEnum.UnlockBuilding)
+            {
+                if (!RuntimeConfigs.Buildings.TryGet(targetId, out _))
+                    AddIssue(issues, definition, $"Unknown building id '{targetId}'.");
+                return;
+            }
+
+            if (parsedType == RewardTypeEnum.UnlockLocation)
+            {
+                if (!RuntimeConfigs.Map.TryGetLocation(targetId, out _))
+                    AddIssue(issues, definition, $"Unknown location id '{targetId}'.");
+                return;
+            }
+
+            if (IsItemReward(parsedType))
+            {
+                if (!TryValidateItem(parsedType, targetId))
+                    AddIssue(issues, definition, $"Unknown {type} reward target id '{targetId}'.");
                 return;
             }
 
