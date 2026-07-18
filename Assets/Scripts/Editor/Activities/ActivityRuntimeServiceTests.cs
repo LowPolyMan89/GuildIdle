@@ -565,6 +565,98 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void ReplacingRuntimeWhileWaitingForActivityBagLeavesOnlyCurrentHandler()
+        {
+            var state = NewState();
+            var replacedProgression = new RecordingProgressionProcessor();
+            var replaced = new ActivityRuntimeService(
+                state,
+                new PlayerStateActivityAdapter(state),
+                new DangerSequenceRandom(100, 1),
+                progressionProcessor: replacedProgression);
+            var started = replaced.Start(WorkStart("hunt_rabbits", "ren", 3));
+            Assert.That(replaced.Tick(20f).success, Is.True);
+            var handoff = replaced.GetPendingLinkedCombatStarts()[0];
+            var bag = state.PendingResults.GetAll()[0];
+            Assert.That(replaced.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+            Assert.That(replaced.ResolveLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+
+            replaced.Dispose();
+            var currentProgression = new RecordingProgressionProcessor();
+            var current = new ActivityRuntimeService(
+                state,
+                new PlayerStateActivityAdapter(state),
+                progressionProcessor: currentProgression);
+
+            var claimed = state.PendingResults.ClaimAll(
+                "bag-after-runtime-replacement",
+                bag.resultId,
+                bag.revision,
+                state.Storage.GetSnapshot().Revision);
+
+            Assert.That(claimed.Success, Is.True);
+            Assert.That(claimed.Resolved, Is.True);
+            Assert.That(replacedProgression.ActivityCompletedCount, Is.Zero);
+            Assert.That(currentProgression.ActivityCompletedCount, Is.EqualTo(1));
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            current.Dispose();
+        }
+
+        [Test]
+        public void ReplacingRuntimeWhileWaitingForCombatCompletionIsSafe()
+        {
+            var state = NewState();
+            var replacedProgression = new RecordingProgressionProcessor();
+            var replaced = new ActivityRuntimeService(
+                state,
+                new PlayerStateActivityAdapter(state),
+                new DangerSequenceRandom(100, 1),
+                progressionProcessor: replacedProgression);
+            var started = replaced.Start(WorkStart("hunt_rabbits", "ren", 3));
+            Assert.That(replaced.Tick(20f).success, Is.True);
+            var handoff = replaced.GetPendingLinkedCombatStarts()[0];
+            var bag = state.PendingResults.GetAll()[0];
+            Assert.That(replaced.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+            Assert.That(state.PendingResults.ClaimAll(
+                "bag-before-runtime-replacement",
+                bag.resultId,
+                bag.revision,
+                state.Storage.GetSnapshot().Revision).Success, Is.True);
+
+            replaced.Dispose();
+            var currentProgression = new RecordingProgressionProcessor();
+            var current = new ActivityRuntimeService(
+                state,
+                new PlayerStateActivityAdapter(state),
+                progressionProcessor: currentProgression);
+            var resolved = current.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+
+            Assert.That(resolved.success, Is.True);
+            Assert.That(replacedProgression.ActivityCompletedCount, Is.Zero);
+            Assert.That(currentProgression.ActivityCompletedCount, Is.EqualTo(1));
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            current.Dispose();
+        }
+
+        [Test]
+        public void DisposeWithoutLinkedCombatIsIdempotentAndReplacementKeepsWorkBehavior()
+        {
+            var state = NewState();
+            var replaced = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+
+            replaced.Dispose();
+            Assert.DoesNotThrow(replaced.Dispose);
+
+            var current = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = current.Start(WorkStart("work_pine_wood", "ren", 1));
+
+            Assert.That(started.success, Is.True);
+            Assert.That(current.Tick(10f).success, Is.True);
+            Assert.That(state.GetActivityExecution(started.executionId).status, Is.EqualTo(ActivityRuntimeStatus.ResultPending));
+            current.Dispose();
+        }
+
+        [Test]
         public void LinkedCombatCompletionProcessorFailureIsRetryable()
         {
             var state = NewState();

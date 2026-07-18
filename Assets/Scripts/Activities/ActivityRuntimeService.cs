@@ -9,7 +9,7 @@ using CoreActivityRuntimeStatus = GuildIdle.Core.ActivityRuntimeStatus;
 
 namespace GuildIdle.Activities
 {
-    public sealed class ActivityRuntimeService : ILinkedCombatStartGateway
+    public sealed class ActivityRuntimeService : ILinkedCombatStartGateway, IDisposable
     {
         public const int MaxCyclesPerTick = 100;
 
@@ -34,6 +34,7 @@ namespace GuildIdle.Activities
         private readonly Action<ActivityRuntimeEvent> _eventSink;
         private readonly IActivityRuntimeProgressionProcessor _progressionProcessor;
         private readonly Dictionary<string, Func<HeroSkillEffectConfigDto, ActivityStagedRewardSaveData[], bool>> _workEffectHandlers;
+        private bool _disposed;
 
         public ActivityRuntimeService(
             IActivityRuntimeStore store,
@@ -56,6 +57,15 @@ namespace GuildIdle.Activities
             _activityState.PendingResults.Resolved += HandlePendingResultResolved;
             ReconcilePendingBuildingEvents();
             ReconcileLinkedCombatCompletions();
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _activityState.PendingResults.Resolved -= HandlePendingResultResolved;
+            _disposed = true;
         }
 
         public ActivityStartResult Start(string activityId, string heroId)

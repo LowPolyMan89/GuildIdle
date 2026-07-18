@@ -70,15 +70,31 @@ namespace GuildIdle.Editor.Activities
         private bool CanUseRuntime()
         {
             if (!Application.isPlaying || !RuntimeConfigs.IsLoaded || !RuntimePlayer.IsLoaded)
+            {
+                ReleaseRuntime();
                 return false;
+            }
 
             if (_runtime == null || !ReferenceEquals(_boundState, RuntimePlayer.State))
             {
+                ReleaseRuntime();
                 _runtime = PlayerRuntimeComposition.CreateRuntimeService();
                 _boundState = RuntimePlayer.State;
             }
 
             return true;
+        }
+
+        private void OnDisable()
+        {
+            ReleaseRuntime();
+        }
+
+        private void ReleaseRuntime()
+        {
+            _runtime?.Dispose();
+            _runtime = null;
+            _boundState = null;
         }
 
         private void DrawHeroState()
