@@ -154,7 +154,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly ConfigPipelineReport _report;
             private readonly Dictionary<string, ConfigSheetTable> _tables = new Dictionary<string, ConfigSheetTable>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _itemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            private readonly HashSet<string> _enabledItemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _enabledRecipeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             public ItemsConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
@@ -289,7 +288,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                     var isRecipe = string.Equals(sheetName, RecipesSheet, StringComparison.OrdinalIgnoreCase);
                     if (IsRuntimeEnabled(row))
                     {
-                        _enabledItemIds.Add(id);
                         if (isRecipe)
                             _enabledRecipeIds.Add(id);
                     }
@@ -467,19 +465,26 @@ namespace GuildIdle.Editor.ConfigDownloader
                     foreach (var column in new[] { "consume_recipe_item", "enabled" })
                         TryParseBool(row, column, required: true, out _);
 
-                    foreach (var column in new[] { "craft_duration_sec", "required_recipe_item_count", "output_count", "fatigue_cost", "skill_exp" })
-                    {
-                        var value = row.Get(column);
-                        if (!string.IsNullOrWhiteSpace(value) && !ConfigPipelineUtilities.TryParseNumber(value, out _))
-                            AddIssue(CraftDefinitionsSheet, row.RowNumber, column, value, "Expected a number.");
-                    }
-
-                    ValidateNumberGreaterThan(row, "craft_duration_sec", 0, "craft_duration_sec must be greater than 0.");
-                    ValidateNumberGreaterThan(row, "output_count", 0, "output_count must be greater than 0.");
-                    ValidateNumberGreaterThanOrEqual(row, "fatigue_cost", 0, "fatigue_cost must be greater than or equal to 0.");
-                    ValidateNumberGreaterThanOrEqual(row, "skill_exp", 0, "skill_exp must be greater than or equal to 0.");
-                    ValidatePackedRefs(row, "materials", "id", "count");
+                    ValidateCraftInt32(row, "craft_duration_sec", 1);
+                    ValidateCraftInt32(row, "required_recipe_item_count", 0);
+                    ValidateCraftInt32(row, "output_count", 1);
+                    ValidateCraftInt32(row, "fatigue_cost", 0);
+                    ValidateCraftInt32(row, "skill_exp", 0);
+                    ValidateCraftMaterials(row);
                     ValidatePackedRefs(row, "required_buildings", "building_id", "level");
+
+                    var recipeItemId = row.Get("required_recipe_item_id");
+                    if (string.IsNullOrWhiteSpace(recipeItemId))
+                    {
+                        if (GetNumber(row, "required_recipe_item_count") != 0d)
+                            AddIssue(CraftDefinitionsSheet, row.RowNumber, "required_recipe_item_count", row.Get("required_recipe_item_count"), "required_recipe_item_count must be 0 when required_recipe_item_id is empty.");
+                        if (GetBool(row, "consume_recipe_item"))
+                            AddIssue(CraftDefinitionsSheet, row.RowNumber, "consume_recipe_item", row.Get("consume_recipe_item"), "consume_recipe_item requires required_recipe_item_id.");
+                    }
+                    else
+                    {
+                        ValidateNumberGreaterThan(row, "required_recipe_item_count", 0, "required_recipe_item_count must be greater than 0 when required_recipe_item_id is set.");
+                    }
 
                     // Disabled craft definitions are not exported. Their runtime references are
                     // intentionally ignored, while their own shape and scalar fields remain validated.
@@ -487,21 +492,11 @@ namespace GuildIdle.Editor.ConfigDownloader
                         continue;
 
                     var targetItemId = row.Get("target_item_id");
-                    if (!string.IsNullOrWhiteSpace(targetItemId) && !_enabledItemIds.Contains(targetItemId))
-                        AddIssue(CraftDefinitionsSheet, row.RowNumber, "target_item_id", targetItemId, "Referenced target_item_id is not exported by Items Configs.");
+                    if (!string.IsNullOrWhiteSpace(targetItemId) && !_itemIds.Contains(targetItemId))
+                        AddIssue(CraftDefinitionsSheet, row.RowNumber, "target_item_id", targetItemId, "Referenced target_item_id does not exist in Items Configs.");
 
-                    var recipeItemId = row.Get("required_recipe_item_id");
-                    if (string.IsNullOrWhiteSpace(recipeItemId))
-                    {
-                        if (GetBool(row, "consume_recipe_item"))
-                            AddIssue(CraftDefinitionsSheet, row.RowNumber, "consume_recipe_item", row.Get("consume_recipe_item"), "consume_recipe_item requires required_recipe_item_id.");
-                    }
-                    else
-                    {
-                        if (!_enabledRecipeIds.Contains(recipeItemId))
-                            AddIssue(CraftDefinitionsSheet, row.RowNumber, "required_recipe_item_id", recipeItemId, "Referenced required_recipe_item_id is not exported by enabled Recipes.id.");
-                        ValidateNumberGreaterThan(row, "required_recipe_item_count", 0, "required_recipe_item_count must be greater than 0 when required_recipe_item_id is set.");
-                    }
+                    if (!string.IsNullOrWhiteSpace(recipeItemId) && !_enabledRecipeIds.Contains(recipeItemId))
+                        AddIssue(CraftDefinitionsSheet, row.RowNumber, "required_recipe_item_id", recipeItemId, "Referenced required_recipe_item_id is not exported by enabled Recipes.id.");
                 }
             }
 
@@ -626,7 +621,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ["craftDurationSec"] = GetNumber(row, "craft_duration_sec"),
                     ["craftSkillId"] = row.Get("craft_skill_id"),
                     ["requiredBuildings"] = ParseRequiredBuildings(row.Get("required_buildings")),
-                    ["materials"] = ParseMaterials(row.Get("materials")),
+                    ["materials"] = ParseCraftDefinitionMaterials(row.Get("materials")),
                     ["requiredRecipeItemId"] = row.Get("required_recipe_item_id"),
                     ["requiredRecipeItemCount"] = GetNumber(row, "required_recipe_item_count"),
                     ["consumeRecipeItem"] = GetBool(row, "consume_recipe_item"),
@@ -725,6 +720,59 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
             }
 
+            private void ValidateCraftMaterials(ConfigSheetDataRow row)
+            {
+                var craftId = row.Get("craft_id");
+                var totals = new Dictionary<string, long>(StringComparer.Ordinal);
+                foreach (var token in ConfigPipelineUtilities.ParseStrictCraftMaterials(row.Get("materials")))
+                {
+                    if (!token.IsValid)
+                    {
+                        AddCraftMaterialIssue(row, craftId, token, token.Error);
+                        continue;
+                    }
+
+                    if (string.Equals(token.ItemId, ForbiddenLegacyItemId, StringComparison.OrdinalIgnoreCase))
+                        AddCraftMaterialIssue(row, craftId, token, "item_gold is a forbidden legacy item id in Items Configs.");
+                    if (string.Equals(token.ItemId, GoldCurrencyId, StringComparison.OrdinalIgnoreCase))
+                        AddCraftMaterialIssue(row, craftId, token, "gold_id is a currency_id and must not be used as an item/material reference.");
+
+                    totals.TryGetValue(token.ItemId, out var total);
+                    total += token.Count;
+                    if (total > int.MaxValue)
+                    {
+                        AddCraftMaterialIssue(row, craftId, token, $"aggregated count for item_id '{token.ItemId}' exceeds Int32.MaxValue.");
+                        continue;
+                    }
+
+                    totals[token.ItemId] = total;
+                }
+            }
+
+            private void AddCraftMaterialIssue(
+                ConfigSheetDataRow row,
+                string craftId,
+                StrictPackedMaterialToken token,
+                string message)
+            {
+                AddIssue(
+                    CraftDefinitionsSheet,
+                    row.RowNumber,
+                    "materials",
+                    token.Raw,
+                    $"CraftDefinition '{craftId}' materials token {token.Index} raw '{token.Raw}': {message}");
+            }
+
+            private void ValidateCraftInt32(ConfigSheetDataRow row, string column, int minimum)
+            {
+                var raw = row.Get(column);
+                if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) || value < minimum)
+                {
+                    var comparison = minimum == 0 ? "greater than or equal to 0" : $"greater than or equal to {minimum}";
+                    AddIssue(CraftDefinitionsSheet, row.RowNumber, column, raw, $"{column} must be an Int32 {comparison}.");
+                }
+            }
+
             private void ValidateRequired(ConfigSheetDataRow row, string column)
             {
                 if (!row.Table.HasColumn(column))
@@ -818,6 +866,24 @@ namespace GuildIdle.Editor.ConfigDownloader
             private static List<Dictionary<string, object>> ParseMaterials(string raw)
             {
                 return ParsePackedObjects(raw, "id", "count");
+            }
+
+            private static List<Dictionary<string, object>> ParseCraftDefinitionMaterials(string raw)
+            {
+                var values = new List<Dictionary<string, object>>();
+                foreach (var token in ConfigPipelineUtilities.ParseStrictCraftMaterials(raw))
+                {
+                    if (!token.IsValid)
+                        continue;
+
+                    values.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        ["id"] = token.ItemId,
+                        ["count"] = token.Count
+                    });
+                }
+
+                return values;
             }
 
             private static List<Dictionary<string, object>> ParseRequiredBuildings(string raw)

@@ -488,6 +488,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             public HashSet<string> QuestIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> EnabledQuestIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> SkillIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> EnabledSkillIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public bool SkillsHaveEnabledColumn { get; private set; }
             public HashSet<string> RarityIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, string> ActivityTypes { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, string> ActivityCategories { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -517,10 +519,28 @@ namespace GuildIdle.Editor.ConfigDownloader
                     }
                 }
 
-                CollectIds(source, "Skills", "skill_id", registry.SkillIds);
+                registry.CollectSkills();
                 CollectIds(source, "Rarities", "id", registry.RarityIds);
                 registry.CollectQuestIds();
                 return registry;
+            }
+
+            private void CollectSkills()
+            {
+                if (!Source.TryGetTable("Skills", out var skills))
+                    return;
+
+                SkillsHaveEnabledColumn = skills.HasColumn("enabled");
+                foreach (var row in skills.DataRows)
+                {
+                    var skillId = row.Get("skill_id");
+                    if (IsBlank(skillId))
+                        continue;
+
+                    SkillIds.Add(skillId);
+                    if (!SkillsHaveEnabledColumn || IsTrue(row.Get("enabled")))
+                        EnabledSkillIds.Add(skillId);
+                }
             }
 
             private void CollectQuestIds()
@@ -645,8 +665,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             public HashSet<string> CurrencyIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> ItemKinds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> EnabledCraftDefinitionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> DeclaredCraftDefinitionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> DeclaredItemIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> EnabledItemIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, string> EquipmentSlotsById { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> ItemKindsById { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> CraftStationsById { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             private ItemsRegistry(LoadedConfig source)
             {
@@ -667,7 +691,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 CollectItemSheet(source, RecipesSheet, registry.EnabledRecipeIds, registry);
                 CollectItemSheet(source, ConsumablesSheet, registry.ConsumableIds, registry);
                 CollectDeclaredItemKinds(source, registry);
-                CollectEnabledIds(source, CraftDefinitionsSheet, "craft_id", registry.EnabledCraftDefinitionIds);
+                registry.CollectCraftDefinitions();
                 CollectIds(source, CurrenciesSheet, "currency_id", registry.CurrencyIds);
                 CollectIds(source, CurrenciesSheet, "currencyId", registry.CurrencyIds);
                 CollectRuntimeItems(source, registry);
@@ -677,6 +701,11 @@ namespace GuildIdle.Editor.ConfigDownloader
             public bool ContainsAnyItem(string id)
             {
                 return EnabledItemIds.Contains(id);
+            }
+
+            public bool ContainsDeclaredItem(string id)
+            {
+                return DeclaredItemIds.Contains(id);
             }
 
             public bool ContainsResource(string id)
@@ -699,9 +728,34 @@ namespace GuildIdle.Editor.ConfigDownloader
                 return EnabledRecipeIds.Contains(id);
             }
 
+            public bool IsEnabledRecipeItem(string id)
+            {
+                return EnabledRecipeIds.Contains(id) &&
+                       ItemKindsById.TryGetValue(id, out var kind) &&
+                       string.Equals(kind, "recipe", StringComparison.OrdinalIgnoreCase);
+            }
+
             public bool ContainsConsumable(string id)
             {
                 return ConsumableIds.Contains(id);
+            }
+
+            private void CollectCraftDefinitions()
+            {
+                if (!Source.TryGetTable(CraftDefinitionsSheet, out var table))
+                    return;
+
+                foreach (var row in table.DataRows)
+                {
+                    var craftId = row.Get("craft_id");
+                    if (IsBlank(craftId))
+                        continue;
+
+                    DeclaredCraftDefinitionIds.Add(craftId);
+                    CraftStationsById[craftId] = row.Get("craft_station_id");
+                    if (!table.HasColumn("enabled") || IsTrue(row.Get("enabled")))
+                        EnabledCraftDefinitionIds.Add(craftId);
+                }
             }
         }
 
@@ -735,6 +789,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         private sealed class RuntimeCraftDefinition
         {
             public string craftId;
+            public string craftStationId;
         }
 
         private sealed class FormulaRegistry
@@ -859,6 +914,14 @@ namespace GuildIdle.Editor.ConfigDownloader
                     return level >= 0;
 
                 return level >= 0 && level <= maxLevel;
+            }
+
+            public bool ContainsExactBuildingLevel(string buildingId, string levelText)
+            {
+                return BuildingIds.Contains(buildingId) &&
+                       long.TryParse(levelText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var level) &&
+                       BuildingLevels.TryGetValue(buildingId, out var configuredLevels) &&
+                       configuredLevels.Contains(level);
             }
 
             private void CollectBuildingSheet(ConfigDownloadedSheet sheet)
@@ -1022,14 +1085,20 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             foreach (var row in table.DataRows)
             {
+                var id = row.Get("id");
                 var kind = row.Get("kind");
                 if (!IsBlank(kind))
                     registry.ItemKinds.Add(kind);
+                if (!IsBlank(id))
+                {
+                    registry.DeclaredItemIds.Add(id);
+                    if (!IsBlank(kind))
+                        registry.ItemKindsById[id] = kind;
+                }
 
                 if (table.HasColumn("enabled") && !IsTrue(row.Get("enabled")))
                     continue;
 
-                var id = row.Get("id");
                 if (!IsBlank(id))
                 {
                     ids.Add(id);
@@ -1115,7 +1184,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             if (!source.TryGetTable(ConsumablesSheet, out _))
                 CollectRuntimeItemIds(runtime.consumables, registry.ConsumableIds, registry);
             if (!source.TryGetTable(CraftDefinitionsSheet, out _))
-                CollectRuntimeCraftDefinitionIds(runtime.craftDefinitions, registry.EnabledCraftDefinitionIds);
+                CollectRuntimeCraftDefinitions(runtime.craftDefinitions, registry);
             if (!source.TryGetTable(CurrenciesSheet, out _))
                 CollectRuntimeCurrencyIds(runtime.currencies, registry.CurrencyIds);
         }
@@ -1130,7 +1199,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (!IsBlank(row.id))
                 {
                     ids.Add(row.id);
+                    registry.DeclaredItemIds.Add(row.id);
                     registry.EnabledItemIds.Add(row.id);
+                    if (!IsBlank(row.kind))
+                        registry.ItemKindsById[row.id] = row.kind;
                     if (!IsBlank(row.equipmentSlot))
                         registry.EquipmentSlotsById[row.id] = row.equipmentSlot;
                 }
@@ -1141,12 +1213,16 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
         }
 
-        private static void CollectRuntimeCraftDefinitionIds(RuntimeCraftDefinition[] rows, HashSet<string> ids)
+        private static void CollectRuntimeCraftDefinitions(RuntimeCraftDefinition[] rows, ItemsRegistry registry)
         {
             foreach (var row in rows ?? Array.Empty<RuntimeCraftDefinition>())
             {
                 if (row != null && !IsBlank(row.craftId))
-                    ids.Add(row.craftId);
+                {
+                    registry.DeclaredCraftDefinitionIds.Add(row.craftId);
+                    registry.EnabledCraftDefinitionIds.Add(row.craftId);
+                    registry.CraftStationsById[row.craftId] = row.craftStationId;
+                }
             }
         }
 
@@ -1859,6 +1935,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 ValidateSkills(items, registry, report);
                 ValidateMaterials(items, report);
                 ValidateVisibilityAndRecipes(items, report);
+                ValidateCraftDefinitionRules(items, report);
                 ValidateConsumables(items, registry, report);
                 ValidateActionConflicts(items, registry, report);
             }
@@ -1918,7 +1995,13 @@ namespace GuildIdle.Editor.ConfigDownloader
                 {
                     foreach (var row in RuntimeRows(table))
                     {
-                        ValidateIdSet(report, items.Source.DisplayName, table.Name, row, "craft_skill_id", registry.Activity.SkillIds, "Activity Configs / Skills.skill_id");
+                        var skillIds = registry.Activity.SkillsHaveEnabledColumn
+                            ? registry.Activity.EnabledSkillIds
+                            : registry.Activity.SkillIds;
+                        var skillTarget = registry.Activity.SkillsHaveEnabledColumn
+                            ? "enabled Activity Configs / Skills.skill_id"
+                            : "Activity Configs / Skills.skill_id";
+                        ValidateIdSet(report, items.Source.DisplayName, table.Name, row, "craft_skill_id", skillIds, skillTarget);
                         foreach (var packedRef in ParsePackedRefs(row.Get("required_skills")))
                         {
                             if (!registry.Activity.SkillIds.Contains(packedRef.Id))
@@ -1934,6 +2017,13 @@ namespace GuildIdle.Editor.ConfigDownloader
                 {
                     foreach (var row in RuntimeRows(table))
                     {
+                        if (string.Equals(table.Name, CraftDefinitionsSheet, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (table.HasColumn("materials"))
+                                ValidateCraftDefinitionMaterials(items, table, row, report);
+                            continue;
+                        }
+
                         foreach (var packedRef in ParsePackedRefs(row.Get("materials")))
                         {
                             if (string.Equals(packedRef.Id, GoldCurrencyId, StringComparison.OrdinalIgnoreCase))
@@ -1949,6 +2039,62 @@ namespace GuildIdle.Editor.ConfigDownloader
                 }
             }
 
+            private static void ValidateCraftDefinitionMaterials(
+                ItemsRegistry items,
+                ConfigSheetTable table,
+                ConfigSheetDataRow row,
+                ConfigPipelineReport report)
+            {
+                var craftId = row.Get("craft_id");
+                var totals = new Dictionary<string, long>(StringComparer.Ordinal);
+                foreach (var token in ConfigPipelineUtilities.ParseStrictCraftMaterials(row.Get("materials")))
+                {
+                    if (!token.IsValid)
+                    {
+                        AddCraftMaterialIssue(items, table, row, craftId, token, token.Error, report);
+                        continue;
+                    }
+
+                    if (string.Equals(token.ItemId, GoldCurrencyId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        AddCraftMaterialIssue(items, table, row, craftId, token, "gold_id is a currency_id and must not be used as a material item.", report);
+                        continue;
+                    }
+
+                    if (!items.ContainsDeclaredItem(token.ItemId))
+                        AddCraftMaterialIssue(items, table, row, craftId, token, "item_id does not exist in Items Configs item/resource/recipe/consumable registry.", report);
+
+                    totals.TryGetValue(token.ItemId, out var total);
+                    total += token.Count;
+                    if (total > int.MaxValue)
+                    {
+                        AddCraftMaterialIssue(items, table, row, craftId, token, $"aggregated count for item_id '{token.ItemId}' exceeds Int32.MaxValue.", report);
+                        continue;
+                    }
+
+                    totals[token.ItemId] = total;
+                }
+            }
+
+            private static void AddCraftMaterialIssue(
+                ItemsRegistry items,
+                ConfigSheetTable table,
+                ConfigSheetDataRow row,
+                string craftId,
+                StrictPackedMaterialToken token,
+                string message,
+                ConfigPipelineReport report)
+            {
+                AddIssue(
+                    report,
+                    items.Source.DisplayName,
+                    table.Name,
+                    row.RowNumber,
+                    "materials",
+                    token.Raw,
+                    $"CraftDefinition '{craftId}' materials token {token.Index} raw '{token.Raw}': {message}");
+            }
+
             private static void ValidateVisibilityAndRecipes(ItemsRegistry items, ConfigPipelineReport report)
             {
                 foreach (var table in ItemTables(items.Source, includeCurrencies: false))
@@ -1960,12 +2106,46 @@ namespace GuildIdle.Editor.ConfigDownloader
                             AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "visibility_item_id", visibilityItemId, "visibility_item_id does not exist in Items Configs item/recipe/consumable registry.");
 
                         var targetItemId = row.Get("target_item_id");
-                        if (!IsBlank(targetItemId) && !items.ContainsAnyItem(targetItemId))
+                        var targetExists = string.Equals(table.Name, CraftDefinitionsSheet, StringComparison.OrdinalIgnoreCase)
+                            ? items.ContainsDeclaredItem(targetItemId)
+                            : items.ContainsAnyItem(targetItemId);
+                        if (!IsBlank(targetItemId) && !targetExists)
                             AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "target_item_id", targetItemId, "target_item_id does not exist in Items Configs item registry.");
 
                         var recipeItemId = row.Get("required_recipe_item_id");
-                        if (!IsBlank(recipeItemId) && !items.ContainsRecipe(recipeItemId))
-                            AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "required_recipe_item_id", recipeItemId, "required_recipe_item_id does not exist in Items Configs / Recipes.id registry.");
+                        if (!IsBlank(recipeItemId) && !items.IsEnabledRecipeItem(recipeItemId))
+                            AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "required_recipe_item_id", recipeItemId, "required_recipe_item_id must reference an enabled Items Configs / Recipes.id registry row with kind=recipe.");
+                    }
+                }
+            }
+
+            private static void ValidateCraftDefinitionRules(ItemsRegistry items, ConfigPipelineReport report)
+            {
+                if (!items.Source.TryGetTable(CraftDefinitionsSheet, out var table))
+                    return;
+                if (!table.HasColumn("required_recipe_item_id") ||
+                    !table.HasColumn("required_recipe_item_count") ||
+                    !table.HasColumn("consume_recipe_item"))
+                {
+                    return;
+                }
+
+                foreach (var row in RuntimeRows(table))
+                {
+                    var recipeItemId = row.Get("required_recipe_item_id");
+                    var recipeCountText = row.Get("required_recipe_item_count");
+                    var consumeRecipe = IsTrue(row.Get("consume_recipe_item"));
+                    var hasRecipeCount = int.TryParse(recipeCountText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var recipeCount);
+                    if (IsBlank(recipeItemId))
+                    {
+                        if (!hasRecipeCount || recipeCount != 0)
+                            AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "required_recipe_item_count", recipeCountText, "required_recipe_item_count must be 0 when required_recipe_item_id is empty.");
+                        if (consumeRecipe)
+                            AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "consume_recipe_item", row.Get("consume_recipe_item"), "consume_recipe_item must be false when required_recipe_item_id is empty.");
+                    }
+                    else if (!hasRecipeCount || recipeCount <= 0)
+                    {
+                        AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "required_recipe_item_count", recipeCountText, "required_recipe_item_count must be a positive Int32 when required_recipe_item_id is set.");
                     }
                 }
             }
@@ -2603,6 +2783,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (!TryGetRequiredRegistry(report, registry.Items, "Items Configs"))
                     return;
 
+                var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var table in buildings.Source.Tables.Values)
                 {
                     if (!table.Name.StartsWith("Craftables -", StringComparison.OrdinalIgnoreCase))
@@ -2611,8 +2792,35 @@ namespace GuildIdle.Editor.ConfigDownloader
                     foreach (var row in table.DataRows)
                     {
                         var craftId = row.Get("craft_id");
-                        if (!IsBlank(craftId) && !registry.Items.EnabledCraftDefinitionIds.Contains(craftId))
+                        var buildingId = row.Get("building_id");
+                        var buildingLevel = row.Get("building_level");
+                        var key = $"{buildingId}\n{buildingLevel}\n{craftId}";
+                        if (seen.TryGetValue(key, out var firstLocation))
+                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "craft_id", craftId, $"Duplicate building_id + building_level + craft_id; first declared at {firstLocation}.");
+                        else
+                            seen[key] = $"{table.Name} row {row.RowNumber}";
+
+                        if (!IsBlank(buildingId) && !buildings.ContainsExactBuildingLevel(buildingId, buildingLevel))
+                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "building_level", buildingLevel, "building_id + building_level does not exist in Buildings Configs.");
+
+                        if (IsBlank(craftId))
+                            continue;
+                        if (!registry.Items.DeclaredCraftDefinitionIds.Contains(craftId))
+                        {
                             AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "craft_id", craftId, "craft_id does not exist in Items Configs / CraftDefinitions.craft_id registry.");
+                            continue;
+                        }
+
+                        var enabled = !table.HasColumn("enabled") || IsTrue(row.Get("enabled"));
+                        if (enabled && !registry.Items.EnabledCraftDefinitionIds.Contains(craftId))
+                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "craft_id", craftId, "enabled Craftable references a disabled CraftDefinition.");
+
+                        if (registry.Items.CraftStationsById.TryGetValue(craftId, out var stationId) &&
+                            !IsBlank(stationId) &&
+                            !string.Equals(buildingId, stationId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "building_id", buildingId, $"building_id must match CraftDefinition.craft_station_id '{stationId}'.");
+                        }
                     }
                 }
             }

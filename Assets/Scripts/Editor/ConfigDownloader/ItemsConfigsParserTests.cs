@@ -89,6 +89,118 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void BuildRuntimeJson_PreservesDuplicateCraftMaterialsAndIsReproducible()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "CraftDefinitions").rows[1].cells[6] =
+                "resource_pine_wood:1;resource_pine_plank:2;resource_pine_wood:3";
+            WriteRaw(download);
+
+            var firstReport = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out var firstJson);
+            var secondReport = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out var secondJson);
+
+            Assert.That(firstReport.Success, Is.True, firstReport.ToDisplayMessage());
+            Assert.That(secondReport.Success, Is.True, secondReport.ToDisplayMessage());
+            Assert.That(secondJson, Is.EqualTo(firstJson));
+            var dto = JsonUtility.FromJson<GuildIdle.Configs.ItemsRuntimeConfigDto>(firstJson);
+            var repository = new GuildIdle.Configs.ItemsConfigRepository(dto);
+            Assert.That(repository.TryGetCraftDefinition("process_pine_plank", out var definition), Is.True);
+            Assert.That(definition.materials, Has.Length.EqualTo(3));
+            Assert.That(definition.materials[0].id, Is.EqualTo("resource_pine_wood"));
+            Assert.That(definition.materials[0].count, Is.EqualTo(1));
+            Assert.That(definition.materials[2].id, Is.EqualTo("resource_pine_wood"));
+            Assert.That(definition.materials[2].count, Is.EqualTo(3));
+            Assert.That(definition.requiredRecipeItemId, Is.Empty);
+            Assert.That(definition.requiredRecipeItemCount, Is.Zero);
+            Assert.That(definition.consumeRecipeItem, Is.False);
+        }
+
+        [TestCase(";resource_pine_wood:1", 1, "")]
+        [TestCase("resource_pine_wood:1;", 2, "")]
+        [TestCase("resource_pine_wood:1;;resource_pine_plank:1", 2, "")]
+        [TestCase("resource_pine_wood", 1, "resource_pine_wood")]
+        [TestCase(":1", 1, ":1")]
+        [TestCase("resource_pine_wood:", 1, "resource_pine_wood:")]
+        [TestCase("resource_pine_wood:1:extra", 1, "resource_pine_wood:1:extra")]
+        [TestCase("resource_pine_wood:no", 1, "resource_pine_wood:no")]
+        [TestCase("resource_pine_wood:0", 1, "resource_pine_wood:0")]
+        [TestCase("resource_pine_wood:-1", 1, "resource_pine_wood:-1")]
+        [TestCase("resource_pine_wood:2147483648", 1, "resource_pine_wood:2147483648")]
+        public void BuildRuntimeJson_RejectsMalformedCraftMaterialWithTokenContext(string materials, int tokenIndex, string rawToken)
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "CraftDefinitions").rows[1].cells[6] = materials;
+            WriteRaw(download);
+
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("CraftDefinitions row 2 column 'materials'"));
+            Assert.That(message, Does.Contain("CraftDefinition 'process_pine_plank'"));
+            Assert.That(message, Does.Contain($"token {tokenIndex}"));
+            Assert.That(message, Does.Contain($"raw '{rawToken}'"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsAggregatedCraftMaterialOverflow()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "CraftDefinitions").rows[1].cells[6] =
+                "resource_pine_wood:2147483647;resource_pine_wood:1";
+            WriteRaw(download);
+
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("token 2").And.Contain("exceeds Int32.MaxValue"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsDuplicateCraftId()
+        {
+            var download = CreateValidDownload();
+            var definitions = FindSheet(download, "CraftDefinitions");
+            definitions.rows = Append(definitions.rows, definitions.rows[1]);
+            WriteRaw(download);
+
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Duplicate craft_id").And.Contain("first declared at row 2"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_AllowsHeaderOnlyCraftDefinitionsAndRecipes()
+        {
+            var download = CreateValidDownload();
+            var recipes = FindSheet(download, "\u0420\u0435\u0446\u0435\u043F\u0442\u044B");
+            recipes.rows = new[] { recipes.rows[0] };
+            var definitions = FindSheet(download, "CraftDefinitions");
+            definitions.rows = new[] { definitions.rows[0] };
+            WriteRaw(download);
+
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(runtimeJson, Does.Contain("\"recipes\": []"));
+            Assert.That(runtimeJson, Does.Contain("\"craftDefinitions\": []"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsRecipeCountWhenRecipeIdIsEmpty()
+        {
+            var download = CreateValidDownload();
+            FindSheet(download, "CraftDefinitions").rows[1].cells[8] = "1";
+            WriteRaw(download);
+
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("required_recipe_item_count must be 0"));
+        }
+
+        [Test]
         public void BuildRuntimeJson_AcceptsOnlyCanonicalEquipmentSlots()
         {
             var legacy = CreateValidDownload();
@@ -137,16 +249,16 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
-        public void BuildRuntimeJson_RejectsEnabledCraftTargetingDisabledRecipeItem()
+        public void BuildRuntimeJson_AllowsCraftTargetThatExistsButIsNotRuntimeEnabled()
         {
             var download = CreateValidDownload();
             AddDisabledRecipeAndCraft(download, targetItemId: "recipe_old", requiredRecipeItemId: "", craftEnabled: "TRUE");
             WriteRaw(download);
 
-            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
 
-            Assert.That(report.Success, Is.False);
-            Assert.That(report.ToDisplayMessage(), Does.Contain("target_item_id").And.Contain("not exported by Items Configs"));
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(runtimeJson, Does.Contain("\"targetItemId\": \"recipe_old\""));
         }
 
         [Test]

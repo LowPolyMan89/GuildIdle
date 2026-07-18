@@ -105,7 +105,121 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
-        public void Validate_CraftReferencesResolveOnlyEnabledRuntimeItems()
+        public void Validate_CraftDefinitionAndCraftableRelationsResolveAcrossCanonicalConfigs()
+        {
+            var report = ConfigCrossConfigValidator.Validate(CraftValidationCollection("valid"));
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+        }
+
+        [Test]
+        public void Validate_CraftableRejectsStationMismatchDisabledCraftAndMissingLevel()
+        {
+            var mismatch = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "mismatch",
+                craftableBuilding: "building_other"));
+            var disabled = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "disabled",
+                craftEnabled: "FALSE"));
+            var missingLevel = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "missing-level",
+                craftableLevel: "2"));
+
+            Assert.That(mismatch.Success, Is.False);
+            Assert.That(mismatch.ToDisplayMessage(), Does.Contain("must match CraftDefinition.craft_station_id"));
+            Assert.That(disabled.Success, Is.False);
+            Assert.That(disabled.ToDisplayMessage(), Does.Contain("enabled Craftable references a disabled CraftDefinition"));
+            Assert.That(missingLevel.Success, Is.False);
+            Assert.That(missingLevel.ToDisplayMessage(), Does.Contain("building_id + building_level does not exist"));
+        }
+
+        [Test]
+        public void Validate_CraftMaterialReferencePreservesStrictTokenContext()
+        {
+            var report = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "material",
+                materials: "resource_material:1;resource_missing:2"));
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("CraftDefinitions row 2 column 'materials'"));
+            Assert.That(message, Does.Contain("CraftDefinition 'craft_test'"));
+            Assert.That(message, Does.Contain("token 2"));
+            Assert.That(message, Does.Contain("raw 'resource_missing:2'"));
+        }
+
+        [Test]
+        public void Validate_CraftSkillEnabledStateOnlyWhenCanonicalColumnExists()
+        {
+            var withoutEnabledColumn = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "skill-no-enabled",
+                skillHasEnabledColumn: false,
+                skillEnabled: false));
+            var withDisabledSkill = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "skill-disabled",
+                skillHasEnabledColumn: true,
+                skillEnabled: false));
+
+            Assert.That(withoutEnabledColumn.Success, Is.True, withoutEnabledColumn.ToDisplayMessage());
+            Assert.That(withDisabledSkill.Success, Is.False);
+            Assert.That(withDisabledSkill.ToDisplayMessage(), Does.Contain("enabled Activity Configs / Skills.skill_id"));
+        }
+
+        [TestCase("component", "TRUE")]
+        [TestCase("recipe", "FALSE")]
+        public void Validate_CraftRecipeMustBeEnabledAndHaveRecipeKind(string recipeKind, string recipeEnabled)
+        {
+            var report = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                $"recipe-{recipeKind}-{recipeEnabled}",
+                recipeKind: recipeKind,
+                recipeEnabled: recipeEnabled));
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("kind=recipe").And.Contain("enabled"));
+        }
+
+        [Test]
+        public void Validate_CraftDefinitionRejectsMissingCanonicalReferences()
+        {
+            var missingTarget = ConfigCrossConfigValidator.Validate(CraftValidationCollection("missing-target", targetItem: "item_missing"));
+            var missingStation = ConfigCrossConfigValidator.Validate(CraftValidationCollection("missing-station", craftStation: "building_missing"));
+            var missingRequiredBuilding = ConfigCrossConfigValidator.Validate(CraftValidationCollection("missing-required-building", requiredBuildings: "building_missing:1"));
+            var missingSkill = ConfigCrossConfigValidator.Validate(CraftValidationCollection("missing-skill", craftSkill: "skill_missing"));
+            var missingRecipe = ConfigCrossConfigValidator.Validate(CraftValidationCollection("missing-recipe", recipeItem: "recipe_missing"));
+
+            Assert.That(missingTarget.ToDisplayMessage(), Does.Contain("target_item_id").And.Contain("does not exist"));
+            Assert.That(missingStation.ToDisplayMessage(), Does.Contain("craft_station_id").And.Contain("Index.building_id"));
+            Assert.That(missingRequiredBuilding.ToDisplayMessage(), Does.Contain("required_buildings").And.Contain("missing Buildings Configs"));
+            Assert.That(missingSkill.ToDisplayMessage(), Does.Contain("craft_skill_id").And.Contain("Skills.skill_id"));
+            Assert.That(missingRecipe.ToDisplayMessage(), Does.Contain("required_recipe_item_id").And.Contain("Recipes.id registry"));
+        }
+
+        [Test]
+        public void Validate_CraftDefinitionRejectsInvalidRecipeCombinationsAndDuplicateCraftableTuple()
+        {
+            var countWithoutRecipe = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "count-without-recipe",
+                recipeItem: "",
+                recipeCount: "1"));
+            var consumeWithoutRecipe = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "consume-without-recipe",
+                recipeItem: "",
+                consumeRecipe: "TRUE"));
+            var zeroRecipeCount = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "zero-recipe-count",
+                recipeCount: "0"));
+            var duplicateCraftable = ConfigCrossConfigValidator.Validate(CraftValidationCollection(
+                "duplicate-craftable",
+                duplicateCraftable: true));
+
+            Assert.That(countWithoutRecipe.ToDisplayMessage(), Does.Contain("required_recipe_item_count must be 0"));
+            Assert.That(consumeWithoutRecipe.ToDisplayMessage(), Does.Contain("consume_recipe_item must be false"));
+            Assert.That(zeroRecipeCount.ToDisplayMessage(), Does.Contain("positive Int32"));
+            Assert.That(duplicateCraftable.ToDisplayMessage(), Does.Contain("Duplicate building_id + building_level + craft_id"));
+        }
+
+        [Test]
+        public void Validate_CraftRecipeRequiresEnabledButTargetOnlyRequiresExistence()
         {
             const string staleRuntime = "{\"recipes\":[{\"id\":\"recipe_old\",\"kind\":\"recipe\"}]}";
 
@@ -128,8 +242,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 staleRuntime));
             var disabledTargetReport = ConfigCrossConfigValidator.Validate(disabledTargetReference);
 
-            Assert.That(disabledTargetReport.Success, Is.False);
-            Assert.That(disabledTargetReport.ToDisplayMessage(), Does.Contain("target_item_id").And.Contain("item registry"));
+            Assert.That(disabledTargetReport.Success, Is.True, disabledTargetReport.ToDisplayMessage());
 
             var disabledCraft = Collection(Source(
                 "items_configs",
@@ -949,6 +1062,76 @@ namespace GuildIdle.Editor.ConfigDownloader
         private static ConfigSourceSettingsCollection Collection(params ConfigSourceSettings[] sources)
         {
             return new ConfigSourceSettingsCollection { sources = sources };
+        }
+
+        private static ConfigSourceSettingsCollection CraftValidationCollection(
+            string suffix,
+            string craftEnabled = "TRUE",
+            string targetItem = "item_output",
+            string craftStation = "building_station",
+            string craftSkill = "skill_crafting",
+            string requiredBuildings = "building_station:1",
+            string craftableBuilding = "building_station",
+            string craftableLevel = "1",
+            string materials = "resource_material:1",
+            string recipeItem = "recipe_test",
+            string recipeCount = "1",
+            string consumeRecipe = "FALSE",
+            string recipeKind = "recipe",
+            string recipeEnabled = "TRUE",
+            bool skillHasEnabledColumn = false,
+            bool skillEnabled = true,
+            bool duplicateCraftable = false)
+        {
+            var skillHeader = skillHasEnabledColumn
+                ? Row("skill_id", "enabled")
+                : Row("skill_id");
+            var skillRow = skillHasEnabledColumn
+                ? Row("skill_crafting", skillEnabled ? "TRUE" : "FALSE")
+                : Row("skill_crafting");
+            var craftableRows = duplicateCraftable
+                ? new[]
+                {
+                    Row("building_id", "building_level", "craft_id", "enabled"),
+                    Row(craftableBuilding, craftableLevel, "craft_test", "TRUE"),
+                    Row(craftableBuilding, craftableLevel, "craft_test", "TRUE")
+                }
+                : new[]
+                {
+                    Row("building_id", "building_level", "craft_id", "enabled"),
+                    Row(craftableBuilding, craftableLevel, "craft_test", "TRUE")
+                };
+
+            return Collection(
+                Source("items_configs", "Items Configs", $"craft-{suffix}-items.json", Download(
+                    Sheet("\u0420\u0435\u0441\u0443\u0440\u0441\u044B",
+                        Row("id", "kind"),
+                        Row("resource_material", "resource")),
+                    Sheet("\u0420\u0430\u0441\u0445\u043E\u0434\u043D\u0438\u043A\u0438",
+                        Row("id", "kind"),
+                        Row("item_output", "consumable")),
+                    Sheet("\u0420\u0435\u0446\u0435\u043F\u0442\u044B",
+                        Row("id", "kind", "enabled"),
+                        Row("recipe_test", recipeKind, recipeEnabled)),
+                    Sheet("CraftDefinitions",
+                        Row("craft_id", "target_item_id", "craft_station_id", "craft_duration_sec", "craft_skill_id", "required_buildings", "materials", "required_recipe_item_id", "required_recipe_item_count", "consume_recipe_item", "output_count", "enabled", "fatigue_cost", "skill_exp"),
+                        Row("craft_test", targetItem, craftStation, "10", craftSkill, requiredBuildings, materials, recipeItem, recipeCount, consumeRecipe, "1", craftEnabled, "0", "1")))),
+                Source("activity_configs", "Activity Configs", $"craft-{suffix}-activity.json", Download(
+                    Sheet("Skills", skillHeader, skillRow))),
+                Source("buildings_configs", "Buildings Configs", $"craft-{suffix}-buildings.json", Download(
+                    Sheet("Index",
+                        Row("building_id", "levels", "start_level", "clickable_requirement"),
+                        Row("building_station", "1", "1", ""),
+                        Row("building_other", "1", "1", "")),
+                    Sheet("Station",
+                        Row("building_id", "building_station"),
+                        Row("level", "source_activity_id"),
+                        Row("1", "")),
+                    Sheet("Other",
+                        Row("building_id", "building_other"),
+                        Row("level", "source_activity_id"),
+                        Row("1", "")),
+                    Sheet("Craftables - Station", craftableRows))));
         }
 
         private static ConfigSourceSettings Source(string configId, string displayName, string fileName, ConfigSheetDownload download, string runtimeJson = null)

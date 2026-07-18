@@ -131,6 +131,88 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             return $"{sheetName}.{column}";
         }
+
+        public static IReadOnlyList<StrictPackedMaterialToken> ParseStrictCraftMaterials(string raw)
+        {
+            var tokens = new List<StrictPackedMaterialToken>();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                tokens.Add(StrictPackedMaterialToken.Invalid(1, raw ?? string.Empty, "token must not be empty."));
+                return tokens;
+            }
+
+            var values = raw.Split(new[] { ';' }, StringSplitOptions.None);
+            for (var index = 0; index < values.Length; index++)
+            {
+                var original = values[index] ?? string.Empty;
+                var trimmed = original.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed))
+                {
+                    tokens.Add(StrictPackedMaterialToken.Invalid(index + 1, original, "token must not be empty."));
+                    continue;
+                }
+
+                var parts = trimmed.Split(':');
+                if (parts.Length != 2)
+                {
+                    tokens.Add(StrictPackedMaterialToken.Invalid(index + 1, original, "expected exactly item_id:count."));
+                    continue;
+                }
+
+                var itemId = parts[0].Trim();
+                var countText = parts[1].Trim();
+                if (string.IsNullOrWhiteSpace(itemId))
+                {
+                    tokens.Add(StrictPackedMaterialToken.Invalid(index + 1, original, "item_id must not be empty."));
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(countText))
+                {
+                    tokens.Add(StrictPackedMaterialToken.Invalid(index + 1, original, "count must not be empty."));
+                    continue;
+                }
+
+                if (!int.TryParse(countText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) || count <= 0)
+                {
+                    tokens.Add(StrictPackedMaterialToken.Invalid(index + 1, original, "count must be an integer from 1 through Int32.MaxValue."));
+                    continue;
+                }
+
+                tokens.Add(StrictPackedMaterialToken.Valid(index + 1, original, itemId, count));
+            }
+
+            return tokens;
+        }
+    }
+
+    internal readonly struct StrictPackedMaterialToken
+    {
+        public int Index { get; }
+        public string Raw { get; }
+        public string ItemId { get; }
+        public int Count { get; }
+        public string Error { get; }
+        public bool IsValid => string.IsNullOrEmpty(Error);
+
+        private StrictPackedMaterialToken(int index, string raw, string itemId, int count, string error)
+        {
+            Index = index;
+            Raw = raw ?? string.Empty;
+            ItemId = itemId ?? string.Empty;
+            Count = count;
+            Error = error ?? string.Empty;
+        }
+
+        public static StrictPackedMaterialToken Valid(int index, string raw, string itemId, int count)
+        {
+            return new StrictPackedMaterialToken(index, raw, itemId, count, string.Empty);
+        }
+
+        public static StrictPackedMaterialToken Invalid(int index, string raw, string error)
+        {
+            return new StrictPackedMaterialToken(index, raw, string.Empty, 0, error);
+        }
     }
 
     internal sealed class ConfigSheetTable

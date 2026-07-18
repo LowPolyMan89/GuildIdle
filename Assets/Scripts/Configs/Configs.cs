@@ -24,6 +24,7 @@ namespace GuildIdle.Configs
         public static HeroesConfigRepository Heroes => GetRepository(database => database.Heroes, "Heroes");
         public static ActivitiesConfigRepository Activities => GetRepository(database => database.Activities, "Activities");
         public static BuildingsConfigRepository Buildings => GetRepository(database => database.Buildings, "Buildings");
+        public static CraftsConfigRepository Crafts => GetRepository(database => database.Crafts, "Crafts");
         public static QuestConfigRepository Quests => GetRepository(database => database.Quests, "Quests");
         public static EnemiesConfigRepository Enemies => GetRepository(database => database.Enemies, "Enemies");
         public static FormulasConfigRepository Formulas => GetRepository(database => database.Formulas, "Formulas");
