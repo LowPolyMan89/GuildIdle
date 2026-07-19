@@ -1,6 +1,7 @@
 using System;
 using GuildIdle.Activities;
 using GuildIdle.Core;
+using GuildIdle.Crafting;
 using GuildIdle.Progression;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
@@ -38,6 +39,21 @@ namespace GuildIdle.Player
             if (state == null)
                 throw new InvalidOperationException("Player state is not loaded yet. Call Player.Load() or wait for config load.");
             return state.Storage;
+        }
+
+        public static CraftRuntimeService CreateCraftRuntimeService()
+        {
+            var state = Player.State;
+            if (state == null)
+                throw new InvalidOperationException("Player state is not loaded yet. Call Player.Load() or wait for config load.");
+            return CreateCraftRuntimeService(state);
+        }
+
+        public static CraftRuntimeService CreateCraftRuntimeService(PlayerState state)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+            return new CraftRuntimeService(RuntimeConfigs.Crafts, new PlayerStateCraftAdapter(state));
         }
 
         public static IPendingResultService CreatePendingResultService()

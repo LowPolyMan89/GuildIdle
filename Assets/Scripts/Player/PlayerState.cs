@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
+using GuildIdle.Crafting;
 using GuildIdle.Core;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
@@ -27,6 +28,7 @@ namespace GuildIdle.Player
         private readonly HashSet<string> _completedActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _availableActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, ActivityExecutionSaveData> _activityExecutions = new Dictionary<string, ActivityExecutionSaveData>(StringComparer.Ordinal);
+        private readonly Dictionary<string, CraftExecutionSaveData> _craftExecutions = new Dictionary<string, CraftExecutionSaveData>(StringComparer.Ordinal);
         private readonly Dictionary<string, QuestInstanceSaveData> _questInstances = new Dictionary<string, QuestInstanceSaveData>(StringComparer.Ordinal);
         private readonly Dictionary<string, PendingResultSourceReferenceSaveData> _resultSources = new Dictionary<string, PendingResultSourceReferenceSaveData>(StringComparer.Ordinal);
         private readonly List<OperationReceiptSaveData> _operationReceipts = new List<OperationReceiptSaveData>();
@@ -84,6 +86,7 @@ namespace GuildIdle.Player
                 completedActivities = BuildSortedArray(_completedActivities),
                 availableActivities = BuildSortedArray(_availableActivities),
                 activityRuntime = BuildActivityRuntimeSaveData(),
+                craftRuntime = BuildCraftRuntimeSaveData(),
                 pendingResults = PendingResults.GetSaveData(),
                 resultSources = BuildResultSourceReferences(),
                 operationReceipts = BuildOperationReceipts()
@@ -302,6 +305,14 @@ namespace GuildIdle.Player
         public bool IsHeroBusy(string heroId)
         {
             return TryGetHeroState(heroId, out var hero) && !string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId);
+        }
+
+        public int GetActiveHeroCount()
+        {
+            var count = 0;
+            foreach (var hero in _heroes.Values)
+                if (!string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId)) count++;
+            return count;
         }
 
         public string GetHeroCurrentActivityExecutionId(string heroId)
@@ -632,9 +643,9 @@ namespace GuildIdle.Player
             if (!ValidateActivityExecution(execution, requireRunning: false))
                 return false;
 
-            if (_activityExecutions.ContainsKey(execution.executionId))
+            if (_activityExecutions.ContainsKey(execution.executionId) || _craftExecutions.ContainsKey(execution.executionId))
             {
-                Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' already exists.");
+                Debug.LogError($"[PlayerState] Execution owner id '{execution.executionId}' already exists.");
                 return false;
             }
 
@@ -707,6 +718,56 @@ namespace GuildIdle.Player
             return true;
         }
 
+        public CraftExecutionSaveData[] GetCraftExecutions()
+        {
+            var keys = SortedKeys(_craftExecutions);
+            var entries = new CraftExecutionSaveData[keys.Count];
+            for (var index = 0; index < keys.Count; index++)
+                entries[index] = CloneCraftExecution(_craftExecutions[keys[index]]);
+            return entries;
+        }
+
+        public CraftExecutionSaveData GetCraftExecution(string executionId)
+        {
+            return !string.IsNullOrWhiteSpace(executionId) && _craftExecutions.TryGetValue(executionId, out var execution)
+                ? CloneCraftExecution(execution)
+                : null;
+        }
+
+        public bool AddCraftExecution(CraftExecutionSaveData execution)
+        {
+            if (!ValidateCraftExecution(execution) || _craftExecutions.ContainsKey(execution.executionId) ||
+                _activityExecutions.ContainsKey(execution.executionId))
+            {
+                Debug.LogError($"[PlayerState] Craft execution '{execution?.executionId}' is invalid or already exists.");
+                return false;
+            }
+            if (!_heroes.TryGetValue(execution.heroId, out var hero) ||
+                !string.Equals(hero.CurrentActivityExecutionId, execution.executionId, StringComparison.Ordinal))
+            {
+                Debug.LogError($"[PlayerState] Hero '{execution.heroId}' must be occupied by craft execution '{execution.executionId}' before it is added.");
+                return false;
+            }
+
+            _craftExecutions.Add(execution.executionId, CloneCraftExecution(execution));
+            return true;
+        }
+
+        public bool UpdateCraftExecution(CraftExecutionSaveData execution)
+        {
+            if (!ValidateCraftExecution(execution) || !_craftExecutions.TryGetValue(execution.executionId, out var previous) ||
+                !HasSameCraftSnapshot(previous, execution))
+                return false;
+            if (!_heroes.TryGetValue(execution.heroId, out var hero) ||
+                !string.Equals(hero.CurrentActivityExecutionId, execution.executionId, StringComparison.Ordinal))
+            {
+                Debug.LogError($"[PlayerState] Craft execution '{execution.executionId}' does not own hero '{execution.heroId}'.");
+                return false;
+            }
+            _craftExecutions[execution.executionId] = CloneCraftExecution(execution);
+            return true;
+        }
+
         private void Load(SaveData saveData)
         {
             saveData ??= new SaveData();
@@ -731,6 +792,7 @@ namespace GuildIdle.Player
             LoadEquipmentSlots(saveData.equipmentSlots);
             NormalizeOrphanEquippedInstances();
             LoadActivityRuntime(saveData.activityRuntime);
+            LoadCraftRuntime(saveData.craftRuntime);
             LoadResultSourceReferences(saveData.resultSources);
             LoadOperationReceipts(saveData.operationReceipts);
             PendingResults.Load(saveData.pendingResults);
@@ -751,6 +813,7 @@ namespace GuildIdle.Player
             _completedActivities.Clear();
             _availableActivities.Clear();
             _activityExecutions.Clear();
+            _craftExecutions.Clear();
             _questInstances.Clear();
             _resultSources.Clear();
             _operationReceipts.Clear();
@@ -1159,6 +1222,34 @@ namespace GuildIdle.Player
             }
         }
 
+        private void LoadCraftRuntime(CraftRuntimeSaveData runtime)
+        {
+            _craftExecutions.Clear();
+            if (runtime?.executions == null)
+                return;
+
+            foreach (var execution in runtime.executions)
+            {
+                if (!ValidateCraftExecution(execution) || _craftExecutions.ContainsKey(execution.executionId) ||
+                    _activityExecutions.ContainsKey(execution.executionId))
+                {
+                    WasNormalized = true;
+                    continue;
+                }
+                if (!_heroes.TryGetValue(execution.heroId, out var hero) ||
+                    !string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
+                {
+                    Debug.LogError($"[PlayerState] Ignoring craft execution '{execution.executionId}': hero '{execution.heroId}' is already busy or missing.");
+                    WasNormalized = true;
+                    continue;
+                }
+
+                var stored = CloneCraftExecution(execution);
+                _craftExecutions.Add(stored.executionId, stored);
+                hero.CurrentActivityExecutionId = stored.executionId;
+            }
+        }
+
         private void LoadOperationReceipts(OperationReceiptSaveData[] receipts)
         {
             _operationReceipts.Clear();
@@ -1541,6 +1632,14 @@ namespace GuildIdle.Player
             };
         }
 
+        private CraftRuntimeSaveData BuildCraftRuntimeSaveData()
+        {
+            return new CraftRuntimeSaveData
+            {
+                executions = GetCraftExecutions()
+            };
+        }
+
         private string GetAvailableStateId()
         {
             return _configs.TryGetItemStateByAvailabilityMode(ItemAvailabilityMode.Available, out var state) && state != null
@@ -1666,6 +1765,176 @@ namespace GuildIdle.Player
             var list = new List<string>(values);
             list.Sort(StringComparer.Ordinal);
             return list.ToArray();
+        }
+
+        private bool ValidateCraftExecution(CraftExecutionSaveData execution)
+        {
+            if (execution == null || string.IsNullOrWhiteSpace(execution.executionId) ||
+                string.IsNullOrWhiteSpace(execution.craftId) || string.IsNullOrWhiteSpace(execution.heroId) ||
+                !_acquiredHeroes.Contains(execution.heroId) || string.IsNullOrWhiteSpace(execution.stationBuildingId) ||
+                execution.stationBuildingLevel < 0 || execution.durationSeconds <= 0 ||
+                float.IsNaN(execution.progressSeconds) || float.IsInfinity(execution.progressSeconds) || execution.progressSeconds < 0f ||
+                string.IsNullOrWhiteSpace(execution.outputItemId) || execution.outputCount <= 0 ||
+                string.IsNullOrWhiteSpace(execution.skillId) || execution.skillExp < 0 || execution.fatigueCostPaid < 0 ||
+                !execution.costsPaid || string.IsNullOrWhiteSpace(execution.startOperationKey) ||
+                string.IsNullOrWhiteSpace(execution.startFingerprint))
+            {
+                Debug.LogError($"[PlayerState] Craft execution '{execution?.executionId}' has an invalid immutable snapshot.");
+                return false;
+            }
+            if (execution.status != CraftExecutionStatus.Running && execution.status != CraftExecutionStatus.ResultPending)
+            {
+                Debug.LogError($"[PlayerState] Craft execution '{execution.executionId}' has unsupported status '{execution.status}'.");
+                return false;
+            }
+            if (execution.status == CraftExecutionStatus.ResultPending && string.IsNullOrWhiteSpace(execution.pendingResultId))
+            {
+                Debug.LogError($"[PlayerState] ResultPending craft execution '{execution.executionId}' has no pending result id.");
+                return false;
+            }
+            var costIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var cost in execution.paidCosts ?? Array.Empty<CraftPaidCostSaveData>())
+            {
+                if (cost == null || string.IsNullOrWhiteSpace(cost.itemId) || cost.quantity <= 0 || !costIds.Add(cost.itemId) ||
+                    (!string.Equals(cost.kind, CraftPaidCostKind.Material, StringComparison.Ordinal) &&
+                     !string.Equals(cost.kind, CraftPaidCostKind.Recipe, StringComparison.Ordinal) &&
+                     !string.Equals(cost.kind, CraftPaidCostKind.MaterialAndRecipe, StringComparison.Ordinal)))
+                    return false;
+            }
+            foreach (var requirement in execution.requiredBuildings ?? Array.Empty<CraftRequiredBuildingSnapshotSaveData>())
+                if (requirement == null || string.IsNullOrWhiteSpace(requirement.buildingId) || requirement.level < 0) return false;
+            var recipe = execution.recipe ?? new CraftRecipeAuditSaveData();
+            var hasRecipe = !string.IsNullOrWhiteSpace(recipe.requiredItemId);
+            if (hasRecipe != (recipe.requiredCount > 0) || (!hasRecipe && recipe.consume) ||
+                recipe.consumedCount != (recipe.consume ? recipe.requiredCount : 0))
+                return false;
+            if (recipe.consume)
+            {
+                var recipeCostFound = false;
+                foreach (var cost in execution.paidCosts ?? Array.Empty<CraftPaidCostSaveData>())
+                {
+                    if (cost != null && string.Equals(cost.itemId, recipe.requiredItemId, StringComparison.Ordinal) &&
+                        cost.quantity >= recipe.requiredCount &&
+                        (string.Equals(cost.kind, CraftPaidCostKind.Recipe, StringComparison.Ordinal) ||
+                         string.Equals(cost.kind, CraftPaidCostKind.MaterialAndRecipe, StringComparison.Ordinal)))
+                    {
+                        recipeCostFound = true;
+                        break;
+                    }
+                }
+                if (!recipeCostFound)
+                    return false;
+            }
+            return true;
+        }
+
+        private static CraftExecutionSaveData CloneCraftExecution(CraftExecutionSaveData source)
+        {
+            if (source == null)
+                return null;
+            var requirements = new CraftRequiredBuildingSnapshotSaveData[source.requiredBuildings?.Length ?? 0];
+            for (var index = 0; index < requirements.Length; index++)
+            {
+                var value = source.requiredBuildings[index];
+                requirements[index] = value == null ? null : new CraftRequiredBuildingSnapshotSaveData { buildingId = value.buildingId, level = value.level };
+            }
+            var costs = new CraftPaidCostSaveData[source.paidCosts?.Length ?? 0];
+            for (var index = 0; index < costs.Length; index++)
+            {
+                var value = source.paidCosts[index];
+                costs[index] = value == null ? null : new CraftPaidCostSaveData { itemId = value.itemId, quantity = value.quantity, kind = value.kind };
+            }
+            var recipe = source.recipe ?? new CraftRecipeAuditSaveData();
+            return new CraftExecutionSaveData
+            {
+                executionId = source.executionId,
+                craftId = source.craftId,
+                heroId = source.heroId,
+                stationBuildingId = source.stationBuildingId,
+                stationBuildingLevel = source.stationBuildingLevel,
+                status = source.status,
+                progressSeconds = Math.Max(0f, source.progressSeconds),
+                durationSeconds = source.durationSeconds,
+                outputItemId = source.outputItemId,
+                outputCount = source.outputCount,
+                skillId = source.skillId,
+                skillExp = source.skillExp,
+                fatigueCostPaid = source.fatigueCostPaid,
+                requiredBuildings = requirements,
+                paidCosts = costs,
+                recipe = new CraftRecipeAuditSaveData
+                {
+                    requiredItemId = recipe.requiredItemId,
+                    requiredCount = recipe.requiredCount,
+                    consume = recipe.consume,
+                    consumedCount = recipe.consumedCount
+                },
+                costsPaid = source.costsPaid,
+                startOperationKey = source.startOperationKey,
+                startFingerprint = source.startFingerprint,
+                pendingResultId = source.pendingResultId,
+                completionRecorded = source.completionRecorded,
+                startedAtUnixSeconds = source.startedAtUnixSeconds
+            };
+        }
+
+        private static bool HasSameCraftSnapshot(CraftExecutionSaveData left, CraftExecutionSaveData right)
+        {
+            if (left == null || right == null ||
+                !string.Equals(left.craftId, right.craftId, StringComparison.Ordinal) ||
+                !string.Equals(left.heroId, right.heroId, StringComparison.Ordinal) ||
+                !string.Equals(left.stationBuildingId, right.stationBuildingId, StringComparison.Ordinal) ||
+                left.stationBuildingLevel != right.stationBuildingLevel || left.durationSeconds != right.durationSeconds ||
+                !string.Equals(left.outputItemId, right.outputItemId, StringComparison.Ordinal) || left.outputCount != right.outputCount ||
+                !string.Equals(left.skillId, right.skillId, StringComparison.Ordinal) || left.skillExp != right.skillExp ||
+                left.fatigueCostPaid != right.fatigueCostPaid || left.costsPaid != right.costsPaid ||
+                !string.Equals(left.startOperationKey, right.startOperationKey, StringComparison.Ordinal) ||
+                !string.Equals(left.startFingerprint, right.startFingerprint, StringComparison.Ordinal) ||
+                left.startedAtUnixSeconds != right.startedAtUnixSeconds ||
+                !SameCraftRequirements(left.requiredBuildings, right.requiredBuildings) ||
+                !SameCraftCosts(left.paidCosts, right.paidCosts))
+                return false;
+
+            var leftRecipe = left.recipe ?? new CraftRecipeAuditSaveData();
+            var rightRecipe = right.recipe ?? new CraftRecipeAuditSaveData();
+            return string.Equals(leftRecipe.requiredItemId, rightRecipe.requiredItemId, StringComparison.Ordinal) &&
+                   leftRecipe.requiredCount == rightRecipe.requiredCount && leftRecipe.consume == rightRecipe.consume &&
+                   leftRecipe.consumedCount == rightRecipe.consumedCount;
+        }
+
+        private static bool SameCraftRequirements(
+            CraftRequiredBuildingSnapshotSaveData[] left,
+            CraftRequiredBuildingSnapshotSaveData[] right)
+        {
+            left ??= Array.Empty<CraftRequiredBuildingSnapshotSaveData>();
+            right ??= Array.Empty<CraftRequiredBuildingSnapshotSaveData>();
+            if (left.Length != right.Length)
+                return false;
+            for (var index = 0; index < left.Length; index++)
+            {
+                if (left[index] == null || right[index] == null ||
+                    !string.Equals(left[index].buildingId, right[index].buildingId, StringComparison.Ordinal) ||
+                    left[index].level != right[index].level)
+                    return false;
+            }
+            return true;
+        }
+
+        private static bool SameCraftCosts(CraftPaidCostSaveData[] left, CraftPaidCostSaveData[] right)
+        {
+            left ??= Array.Empty<CraftPaidCostSaveData>();
+            right ??= Array.Empty<CraftPaidCostSaveData>();
+            if (left.Length != right.Length)
+                return false;
+            for (var index = 0; index < left.Length; index++)
+            {
+                if (left[index] == null || right[index] == null ||
+                    !string.Equals(left[index].itemId, right[index].itemId, StringComparison.Ordinal) ||
+                    left[index].quantity != right[index].quantity ||
+                    !string.Equals(left[index].kind, right[index].kind, StringComparison.Ordinal))
+                    return false;
+            }
+            return true;
         }
 
         private bool ValidateActivityExecution(ActivityExecutionSaveData execution, bool requireRunning)
@@ -2095,6 +2364,8 @@ namespace GuildIdle.Player
             resultRevision = source.resultRevision,
             stackId = source.stackId,
             instanceId = source.instanceId,
+            executionId = source.executionId,
+            resultPayload = source.resultPayload,
             quantity = source.quantity,
             resolved = source.resolved
         };

@@ -453,6 +453,36 @@ namespace GuildIdle.Player
             _state.StorageRevision++;
         }
 
+        internal bool TryConsumeForCraft(string itemId, int quantity, out string error)
+        {
+            error = null;
+            if (quantity <= 0 || GetAvailableForActionCount(itemId, null) < quantity)
+            {
+                error = "Insufficient available quantity.";
+                return false;
+            }
+
+            var remaining = quantity;
+            foreach (var stack in OrderedConsumableStacks(itemId, null))
+            {
+                var removed = Math.Min(stack.quantity, remaining);
+                stack.quantity -= removed;
+                remaining -= removed;
+                if (stack.quantity == 0)
+                    _state.MutableItemStacks.Remove(stack.stackId);
+                if (remaining == 0)
+                    break;
+            }
+            if (remaining != 0)
+            {
+                error = "Only stack items can be consumed by quantity.";
+                return false;
+            }
+
+            _state.StorageRevision++;
+            return true;
+        }
+
         internal void NotifyExternalMutation()
         {
             Changed?.Invoke(GetSnapshot());

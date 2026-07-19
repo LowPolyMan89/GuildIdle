@@ -1,4 +1,5 @@
 using System;
+using GuildIdle.Crafting;
 using GuildIdle.Core;
 
 namespace GuildIdle.Player
@@ -25,6 +26,7 @@ namespace GuildIdle.Player
         public string[] completedActivities = Array.Empty<string>();
         public string[] availableActivities = Array.Empty<string>();
         public ActivityRuntimeSaveData activityRuntime = new ActivityRuntimeSaveData();
+        public CraftRuntimeSaveData craftRuntime = new CraftRuntimeSaveData();
         public PendingResultSaveData[] pendingResults = Array.Empty<PendingResultSaveData>();
         public PendingResultSourceReferenceSaveData[] resultSources = Array.Empty<PendingResultSourceReferenceSaveData>();
         public OperationReceiptSaveData[] operationReceipts = Array.Empty<OperationReceiptSaveData>();
@@ -209,6 +211,8 @@ namespace GuildIdle.Player
         public long resultRevision;
         public string stackId;
         public string instanceId;
+        public string executionId;
+        public string resultPayload;
         public int quantity;
         public bool resolved;
     }
