@@ -1803,10 +1803,17 @@ namespace GuildIdle.Player
             var advanceOperationKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var receipt in execution.advanceReceipts ?? Array.Empty<CraftAdvanceReceiptSaveData>())
             {
+                var completed = string.Equals(receipt?.code, CraftAdvanceCode.ResultPending, StringComparison.Ordinal);
                 if (receipt == null || string.IsNullOrWhiteSpace(receipt.operationKey) ||
                     string.IsNullOrWhiteSpace(receipt.fingerprint) || !advanceOperationKeys.Add(receipt.operationKey) ||
                     double.IsNaN(receipt.deltaSeconds) || double.IsInfinity(receipt.deltaSeconds) || receipt.deltaSeconds < 0d ||
-                    float.IsNaN(receipt.progressSeconds) || float.IsInfinity(receipt.progressSeconds) || receipt.progressSeconds < 0f)
+                    float.IsNaN(receipt.progressSeconds) || float.IsInfinity(receipt.progressSeconds) || receipt.progressSeconds < 0f ||
+                    receipt.progressSeconds > execution.durationSeconds ||
+                    (!completed && !string.Equals(receipt.code, CraftAdvanceCode.Applied, StringComparison.Ordinal)) ||
+                    (completed != !string.IsNullOrWhiteSpace(receipt.pendingResultId)) ||
+                    (completed && (receipt.progressSeconds < execution.durationSeconds ||
+                                   !string.Equals(receipt.pendingResultId, $"result:{PendingResultSourceType.Craft}:{execution.executionId}", StringComparison.Ordinal))) ||
+                    (!completed && receipt.progressSeconds >= execution.durationSeconds))
                     return false;
             }
             var costIds = new HashSet<string>(StringComparer.Ordinal);

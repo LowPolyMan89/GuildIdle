@@ -60,6 +60,11 @@ namespace GuildIdle.Player
         public PendingResultSaveData Result { get; set; }
     }
 
+    public static class PendingResultMutationCode
+    {
+        public const string CraftFinalizationNotAvailable = "CraftFinalizationNotAvailable";
+    }
+
     public sealed class PendingResultResolvedEvent
     {
         public string ResultId { get; set; }
@@ -654,6 +659,14 @@ namespace GuildIdle.Player
                 return MutationFailure("NothingChanged", "No entries could be processed.");
 
             NormalizeEntries(result);
+            if (result.entries.Length == 0 &&
+                string.Equals(result.sourceType, PendingResultSourceType.Craft, StringComparison.Ordinal))
+            {
+                _state.RestoreTransactional(before);
+                return MutationFailure(
+                    PendingResultMutationCode.CraftFinalizationNotAvailable,
+                    "Craft Result cannot be fully resolved until the craft finalization workflow is available.");
+            }
             var storageChanged = isClaim && StorageChanged(before);
             if (storageChanged)
                 _storage.CommitExternalMutation();

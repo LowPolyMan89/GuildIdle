@@ -207,7 +207,7 @@ namespace GuildIdle.Crafting
                     return AdvanceFailure(CraftAdvanceCode.InvalidExecution, replayError, executionId, execution);
                 if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(execution))
                     return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "ResultPending CraftExecution has no valid linked Craft Result.", executionId, execution);
-                return AdvanceSuccess(execution, CraftAdvanceCode.Replayed, true);
+                return AdvanceReplay(execution, savedReceipt);
             }
 
             if (!TryValidateAdvanceExecution(execution, out var validationError))
@@ -760,10 +760,17 @@ namespace GuildIdle.Crafting
             var operationKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var receipt in execution.advanceReceipts ?? Array.Empty<CraftAdvanceReceiptSaveData>())
             {
+                var completed = string.Equals(receipt?.code, CraftAdvanceCode.ResultPending, StringComparison.Ordinal);
                 if (receipt == null || string.IsNullOrWhiteSpace(receipt.operationKey) ||
                     string.IsNullOrWhiteSpace(receipt.fingerprint) || !operationKeys.Add(receipt.operationKey) ||
                     double.IsNaN(receipt.deltaSeconds) || double.IsInfinity(receipt.deltaSeconds) || receipt.deltaSeconds < 0d ||
-                    float.IsNaN(receipt.progressSeconds) || float.IsInfinity(receipt.progressSeconds) || receipt.progressSeconds < 0f)
+                    float.IsNaN(receipt.progressSeconds) || float.IsInfinity(receipt.progressSeconds) || receipt.progressSeconds < 0f ||
+                    receipt.progressSeconds > execution.durationSeconds ||
+                    (!completed && !string.Equals(receipt.code, CraftAdvanceCode.Applied, StringComparison.Ordinal)) ||
+                    (completed != !string.IsNullOrWhiteSpace(receipt.pendingResultId)) ||
+                    (completed && (receipt.progressSeconds < execution.durationSeconds ||
+                                   !string.Equals(receipt.pendingResultId, BuildCraftResultId(execution.executionId), StringComparison.Ordinal))) ||
+                    (!completed && receipt.progressSeconds >= execution.durationSeconds))
                 {
                     error = "CraftExecution advance receipts are invalid.";
                     return false;
@@ -775,13 +782,45 @@ namespace GuildIdle.Crafting
         private bool HasValidPendingResult(CraftExecutionSaveData execution)
         {
             var result = _state.GetPendingResult(execution?.pendingResultId);
-            return result != null &&
-                   string.Equals(result.resultId, BuildCraftResultId(execution.executionId), StringComparison.Ordinal) &&
-                   string.Equals(result.sourceType, PendingResultSourceType.Craft, StringComparison.Ordinal) &&
-                   string.Equals(result.sourceId, execution.craftId, StringComparison.Ordinal) &&
-                   string.Equals(result.sourceExecutionId, execution.executionId, StringComparison.Ordinal) &&
-                   string.Equals(result.ownerHeroId, execution.heroId, StringComparison.Ordinal) &&
-                   string.Equals(result.state, PendingResultState.ResultPending, StringComparison.Ordinal);
+            if (result == null ||
+                string.Equals(result.resultId, BuildCraftResultId(execution.executionId), StringComparison.Ordinal) == false ||
+                string.Equals(result.sourceType, PendingResultSourceType.Craft, StringComparison.Ordinal) == false ||
+                string.Equals(result.sourceId, execution.craftId, StringComparison.Ordinal) == false ||
+                string.Equals(result.sourceExecutionId, execution.executionId, StringComparison.Ordinal) == false ||
+                string.Equals(result.ownerHeroId, execution.heroId, StringComparison.Ordinal) == false ||
+                string.Equals(result.state, PendingResultState.ResultPending, StringComparison.Ordinal) == false ||
+                result.entries == null || result.entries.Length == 0)
+                return false;
+
+            var itemFound = false;
+            var skillExpFound = false;
+            foreach (var entry in result.entries)
+            {
+                if (entry == null || entry.quantity <= 0 ||
+                    !string.Equals(entry.origin, PendingResultOrigin.CraftOutput, StringComparison.Ordinal))
+                    return false;
+
+                if (string.Equals(entry.rewardType, RewardType.Item, StringComparison.Ordinal))
+                {
+                    if (itemFound || !string.Equals(entry.targetId, execution.outputItemId, StringComparison.Ordinal) ||
+                        entry.quantity > execution.outputCount)
+                        return false;
+                    itemFound = true;
+                    continue;
+                }
+
+                if (string.Equals(entry.rewardType, RewardType.SkillExp, StringComparison.Ordinal))
+                {
+                    if (skillExpFound || !string.Equals(entry.targetId, execution.skillId, StringComparison.Ordinal) ||
+                        entry.quantity > execution.skillExp)
+                        return false;
+                    skillExpFound = true;
+                    continue;
+                }
+
+                return false;
+            }
+            return itemFound || skillExpFound;
         }
 
         private static CraftAdvanceReceiptSaveData FindAdvanceReceipt(CraftExecutionSaveData execution, string operationKey)
@@ -832,6 +871,42 @@ namespace GuildIdle.Crafting
                 ProgressSeconds = execution?.progressSeconds ?? 0f,
                 PendingResultId = execution?.pendingResultId,
                 Execution = CloneExecution(execution)
+            };
+        }
+
+        private static CraftAdvanceResult AdvanceReplay(CraftExecutionSaveData current, CraftAdvanceReceiptSaveData receipt)
+        {
+            var execution = CloneExecution(current);
+            var completed = string.Equals(receipt.code, CraftAdvanceCode.ResultPending, StringComparison.Ordinal);
+            execution.progressSeconds = receipt.progressSeconds;
+            execution.status = completed ? CraftExecutionStatus.ResultPending : CraftExecutionStatus.Running;
+            execution.completionRecorded = completed;
+            execution.pendingResultId = receipt.pendingResultId;
+
+            var receiptCount = 0;
+            foreach (var saved in execution.advanceReceipts ?? Array.Empty<CraftAdvanceReceiptSaveData>())
+            {
+                receiptCount++;
+                if (saved != null && string.Equals(saved.operationKey, receipt.operationKey, StringComparison.Ordinal))
+                    break;
+            }
+            if (receiptCount < execution.advanceReceipts.Length)
+            {
+                var historicalReceipts = new CraftAdvanceReceiptSaveData[receiptCount];
+                Array.Copy(execution.advanceReceipts, historicalReceipts, receiptCount);
+                execution.advanceReceipts = historicalReceipts;
+            }
+
+            return new CraftAdvanceResult
+            {
+                Success = true,
+                Replayed = true,
+                Completed = completed,
+                Code = receipt.code,
+                ExecutionId = current.executionId,
+                ProgressSeconds = receipt.progressSeconds,
+                PendingResultId = receipt.pendingResultId,
+                Execution = execution
             };
         }
 
