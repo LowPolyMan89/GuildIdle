@@ -1787,10 +1787,27 @@ namespace GuildIdle.Player
                 Debug.LogError($"[PlayerState] Craft execution '{execution.executionId}' has unsupported status '{execution.status}'.");
                 return false;
             }
-            if (execution.status == CraftExecutionStatus.ResultPending && string.IsNullOrWhiteSpace(execution.pendingResultId))
+            if (execution.status == CraftExecutionStatus.Running &&
+                (!string.IsNullOrWhiteSpace(execution.pendingResultId) || execution.completionRecorded))
             {
-                Debug.LogError($"[PlayerState] ResultPending craft execution '{execution.executionId}' has no pending result id.");
+                Debug.LogError($"[PlayerState] Running craft execution '{execution.executionId}' has completion state.");
                 return false;
+            }
+            if (execution.status == CraftExecutionStatus.ResultPending &&
+                (string.IsNullOrWhiteSpace(execution.pendingResultId) || !execution.completionRecorded ||
+                 execution.progressSeconds < execution.durationSeconds))
+            {
+                Debug.LogError($"[PlayerState] ResultPending craft execution '{execution.executionId}' has invalid completion state.");
+                return false;
+            }
+            var advanceOperationKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var receipt in execution.advanceReceipts ?? Array.Empty<CraftAdvanceReceiptSaveData>())
+            {
+                if (receipt == null || string.IsNullOrWhiteSpace(receipt.operationKey) ||
+                    string.IsNullOrWhiteSpace(receipt.fingerprint) || !advanceOperationKeys.Add(receipt.operationKey) ||
+                    double.IsNaN(receipt.deltaSeconds) || double.IsInfinity(receipt.deltaSeconds) || receipt.deltaSeconds < 0d ||
+                    float.IsNaN(receipt.progressSeconds) || float.IsInfinity(receipt.progressSeconds) || receipt.progressSeconds < 0f)
+                    return false;
             }
             var costIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var cost in execution.paidCosts ?? Array.Empty<CraftPaidCostSaveData>())
@@ -1845,6 +1862,20 @@ namespace GuildIdle.Player
                 costs[index] = value == null ? null : new CraftPaidCostSaveData { itemId = value.itemId, quantity = value.quantity, kind = value.kind };
             }
             var recipe = source.recipe ?? new CraftRecipeAuditSaveData();
+            var advanceReceipts = new CraftAdvanceReceiptSaveData[source.advanceReceipts?.Length ?? 0];
+            for (var index = 0; index < advanceReceipts.Length; index++)
+            {
+                var value = source.advanceReceipts[index];
+                advanceReceipts[index] = value == null ? null : new CraftAdvanceReceiptSaveData
+                {
+                    operationKey = value.operationKey,
+                    fingerprint = value.fingerprint,
+                    deltaSeconds = value.deltaSeconds,
+                    progressSeconds = value.progressSeconds,
+                    code = value.code,
+                    pendingResultId = value.pendingResultId
+                };
+            }
             return new CraftExecutionSaveData
             {
                 executionId = source.executionId,
@@ -1874,6 +1905,7 @@ namespace GuildIdle.Player
                 startFingerprint = source.startFingerprint,
                 pendingResultId = source.pendingResultId,
                 completionRecorded = source.completionRecorded,
+                advanceReceipts = advanceReceipts,
                 startedAtUnixSeconds = source.startedAtUnixSeconds
             };
         }

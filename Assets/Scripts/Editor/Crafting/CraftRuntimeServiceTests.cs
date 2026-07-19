@@ -68,6 +68,257 @@ namespace GuildIdle.Editor.Crafting
         }
 
         [Test]
+        public void PartialAdvancePersistsProgressAndReplayDoesNotApplyDeltaTwice()
+        {
+            var state = StartBasic(out var runtime, out var executionId);
+            var saves = _storage.SaveCalls;
+
+            var first = runtime.Advance(executionId, 4d, "advance-partial");
+            var replay = runtime.Advance(executionId, 4d, "advance-partial");
+            var conflict = runtime.Advance(executionId, 1d, "advance-partial");
+
+            Assert.That(first.Success, Is.True);
+            Assert.That(first.Code, Is.EqualTo(CraftAdvanceCode.Applied));
+            Assert.That(first.ProgressSeconds, Is.EqualTo(4f));
+            Assert.That(first.Completed, Is.False);
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(replay.Code, Is.EqualTo(CraftAdvanceCode.Replayed));
+            Assert.That(conflict.Success, Is.False);
+            Assert.That(conflict.Code, Is.EqualTo(CraftAdvanceCode.OperationReplayConflict));
+            Assert.That(state.GetCraftExecution(executionId).progressSeconds, Is.EqualTo(4f));
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(_storage.SaveCalls, Is.EqualTo(saves + 1));
+        }
+
+        [Test]
+        public void ExactBoundaryCreatesOneCraftResultWithoutApplyingRewardsOrReleasingHero()
+        {
+            var state = StartBasic(out _, out var executionId);
+            var events = new List<CraftResultPendingEvent>();
+            var runtime = Runtime(state, resultPendingEventSink: events.Add);
+            var saves = _storage.SaveCalls;
+
+            var completed = runtime.Advance(executionId, 10d, "advance-complete");
+
+            Assert.That(completed.Success, Is.True);
+            Assert.That(completed.Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
+            Assert.That(completed.Completed, Is.True);
+            Assert.That(completed.ProgressSeconds, Is.EqualTo(10f));
+            Assert.That(_storage.SaveCalls, Is.EqualTo(saves + 1), "Completion must have one Save boundary.");
+            Assert.That(events, Has.Count.EqualTo(1));
+            Assert.That(events[0].PendingResultId, Is.EqualTo(completed.PendingResultId));
+
+            var execution = state.GetCraftExecution(executionId);
+            Assert.That(execution.status, Is.EqualTo(CraftExecutionStatus.ResultPending));
+            Assert.That(execution.completionRecorded, Is.True);
+            Assert.That(execution.pendingResultId, Is.EqualTo(completed.PendingResultId));
+            Assert.That(state.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo(executionId));
+            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.Zero);
+
+            var result = state.PendingResults.Get(completed.PendingResultId);
+            Assert.That(result.sourceType, Is.EqualTo(PendingResultSourceType.Craft));
+            Assert.That(result.sourceId, Is.EqualTo("craft_basic"));
+            Assert.That(result.sourceExecutionId, Is.EqualTo(executionId));
+            Assert.That(result.ownerHeroId, Is.EqualTo("ren"));
+            AssertEntry(result, "Item", "consumable_roasted_rabbit_meat", 1, PendingResultOrigin.CraftOutput);
+            AssertEntry(result, "SkillExp", "skill_crafting", 2, PendingResultOrigin.CraftOutput);
+        }
+
+        [Test]
+        public void LargeDeltaAndFurtherAdvanceCreateNoDuplicateResult()
+        {
+            var state = StartBasic(out var runtime, out var executionId);
+
+            var completed = runtime.Advance(executionId, double.MaxValue, "advance-large");
+            var saves = _storage.SaveCalls;
+            var replay = runtime.Advance(executionId, double.MaxValue, "advance-large");
+            var further = runtime.Advance(executionId, 100d, "advance-after-completion");
+
+            Assert.That(completed.Success, Is.True);
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(further.Success, Is.True);
+            Assert.That(further.Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
+            Assert.That(state.PendingResults.GetAll(), Has.Length.EqualTo(1));
+            Assert.That(_storage.SaveCalls, Is.EqualTo(saves));
+        }
+
+        [Test]
+        public void ZeroDeltaIsAcceptedAndClockRollbackCallerCannotReduceProgress()
+        {
+            var state = StartBasic(out var runtime, out var executionId);
+            Assert.That(runtime.Advance(executionId, 3d, "advance-first").Success, Is.True);
+
+            var zero = runtime.Advance(executionId, 0d, "advance-zero");
+            var replayConflict = runtime.Advance(executionId, 1d, "advance-zero");
+            var negative = runtime.Advance(executionId, -1d, "advance-negative");
+
+            Assert.That(zero.Success, Is.True);
+            Assert.That(zero.ProgressSeconds, Is.EqualTo(3f));
+            Assert.That(replayConflict.Code, Is.EqualTo(CraftAdvanceCode.OperationReplayConflict));
+            Assert.That(negative.Code, Is.EqualTo(CraftAdvanceCode.InvalidDelta));
+            Assert.That(state.GetCraftExecution(executionId).progressSeconds, Is.EqualTo(3f));
+        }
+
+        [Test]
+        public void CompletionUsesImmutableExecutionSnapshotAfterCraftConfigChanges()
+        {
+            var state = StartBasic(out var runtime, out var executionId);
+            var definition = FindDefinition("craft_basic");
+            definition.craftDurationSec = 999;
+            definition.targetItemId = "consumable_other";
+            definition.outputCount = 7;
+            definition.skillExp = 99;
+
+            var completed = runtime.Advance(executionId, 10d, "advance-snapshot");
+
+            Assert.That(completed.Success, Is.True);
+            var result = state.PendingResults.Get(completed.PendingResultId);
+            AssertEntry(result, "Item", "consumable_roasted_rabbit_meat", 1, PendingResultOrigin.CraftOutput);
+            AssertEntry(result, "SkillExp", "skill_crafting", 2, PendingResultOrigin.CraftOutput);
+        }
+
+        [Test]
+        public void FullStorageDoesNotBlockCraftCompletion()
+        {
+            var state = StartBasic(out var runtime, out var executionId);
+            FillStorage(state);
+            Assert.That(state.Storage.GetSnapshot().FreeSlots, Is.Zero);
+
+            var completed = runtime.Advance(executionId, 10d, "advance-full-storage");
+
+            Assert.That(completed.Success, Is.True);
+            Assert.That(state.PendingResults.Get(completed.PendingResultId), Is.Not.Null);
+            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
+        }
+
+        [Test]
+        public void RewardValidationFailureLeavesRunningExecutionUnchanged()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 3);
+            Seed(state, "resource_herb", 1);
+            var runtime = Runtime(state);
+            var started = runtime.Start(Request("craft_invalid_reward", "start-invalid-reward"));
+            Assert.That(started.Success, Is.True);
+            var saves = _storage.SaveCalls;
+
+            var advanced = runtime.Advance(started.ExecutionId, 10d, "advance-invalid-reward");
+
+            Assert.That(advanced.Success, Is.False);
+            Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.RewardValidationFailure));
+            AssertRunningWithoutResult(state, started.ExecutionId, 0f);
+            Assert.That(_storage.SaveCalls, Is.EqualTo(saves));
+        }
+
+        [Test]
+        public void PendingResultCreationFailureRollsBackProgressCompletionAndReceipt()
+        {
+            var state = StartBasic(out _, out var executionId);
+            var fault = new FaultInjectingCraftState(new PlayerStateCraftAdapter(state)) { FailPendingResultCreation = true };
+
+            var advanced = new CraftRuntimeService(_database.Crafts, fault).Advance(executionId, 10d, "advance-result-failure");
+
+            Assert.That(advanced.Success, Is.False);
+            Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.PendingResultFailure));
+            AssertRunningWithoutResult(state, executionId, 0f);
+            Assert.That(state.GetCraftExecution(executionId).advanceReceipts, Is.Empty);
+        }
+
+        [Test]
+        public void CompletionSaveFailureRestoresMemoryAndPersistedRunningState()
+        {
+            var state = StartBasic(out _, out var executionId);
+            var events = new List<CraftResultPendingEvent>();
+            var runtime = Runtime(state, resultPendingEventSink: events.Add);
+            _storage.ThrowOnSaveCall = _storage.SaveCalls + 1;
+            LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save flush failure");
+
+            var advanced = runtime.Advance(executionId, 10d, "advance-save-failure");
+
+            Assert.That(advanced.Success, Is.False);
+            Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.SaveFailure));
+            Assert.That(events, Is.Empty);
+            AssertRunningWithoutResult(state, executionId, 0f);
+            Assert.That(state.GetCraftExecution(executionId).advanceReceipts, Is.Empty);
+            var loaded = SaveService.Load(_factory, _storage);
+            AssertRunningWithoutResult(loaded, executionId, 0f);
+        }
+
+        [Test]
+        public void SaveLoadBeforeAndAfterBoundaryDoesNotDuplicateCraftResult()
+        {
+            var state = StartBasic(out var runtime, out var executionId);
+            Assert.That(runtime.Advance(executionId, 4d, "advance-before-load").Success, Is.True);
+
+            var loadedBefore = SaveService.Load(_factory, _storage);
+            var loadedRuntime = Runtime(loadedBefore);
+            var replay = loadedRuntime.Advance(executionId, 4d, "advance-before-load");
+            var completed = loadedRuntime.Advance(executionId, 6d, "advance-after-load");
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(completed.Success, Is.True);
+
+            var loadedAfter = SaveService.Load(_factory, _storage);
+            var noOp = Runtime(loadedAfter).Advance(executionId, 10d, "advance-loaded-result");
+
+            Assert.That(noOp.Success, Is.True);
+            Assert.That(noOp.Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
+            Assert.That(loadedAfter.PendingResults.GetAll(), Has.Length.EqualTo(1));
+            Assert.That(loadedAfter.GetCraftExecution(executionId).pendingResultId, Is.EqualTo(completed.PendingResultId));
+        }
+
+        [Test]
+        public void MissingLinkedResultAfterLoadIsIntegrityFailureAndIsNotRerolled()
+        {
+            var state = StartBasic(out var runtime, out var executionId);
+            Assert.That(runtime.Advance(executionId, 10d, "advance-before-corruption").Success, Is.True);
+            var corrupted = state.ToSaveData();
+            corrupted.pendingResults = Array.Empty<PendingResultSaveData>();
+            var corruptedState = _factory.Create(corrupted);
+
+            var advanced = Runtime(corruptedState).Advance(executionId, 1d, "advance-corrupt-result");
+
+            Assert.That(advanced.Success, Is.False);
+            Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.DataIntegrityFailure));
+            Assert.That(corruptedState.PendingResults.GetAll(), Is.Empty);
+            Assert.That(corruptedState.GetCraftExecution(executionId).status, Is.EqualTo(CraftExecutionStatus.ResultPending));
+        }
+
+        [Test]
+        public void OnlineAndOfflineCallersShareTheSameAdvanceApi()
+        {
+            var state = StartBasic(out var onlineRuntime, out var executionId);
+            Assert.That(onlineRuntime.Advance(executionId, 4d, "online-delta").Success, Is.True);
+
+            var offlineRuntime = Runtime(state);
+            var completed = offlineRuntime.Advance(executionId, 6d, "offline-delta");
+
+            Assert.That(completed.Success, Is.True);
+            Assert.That(completed.Completed, Is.True);
+            Assert.That(state.PendingResults.GetAll(), Has.Length.EqualTo(1));
+        }
+
+        [Test]
+        public void CookRoastedRabbitMeatSnapshotCreatesExpectedItemAndSkillExpAfterTenSeconds()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 3);
+            Seed(state, "resource_herb", 1);
+            var runtime = Runtime(state);
+            var started = runtime.Start(Request("cook_roasted_rabbit_meat", "start-cook-rabbit"));
+
+            var completed = runtime.Advance(started.ExecutionId, 10d, "advance-cook-rabbit");
+
+            Assert.That(completed.Success, Is.True);
+            var result = state.PendingResults.Get(completed.PendingResultId);
+            AssertEntry(result, "Item", "consumable_roasted_rabbit_meat", 1, PendingResultOrigin.CraftOutput);
+            AssertEntry(result, "SkillExp", "skill_crafting", 2, PendingResultOrigin.CraftOutput);
+        }
+
+        [Test]
         public void NonConsumableRecipeIsRequiredButRemainsInStorage()
         {
             var state = NewState();
@@ -226,6 +477,30 @@ namespace GuildIdle.Editor.Crafting
             finally
             {
                 PlayerRuntimeComposition.CraftStarted -= handler;
+            }
+        }
+
+        [Test]
+        public void ProductionCompositionPublishesCraftResultPendingExactlyOnceAfterCommit()
+        {
+            var state = StartBasic(out _, out var executionId);
+            var events = new List<CraftResultPendingEvent>();
+            Action<CraftResultPendingEvent> handler = events.Add;
+            PlayerRuntimeComposition.CraftResultPending += handler;
+            try
+            {
+                var result = PlayerRuntimeComposition.CreateCraftRuntimeService(state)
+                    .Advance(executionId, 10d, "advance-production-result");
+
+                Assert.That(result.Success, Is.True);
+                Assert.That(events, Has.Count.EqualTo(1));
+                Assert.That(events[0].ExecutionId, Is.EqualTo(executionId));
+                Assert.That(events[0].PendingResultId, Is.EqualTo(result.PendingResultId));
+                Assert.That(state.PendingResults.Get(result.PendingResultId), Is.Not.Null);
+            }
+            finally
+            {
+                PlayerRuntimeComposition.CraftResultPending -= handler;
             }
         }
 
@@ -528,9 +803,24 @@ namespace GuildIdle.Editor.Crafting
             return SaveService.Load(_factory, _storage);
         }
 
-        private CraftRuntimeService Runtime(PlayerState state, Action<CraftStartedEvent> eventSink = null)
+        private PlayerState StartBasic(out CraftRuntimeService runtime, out string executionId)
         {
-            return new CraftRuntimeService(_database.Crafts, new PlayerStateCraftAdapter(state), eventSink);
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 3);
+            Seed(state, "resource_herb", 1);
+            runtime = Runtime(state);
+            var started = runtime.Start(Request("craft_basic", $"start-basic:{Guid.NewGuid():N}"));
+            Assert.That(started.Success, Is.True);
+            executionId = started.ExecutionId;
+            return state;
+        }
+
+        private CraftRuntimeService Runtime(
+            PlayerState state,
+            Action<CraftStartedEvent> eventSink = null,
+            Action<CraftResultPendingEvent> resultPendingEventSink = null)
+        {
+            return new CraftRuntimeService(_database.Crafts, new PlayerStateCraftAdapter(state), eventSink, resultPendingEventSink);
         }
 
         private static CraftStartRequest Request(
@@ -554,6 +844,44 @@ namespace GuildIdle.Editor.Crafting
         {
             var result = state.Storage.Add($"seed:{itemId}:{Guid.NewGuid():N}", state.Storage.GetSnapshot().Revision, itemId, quantity);
             Assert.That(result.Success, Is.True, result.Message);
+        }
+
+        private static void FillStorage(PlayerState state)
+        {
+            var index = 0;
+            while (state.Storage.GetSnapshot().FreeSlots > 0)
+            {
+                var result = state.Storage.Add($"fill:{index++}", state.Storage.GetSnapshot().Revision, "resource_herb", 2);
+                Assert.That(result.Success, Is.True, result.Message);
+            }
+        }
+
+        private static void AssertRunningWithoutResult(PlayerState state, string executionId, float progress)
+        {
+            var execution = state.GetCraftExecution(executionId);
+            Assert.That(execution, Is.Not.Null);
+            Assert.That(execution.status, Is.EqualTo(CraftExecutionStatus.Running));
+            Assert.That(execution.progressSeconds, Is.EqualTo(progress));
+            Assert.That(execution.completionRecorded, Is.False);
+            Assert.That(execution.pendingResultId, Is.Null.Or.Empty);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.GetHeroCurrentActivityExecutionId(execution.heroId), Is.EqualTo(executionId));
+        }
+
+        private static void AssertEntry(PendingResultSaveData result, string rewardType, string targetId, long quantity, string origin)
+        {
+            Assert.That(result, Is.Not.Null);
+            foreach (var entry in result.entries ?? Array.Empty<PendingResultEntrySaveData>())
+            {
+                if (entry != null && string.Equals(entry.rewardType, rewardType, StringComparison.Ordinal) &&
+                    string.Equals(entry.targetId, targetId, StringComparison.Ordinal))
+                {
+                    Assert.That(entry.quantity, Is.EqualTo(quantity));
+                    Assert.That(entry.origin, Is.EqualTo(origin));
+                    return;
+                }
+            }
+            Assert.Fail($"Missing result entry {rewardType}:{targetId}.");
         }
 
         private void AssertBlockedWithoutMutation(PlayerState state, CraftStartRequest request, string code)
@@ -620,6 +948,18 @@ namespace GuildIdle.Editor.Crafting
                                 new MaterialCostDto { id = "resource_rabbit_meat", count = 2 },
                                 new MaterialCostDto { id = "resource_herb", count = 1 }
                             }),
+                        Definition("cook_roasted_rabbit_meat", "consumable_roasted_rabbit_meat", 10, 2, 2,
+                            new[]
+                            {
+                                new MaterialCostDto { id = "resource_rabbit_meat", count = 3 },
+                                new MaterialCostDto { id = "resource_herb", count = 1 }
+                            }),
+                        Definition("craft_invalid_reward", "missing_output_item", 10, 2, 2,
+                            new[]
+                            {
+                                new MaterialCostDto { id = "resource_rabbit_meat", count = 3 },
+                                new MaterialCostDto { id = "resource_herb", count = 1 }
+                            }),
                         Definition("craft_recipe_kept", "consumable_roasted_rabbit_meat", 10, 1, 2,
                             new[] { new MaterialCostDto { id = "resource_rabbit_meat", count = 1 } },
                             "recipe_roasting", 1, false),
@@ -664,6 +1004,8 @@ namespace GuildIdle.Editor.Crafting
                     buildingCraftables = new[]
                     {
                         Craftable("craft_basic"),
+                        Craftable("cook_roasted_rabbit_meat"),
+                        Craftable("craft_invalid_reward"),
                         Craftable("craft_recipe_kept"),
                         Craftable("craft_recipe_consumed"),
                         Craftable("craft_other"),
@@ -772,6 +1114,8 @@ namespace GuildIdle.Editor.Crafting
             public int FailConsumeCall { get; set; } = -1;
             public bool FailOccupation { get; set; }
             public bool FailAddExecution { get; set; }
+            public bool FailUpdateExecution { get; set; }
+            public bool FailPendingResultCreation { get; set; }
             public SaveData CaptureCheckpoint() => _inner.CaptureCheckpoint();
             public void RestoreCheckpoint(SaveData checkpoint) => _inner.RestoreCheckpoint(checkpoint);
             public bool TryGetOperationReceipt(string aggregateId, string operationId, out OperationReceiptSaveData receipt) => _inner.TryGetOperationReceipt(aggregateId, operationId, out receipt);
@@ -805,6 +1149,12 @@ namespace GuildIdle.Editor.Crafting
             public CraftExecutionSaveData[] GetCraftExecutions() => _inner.GetCraftExecutions();
             public CraftExecutionSaveData GetCraftExecution(string executionId) => _inner.GetCraftExecution(executionId);
             public bool AddCraftExecution(CraftExecutionSaveData execution) => !FailAddExecution && _inner.AddCraftExecution(execution);
+            public bool UpdateCraftExecution(CraftExecutionSaveData execution) => !FailUpdateExecution && _inner.UpdateCraftExecution(execution);
+            public PendingResultSaveData GetPendingResult(string resultId) => _inner.GetPendingResult(resultId);
+            public PendingResultFormationResult CreatePendingResult(string operationId, PendingResultDraft draft) =>
+                FailPendingResultCreation
+                    ? new PendingResultFormationResult { Success = false, Code = "SimulatedFailure", Message = "simulated PendingResult failure" }
+                    : _inner.CreatePendingResult(operationId, draft);
             public bool Save() => _inner.Save();
         }
 

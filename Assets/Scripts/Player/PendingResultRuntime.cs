@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using GuildIdle.Activities;
 using GuildIdle.Core;
+using GuildIdle.Crafting;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Player
@@ -259,6 +260,64 @@ namespace GuildIdle.Player
         public bool Resolve(PendingResultSaveData result) => _state.ResolvePersistentResultSource(result);
     }
 
+    internal sealed class CraftPendingResultSourceHandler : IPendingResultSourceHandler
+    {
+        private readonly PlayerState _state;
+
+        public CraftPendingResultSourceHandler(PlayerState state) => _state = state ?? throw new ArgumentNullException(nameof(state));
+        public string SourceType => PendingResultSourceType.Craft;
+        public bool AcceptsOrigin(string origin) => string.Equals(origin, PendingResultOrigin.CraftOutput, StringComparison.Ordinal);
+
+        public bool TryBind(PendingResultSaveData result, bool makeClaimable, PendingResultBindMode mode)
+        {
+            if (mode == PendingResultBindMode.Append)
+                return false;
+            var execution = result == null ? null : _state.GetCraftExecution(result.sourceExecutionId);
+            if (execution == null || _state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) ||
+                !string.Equals(execution.craftId, result.sourceId, StringComparison.Ordinal) ||
+                !string.Equals(execution.heroId, result.ownerHeroId, StringComparison.Ordinal) ||
+                (!string.IsNullOrWhiteSpace(execution.pendingResultId) &&
+                 !string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal)))
+                return false;
+
+            if (mode == PendingResultBindMode.Create)
+            {
+                if (!makeClaimable || execution.status != CraftExecutionStatus.Running || execution.completionRecorded ||
+                    !string.IsNullOrWhiteSpace(execution.pendingResultId) || execution.progressSeconds < execution.durationSeconds)
+                    return false;
+                execution.pendingResultId = result.resultId;
+                execution.completionRecorded = true;
+                execution.status = CraftExecutionStatus.ResultPending;
+            }
+            else if (execution.status != CraftExecutionStatus.ResultPending || !execution.completionRecorded ||
+                     !string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (!_state.TryBindPersistentResultSource(result, mode != PendingResultBindMode.Create))
+                return false;
+            return _state.UpdateCraftExecution(execution);
+        }
+
+        public bool CanClaim(PendingResultSaveData result)
+        {
+            var execution = result == null ? null : _state.GetCraftExecution(result.sourceExecutionId);
+            return execution != null && !_state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) &&
+                   execution.status == CraftExecutionStatus.ResultPending && execution.completionRecorded &&
+                   string.Equals(execution.craftId, result.sourceId, StringComparison.Ordinal) &&
+                   string.Equals(execution.heroId, result.ownerHeroId, StringComparison.Ordinal) &&
+                   string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal) &&
+                   _state.CanClaimPersistentResultSource(result);
+        }
+
+        public bool Resolve(PendingResultSaveData result)
+        {
+            // Execution completion and hero release are owned by the craft finalization workflow.
+            return CanClaim(result) && _state.ResolvePersistentResultSource(result);
+        }
+    }
+
     public sealed class PendingResultService : IPendingResultService
     {
         private readonly PlayerState _state;
@@ -279,7 +338,7 @@ namespace GuildIdle.Player
                 PendingResultOrigin.CombatLoot,
                 PendingResultOrigin.ActivityLootInCombat,
                 PendingResultOrigin.BroughtConsumable));
-            _sourceLifecycle.Register(new PersistentPendingResultSourceHandler(PendingResultSourceType.Craft, state, PendingResultOrigin.CraftOutput));
+            _sourceLifecycle.Register(new CraftPendingResultSourceHandler(state));
         }
 
         public event Action<PendingResultResolvedEvent> Resolved;

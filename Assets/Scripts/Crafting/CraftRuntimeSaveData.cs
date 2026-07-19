@@ -39,7 +39,19 @@ namespace GuildIdle.Crafting
         public string startFingerprint;
         public string pendingResultId;
         public bool completionRecorded;
+        public CraftAdvanceReceiptSaveData[] advanceReceipts = Array.Empty<CraftAdvanceReceiptSaveData>();
         public long startedAtUnixSeconds;
+    }
+
+    [Serializable]
+    public sealed class CraftAdvanceReceiptSaveData
+    {
+        public string operationKey;
+        public string fingerprint;
+        public double deltaSeconds;
+        public float progressSeconds;
+        public string code;
+        public string pendingResultId;
     }
 
     [Serializable]

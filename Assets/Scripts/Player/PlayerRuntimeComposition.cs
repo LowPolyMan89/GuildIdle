@@ -13,6 +13,7 @@ namespace GuildIdle.Player
         private static PlayerStateFactory _playerStateFactory;
 
         public static event Action<CraftStartedEvent> CraftStarted;
+        public static event Action<CraftResultPendingEvent> CraftResultPending;
 
         public static ActivityRuntimeService CreateRuntimeService()
         {
@@ -55,7 +56,11 @@ namespace GuildIdle.Player
         {
             if (state == null)
                 throw new ArgumentNullException(nameof(state));
-            return new CraftRuntimeService(RuntimeConfigs.Crafts, new PlayerStateCraftAdapter(state), HandleCraftStartedEvent);
+            return new CraftRuntimeService(
+                RuntimeConfigs.Crafts,
+                new PlayerStateCraftAdapter(state),
+                HandleCraftStartedEvent,
+                HandleCraftResultPendingEvent);
         }
 
         public static IPendingResultService CreatePendingResultService()
@@ -165,6 +170,11 @@ namespace GuildIdle.Player
         private static void HandleCraftStartedEvent(CraftStartedEvent craftStartedEvent)
         {
             CraftStarted?.Invoke(craftStartedEvent);
+        }
+
+        private static void HandleCraftResultPendingEvent(CraftResultPendingEvent craftResultPendingEvent)
+        {
+            CraftResultPending?.Invoke(craftResultPendingEvent);
         }
 
         private static PlayerStateFactory GetPlayerStateFactory()

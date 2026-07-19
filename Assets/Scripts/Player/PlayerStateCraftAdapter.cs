@@ -62,6 +62,10 @@ namespace GuildIdle.Player
         public CraftExecutionSaveData[] GetCraftExecutions() => _state.GetCraftExecutions();
         public CraftExecutionSaveData GetCraftExecution(string executionId) => _state.GetCraftExecution(executionId);
         public bool AddCraftExecution(CraftExecutionSaveData execution) => _state.AddCraftExecution(execution);
+        public bool UpdateCraftExecution(CraftExecutionSaveData execution) => _state.UpdateCraftExecution(execution);
+        public PendingResultSaveData GetPendingResult(string resultId) => _state.PendingResults.Get(resultId);
+        public PendingResultFormationResult CreatePendingResult(string operationId, PendingResultDraft draft) =>
+            _state.PendingResults.CreateOrAppend(operationId, draft, true);
         public bool Save() => _state.Save();
     }
 }

@@ -34,6 +34,23 @@ namespace GuildIdle.Crafting
         public const string MaterialAndRecipe = "MaterialAndRecipe";
     }
 
+    public static class CraftAdvanceCode
+    {
+        public const string Applied = "Applied";
+        public const string Replayed = "Replayed";
+        public const string ResultPending = "ResultPending";
+        public const string OperationKeyRequired = "OperationKeyRequired";
+        public const string OperationReplayConflict = "OperationReplayConflict";
+        public const string InvalidDelta = "InvalidDelta";
+        public const string ExecutionNotFound = "ExecutionNotFound";
+        public const string InvalidExecution = "InvalidExecution";
+        public const string DataIntegrityFailure = "DataIntegrityFailure";
+        public const string RewardValidationFailure = "RewardValidationFailure";
+        public const string PendingResultFailure = "PendingResultFailure";
+        public const string TransactionFailure = "TransactionFailure";
+        public const string SaveFailure = "SaveFailure";
+    }
+
     public sealed class CraftStartRequest
     {
         public string CraftId { get; set; }
@@ -157,5 +174,26 @@ namespace GuildIdle.Crafting
         public string HeroId { get; internal set; }
         public string StationBuildingId { get; internal set; }
         public int StationBuildingLevel { get; internal set; }
+    }
+
+    public sealed class CraftAdvanceResult
+    {
+        public bool Success { get; internal set; }
+        public bool Replayed { get; internal set; }
+        public bool Completed { get; internal set; }
+        public string Code { get; internal set; }
+        public string Message { get; internal set; }
+        public string ExecutionId { get; internal set; }
+        public float ProgressSeconds { get; internal set; }
+        public string PendingResultId { get; internal set; }
+        public CraftExecutionSaveData Execution { get; internal set; }
+    }
+
+    public sealed class CraftResultPendingEvent
+    {
+        public string ExecutionId { get; internal set; }
+        public string CraftId { get; internal set; }
+        public string HeroId { get; internal set; }
+        public string PendingResultId { get; internal set; }
     }
 }
