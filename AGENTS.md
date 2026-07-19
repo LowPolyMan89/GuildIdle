@@ -1,197 +1,179 @@
 # GuildIdle Codex Instructions
 
-## GuildIdle Google Drive Docs Reading Policy
+## 1. Permission And Scope
 
-Дизайн-данные GuildIdle хранятся в Google Drive. **DO NOT** загружать все документы или целые таблицы вслепую. **MUST** экономить контекст и читать только минимальный релевантный источник.
+- Reviews, analysis, planning, Issue checks, commit checks, and explanations are **read-only** unless the user explicitly asks to apply changes.
+- An Issue URL, commit SHA, branch name, suggested patch, or request to review something is **not** permission to modify files, Issues, branches, commits, or Pull Requests.
+- Modify repository, Drive, config, documentation, or project files only after an explicit user request to implement or apply changes.
+- Create branches, commits, pushes, Pull Requests, or GitHub Issue changes only when explicitly requested.
+- Keep every change minimal and scoped. **DO NOT** perform opportunistic refactoring, broad renaming, formatting cleanup, or unrelated fixes.
+- If additional work is discovered outside the requested scope, continue the valid in-scope work and report the extra finding separately. **DO NOT** implement it without approval.
+- Before asking a question, check the current conversation, active Issue, Project Index, relevant documents, and repository context. **DO NOT** ask the user to repeat information already available.
 
-### Sources of truth
+## 2. Source Ownership
 
-Перед чтением проектной документации начни с:
+Different sources own different facts:
+
+- **GuildIdle — Project Index** defines which project documents and configs are canonical.
+- **GuildIdle — Config Schema** defines config architecture, id ownership, relations, formats, import order, and validation rules.
+- Canonical Google Sheets define exact config data.
+- The active GitHub Issue defines implementation scope and acceptance criteria.
+- The repository defines the currently implemented code and project state.
+
+**DO NOT** silently resolve conflicts between an Issue, canonical documentation, configs, and repository implementation. Report the conflict and continue only with the unambiguous part of the task.
+
+## 3. GuildIdle Google Drive Reading Policy
+
+Design data is stored in Google Drive. Read only the smallest relevant source.
+
+Start with:
 
 1. **GuildIdle — Project Index**  
-   Главный реестр canonical project documents and configs.  
    https://docs.google.com/document/d/1OsIgOiYgb6NxxwvgjQfuhaBXCVGqxg6DUkVp6CdXFwo
 
-Для задач, связанных с конфигами, после Project Index используй:
-
-2. **GuildIdle — Config Schema**  
-   Technical schema для config architecture, id ownership, sheet relations, import order, validation rules, and links to concrete config sheets/tabs.  
+2. For config-related tasks, then read **GuildIdle — Config Schema**  
    https://docs.google.com/document/d/1z3f1RWfy5OqAZRYswMrWUzCF_bCJFOq8QW3GgBLZJqo
 
-**DO NOT** искать по всему Google Drive, если нужный файл указан в Project Index или Config Schema.
-
-### Token-saving rules
-
-When working with Drive documents:
-
+- **DO NOT** search the whole Drive when the required source is linked from Project Index or Config Schema.
 - **DO NOT** read entire documents unless the task explicitly requires a full review.
-- Prefer document search, heading search, and specific section reads.
-- If the task references a system, first find the canonical document in **Project Index**, then read only the relevant section.
-- If a document has already been summarized in the current task, reuse the summary instead of reading it again.
-- If information is missing, ask for the specific missing section instead of loading unrelated documents.
-- **NEVER** paste large raw document contents into prompts unless absolutely necessary.
+- Prefer document search, heading search, and narrow section reads.
+- Reuse relevant summaries already established in the current task.
+- **DO NOT** paste large raw document contents into prompts or responses unless necessary.
 
-When working with Google Sheets configs:
+### Google Sheets
 
-- **DO NOT** load full spreadsheets.
-- First read spreadsheet metadata: sheet names, sheet ids, and grid sizes.
-- Then read only:
-  - the header row;
-  - the specific sheet involved in the task;
-  - the specific bounded range needed for validation or implementation.
-- For config architecture, use **Config Schema** first.
-- For exact data, use the linked sheet/tab from **Config Schema**.
-- Prefer targeted row search by id over reading large ranges.
-- If validating references, collect ids from source sheets first, then check only the dependent sheets.
+- **DO NOT** load complete spreadsheets by default.
+- First inspect sheet metadata: names, ids, and grid sizes.
+- Then read only the relevant header, sheet, rows, ids, or bounded range.
+- Use Config Schema links and ownership rules. **DO NOT** guess spreadsheet names, sheet names, tabs, or id ownership from memory.
+- For reference validation, collect ids from source sheets first, then inspect only the dependent rows.
 
-### Reading order for GuildIdle config tasks
+### Creating Or Changing Drive Documents
 
-For any task involving configs, use this order:
+Before creating or changing a GuildIdle document or spreadsheet:
 
-1. Find the relevant system and canonical sources in **Project Index**.
-2. Read the related section of **Config Schema**.
-3. Open only the linked config sheet/tab from the “Быстрые ссылки” section.
-4. Read the header row of the relevant sheet.
-5. Read or search only the rows related to the requested ids.
-6. If the task may change config architecture, stop implementation and follow the architecture change approval flow below.
+1. Check Project Index.
+2. Check the GuildIdle folder.
+3. Check the `Дизайн Документы` folder.
+4. Use an existing canonical file when suitable.
+5. If no suitable file exists, ask the user before creating a new one.
 
-### Architecture update rule
+**DO NOT** create duplicate documents as a workaround.
 
-If a task changes config architecture:
+### If Drive Access Is Unavailable
 
-1. Present a concise implementation plan.
-2. Ask targeted questions about decisions that cannot be inferred from the current schema.
-3. Wait for explicit user approval.
-4. Update **GuildIdle — Config Schema** before or together with the approved code/config changes.
+- Continue repository-only analysis when canonical Drive information is not required.
+- **DO NOT** guess missing document, schema, or config structure.
+- Ask for a specific export, screenshot, or copied section only when the missing canonical information materially blocks the task.
+
+## 4. Config Architecture Changes
+
+For config tasks, use this order:
+
+1. Find the relevant system and canonical sources in Project Index.
+2. Read the related Config Schema section.
+3. Open only the linked config sheet or tab.
+4. Read its header and the rows related to the requested ids.
 
 Architecture changes include:
 
 - adding a new config file;
-- adding, deleting, or renaming a sheet;
-- adding, deleting, or renaming columns;
-- changing the meaning of a field;
-- changing id format;
-- changing packed reference format, for example `item_id:count` or `enemy_id:level`;
+- adding, deleting, or renaming a sheet or column;
+- changing field meaning or id format;
+- changing packed reference formats;
 - moving an entity between configs;
-- changing how `target_id`, `loot_id`, `req_type`, `reward_type`, `drop_type`, or `trigger_type` is resolved.
+- changing how polymorphic ids or type-dependent references are resolved.
 
-**DO NOT** implement importer or runtime assumptions that are not described in **Config Schema**. If the schema is missing a required rule, propose the schema change and wait for approval before implementation.
+Before implementing an architecture change:
 
-### Canonical config access pattern
+1. Present a concise implementation plan.
+2. Ask only about decisions that cannot be inferred from the current schema or task.
+3. Wait for explicit approval.
+4. Update Config Schema before or together with the approved code and config changes.
 
-Use **Config Schema** links instead of manually guessing sheet tabs.
+- **DO NOT** implement importer or runtime assumptions not described in Config Schema.
+- Currencies are not inventory items.
+- Polymorphic ids must be resolved through their type fields.
+- Packed references must follow the current Config Schema.
+- Config Schema defines the current exact field names and formats; **DO NOT** duplicate or infer stale formats from memory.
 
-Typical examples:
-
-- Need activity ids: open `Activity Configs / Activities`.
-- Need activity rewards: open `Activity Configs / ActivityRewards`.
-- Need skill ids: open `Activity Configs / Skills`.
-- Need item/resource ids: open `Items Configs / Ресурсы`, `Снаряжение`, `Рецепты`, or `Расходники`.
-- Need currencies: open `Items Configs / Валюты`.
-- Need building ids: open `Buildings Configs / Index`.
-- Need map cells or locations: open `Map Configs / MapCells` or `MapLocations`.
-- Need enemy ids: open `Enemies Configs / Enemies`.
-- Need enemy groups: open `Enemies Configs / EnemyGroups`.
-- Need loot tables: open `Loot Configs / LootTables` and `LootTableEntries`.
-
-### Important GuildIdle data rules
-
-- `gold_id` is a `currency_id`, not an `item_id`.
-- `item_gold` is forbidden legacy data.
-- **DO NOT** treat currency as an inventory item, craft material, stackable item, or craftable entity.
-- Polymorphic fields **MUST** be resolved through their type field:
-  - `ActivityRequirements.target_id` depends on `req_type`;
-  - `ActivityRewards.target_id` depends on `reward_type`;
-  - `LootTableEntries.target_id` depends on `drop_type`;
-  - `ActivityTriggers.target_id` depends on `trigger_type`.
-- `EnemyGroups.enemy_ref` uses the format `enemy_id:level`.
-- Packed material refs use the format `id:count`.
-
-### If Drive access is unavailable
-
-If Google Drive tools or MCP are unavailable:
-
-- **DO NOT** guess document or config structure.
-- Ask the user to provide the relevant export, screenshot, or copied section.
-- Use local project files only if they are clearly up to date.
-- If a local file conflicts with **Project Index** or **Config Schema**, treat the canonical Drive documents as the source of truth.
-
-### Response discipline
-
-When answering or implementing:
-
-- Mention which canonical sources were used.
-- Mention which sections, sheets, or bounded ranges were read.
-- Avoid dumping raw document or config data into the response.
-- Prefer concise summaries, ids, and exact changed files.
-
-## Project Tracking
+## 5. GitHub Issue Workflow
 
 Project work is tracked through GitHub Issues:
 
 https://github.com/LowPolyMan89/GuildIdle/issues
 
-### GitHub Issue discipline
+- Determine the active Issue from the user request, provided URL, current branch, Pull Request, or established task context.
+- Ask which Issue owns the work only when project changes are requested and ownership remains genuinely ambiguous.
+- Read the active Issue before implementation and keep changes within its scope and acceptance criteria.
+- Read linked Issues only when directly relevant.
+- **DO NOT** silently expand Issue scope.
+- **DO NOT** create, edit, close, reopen, label, assign, or comment on Issues without explicit user permission.
+- Reviews, explanations, planning, and other read-only work do not require an active Issue unless the user explicitly requests Issue-based tracking.
 
-Changes to code, configs, assets, documentation, or project files should be performed within the scope of a GitHub Issue in the `LowPolyMan89/GuildIdle` repository.
+### Issue Or Commit Reviews
 
-- Before changing project files, identify the active GitHub Issue.
-- If the user has not provided an Issue number or URL, ask which Issue should own the work.
-- Read the active Issue before implementation and keep changes within its stated scope and acceptance criteria.
-- Read linked Issues only when they are directly relevant to the requested work.
-- If implementation reveals additional work outside the active Issue scope, stop before making those extra changes.
-- Ask the user whether to create a separate Issue, extend the current Issue, or link an existing related Issue.
-- **DO NOT** silently expand the active Issue scope.
-- **DO NOT** create, edit, close, reopen, label, assign, or comment on GitHub Issues without explicit user permission.
-- **DO NOT** modify the repository, create commits, push branches, or open Pull Requests without explicit user permission.
-- Reviews, explanations, planning, and other read-only work do not require an active GitHub Issue unless the user explicitly requests Issue-based tracking.
-- When project files are changed, mention the active Issue number and the exact changed files in the final response.
+For review tasks:
 
-## Build And Verification
+- read the Issue and acceptance criteria when provided;
+- inspect the actual diff or changed files;
+- consult canonical documentation only where needed;
+- separate confirmed defects, probable risks, and optional suggestions;
+- do not modify files, Issues, or branches during the review;
+- conclude whether the work is ready, conditionally ready, or not ready.
 
-- **DO NOT** run code builds after completing code tasks unless the user explicitly asks for a build.
-- **DO NOT** try to run Unity EditMode tests.
-- **DO NOT** search for Unity in PATH, Program Files, the registry, or typical local install paths.
-- **DO NOT** generate or rebuild runtime config JSON files yourself. If runtime config regeneration is needed, ask the user to run the existing Unity Config Downloader pipeline, wait for the result, then continue from the reported errors or updated files.
-- For default verification, inspect the resulting diff and run `git diff --check`.
-- Run additional verification only when explicitly requested by the user.
+## 6. Repository Editing Rules
 
-### Unity test runs when explicitly requested
+Before modifying files in a local workspace:
 
-Run Unity tests only when the user explicitly asks for them. If the Unity Editor is already open, ask the user to close it first, then verify with `Get-Process Unity -ErrorAction SilentlyContinue`.
+- inspect `git status` and the relevant diff;
+- preserve unrelated user changes;
+- **DO NOT** reset, discard, overwrite, or reformat unrelated files;
+- **DO NOT** use destructive Git commands such as `reset --hard`, `checkout --`, `clean`, force-push, or history rewrite without explicit permission.
 
-Use the Unity executable path already known for this workspace:
+When editing:
 
-`F:\Unity\6000.3.12f1\Editor\Unity.exe`
+- make the smallest coherent change that satisfies the task;
+- preserve existing conventions unless the task explicitly changes them;
+- mention the active Issue, exact changed files, and any out-of-scope findings in the final response.
 
-Do not search for Unity in PATH, Program Files, or the registry. If the path stops working, ask the user for the installed Unity path.
+## 7. Generated Files And Config Downloads
 
-Important: do not pass `-quit` to Unity Test Framework command-line runs in this project. The local `com.unity.test-framework` warns that command-line tests do not work when `-quit` is specified. Unity exits by itself when the test run completes.
+- **DO NOT** hand-edit generated runtime config JSON.
+- **DO NOT** generate or rebuild runtime config JSON manually.
+- Fix the canonical source, schema, parser, validator, or downloader pipeline instead.
+- When regeneration is required, ask the user to run the existing Unity Config Downloader pipeline and continue from the resulting files or reported errors.
+- Generated outputs do not define design intent when they conflict with canonical sources.
 
-Targeted EditMode test example:
+## 8. Build And Verification
 
-```powershell
-$results = 'E:\repo\GuildIdle\TestResults_codex_activity_runtime.xml'
-$log = 'E:\repo\GuildIdle\Logs\codex-editmode-activity-runtime.log'
-if (Test-Path $results) { Remove-Item $results -Force }
-if (Test-Path $log) { Remove-Item $log -Force }
-& 'F:\Unity\6000.3.12f1\Editor\Unity.exe' -batchmode -projectPath 'E:\repo\GuildIdle' -runTests -testPlatform EditMode -runSynchronously -testFilter 'GuildIdle.Editor.Activities.ActivityRuntimeServiceTests' -testResults $results -logFile $log
-```
+Default verification:
 
-Full EditMode suite example:
+- inspect the resulting diff;
+- run `git diff --check` when working in a local repository;
+- run only focused static checks that do not alter project files.
 
-```powershell
-$results = 'E:\repo\GuildIdle\TestResults_codex_editmode_all.xml'
-$log = 'E:\repo\GuildIdle\Logs\codex-editmode-all.log'
-if (Test-Path $results) { Remove-Item $results -Force }
-if (Test-Path $log) { Remove-Item $log -Force }
-& 'F:\Unity\6000.3.12f1\Editor\Unity.exe' -batchmode -projectPath 'E:\repo\GuildIdle' -runTests -testPlatform EditMode -runSynchronously -testResults $results -logFile $log
-```
+- **DO NOT** run builds or Unity tests unless explicitly requested.
+- When Unity tests are explicitly requested, use the workspace-configured Unity executable; do not search PATH, Program Files, or the registry.
+- Do not pass `-quit` to Unity Test Framework command-line runs in this project.
+- Ensure Unity is not already running before a command-line test run.
+- Keep temporary test results outside tracked project files and remove any generated temporary files before finishing.
 
-After launch, wait for Unity to exit, then parse the XML results. Unity also writes a copy to `C:\Users\Andrew\AppData\LocalLow\DefaultCompany\GuildIdle\TestResults.xml`. Remove temporary `TestResults_codex*.xml` files from the repo root before finishing.
+## 9. Unity Assets
 
-## Unity Assets
+- **DO NOT** edit Unity scenes or prefabs unless the user explicitly requests scene or prefab changes.
+- Treat `.unity`, `.prefab`, and their related metadata changes as out of scope without that permission.
+- **DO NOT** create Unity `.meta` files manually. Let Unity generate and update them.
 
-- **DO NOT** edit Unity scenes or prefabs unless the user explicitly asks for scene or prefab changes.
-- Treat `.unity`, `.prefab`, and their related metadata changes as out of scope without explicit permission.
-- **DO NOT** create Unity `.meta` files manually. Let Unity generate and update `.meta` files.
+## 10. Final Response
+
+After implementation, report:
+
+- active Issue, or state that no Issue was linked;
+- changed files;
+- behavior or rules changed;
+- verification performed;
+- verification not performed;
+- remaining risks or out-of-scope findings.
+
+When canonical Drive sources were consulted, briefly name the documents, sections, sheets, or ranges used. Avoid dumping raw source contents.
