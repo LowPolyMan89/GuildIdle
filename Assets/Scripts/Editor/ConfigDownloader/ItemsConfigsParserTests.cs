@@ -249,23 +249,40 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
-        public void BuildRuntimeJson_AllowsCraftTargetThatExistsButIsNotRuntimeEnabled()
+        public void BuildRuntimeJson_RejectsEnabledCraftTargetThatIsNotRuntimeEnabled()
         {
             var download = CreateValidDownload();
             AddDisabledRecipeAndCraft(download, targetItemId: "recipe_old", requiredRecipeItemId: "", craftEnabled: "TRUE");
             WriteRaw(download);
 
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("target_item_id").And.Contain("runtime Items Configs item registry"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_AllowsCraftReferencesFromSheetWithoutCanonicalEnabledColumn()
+        {
+            WriteRaw(CreateValidDownload());
+
             var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
-            Assert.That(runtimeJson, Does.Contain("\"targetItemId\": \"recipe_old\""));
+            Assert.That(runtimeJson, Does.Contain("\"targetItemId\": \"resource_pine_plank\""));
+            Assert.That(runtimeJson, Does.Contain("\"id\": \"resource_pine_wood\""));
         }
 
         [Test]
         public void BuildRuntimeJson_IgnoresRuntimeReferencesOfDisabledCraft()
         {
             var download = CreateValidDownload();
-            AddDisabledRecipeAndCraft(download, targetItemId: "resource_pine_wood", requiredRecipeItemId: "recipe_old", craftEnabled: "FALSE");
+            AddDisabledRecipeAndCraft(
+                download,
+                targetItemId: "recipe_old",
+                requiredRecipeItemId: "recipe_old",
+                craftEnabled: "FALSE",
+                materials: "recipe_old:1");
             WriteRaw(download);
 
             var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
@@ -431,7 +448,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             ConfigSheetDownload download,
             string targetItemId,
             string requiredRecipeItemId,
-            string craftEnabled)
+            string craftEnabled,
+            string materials = "resource_pine_wood:1")
         {
             var recipes = FindSheet(download, "Рецепты");
             recipes.rows = Append(
@@ -449,7 +467,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     "10",
                     "skill_crafting",
                     "building_carpentry:1",
-                    "resource_pine_wood:1",
+                    materials,
                     requiredRecipeItemId,
                     hasRequiredRecipe ? "1" : "0",
                     hasRequiredRecipe ? "TRUE" : "FALSE",

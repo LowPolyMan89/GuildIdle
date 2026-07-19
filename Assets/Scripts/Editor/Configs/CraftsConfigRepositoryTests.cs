@@ -30,17 +30,22 @@ namespace GuildIdle.Editor.Configs
                 },
                 new[] { sourceRequirement });
             var definitionA = Definition("craft_a", new[] { new MaterialCostDto { id = "resource_a", count = 1 } });
+            var definitionOther = Definition(
+                "craft_other",
+                new[] { new MaterialCostDto { id = "resource_c", count = 1 } },
+                craftStationId: "building_other_station");
             var relationZ = Craftable("craft_z", 10, true, 1);
             var relationA = Craftable("craft_a", 10, true, 1);
             var disabled = Craftable("craft_a", 0, false, 1);
             var otherLevel = Craftable("craft_a", 0, true, 2);
+            var otherStation = Craftable("craft_other", 5, true, 3, "building_other_station");
             var items = new ItemsConfigRepository(new ItemsRuntimeConfigDto
             {
-                craftDefinitions = new[] { definitionZ, definitionA }
+                craftDefinitions = new[] { definitionZ, definitionA, definitionOther }
             });
             var buildings = new BuildingsConfigRepository(new BuildingsRuntimeConfigDto
             {
-                buildingCraftables = new[] { relationZ, disabled, relationA, otherLevel }
+                buildingCraftables = new[] { relationZ, disabled, relationA, otherLevel, otherStation }
             });
 
             var repository = new CraftsConfigRepository(items, buildings);
@@ -71,6 +76,10 @@ namespace GuildIdle.Editor.Configs
             Assert.That(available[1].BuildingId, Is.EqualTo("building_station"));
             Assert.That(repository.GetAvailableCrafts("building_station", 2), Has.Count.EqualTo(1));
             Assert.That(repository.GetAvailableCrafts("building_station", 3), Is.Empty);
+            var availableAtOtherStation = repository.GetAvailableCrafts("building_other_station", 3);
+            Assert.That(availableAtOtherStation, Has.Count.EqualTo(1));
+            Assert.That(availableAtOtherStation[0].CraftId, Is.EqualTo("craft_other"));
+            Assert.That(availableAtOtherStation[0].Definition.CraftStationId, Is.EqualTo("building_other_station"));
             Assert.Throws<NotSupportedException>(() => ((IList<AvailableCraftDescriptor>)available).Clear());
         }
 
@@ -140,13 +149,14 @@ namespace GuildIdle.Editor.Configs
         private static CraftDefinitionConfigDto Definition(
             string craftId,
             MaterialCostDto[] materials,
-            RequiredBuildingDto[] requiredBuildings = null)
+            RequiredBuildingDto[] requiredBuildings = null,
+            string craftStationId = "building_station")
         {
             return new CraftDefinitionConfigDto
             {
                 craftId = craftId,
                 targetItemId = "item_output",
-                craftStationId = "building_station",
+                craftStationId = craftStationId,
                 craftDurationSec = 10,
                 craftSkillId = "skill_crafting",
                 requiredBuildings = requiredBuildings ?? Array.Empty<RequiredBuildingDto>(),
@@ -155,11 +165,16 @@ namespace GuildIdle.Editor.Configs
             };
         }
 
-        private static BuildingCraftableConfigDto Craftable(string craftId, int sortOrder, bool enabled, int level)
+        private static BuildingCraftableConfigDto Craftable(
+            string craftId,
+            int sortOrder,
+            bool enabled,
+            int level,
+            string buildingId = "building_station")
         {
             return new BuildingCraftableConfigDto
             {
-                buildingId = "building_station",
+                buildingId = buildingId,
                 buildingLevel = level,
                 craftId = craftId,
                 sortOrder = sortOrder,

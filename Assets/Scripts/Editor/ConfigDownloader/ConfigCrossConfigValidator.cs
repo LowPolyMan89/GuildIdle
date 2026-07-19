@@ -2061,8 +2061,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                         continue;
                     }
 
-                    if (!items.ContainsDeclaredItem(token.ItemId))
-                        AddCraftMaterialIssue(items, table, row, craftId, token, "item_id does not exist in Items Configs item/resource/recipe/consumable registry.", report);
+                    if (!items.ContainsAnyItem(token.ItemId))
+                        AddCraftMaterialIssue(items, table, row, craftId, token, "item_id does not exist in the runtime/enabled Items Configs item/resource/recipe/consumable registry.", report);
 
                     totals.TryGetValue(token.ItemId, out var total);
                     total += token.Count;
@@ -2106,11 +2106,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                             AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "visibility_item_id", visibilityItemId, "visibility_item_id does not exist in Items Configs item/recipe/consumable registry.");
 
                         var targetItemId = row.Get("target_item_id");
-                        var targetExists = string.Equals(table.Name, CraftDefinitionsSheet, StringComparison.OrdinalIgnoreCase)
-                            ? items.ContainsDeclaredItem(targetItemId)
-                            : items.ContainsAnyItem(targetItemId);
+                        var targetExists = items.ContainsAnyItem(targetItemId);
                         if (!IsBlank(targetItemId) && !targetExists)
-                            AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "target_item_id", targetItemId, "target_item_id does not exist in Items Configs item registry.");
+                            AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "target_item_id", targetItemId, "target_item_id does not exist in the runtime/enabled Items Configs item registry.");
 
                         var recipeItemId = row.Get("required_recipe_item_id");
                         if (!IsBlank(recipeItemId) && !items.IsEnabledRecipeItem(recipeItemId))
@@ -2794,14 +2792,23 @@ namespace GuildIdle.Editor.ConfigDownloader
                         var craftId = row.Get("craft_id");
                         var buildingId = row.Get("building_id");
                         var buildingLevel = row.Get("building_level");
-                        var key = $"{buildingId}\n{buildingLevel}\n{craftId}";
-                        if (seen.TryGetValue(key, out var firstLocation))
-                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "craft_id", craftId, $"Duplicate building_id + building_level + craft_id; first declared at {firstLocation}.");
+                        if (!long.TryParse(buildingLevel, NumberStyles.Integer, CultureInfo.InvariantCulture, out var normalizedBuildingLevel) ||
+                            normalizedBuildingLevel < 0)
+                        {
+                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "building_level", buildingLevel, "building_level must be an integer greater than or equal to 0.");
+                        }
                         else
-                            seen[key] = $"{table.Name} row {row.RowNumber}";
+                        {
+                            var normalizedLevelText = normalizedBuildingLevel.ToString(CultureInfo.InvariantCulture);
+                            var key = $"{buildingId}\n{normalizedLevelText}\n{craftId}";
+                            if (seen.TryGetValue(key, out var firstLocation))
+                                AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "craft_id", craftId, $"Duplicate building_id + building_level + craft_id; first declared at {firstLocation}.");
+                            else
+                                seen[key] = $"{table.Name} row {row.RowNumber}";
 
-                        if (!IsBlank(buildingId) && !buildings.ContainsExactBuildingLevel(buildingId, buildingLevel))
-                            AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "building_level", buildingLevel, "building_id + building_level does not exist in Buildings Configs.");
+                            if (!IsBlank(buildingId) && !buildings.ContainsExactBuildingLevel(buildingId, normalizedLevelText))
+                                AddIssue(report, buildings.Source.DisplayName, table.Name, row.RowNumber, "building_level", buildingLevel, "building_id + building_level does not exist in Buildings Configs.");
+                        }
 
                         if (IsBlank(craftId))
                             continue;

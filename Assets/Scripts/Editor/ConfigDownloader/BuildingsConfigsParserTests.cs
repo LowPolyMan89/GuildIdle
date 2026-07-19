@@ -185,6 +185,22 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void BuildRuntimeJson_RejectsDuplicateCraftableWithNormalizedBuildingLevel()
+        {
+            var download = CreateValidDownload();
+            var craftables = FindSheet(download, "Craftables - Carpentry");
+            craftables.rows = Append(
+                craftables.rows,
+                Row("building_carpentry", "01", "process_pine_plank", "20", "Materials", "TRUE", "duplicate"));
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Duplicate building_id + building_level + craft_id"));
+        }
+
+        [Test]
         public void BuildRuntimeJson_ExportsCanonicalBuildFields()
         {
             WriteRaw(CreateValidDownload());

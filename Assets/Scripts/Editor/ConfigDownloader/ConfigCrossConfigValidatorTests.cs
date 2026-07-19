@@ -219,20 +219,9 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
-        public void Validate_CraftRecipeRequiresEnabledButTargetOnlyRequiresExistence()
+        public void Validate_CraftRuntimeItemReferencesRequireEnabledItems()
         {
             const string staleRuntime = "{\"recipes\":[{\"id\":\"recipe_old\",\"kind\":\"recipe\"}]}";
-
-            var disabledRecipeReference = Collection(Source(
-                "items_configs",
-                "GuildIdle - Items Configs",
-                "items-disabled-recipe.json",
-                ItemsCraftReferenceDownload("resource_pine_wood", "recipe_old", "TRUE"),
-                staleRuntime));
-            var disabledRecipeReport = ConfigCrossConfigValidator.Validate(disabledRecipeReference);
-
-            Assert.That(disabledRecipeReport.Success, Is.False);
-            Assert.That(disabledRecipeReport.ToDisplayMessage(), Does.Contain("required_recipe_item_id").And.Contain("Recipes.id registry"));
 
             var disabledTargetReference = Collection(Source(
                 "items_configs",
@@ -242,17 +231,47 @@ namespace GuildIdle.Editor.ConfigDownloader
                 staleRuntime));
             var disabledTargetReport = ConfigCrossConfigValidator.Validate(disabledTargetReference);
 
-            Assert.That(disabledTargetReport.Success, Is.True, disabledTargetReport.ToDisplayMessage());
+            Assert.That(disabledTargetReport.Success, Is.False);
+            Assert.That(disabledTargetReport.ToDisplayMessage(), Does.Contain("target_item_id").And.Contain("runtime/enabled Items Configs item registry"));
 
-            var disabledCraft = Collection(Source(
+            var disabledMaterialReference = Collection(Source(
+                "items_configs",
+                "GuildIdle - Items Configs",
+                "items-disabled-material.json",
+                ItemsCraftReferenceDownload("resource_pine_wood", "", "TRUE", "recipe_old:1"),
+                staleRuntime));
+            var disabledMaterialReport = ConfigCrossConfigValidator.Validate(disabledMaterialReference);
+
+            Assert.That(disabledMaterialReport.Success, Is.False);
+            Assert.That(disabledMaterialReport.ToDisplayMessage(), Does.Contain("materials").And.Contain("recipe_old:1").And.Contain("runtime/enabled Items Configs"));
+        }
+
+        [Test]
+        public void Validate_CraftRuntimeReferencesAcceptItemsFromSheetWithoutEnabledColumn()
+        {
+            var collection = Collection(Source(
+                "items_configs",
+                "GuildIdle - Items Configs",
+                "items-no-enabled-column.json",
+                ItemsCraftReferenceDownload("resource_pine_wood", "", "TRUE", "resource_pine_wood:1")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+        }
+
+        [Test]
+        public void Validate_DisabledCraftDefinitionIgnoresInactiveRuntimeReferences()
+        {
+            var collection = Collection(Source(
                 "items_configs",
                 "GuildIdle - Items Configs",
                 "items-disabled-craft.json",
-                ItemsCraftReferenceDownload("resource_pine_wood", "recipe_old", "FALSE"),
-                staleRuntime));
-            var disabledCraftReport = ConfigCrossConfigValidator.Validate(disabledCraft);
+                ItemsCraftReferenceDownload("recipe_old", "recipe_old", "FALSE", "recipe_old:1")));
 
-            Assert.That(disabledCraftReport.Success, Is.True, disabledCraftReport.ToDisplayMessage());
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
         }
 
         [Test]
@@ -1094,7 +1113,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 {
                     Row("building_id", "building_level", "craft_id", "enabled"),
                     Row(craftableBuilding, craftableLevel, "craft_test", "TRUE"),
-                    Row(craftableBuilding, craftableLevel, "craft_test", "TRUE")
+                    Row(craftableBuilding, "0" + craftableLevel, "craft_test", "TRUE")
                 }
                 : new[]
                 {
@@ -1383,7 +1402,11 @@ namespace GuildIdle.Editor.ConfigDownloader
                     Row(resourceId, nameId, descriptionId, "icon_resource", "resource", "", "")));
         }
 
-        private static ConfigSheetDownload ItemsCraftReferenceDownload(string targetItemId, string requiredRecipeItemId, string craftEnabled)
+        private static ConfigSheetDownload ItemsCraftReferenceDownload(
+            string targetItemId,
+            string requiredRecipeItemId,
+            string craftEnabled,
+            string materials = "")
         {
             return Download(
                 Sheet("Ресурсы",
@@ -1393,8 +1416,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     Row("id", "kind", "enabled"),
                     Row("recipe_old", "recipe", "FALSE")),
                 Sheet("CraftDefinitions",
-                    Row("craft_id", "target_item_id", "required_recipe_item_id", "enabled"),
-                    Row("craft_test", targetItemId, requiredRecipeItemId, craftEnabled)));
+                    Row("craft_id", "target_item_id", "materials", "required_recipe_item_id", "enabled"),
+                    Row("craft_test", targetItemId, materials, requiredRecipeItemId, craftEnabled)));
         }
 
         private static ConfigSheetDownload EmptyDownload()

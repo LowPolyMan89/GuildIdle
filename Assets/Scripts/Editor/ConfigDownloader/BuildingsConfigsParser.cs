@@ -425,24 +425,21 @@ namespace GuildIdle.Editor.ConfigDownloader
                         if (!string.IsNullOrWhiteSpace(buildingId) && !_buildings.ContainsKey(buildingId))
                             AddIssue(table.Name, row.RowNumber, "building_id", buildingId, "building_id does not exist in Index.building_id.");
 
-                        if (TryParseRequiredWholeNumber(row, "building_level", out var buildingLevel))
+                        if (TryParseRequiredNonNegativeInteger(row, "building_level", out var buildingLevel))
                         {
-                            if (buildingLevel < 0)
-                                AddIssue(table.Name, row.RowNumber, "building_level", row.Get("building_level"), "building_level must be a number greater than or equal to 0.");
-
                             if (!string.IsNullOrWhiteSpace(buildingId) &&
                                 !_levelKeys.ContainsKey(LevelKey(buildingId, buildingLevel)))
                             {
                                 AddIssue(table.Name, row.RowNumber, "building_level", row.Get("building_level"), "building_level does not exist in BuildingLevels for this building_id.");
                             }
-                        }
 
-                        var craftId = row.Get("craft_id");
-                        var key = $"{buildingId}\n{row.Get("building_level")}\n{craftId}";
-                        if (seen.TryGetValue(key, out var firstRow))
-                            AddIssue(table.Name, row.RowNumber, "craft_id", craftId, $"Duplicate building_id + building_level + craft_id; first declared at row {firstRow}.");
-                        else
-                            seen[key] = row.RowNumber;
+                            var craftId = row.Get("craft_id");
+                            var key = $"{buildingId}\n{buildingLevel.ToString(CultureInfo.InvariantCulture)}\n{craftId}";
+                            if (seen.TryGetValue(key, out var firstRow))
+                                AddIssue(table.Name, row.RowNumber, "craft_id", craftId, $"Duplicate building_id + building_level + craft_id; first declared at row {firstRow}.");
+                            else
+                                seen[key] = row.RowNumber;
+                        }
                     }
                 }
             }
@@ -1332,6 +1329,25 @@ namespace GuildIdle.Editor.ConfigDownloader
 
                 AddIssue(row.Table.Name, row.RowNumber, column, raw, "Expected a whole number.");
                 return false;
+            }
+
+            private bool TryParseRequiredNonNegativeInteger(ConfigSheetDataRow row, string column, out long value)
+            {
+                value = 0L;
+                var raw = row.Get(column);
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    AddIssue(row.Table.Name, row.RowNumber, column, raw, $"{column} is required.");
+                    return false;
+                }
+
+                if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) || value < 0)
+                {
+                    AddIssue(row.Table.Name, row.RowNumber, column, raw, $"{column} must be an integer greater than or equal to 0.");
+                    return false;
+                }
+
+                return true;
             }
 
             private bool TryParseBool(ConfigSheetDataRow row, string column, bool required, out bool value)

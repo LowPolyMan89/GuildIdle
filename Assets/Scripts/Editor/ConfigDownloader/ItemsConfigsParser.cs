@@ -154,6 +154,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             private readonly ConfigPipelineReport _report;
             private readonly Dictionary<string, ConfigSheetTable> _tables = new Dictionary<string, ConfigSheetTable>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _itemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            private readonly HashSet<string> _runtimeItemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _enabledRecipeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             public ItemsConfigContext(ConfigSheetDownload download, ConfigPipelineReport report)
@@ -288,6 +289,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     var isRecipe = string.Equals(sheetName, RecipesSheet, StringComparison.OrdinalIgnoreCase);
                     if (IsRuntimeEnabled(row))
                     {
+                        _runtimeItemIds.Add(id);
                         if (isRecipe)
                             _enabledRecipeIds.Add(id);
                     }
@@ -492,8 +494,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                         continue;
 
                     var targetItemId = row.Get("target_item_id");
-                    if (!string.IsNullOrWhiteSpace(targetItemId) && !_itemIds.Contains(targetItemId))
-                        AddIssue(CraftDefinitionsSheet, row.RowNumber, "target_item_id", targetItemId, "Referenced target_item_id does not exist in Items Configs.");
+                    if (!string.IsNullOrWhiteSpace(targetItemId) && !_runtimeItemIds.Contains(targetItemId))
+                        AddIssue(CraftDefinitionsSheet, row.RowNumber, "target_item_id", targetItemId, "Referenced target_item_id is not exported by the runtime Items Configs item registry.");
 
                     if (!string.IsNullOrWhiteSpace(recipeItemId) && !_enabledRecipeIds.Contains(recipeItemId))
                         AddIssue(CraftDefinitionsSheet, row.RowNumber, "required_recipe_item_id", recipeItemId, "Referenced required_recipe_item_id is not exported by enabled Recipes.id.");
