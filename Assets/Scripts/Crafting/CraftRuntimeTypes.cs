@@ -40,6 +40,8 @@ namespace GuildIdle.Crafting
         public const string Replayed = "Replayed";
         public const string ResultPending = "ResultPending";
         public const string OperationKeyRequired = "OperationKeyRequired";
+        public const string OperationSequenceRequired = "OperationSequenceRequired";
+        public const string OperationSequenceGap = "OperationSequenceGap";
         public const string OperationReplayConflict = "OperationReplayConflict";
         public const string InvalidDelta = "InvalidDelta";
         public const string ExecutionNotFound = "ExecutionNotFound";
@@ -184,6 +186,7 @@ namespace GuildIdle.Crafting
         public string Code { get; internal set; }
         public string Message { get; internal set; }
         public string ExecutionId { get; internal set; }
+        public long OperationSequence { get; internal set; }
         public float ProgressSeconds { get; internal set; }
         public string PendingResultId { get; internal set; }
         public CraftExecutionSaveData Execution { get; internal set; }

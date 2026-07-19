@@ -84,8 +84,8 @@ namespace GuildIdle.Editor.Crafting
                 Assert.That(state.GetHeroCurrentActivityExecutionId(HeroId), Is.EqualTo(started.ExecutionId));
                 Assert.That(startedEvents, Has.Count.EqualTo(1));
 
-                var completed = runtime.Advance(started.ExecutionId, 10d, "stage1-complete");
-                var replayedCompletion = runtime.Advance(started.ExecutionId, 10d, "stage1-complete");
+                var completed = runtime.Advance(started.ExecutionId, 10d, "stage1-complete", 1);
+                var replayedCompletion = runtime.Advance(started.ExecutionId, 10d, "stage1-complete", 1);
 
                 Assert.That(completed.Success, Is.True, completed.Message);
                 Assert.That(completed.Completed, Is.True);
@@ -177,7 +177,7 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(started.Execution.durationSeconds, Is.EqualTo(3));
             Assert.That(state.GetItem("resource_pine_wood"), Is.Zero);
 
-            var completed = runtime.Advance(started.ExecutionId, 3d, "generic-complete");
+            var completed = runtime.Advance(started.ExecutionId, 3d, "generic-complete", 1);
             Assert.That(completed.Success, Is.True, completed.Message);
             var pending = PlayerRuntimeComposition.CreatePendingResultService().Get(completed.PendingResultId);
             var claimed = PlayerRuntimeComposition.CreatePendingResultService().ClaimAll(
@@ -208,13 +208,43 @@ namespace GuildIdle.Editor.Crafting
             var started = runtime.Start(startRequest);
             Assert.That(started.Success, Is.True, started.Message);
 
-            for (var index = 0; index < 65; index++)
+            var firstAdvance = runtime.Advance(started.ExecutionId, 1d, "retention-anchor-nonzero", 1);
+            Assert.That(firstAdvance.Success, Is.True, firstAdvance.Message);
+            for (var index = 0; index < 64; index++)
             {
-                var advanced = runtime.Advance(started.ExecutionId, 0d, $"retention-anchor-zero-{index}");
+                var advanced = runtime.Advance(started.ExecutionId, 0d, $"retention-anchor-zero-{index}", index + 2L);
                 Assert.That(advanced.Success, Is.True, advanced.Message);
             }
 
             Assert.That(state.GetCraftExecution(started.ExecutionId).advanceReceipts, Has.Length.EqualTo(64));
+            Assert.That(state.GetCraftExecution(started.ExecutionId).advanceReceipts[0].operationKey, Is.Not.EqualTo("retention-anchor-nonzero"));
+            var loadedAfterAdvanceEviction = SaveService.Load(GetProductionFactory(), storage);
+            SetPlayerState(loadedAfterAdvanceEviction);
+            state = loadedAfterAdvanceEviction;
+            runtime = PlayerRuntimeComposition.CreateCraftRuntimeService();
+            pendingResults = PlayerRuntimeComposition.CreatePendingResultService();
+            var resultEvents = new List<CraftResultPendingEvent>();
+            Action<CraftResultPendingEvent> resultHandler = resultEvents.Add;
+            PlayerRuntimeComposition.CraftResultPending += resultHandler;
+            CraftAdvanceResult replayedEvictedAdvance;
+            try
+            {
+                replayedEvictedAdvance = runtime.Advance(started.ExecutionId, 1d, "retention-anchor-nonzero", 1);
+            }
+            finally
+            {
+                PlayerRuntimeComposition.CraftResultPending -= resultHandler;
+            }
+            Assert.That(replayedEvictedAdvance.Success, Is.True, replayedEvictedAdvance.Message);
+            Assert.That(replayedEvictedAdvance.Replayed, Is.True);
+            Assert.That(replayedEvictedAdvance.Completed, Is.False);
+            Assert.That(state.GetCraftExecution(started.ExecutionId).progressSeconds, Is.EqualTo(1f));
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
+            Assert.That(state.GetHeroSkillExp(HeroId, "skill_crafting"), Is.Zero);
+            Assert.That(state.GetHeroCurrentActivityExecutionId(HeroId), Is.EqualTo(started.ExecutionId));
+            Assert.That(resultEvents, Is.Empty);
+
             ChurnStorageReceipts(state, "retention-anchor-storage", 33);
             Assert.That(state.ToSaveData().operationReceipts, Has.Length.EqualTo(64));
             Assert.That(HasReceipt(state, "craft-start", startRequest.OperationKey), Is.False);
@@ -224,7 +254,7 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(replayedStart.ExecutionId, Is.EqualTo(started.ExecutionId));
             Assert.That(state.GetItem("resource_rabbit_meat"), Is.EqualTo(1));
 
-            var completed = runtime.Advance(started.ExecutionId, 10d, "retention-anchor-complete");
+            var completed = runtime.Advance(started.ExecutionId, 9d, "retention-anchor-complete", 66);
             Assert.That(completed.Success, Is.True, completed.Message);
             var pending = pendingResults.Get(completed.PendingResultId);
             var skillEntry = FindEntry(pending, RewardType.SkillExp);
@@ -255,7 +285,7 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(second.Success, Is.True, second.Message);
             for (var index = 0; index < 65; index++)
             {
-                var advanced = runtime.Advance(second.ExecutionId, 0d, $"retention-second-zero-{index}");
+                var advanced = runtime.Advance(second.ExecutionId, 0d, $"retention-second-zero-{index}", index + 1L);
                 Assert.That(advanced.Success, Is.True, advanced.Message);
             }
 
@@ -311,10 +341,12 @@ namespace GuildIdle.Editor.Crafting
                 oversizedExecution.advanceReceipts,
                 new CraftAdvanceReceiptSaveData
                 {
+                    operationSequence = oversizedExecution.lastAdvanceSequence + 1,
                     operationKey = "retention-imported-overflow",
                     fingerprint = "execution:imported|delta:0",
                     code = CraftAdvanceCode.Applied
                 });
+            oversizedExecution.lastAdvanceSequence++;
             var normalized = GetProductionFactory().Create(oversizedSave);
             var normalizedReceipts = normalized.GetCraftExecution(second.ExecutionId).advanceReceipts;
             Assert.That(normalizedReceipts, Has.Length.EqualTo(64));
@@ -322,7 +354,7 @@ namespace GuildIdle.Editor.Crafting
 
             SetPlayerState(loaded);
             var loadedRuntime = PlayerRuntimeComposition.CreateCraftRuntimeService();
-            var completedSecond = loadedRuntime.Advance(second.ExecutionId, 10d, "retention-second-complete");
+            var completedSecond = loadedRuntime.Advance(second.ExecutionId, 10d, "retention-second-complete", 66);
             Assert.That(completedSecond.Success, Is.True, completedSecond.Message);
             var secondResult = loaded.PendingResults.Get(completedSecond.PendingResultId);
             Assert.That(loaded.PendingResults.DiscardAll(
@@ -342,7 +374,8 @@ namespace GuildIdle.Editor.Crafting
                 var churnedCompletion = loadedRuntime.Advance(
                     churnedStart.ExecutionId,
                     10d,
-                    $"retention-source-complete-{index}");
+                    $"retention-source-complete-{index}",
+                    1);
                 Assert.That(churnedCompletion.Success, Is.True, churnedCompletion.Message);
                 var churnedResult = loaded.PendingResults.Get(churnedCompletion.PendingResultId);
                 var churnedDiscard = loaded.PendingResults.DiscardAll(
@@ -359,6 +392,122 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(loaded.PendingResults.GetAll(), Is.Empty);
             Assert.That(loaded.GetHeroCurrentActivityExecutionId(HeroId), Is.Null.Or.Empty);
             Assert.That(Encoding.UTF8.GetByteCount(JsonUtility.ToJson(retainedSave)), Is.LessThan(SaveSizeLimitBytes));
+        }
+
+        [Test]
+        public void MixedCraftAndCombatResolvedSourcesRetainNewestBySequenceAndEvictedClaimCannotRepeatRewards()
+        {
+            var storage = new MemorySaveStorage();
+            var state = CreateProductionState(LoadGeneratedConfigs().BuildDatabase(), storage);
+            Assert.That(state.SetBuildingLevel(CampfireId, 1), Is.True);
+            SetPlayerState(state);
+            var runtime = PlayerRuntimeComposition.CreateCraftRuntimeService();
+            var pendingResults = PlayerRuntimeComposition.CreatePendingResultService();
+            var anchor = pendingResults.CreateOrAppend(
+                "mixed-anchor-form",
+                CombatDraft("mixed-anchor", "resource_pine_wood"),
+                true);
+            Assert.That(anchor.Success, Is.True, anchor.Message);
+            const string anchorClaimOperation = "mixed-anchor-claim";
+            var anchorRevision = anchor.Result.revision;
+            var anchorStorageRevision = state.Storage.GetSnapshot().Revision;
+            var anchorClaim = pendingResults.ClaimAll(
+                anchorClaimOperation,
+                anchor.Result.resultId,
+                anchorRevision,
+                anchorStorageRevision);
+            Assert.That(anchorClaim.Success, Is.True, anchorClaim.Message);
+            Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(1));
+
+            for (var index = 0; index < 65; index++)
+            {
+                if (index % 2 == 0)
+                {
+                    Seed(state, "resource_rabbit_meat", 1);
+                    var started = runtime.Start(Request(
+                        ProductionCraftId,
+                        $"mixed-craft-start-{index}",
+                        CampfireId,
+                        1));
+                    Assert.That(started.Success, Is.True, started.Message);
+                    var completed = runtime.Advance(started.ExecutionId, 10d, $"mixed-craft-complete-{index}", 1);
+                    Assert.That(completed.Success, Is.True, completed.Message);
+                    var discarded = pendingResults.DiscardAll(
+                        $"mixed-craft-discard-{index}",
+                        completed.PendingResultId,
+                        pendingResults.Get(completed.PendingResultId).revision);
+                    Assert.That(discarded.Success, Is.True, discarded.Message);
+                }
+                else
+                {
+                    var formed = pendingResults.CreateOrAppend(
+                        $"mixed-combat-form-{index}",
+                        CombatDraft($"mixed-combat-{index}", "resource_pine_wood"),
+                        true);
+                    Assert.That(formed.Success, Is.True, formed.Message);
+                    var discarded = pendingResults.DiscardAll(
+                        $"mixed-combat-discard-{index}",
+                        formed.Result.resultId,
+                        formed.Result.revision);
+                    Assert.That(discarded.Success, Is.True, discarded.Message);
+                }
+            }
+
+            var retained = state.ToSaveData().resultSources;
+            Assert.That(retained, Has.Length.EqualTo(64));
+            var sourceTypes = new HashSet<string>(StringComparer.Ordinal);
+            var sequences = new HashSet<long>();
+            var minSequence = long.MaxValue;
+            var maxSequence = 0L;
+            foreach (var source in retained)
+            {
+                sourceTypes.Add(source.sourceType);
+                Assert.That(source.resolutionSequence, Is.GreaterThan(0));
+                Assert.That(sequences.Add(source.resolutionSequence), Is.True);
+                minSequence = Math.Min(minSequence, source.resolutionSequence);
+                maxSequence = Math.Max(maxSequence, source.resolutionSequence);
+            }
+            Assert.That(sourceTypes, Does.Contain(PendingResultSourceType.Craft));
+            Assert.That(sourceTypes, Does.Contain(PendingResultSourceType.Combat));
+            Assert.That(minSequence, Is.EqualTo(3));
+            Assert.That(maxSequence, Is.EqualTo(66));
+            Assert.That(FindSourceOrNull(state, anchor.Result.resultId), Is.Null);
+            Assert.That(HasReceipt(state, anchor.Result.resultId, anchorClaimOperation), Is.False);
+
+            var loaded = SaveService.Load(GetProductionFactory(), storage);
+            var itemBeforeReplay = loaded.GetItem("resource_pine_wood");
+            var replay = loaded.PendingResults.ClaimAll(
+                anchorClaimOperation,
+                anchor.Result.resultId,
+                anchorRevision,
+                anchorStorageRevision);
+            Assert.That(replay.Success, Is.False);
+            Assert.That(replay.Code, Is.EqualTo("ResultNotFound"));
+            Assert.That(loaded.GetItem("resource_pine_wood"), Is.EqualTo(itemBeforeReplay));
+            Assert.That(loaded.PendingResults.GetAll(), Is.Empty);
+            Assert.That(loaded.GetCraftExecutions(), Is.Empty);
+            Assert.That(loaded.GetHeroCurrentActivityExecutionId(HeroId), Is.Null.Or.Empty);
+            Assert.That(Encoding.UTF8.GetByteCount(JsonUtility.ToJson(loaded.ToSaveData())), Is.LessThan(SaveSizeLimitBytes));
+        }
+
+        private static PendingResultDraft CombatDraft(string sourceExecutionId, string itemId)
+        {
+            return new PendingResultDraft
+            {
+                SourceType = PendingResultSourceType.Combat,
+                SourceId = "mixed-retention-combat",
+                SourceExecutionId = sourceExecutionId,
+                Entries = new[]
+                {
+                    new PendingResultEntryDraft
+                    {
+                        RewardType = RewardType.Item,
+                        TargetId = itemId,
+                        Quantity = 1,
+                        Origin = PendingResultOrigin.CombatLoot
+                    }
+                }
+            };
         }
 
         private static PlayerState CreateProductionState(ConfigDatabase database, ISaveStorage storage)
@@ -440,10 +589,18 @@ namespace GuildIdle.Editor.Crafting
 
         private static PendingResultSourceReferenceSaveData FindSource(PlayerState state, string resultId)
         {
+            var source = FindSourceOrNull(state, resultId);
+            if (source != null)
+                return source;
+            Assert.Fail($"Missing PendingResult source reference '{resultId}'.");
+            return null;
+        }
+
+        private static PendingResultSourceReferenceSaveData FindSourceOrNull(PlayerState state, string resultId)
+        {
             foreach (var source in state.ToSaveData().resultSources)
                 if (source != null && string.Equals(source.resultId, resultId, StringComparison.Ordinal))
                     return source;
-            Assert.Fail($"Missing PendingResult source reference '{resultId}'.");
             return null;
         }
 

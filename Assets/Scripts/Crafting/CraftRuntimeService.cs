@@ -186,8 +186,18 @@ namespace GuildIdle.Crafting
 
         public CraftAdvanceResult Advance(string executionId, double deltaSeconds, string operationKey)
         {
+            return AdvanceFailure(
+                CraftAdvanceCode.OperationSequenceRequired,
+                "Craft advance requires an explicit positive operationSequence.",
+                executionId);
+        }
+
+        public CraftAdvanceResult Advance(string executionId, double deltaSeconds, string operationKey, long operationSequence)
+        {
             if (string.IsNullOrWhiteSpace(operationKey))
                 return AdvanceFailure(CraftAdvanceCode.OperationKeyRequired, "Craft advance requires operationKey.", executionId);
+            if (operationSequence <= 0)
+                return AdvanceFailure(CraftAdvanceCode.OperationSequenceRequired, "Craft advance operationSequence must be positive.", executionId);
             if (double.IsNaN(deltaSeconds) || double.IsInfinity(deltaSeconds) || deltaSeconds < 0d)
                 return AdvanceFailure(CraftAdvanceCode.InvalidDelta, "Craft advance delta must be finite and non-negative.", executionId);
             if (deltaSeconds == 0d)
@@ -196,22 +206,41 @@ namespace GuildIdle.Crafting
             var execution = _state.GetCraftExecution(executionId);
             if (execution == null)
                 return AdvanceFailure(CraftAdvanceCode.ExecutionNotFound, $"CraftExecution '{executionId}' was not found.", executionId);
+            if (!TryValidateAdvanceExecution(execution, out var validationError))
+                return AdvanceFailure(CraftAdvanceCode.InvalidExecution, validationError, executionId, execution);
 
-            var fingerprint = BuildAdvanceFingerprint(executionId, deltaSeconds);
+            var fingerprint = BuildAdvanceFingerprint(executionId, deltaSeconds, operationSequence);
             var savedReceipt = FindAdvanceReceipt(execution, operationKey);
             if (savedReceipt != null)
             {
-                if (!string.Equals(savedReceipt.fingerprint, fingerprint, StringComparison.Ordinal))
+                if (savedReceipt.operationSequence != operationSequence ||
+                    !MatchesAdvanceFingerprint(savedReceipt, executionId, deltaSeconds, fingerprint))
                     return AdvanceFailure(CraftAdvanceCode.OperationReplayConflict, "operationKey was already used with another craft advance payload.", executionId, execution);
-                if (!TryValidateAdvanceExecution(execution, out var replayError))
-                    return AdvanceFailure(CraftAdvanceCode.InvalidExecution, replayError, executionId, execution);
                 if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(execution))
                     return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "ResultPending CraftExecution has no valid linked Craft Result.", executionId, execution);
                 return AdvanceReplay(execution, savedReceipt);
             }
 
-            if (!TryValidateAdvanceExecution(execution, out var validationError))
-                return AdvanceFailure(CraftAdvanceCode.InvalidExecution, validationError, executionId, execution);
+            savedReceipt = FindAdvanceReceipt(execution, operationSequence);
+            if (savedReceipt != null)
+            {
+                if (!string.Equals(savedReceipt.operationKey, operationKey, StringComparison.Ordinal) ||
+                    !MatchesAdvanceFingerprint(savedReceipt, executionId, deltaSeconds, fingerprint))
+                    return AdvanceFailure(CraftAdvanceCode.OperationReplayConflict, "operationSequence was already used with another craft advance payload.", executionId, execution);
+                if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(execution))
+                    return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "ResultPending CraftExecution has no valid linked Craft Result.", executionId, execution);
+                return AdvanceReplay(execution, savedReceipt);
+            }
+
+            if (operationSequence <= execution.lastAdvanceSequence)
+            {
+                if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(execution))
+                    return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "ResultPending CraftExecution has no valid linked Craft Result.", executionId, execution);
+                return AdvanceEvictedReplay(execution, operationSequence);
+            }
+            if (operationSequence != execution.lastAdvanceSequence + 1)
+                return AdvanceFailure(CraftAdvanceCode.OperationSequenceGap, "Craft advance operationSequence must be the next monotonic value.", executionId, execution);
+
             if (execution.status == CraftExecutionStatus.ResultPending)
             {
                 if (!HasValidPendingResult(execution))
@@ -251,7 +280,10 @@ namespace GuildIdle.Crafting
                 next.progressSeconds = completes
                     ? next.durationSeconds
                     : (float)(next.progressSeconds + deltaSeconds);
-                AddAdvanceReceipt(next, operationKey, fingerprint, deltaSeconds, completes ? CraftAdvanceCode.ResultPending : CraftAdvanceCode.Applied,
+                next.lastAdvanceSequence = operationSequence;
+                if (completes)
+                    next.completionAdvanceSequence = operationSequence;
+                AddAdvanceReceipt(next, operationSequence, operationKey, fingerprint, deltaSeconds, completes ? CraftAdvanceCode.ResultPending : CraftAdvanceCode.Applied,
                     completes ? expectedResultId : null);
 
                 if (!_state.UpdateCraftExecution(next))
@@ -758,10 +790,22 @@ namespace GuildIdle.Crafting
             }
 
             var operationKeys = new HashSet<string>(StringComparer.Ordinal);
+            var operationSequences = new HashSet<long>();
+            var previousSequence = 0L;
+            if (execution.lastAdvanceSequence < 0 || execution.completionAdvanceSequence < 0 ||
+                (execution.status == CraftExecutionStatus.Running && execution.completionAdvanceSequence != 0) ||
+                (execution.status == CraftExecutionStatus.ResultPending &&
+                 (execution.completionAdvanceSequence <= 0 || execution.completionAdvanceSequence != execution.lastAdvanceSequence)))
+            {
+                error = "CraftExecution advance sequence state is invalid.";
+                return false;
+            }
             foreach (var receipt in execution.advanceReceipts ?? Array.Empty<CraftAdvanceReceiptSaveData>())
             {
                 var completed = string.Equals(receipt?.code, CraftAdvanceCode.ResultPending, StringComparison.Ordinal);
-                if (receipt == null || string.IsNullOrWhiteSpace(receipt.operationKey) ||
+                if (receipt == null || receipt.operationSequence <= 0 || receipt.operationSequence > execution.lastAdvanceSequence ||
+                    receipt.operationSequence <= previousSequence || !operationSequences.Add(receipt.operationSequence) ||
+                    string.IsNullOrWhiteSpace(receipt.operationKey) ||
                     string.IsNullOrWhiteSpace(receipt.fingerprint) || !operationKeys.Add(receipt.operationKey) ||
                     double.IsNaN(receipt.deltaSeconds) || double.IsInfinity(receipt.deltaSeconds) || receipt.deltaSeconds < 0d ||
                     float.IsNaN(receipt.progressSeconds) || float.IsInfinity(receipt.progressSeconds) || receipt.progressSeconds < 0f ||
@@ -775,6 +819,12 @@ namespace GuildIdle.Crafting
                     error = "CraftExecution advance receipts are invalid.";
                     return false;
                 }
+                if (completed != (receipt.operationSequence == execution.completionAdvanceSequence))
+                {
+                    error = "CraftExecution completion sequence does not match its receipt.";
+                    return false;
+                }
+                previousSequence = receipt.operationSequence;
             }
             return true;
         }
@@ -791,8 +841,16 @@ namespace GuildIdle.Crafting
             return null;
         }
 
+        private static CraftAdvanceReceiptSaveData FindAdvanceReceipt(CraftExecutionSaveData execution, long operationSequence)
+        {
+            foreach (var receipt in execution?.advanceReceipts ?? Array.Empty<CraftAdvanceReceiptSaveData>())
+                if (receipt != null && receipt.operationSequence == operationSequence) return receipt;
+            return null;
+        }
+
         private static void AddAdvanceReceipt(
             CraftExecutionSaveData execution,
+            long operationSequence,
             string operationKey,
             string fingerprint,
             double deltaSeconds,
@@ -803,6 +861,7 @@ namespace GuildIdle.Crafting
             {
                 new CraftAdvanceReceiptSaveData
                 {
+                    operationSequence = operationSequence,
                     operationKey = operationKey,
                     fingerprint = fingerprint,
                     deltaSeconds = deltaSeconds,
@@ -816,8 +875,20 @@ namespace GuildIdle.Crafting
             execution.advanceReceipts = receipts.ToArray();
         }
 
-        private static string BuildAdvanceFingerprint(string executionId, double deltaSeconds) =>
-            $"execution:{Part(executionId)}|delta:{deltaSeconds.ToString("R", CultureInfo.InvariantCulture)}";
+        private static string BuildAdvanceFingerprint(string executionId, double deltaSeconds, long operationSequence) =>
+            $"execution:{Part(executionId)}|delta:{deltaSeconds.ToString("R", CultureInfo.InvariantCulture)}|sequence:{operationSequence.ToString(CultureInfo.InvariantCulture)}";
+
+        private static bool MatchesAdvanceFingerprint(
+            CraftAdvanceReceiptSaveData receipt,
+            string executionId,
+            double deltaSeconds,
+            string currentFingerprint)
+        {
+            if (string.Equals(receipt?.fingerprint, currentFingerprint, StringComparison.Ordinal))
+                return true;
+            var legacyFingerprint = $"execution:{Part(executionId)}|delta:{deltaSeconds.ToString("R", CultureInfo.InvariantCulture)}";
+            return string.Equals(receipt?.fingerprint, legacyFingerprint, StringComparison.Ordinal);
+        }
 
         private static string BuildCraftResultId(string executionId) =>
             $"result:{PendingResultSourceType.Craft}:{executionId}";
@@ -831,6 +902,7 @@ namespace GuildIdle.Crafting
                 Completed = execution?.status == CraftExecutionStatus.ResultPending,
                 Code = code,
                 ExecutionId = execution?.executionId,
+                OperationSequence = execution?.lastAdvanceSequence ?? 0,
                 ProgressSeconds = execution?.progressSeconds ?? 0f,
                 PendingResultId = execution?.pendingResultId,
                 Execution = CloneExecution(execution)
@@ -845,6 +917,8 @@ namespace GuildIdle.Crafting
             execution.status = completed ? CraftExecutionStatus.ResultPending : CraftExecutionStatus.Running;
             execution.completionRecorded = completed;
             execution.pendingResultId = receipt.pendingResultId;
+            execution.lastAdvanceSequence = receipt.operationSequence;
+            execution.completionAdvanceSequence = completed ? receipt.operationSequence : 0;
 
             var receiptCount = 0;
             foreach (var saved in execution.advanceReceipts ?? Array.Empty<CraftAdvanceReceiptSaveData>())
@@ -867,9 +941,28 @@ namespace GuildIdle.Crafting
                 Completed = completed,
                 Code = receipt.code,
                 ExecutionId = current.executionId,
+                OperationSequence = receipt.operationSequence,
                 ProgressSeconds = receipt.progressSeconds,
                 PendingResultId = receipt.pendingResultId,
                 Execution = execution
+            };
+        }
+
+        private static CraftAdvanceResult AdvanceEvictedReplay(CraftExecutionSaveData execution, long operationSequence)
+        {
+            var completed = execution.status == CraftExecutionStatus.ResultPending &&
+                            execution.completionAdvanceSequence == operationSequence;
+            return new CraftAdvanceResult
+            {
+                Success = true,
+                Replayed = true,
+                Completed = completed,
+                Code = completed ? CraftAdvanceCode.ResultPending : CraftAdvanceCode.Applied,
+                ExecutionId = execution.executionId,
+                OperationSequence = operationSequence,
+                ProgressSeconds = execution.progressSeconds,
+                PendingResultId = completed ? execution.pendingResultId : null,
+                Execution = CloneExecution(execution)
             };
         }
 
@@ -1002,6 +1095,7 @@ namespace GuildIdle.Crafting
                 advanceReceipts[index] = value == null ? null : new CraftAdvanceReceiptSaveData
                 {
                     operationKey = value.operationKey,
+                    operationSequence = value.operationSequence,
                     fingerprint = value.fingerprint,
                     deltaSeconds = value.deltaSeconds,
                     progressSeconds = value.progressSeconds,
@@ -1038,6 +1132,8 @@ namespace GuildIdle.Crafting
                 startFingerprint = source.startFingerprint,
                 pendingResultId = source.pendingResultId,
                 completionRecorded = source.completionRecorded,
+                lastAdvanceSequence = source.lastAdvanceSequence,
+                completionAdvanceSequence = source.completionAdvanceSequence,
                 advanceReceipts = advanceReceipts,
                 startedAtUnixSeconds = source.startedAtUnixSeconds
             };

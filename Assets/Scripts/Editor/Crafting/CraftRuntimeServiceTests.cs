@@ -74,9 +74,9 @@ namespace GuildIdle.Editor.Crafting
             var state = StartBasic(out var runtime, out var executionId);
             var saves = _storage.SaveCalls;
 
-            var first = runtime.Advance(executionId, 4d, "advance-partial");
-            var replay = runtime.Advance(executionId, 4d, "advance-partial");
-            var conflict = runtime.Advance(executionId, 1d, "advance-partial");
+            var first = runtime.Advance(executionId, 4d, "advance-partial", 1);
+            var replay = runtime.Advance(executionId, 4d, "advance-partial", 1);
+            var conflict = runtime.Advance(executionId, 1d, "advance-partial", 1);
 
             Assert.That(first.Success, Is.True);
             Assert.That(first.Code, Is.EqualTo(CraftAdvanceCode.Applied));
@@ -99,11 +99,11 @@ namespace GuildIdle.Editor.Crafting
         public void PartialAdvanceReplayAfterCompletionReturnsOriginalOperationResult()
         {
             var state = StartBasic(out var runtime, out var executionId);
-            var partial = runtime.Advance(executionId, 4d, "advance-replay-partial");
-            var completed = runtime.Advance(executionId, 6d, "advance-replay-complete");
+            var partial = runtime.Advance(executionId, 4d, "advance-replay-partial", 1);
+            var completed = runtime.Advance(executionId, 6d, "advance-replay-complete", 2);
             var beforeReplay = JsonUtility.ToJson(state.ToSaveData());
 
-            var replay = runtime.Advance(executionId, 4d, "advance-replay-partial");
+            var replay = runtime.Advance(executionId, 4d, "advance-replay-partial", 1);
 
             Assert.That(completed.Success, Is.True);
             Assert.That(completed.Completed, Is.True);
@@ -127,7 +127,7 @@ namespace GuildIdle.Editor.Crafting
             var runtime = Runtime(state, resultPendingEventSink: events.Add);
             var saves = _storage.SaveCalls;
 
-            var completed = runtime.Advance(executionId, 10d, "advance-complete");
+            var completed = runtime.Advance(executionId, 10d, "advance-complete", 1);
 
             Assert.That(completed.Success, Is.True);
             Assert.That(completed.Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
@@ -173,7 +173,7 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(1));
             AssertEntry(claimed.Result, RewardType.SkillExp, "skill_crafting", 1, PendingResultOrigin.CraftOutput);
             AssertCraftResultStillPending(state, executionId, result.resultId);
-            Assert.That(Runtime(state).Advance(executionId, 1d, "advance-after-partial-claim").Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
+            Assert.That(Runtime(state).Advance(executionId, 1d, "advance-after-partial-claim", 2).Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
         }
 
         [Test]
@@ -194,7 +194,7 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.Zero);
             AssertEntry(discarded.Result, RewardType.SkillExp, "skill_crafting", 1, PendingResultOrigin.CraftOutput);
             AssertCraftResultStillPending(state, executionId, result.resultId);
-            Assert.That(Runtime(state).Advance(executionId, 1d, "advance-after-partial-discard").Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
+            Assert.That(Runtime(state).Advance(executionId, 1d, "advance-after-partial-discard", 2).Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
         }
 
         [Test]
@@ -408,10 +408,10 @@ namespace GuildIdle.Editor.Crafting
         {
             var state = StartBasic(out var runtime, out var executionId);
 
-            var completed = runtime.Advance(executionId, double.MaxValue, "advance-large");
+            var completed = runtime.Advance(executionId, double.MaxValue, "advance-large", 1);
             var saves = _storage.SaveCalls;
-            var replay = runtime.Advance(executionId, double.MaxValue, "advance-large");
-            var further = runtime.Advance(executionId, 100d, "advance-after-completion");
+            var replay = runtime.Advance(executionId, double.MaxValue, "advance-large", 1);
+            var further = runtime.Advance(executionId, 100d, "advance-after-completion", 2);
 
             Assert.That(completed.Success, Is.True);
             Assert.That(replay.Success, Is.True);
@@ -426,17 +426,33 @@ namespace GuildIdle.Editor.Crafting
         public void ZeroDeltaIsAcceptedAndClockRollbackCallerCannotReduceProgress()
         {
             var state = StartBasic(out var runtime, out var executionId);
-            Assert.That(runtime.Advance(executionId, 3d, "advance-first").Success, Is.True);
+            Assert.That(runtime.Advance(executionId, 3d, "advance-first", 1).Success, Is.True);
 
-            var zero = runtime.Advance(executionId, 0d, "advance-zero");
-            var replayConflict = runtime.Advance(executionId, 1d, "advance-zero");
-            var negative = runtime.Advance(executionId, -1d, "advance-negative");
+            var zero = runtime.Advance(executionId, 0d, "advance-zero", 2);
+            var replayConflict = runtime.Advance(executionId, 1d, "advance-zero", 2);
+            var negative = runtime.Advance(executionId, -1d, "advance-negative", 3);
 
             Assert.That(zero.Success, Is.True);
             Assert.That(zero.ProgressSeconds, Is.EqualTo(3f));
             Assert.That(replayConflict.Code, Is.EqualTo(CraftAdvanceCode.OperationReplayConflict));
             Assert.That(negative.Code, Is.EqualTo(CraftAdvanceCode.InvalidDelta));
             Assert.That(state.GetCraftExecution(executionId).progressSeconds, Is.EqualTo(3f));
+        }
+
+        [Test]
+        public void AdvanceWithoutSequenceAndAdvanceWithGapAreRejectedWithoutMutation()
+        {
+            var state = StartBasic(out var runtime, out var executionId);
+            var before = JsonUtility.ToJson(state.ToSaveData());
+
+            var missingSequence = runtime.Advance(executionId, 1d, "advance-without-sequence");
+            var sequenceGap = runtime.Advance(executionId, 1d, "advance-sequence-gap", 2);
+
+            Assert.That(missingSequence.Success, Is.False);
+            Assert.That(missingSequence.Code, Is.EqualTo(CraftAdvanceCode.OperationSequenceRequired));
+            Assert.That(sequenceGap.Success, Is.False);
+            Assert.That(sequenceGap.Code, Is.EqualTo(CraftAdvanceCode.OperationSequenceGap));
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
         }
 
         [Test]
@@ -449,7 +465,7 @@ namespace GuildIdle.Editor.Crafting
             definition.outputCount = 7;
             definition.skillExp = 99;
 
-            var completed = runtime.Advance(executionId, 10d, "advance-snapshot");
+            var completed = runtime.Advance(executionId, 10d, "advance-snapshot", 1);
 
             Assert.That(completed.Success, Is.True);
             var result = state.PendingResults.Get(completed.PendingResultId);
@@ -464,7 +480,7 @@ namespace GuildIdle.Editor.Crafting
             FillStorage(state);
             Assert.That(state.Storage.GetSnapshot().FreeSlots, Is.Zero);
 
-            var completed = runtime.Advance(executionId, 10d, "advance-full-storage");
+            var completed = runtime.Advance(executionId, 10d, "advance-full-storage", 1);
 
             Assert.That(completed.Success, Is.True);
             Assert.That(state.PendingResults.Get(completed.PendingResultId), Is.Not.Null);
@@ -482,7 +498,7 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(started.Success, Is.True);
             var saves = _storage.SaveCalls;
 
-            var advanced = runtime.Advance(started.ExecutionId, 10d, "advance-invalid-reward");
+            var advanced = runtime.Advance(started.ExecutionId, 10d, "advance-invalid-reward", 1);
 
             Assert.That(advanced.Success, Is.False);
             Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.RewardValidationFailure));
@@ -496,7 +512,7 @@ namespace GuildIdle.Editor.Crafting
             var state = StartBasic(out _, out var executionId);
             var fault = new FaultInjectingCraftState(new PlayerStateCraftAdapter(state)) { FailPendingResultCreation = true };
 
-            var advanced = new CraftRuntimeService(_database.Crafts, fault).Advance(executionId, 10d, "advance-result-failure");
+            var advanced = new CraftRuntimeService(_database.Crafts, fault).Advance(executionId, 10d, "advance-result-failure", 1);
 
             Assert.That(advanced.Success, Is.False);
             Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.PendingResultFailure));
@@ -513,7 +529,7 @@ namespace GuildIdle.Editor.Crafting
             _storage.ThrowOnSaveCall = _storage.SaveCalls + 1;
             LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save flush failure");
 
-            var advanced = runtime.Advance(executionId, 10d, "advance-save-failure");
+            var advanced = runtime.Advance(executionId, 10d, "advance-save-failure", 1);
 
             Assert.That(advanced.Success, Is.False);
             Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.SaveFailure));
@@ -528,18 +544,18 @@ namespace GuildIdle.Editor.Crafting
         public void SaveLoadBeforeAndAfterBoundaryDoesNotDuplicateCraftResult()
         {
             var state = StartBasic(out var runtime, out var executionId);
-            Assert.That(runtime.Advance(executionId, 4d, "advance-before-load").Success, Is.True);
+            Assert.That(runtime.Advance(executionId, 4d, "advance-before-load", 1).Success, Is.True);
 
             var loadedBefore = SaveService.Load(_factory, _storage);
             var loadedRuntime = Runtime(loadedBefore);
-            var replay = loadedRuntime.Advance(executionId, 4d, "advance-before-load");
-            var completed = loadedRuntime.Advance(executionId, 6d, "advance-after-load");
+            var replay = loadedRuntime.Advance(executionId, 4d, "advance-before-load", 1);
+            var completed = loadedRuntime.Advance(executionId, 6d, "advance-after-load", 2);
             Assert.That(replay.Success, Is.True);
             Assert.That(replay.Replayed, Is.True);
             Assert.That(completed.Success, Is.True);
 
             var loadedAfter = SaveService.Load(_factory, _storage);
-            var noOp = Runtime(loadedAfter).Advance(executionId, 10d, "advance-loaded-result");
+            var noOp = Runtime(loadedAfter).Advance(executionId, 10d, "advance-loaded-result", 3);
 
             Assert.That(noOp.Success, Is.True);
             Assert.That(noOp.Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
@@ -548,16 +564,38 @@ namespace GuildIdle.Editor.Crafting
         }
 
         [Test]
+        public void CompletionBoundarySequenceReplaysAfterReceiptEvictionAndLoad()
+        {
+            var state = CompleteBasic(out var executionId, out var result);
+            var save = state.ToSaveData();
+            save.craftRuntime.executions[0].advanceReceipts = Array.Empty<CraftAdvanceReceiptSaveData>();
+            var loaded = _factory.Create(save);
+            var events = new List<CraftResultPendingEvent>();
+            var before = JsonUtility.ToJson(loaded.ToSaveData());
+
+            var replay = Runtime(loaded, resultPendingEventSink: events.Add)
+                .Advance(executionId, 10d, "evicted-completion-replay", 1);
+
+            Assert.That(replay.Success, Is.True, replay.Message);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(replay.Completed, Is.True);
+            Assert.That(replay.Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
+            Assert.That(replay.PendingResultId, Is.EqualTo(result.resultId));
+            Assert.That(JsonUtility.ToJson(loaded.ToSaveData()), Is.EqualTo(before));
+            Assert.That(events, Is.Empty);
+        }
+
+        [Test]
         public void MissingLinkedResultAfterLoadIsIntegrityFailureAndIsNotRerolled()
         {
             var state = StartBasic(out var runtime, out var executionId);
-            Assert.That(runtime.Advance(executionId, 10d, "advance-before-corruption").Success, Is.True);
+            Assert.That(runtime.Advance(executionId, 10d, "advance-before-corruption", 1).Success, Is.True);
             var corrupted = state.ToSaveData();
             corrupted.pendingResults = Array.Empty<PendingResultSaveData>();
             LogAssert.Expect(LogType.Error, $"[PlayerState] Craft execution '{executionId}' has a Pending source but no linked PendingResult and remains blocked for manual recovery.");
             var corruptedState = _factory.Create(corrupted);
 
-            var advanced = Runtime(corruptedState).Advance(executionId, 1d, "advance-corrupt-result");
+            var advanced = Runtime(corruptedState).Advance(executionId, 1d, "advance-corrupt-result", 2);
 
             Assert.That(advanced.Success, Is.False);
             Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.DataIntegrityFailure));
@@ -619,7 +657,7 @@ namespace GuildIdle.Editor.Crafting
             var loaded = _factory.Create(corrupted);
             var beforeAdvance = JsonUtility.ToJson(loaded.ToSaveData());
 
-            var advanced = Runtime(loaded).Advance(executionId, 1d, $"advance-corrupt-{corruption}");
+            var advanced = Runtime(loaded).Advance(executionId, 1d, $"advance-corrupt-{corruption}", 2);
 
             Assert.That(advanced.Success, Is.False);
             Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.DataIntegrityFailure));
@@ -789,7 +827,7 @@ namespace GuildIdle.Editor.Crafting
             savedResult.entries = new[] { skillExp };
             var loaded = _factory.Create(saved);
 
-            var advanced = Runtime(loaded).Advance(executionId, 1d, "advance-valid-partial-result");
+            var advanced = Runtime(loaded).Advance(executionId, 1d, "advance-valid-partial-result", 2);
 
             Assert.That(advanced.Success, Is.True);
             Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.ResultPending));
@@ -802,10 +840,10 @@ namespace GuildIdle.Editor.Crafting
         public void OnlineAndOfflineCallersShareTheSameAdvanceApi()
         {
             var state = StartBasic(out var onlineRuntime, out var executionId);
-            Assert.That(onlineRuntime.Advance(executionId, 4d, "online-delta").Success, Is.True);
+            Assert.That(onlineRuntime.Advance(executionId, 4d, "online-delta", 1).Success, Is.True);
 
             var offlineRuntime = Runtime(state);
-            var completed = offlineRuntime.Advance(executionId, 6d, "offline-delta");
+            var completed = offlineRuntime.Advance(executionId, 6d, "offline-delta", 2);
 
             Assert.That(completed.Success, Is.True);
             Assert.That(completed.Completed, Is.True);
@@ -821,7 +859,7 @@ namespace GuildIdle.Editor.Crafting
             var runtime = Runtime(state);
             var started = runtime.Start(Request("cook_roasted_rabbit_meat", "start-cook-rabbit"));
 
-            var completed = runtime.Advance(started.ExecutionId, 10d, "advance-cook-rabbit");
+            var completed = runtime.Advance(started.ExecutionId, 10d, "advance-cook-rabbit", 1);
 
             Assert.That(completed.Success, Is.True);
             var result = state.PendingResults.Get(completed.PendingResultId);
@@ -1001,7 +1039,7 @@ namespace GuildIdle.Editor.Crafting
             try
             {
                 var result = PlayerRuntimeComposition.CreateCraftRuntimeService(state)
-                    .Advance(executionId, 10d, "advance-production-result");
+                    .Advance(executionId, 10d, "advance-production-result", 1);
 
                 Assert.That(result.Success, Is.True);
                 Assert.That(events, Has.Count.EqualTo(1));
@@ -1329,7 +1367,7 @@ namespace GuildIdle.Editor.Crafting
         private PlayerState CompleteBasic(out string executionId, out PendingResultSaveData result)
         {
             var state = StartBasic(out var runtime, out executionId);
-            var completed = runtime.Advance(executionId, 10d, $"complete-basic:{Guid.NewGuid():N}");
+            var completed = runtime.Advance(executionId, 10d, $"complete-basic:{Guid.NewGuid():N}", 1);
             Assert.That(completed.Success, Is.True);
             result = state.PendingResults.Get(completed.PendingResultId);
             Assert.That(result, Is.Not.Null);

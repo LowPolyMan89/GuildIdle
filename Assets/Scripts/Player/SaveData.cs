@@ -197,6 +197,7 @@ namespace GuildIdle.Player
         public string sourceExecutionId;
         public string resultId;
         public string state = PendingResultSourceState.Pending;
+        public long resolutionSequence;
     }
 
     [Serializable]

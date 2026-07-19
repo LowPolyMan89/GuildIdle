@@ -35,6 +35,7 @@ namespace GuildIdle.Player
         private readonly Dictionary<string, QuestInstanceSaveData> _questInstances = new Dictionary<string, QuestInstanceSaveData>(StringComparer.Ordinal);
         private readonly Dictionary<string, PendingResultSourceReferenceSaveData> _resultSources = new Dictionary<string, PendingResultSourceReferenceSaveData>(StringComparer.Ordinal);
         private readonly List<OperationReceiptSaveData> _operationReceipts = new List<OperationReceiptSaveData>();
+        private long _lastResultSourceResolutionSequence;
         private Func<bool> _saveHandler;
         private string _currentStageId;
 
@@ -1242,21 +1243,23 @@ namespace GuildIdle.Player
 
             foreach (var execution in runtime.executions)
             {
-                if (!ValidateCraftExecution(execution) || _craftExecutions.ContainsKey(execution.executionId) ||
-                    _activityExecutions.ContainsKey(execution.executionId))
+                var stored = CloneCraftExecution(execution);
+                if (NormalizeLegacyCraftAdvanceSequences(stored))
+                    WasNormalized = true;
+                if (!ValidateCraftExecution(stored) || _craftExecutions.ContainsKey(stored.executionId) ||
+                    _activityExecutions.ContainsKey(stored.executionId))
                 {
                     WasNormalized = true;
                     continue;
                 }
-                if (!_heroes.TryGetValue(execution.heroId, out var hero) ||
+                if (!_heroes.TryGetValue(stored.heroId, out var hero) ||
                     !string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
                 {
-                    Debug.LogError($"[PlayerState] Ignoring craft execution '{execution.executionId}': hero '{execution.heroId}' is already busy or missing.");
+                    Debug.LogError($"[PlayerState] Ignoring craft execution '{stored.executionId}': hero '{stored.heroId}' is already busy or missing.");
                     WasNormalized = true;
                     continue;
                 }
 
-                var stored = CloneCraftExecution(execution);
                 if (stored.advanceReceipts.Length > OperationReceiptRetentionLimit)
                 {
                     var retained = new CraftAdvanceReceiptSaveData[OperationReceiptRetentionLimit];
@@ -1297,6 +1300,9 @@ namespace GuildIdle.Player
         private void LoadResultSourceReferences(PendingResultSourceReferenceSaveData[] sources)
         {
             _resultSources.Clear();
+            _lastResultSourceResolutionSequence = 0;
+            var resolutionSequences = new HashSet<long>();
+            var requiresSequenceNormalization = false;
             foreach (var source in sources ?? Array.Empty<PendingResultSourceReferenceSaveData>())
             {
                 if (source == null || string.IsNullOrWhiteSpace(source.sourceType) || string.IsNullOrWhiteSpace(source.sourceExecutionId) ||
@@ -1312,8 +1318,23 @@ namespace GuildIdle.Player
                     WasNormalized = true;
                     continue;
                 }
-                _resultSources.Add(key, CloneResultSourceReference(source));
+                var stored = CloneResultSourceReference(source);
+                if (string.Equals(stored.state, PendingResultSourceState.Resolved, StringComparison.Ordinal))
+                {
+                    if (stored.resolutionSequence <= 0 || !resolutionSequences.Add(stored.resolutionSequence))
+                        requiresSequenceNormalization = true;
+                    else
+                        _lastResultSourceResolutionSequence = Math.Max(_lastResultSourceResolutionSequence, stored.resolutionSequence);
+                }
+                else if (stored.resolutionSequence != 0)
+                {
+                    stored.resolutionSequence = 0;
+                    WasNormalized = true;
+                }
+                _resultSources.Add(key, stored);
             }
+            if (requiresSequenceNormalization)
+                NormalizeResultSourceResolutionSequences();
         }
 
         internal bool TryGetOperationReceipt(string aggregateId, string operationId, out OperationReceiptSaveData receipt)
@@ -1400,6 +1421,7 @@ namespace GuildIdle.Player
                 return false;
             source.state = PendingResultSourceState.Resolved;
             source.resultId = result.resultId;
+            source.resolutionSequence = NextResultSourceResolutionSequence();
             TrimResolvedResultSources(ResultSourceKey(result.sourceType, result.sourceExecutionId));
             return true;
         }
@@ -1419,27 +1441,61 @@ namespace GuildIdle.Player
 
         private bool TrimResolvedResultSources(string protectedSourceKey = null)
         {
-            var resolvedKeys = new List<string>();
+            var resolvedKeys = new List<KeyValuePair<string, PendingResultSourceReferenceSaveData>>();
             foreach (var pair in _resultSources)
             {
                 if (pair.Value != null && string.Equals(pair.Value.state, PendingResultSourceState.Resolved, StringComparison.Ordinal))
-                    resolvedKeys.Add(pair.Key);
+                    resolvedKeys.Add(pair);
             }
             if (resolvedKeys.Count <= ResolvedResultSourceRetentionLimit)
                 return false;
 
-            resolvedKeys.Sort(StringComparer.Ordinal);
+            resolvedKeys.Sort((left, right) =>
+            {
+                var sequenceOrder = left.Value.resolutionSequence.CompareTo(right.Value.resolutionSequence);
+                return sequenceOrder != 0 ? sequenceOrder : StringComparer.Ordinal.Compare(left.Key, right.Key);
+            });
             var removeCount = resolvedKeys.Count - ResolvedResultSourceRetentionLimit;
-            foreach (var key in resolvedKeys)
+            var removed = false;
+            foreach (var pair in resolvedKeys)
             {
                 if (removeCount == 0)
                     break;
-                if (string.Equals(key, protectedSourceKey, StringComparison.Ordinal))
+                if (string.Equals(pair.Key, protectedSourceKey, StringComparison.Ordinal))
                     continue;
-                if (_resultSources.Remove(key))
+                if (_resultSources.Remove(pair.Key))
+                {
                     removeCount--;
+                    removed = true;
+                }
             }
-            return removeCount < resolvedKeys.Count - ResolvedResultSourceRetentionLimit;
+            return removed;
+        }
+
+        private long NextResultSourceResolutionSequence()
+        {
+            if (_lastResultSourceResolutionSequence == long.MaxValue)
+                NormalizeResultSourceResolutionSequences();
+            return ++_lastResultSourceResolutionSequence;
+        }
+
+        private void NormalizeResultSourceResolutionSequences()
+        {
+            var resolved = new List<KeyValuePair<string, PendingResultSourceReferenceSaveData>>();
+            foreach (var pair in _resultSources)
+                if (pair.Value != null && string.Equals(pair.Value.state, PendingResultSourceState.Resolved, StringComparison.Ordinal))
+                    resolved.Add(pair);
+            resolved.Sort((left, right) =>
+            {
+                var leftSequence = left.Value.resolutionSequence > 0 ? left.Value.resolutionSequence : long.MaxValue;
+                var rightSequence = right.Value.resolutionSequence > 0 ? right.Value.resolutionSequence : long.MaxValue;
+                var sequenceOrder = leftSequence.CompareTo(rightSequence);
+                return sequenceOrder != 0 ? sequenceOrder : StringComparer.Ordinal.Compare(left.Key, right.Key);
+            });
+            _lastResultSourceResolutionSequence = 0;
+            foreach (var pair in resolved)
+                pair.Value.resolutionSequence = ++_lastResultSourceResolutionSequence;
+            WasNormalized = true;
         }
 
         internal void ReconcileCraftExecutions()
@@ -1860,6 +1916,25 @@ namespace GuildIdle.Player
             return list.ToArray();
         }
 
+        private static bool NormalizeLegacyCraftAdvanceSequences(CraftExecutionSaveData execution)
+        {
+            if (execution == null || execution.lastAdvanceSequence != 0 || execution.completionAdvanceSequence != 0)
+                return false;
+
+            var receipts = execution.advanceReceipts ?? Array.Empty<CraftAdvanceReceiptSaveData>();
+            if (receipts.Length == 0)
+                return false;
+            foreach (var receipt in receipts)
+                if (receipt == null || receipt.operationSequence != 0) return false;
+
+            for (var index = 0; index < receipts.Length; index++)
+                receipts[index].operationSequence = index + 1L;
+            execution.lastAdvanceSequence = receipts.Length;
+            if (execution.status == CraftExecutionStatus.ResultPending && execution.completionRecorded)
+                execution.completionAdvanceSequence = execution.lastAdvanceSequence;
+            return true;
+        }
+
         private bool ValidateCraftExecution(CraftExecutionSaveData execution)
         {
             if (execution == null || string.IsNullOrWhiteSpace(execution.executionId) ||
@@ -1893,11 +1968,25 @@ namespace GuildIdle.Player
                 Debug.LogError($"[PlayerState] ResultPending craft execution '{execution.executionId}' has invalid completion state.");
                 return false;
             }
+            var completionPrepared = execution.status == CraftExecutionStatus.Running && execution.completionAdvanceSequence > 0;
+            if (execution.lastAdvanceSequence < 0 || execution.completionAdvanceSequence < 0 ||
+                (completionPrepared &&
+                 (execution.completionAdvanceSequence != execution.lastAdvanceSequence || execution.progressSeconds < execution.durationSeconds)) ||
+                (execution.status == CraftExecutionStatus.ResultPending &&
+                 (execution.completionAdvanceSequence <= 0 || execution.completionAdvanceSequence != execution.lastAdvanceSequence)))
+            {
+                Debug.LogError($"[PlayerState] Craft execution '{execution.executionId}' has invalid advance sequence state.");
+                return false;
+            }
             var advanceOperationKeys = new HashSet<string>(StringComparer.Ordinal);
+            var advanceOperationSequences = new HashSet<long>();
+            var previousAdvanceSequence = 0L;
             foreach (var receipt in execution.advanceReceipts ?? Array.Empty<CraftAdvanceReceiptSaveData>())
             {
                 var completed = string.Equals(receipt?.code, CraftAdvanceCode.ResultPending, StringComparison.Ordinal);
-                if (receipt == null || string.IsNullOrWhiteSpace(receipt.operationKey) ||
+                if (receipt == null || receipt.operationSequence <= 0 || receipt.operationSequence > execution.lastAdvanceSequence ||
+                    receipt.operationSequence <= previousAdvanceSequence || !advanceOperationSequences.Add(receipt.operationSequence) ||
+                    string.IsNullOrWhiteSpace(receipt.operationKey) ||
                     string.IsNullOrWhiteSpace(receipt.fingerprint) || !advanceOperationKeys.Add(receipt.operationKey) ||
                     double.IsNaN(receipt.deltaSeconds) || double.IsInfinity(receipt.deltaSeconds) || receipt.deltaSeconds < 0d ||
                     float.IsNaN(receipt.progressSeconds) || float.IsInfinity(receipt.progressSeconds) || receipt.progressSeconds < 0f ||
@@ -1906,8 +1995,10 @@ namespace GuildIdle.Player
                     (completed != !string.IsNullOrWhiteSpace(receipt.pendingResultId)) ||
                     (completed && (receipt.progressSeconds < execution.durationSeconds ||
                                    !string.Equals(receipt.pendingResultId, $"result:{PendingResultSourceType.Craft}:{execution.executionId}", StringComparison.Ordinal))) ||
-                    (!completed && receipt.progressSeconds >= execution.durationSeconds))
+                    (!completed && receipt.progressSeconds >= execution.durationSeconds) ||
+                    (completed != (receipt.operationSequence == execution.completionAdvanceSequence)))
                     return false;
+                previousAdvanceSequence = receipt.operationSequence;
             }
             var costIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var cost in execution.paidCosts ?? Array.Empty<CraftPaidCostSaveData>())
@@ -1968,6 +2059,7 @@ namespace GuildIdle.Player
                 var value = source.advanceReceipts[index];
                 advanceReceipts[index] = value == null ? null : new CraftAdvanceReceiptSaveData
                 {
+                    operationSequence = value.operationSequence,
                     operationKey = value.operationKey,
                     fingerprint = value.fingerprint,
                     deltaSeconds = value.deltaSeconds,
@@ -2005,6 +2097,8 @@ namespace GuildIdle.Player
                 startFingerprint = source.startFingerprint,
                 pendingResultId = source.pendingResultId,
                 completionRecorded = source.completionRecorded,
+                lastAdvanceSequence = source.lastAdvanceSequence,
+                completionAdvanceSequence = source.completionAdvanceSequence,
                 advanceReceipts = advanceReceipts,
                 startedAtUnixSeconds = source.startedAtUnixSeconds
             };
@@ -2508,7 +2602,8 @@ namespace GuildIdle.Player
             sourceId = source.sourceId,
             sourceExecutionId = source.sourceExecutionId,
             resultId = source.resultId,
-            state = source.state
+            state = source.state,
+            resolutionSequence = source.resolutionSequence
         };
 
         private static string ResultSourceKey(string sourceType, string sourceExecutionId) => $"{sourceType}\n{sourceExecutionId}";
