@@ -768,6 +768,13 @@ namespace GuildIdle.Player
             return true;
         }
 
+        internal bool RemoveCraftExecution(string executionId)
+        {
+            if (string.IsNullOrWhiteSpace(executionId) || !_craftExecutions.ContainsKey(executionId))
+                return false;
+            return _craftExecutions.Remove(executionId);
+        }
+
         private void Load(SaveData saveData)
         {
             saveData ??= new SaveData();
@@ -1377,6 +1384,36 @@ namespace GuildIdle.Player
             source.state = PendingResultSourceState.Resolved;
             source.resultId = result.resultId;
             return true;
+        }
+
+        internal void ReconcileCraftExecutions()
+        {
+            foreach (var executionId in new List<string>(_craftExecutions.Keys))
+            {
+                var execution = _craftExecutions[executionId];
+                if (execution.status != CraftExecutionStatus.ResultPending || !execution.completionRecorded ||
+                    string.IsNullOrWhiteSpace(execution.pendingResultId) || PendingResults.Get(execution.pendingResultId) != null ||
+                    !_resultSources.TryGetValue(ResultSourceKey(PendingResultSourceType.Craft, execution.executionId), out var source) ||
+                    !string.Equals(source.sourceId, execution.craftId, StringComparison.Ordinal) ||
+                    !string.Equals(source.resultId, execution.pendingResultId, StringComparison.Ordinal))
+                    continue;
+
+                if (string.Equals(source.state, PendingResultSourceState.Pending, StringComparison.Ordinal))
+                {
+                    source.state = PendingResultSourceState.Blocked;
+                    WasNormalized = true;
+                    Debug.LogError($"[PlayerState] Craft execution '{execution.executionId}' has a Pending source but no linked PendingResult and remains blocked for manual recovery.");
+                    continue;
+                }
+                if (!string.Equals(source.state, PendingResultSourceState.Resolved, StringComparison.Ordinal))
+                    continue;
+
+                if (!RemoveCraftExecution(execution.executionId))
+                    continue;
+                if (string.Equals(GetHeroCurrentActivityExecutionId(execution.heroId), execution.executionId, StringComparison.Ordinal))
+                    ClearHeroBusy(execution.heroId, execution.executionId);
+                WasNormalized = true;
+            }
         }
 
         private static bool ValidateConfigsReady(string action)

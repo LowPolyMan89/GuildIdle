@@ -1059,6 +1059,16 @@ namespace GuildIdle.Crafting
     {
         public static bool Validate(CraftExecutionSaveData execution, PendingResultSaveData result)
         {
+            return Validate(execution, result, false);
+        }
+
+        public static bool ValidateForFinalization(CraftExecutionSaveData execution, PendingResultSaveData result)
+        {
+            return Validate(execution, result, true) && result.entries.Length == 0;
+        }
+
+        private static bool Validate(CraftExecutionSaveData execution, PendingResultSaveData result, bool allowEmptyEntries)
+        {
             if (execution == null || result == null ||
                 !string.Equals(result.resultId, $"result:{PendingResultSourceType.Craft}:{execution.executionId}", StringComparison.Ordinal) ||
                 !string.Equals(result.sourceType, PendingResultSourceType.Craft, StringComparison.Ordinal) ||
@@ -1066,7 +1076,7 @@ namespace GuildIdle.Crafting
                 !string.Equals(result.sourceExecutionId, execution.executionId, StringComparison.Ordinal) ||
                 !string.Equals(result.ownerHeroId, execution.heroId, StringComparison.Ordinal) ||
                 !string.Equals(result.state, PendingResultState.ResultPending, StringComparison.Ordinal) ||
-                result.entries == null || result.entries.Length == 0)
+                result.entries == null || (!allowEmptyEntries && result.entries.Length == 0))
                 return false;
 
             var itemFound = false;
@@ -1097,7 +1107,7 @@ namespace GuildIdle.Crafting
 
                 return false;
             }
-            return itemFound || skillExpFound;
+            return allowEmptyEntries || itemFound || skillExpFound;
         }
     }
 }
