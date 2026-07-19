@@ -36,6 +36,7 @@ namespace GuildIdle.Player
         private readonly Dictionary<string, PendingResultSourceReferenceSaveData> _resultSources = new Dictionary<string, PendingResultSourceReferenceSaveData>(StringComparer.Ordinal);
         private readonly List<OperationReceiptSaveData> _operationReceipts = new List<OperationReceiptSaveData>();
         private long _lastResultSourceResolutionSequence;
+        private long _lastCombatResultSequence;
         private Func<bool> _saveHandler;
         private string _currentStageId;
 
@@ -93,6 +94,7 @@ namespace GuildIdle.Player
                 craftRuntime = BuildCraftRuntimeSaveData(),
                 pendingResults = PendingResults.GetSaveData(),
                 resultSources = BuildResultSourceReferences(),
+                lastCombatResultSequence = _lastCombatResultSequence,
                 operationReceipts = BuildOperationReceipts()
             };
         }
@@ -784,6 +786,9 @@ namespace GuildIdle.Player
             saveData ??= new SaveData();
 
             _currentStageId = string.IsNullOrWhiteSpace(saveData.currentStageId) ? null : saveData.currentStageId;
+            if (saveData.lastCombatResultSequence < 0)
+                WasNormalized = true;
+            _lastCombatResultSequence = Math.Max(0, saveData.lastCombatResultSequence);
             if (saveData.storageRevision < 0)
                 WasNormalized = true;
             StorageRevision = Math.Max(0, saveData.storageRevision);
@@ -1437,6 +1442,16 @@ namespace GuildIdle.Player
                     return true;
             }
             return false;
+        }
+
+        internal long LastCombatResultSequence => _lastCombatResultSequence;
+
+        internal bool TryAcceptCombatResultSequence(long sourceSequence)
+        {
+            if (sourceSequence <= 0 || sourceSequence != _lastCombatResultSequence + 1)
+                return false;
+            _lastCombatResultSequence = sourceSequence;
+            return true;
         }
 
         private bool TrimResolvedResultSources(string protectedSourceKey = null)

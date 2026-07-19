@@ -29,6 +29,7 @@ namespace GuildIdle.Player
         public CraftRuntimeSaveData craftRuntime = new CraftRuntimeSaveData();
         public PendingResultSaveData[] pendingResults = Array.Empty<PendingResultSaveData>();
         public PendingResultSourceReferenceSaveData[] resultSources = Array.Empty<PendingResultSourceReferenceSaveData>();
+        public long lastCombatResultSequence;
         public OperationReceiptSaveData[] operationReceipts = Array.Empty<OperationReceiptSaveData>();
     }
 

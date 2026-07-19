@@ -133,6 +133,7 @@ namespace GuildIdle.Player.Editor
                 {
                     SourceId = "combat-source-a",
                     SourceExecutionId = "combat-execution-a",
+                    SourceSequence = 1,
                     Entries = new[]
                     {
                         new PendingResultEntryDraft
@@ -154,6 +155,7 @@ namespace GuildIdle.Player.Editor
                 {
                     SourceId = "combat-source-b",
                     SourceExecutionId = "combat-execution-b",
+                    SourceSequence = 2,
                     Entries = new[]
                     {
                         new PendingResultEntryDraft
@@ -842,7 +844,7 @@ namespace GuildIdle.Player.Editor
 
             var formed = _state.PendingResults.CreateCombatResult(
                 "combat-result",
-                new PendingResultDraft { SourceId = "combat-source", SourceExecutionId = "combat-a" },
+                new PendingResultDraft { SourceId = "combat-source", SourceExecutionId = "combat-a", SourceSequence = 1 },
                 transferred.StackId,
                 context,
                 consumed.StorageRevision);
@@ -862,12 +864,14 @@ namespace GuildIdle.Player.Editor
             var restored = SaveService.Load(_factory, _storage);
             var secondFormation = restored.PendingResults.CreateCombatResult(
                 "combat-result-second-attempt",
-                new PendingResultDraft { SourceId = "combat-source", SourceExecutionId = "combat-a" },
+                new PendingResultDraft { SourceId = "combat-source", SourceExecutionId = "combat-a", SourceSequence = 1 },
                 null,
                 context,
                 restored.Storage.GetSnapshot().Revision);
-            Assert.That(secondFormation.Success, Is.False);
-            Assert.That(secondFormation.Code, Is.EqualTo("SourceTransitionFailed"));
+            Assert.That(secondFormation.Success, Is.True);
+            Assert.That(secondFormation.Replayed, Is.True);
+            Assert.That(secondFormation.ResolvedImmediately, Is.True);
+            Assert.That(secondFormation.Result, Is.Null);
         }
 
         private sealed class MemorySaveStorage : ISaveStorage

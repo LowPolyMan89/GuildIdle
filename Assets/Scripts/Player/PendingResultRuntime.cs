@@ -34,6 +34,7 @@ namespace GuildIdle.Player
         public string SourceId { get; set; }
         public string SourceExecutionId { get; set; }
         public string OwnerHeroId { get; set; }
+        public long SourceSequence { get; set; }
         public string OperationContext { get; set; }
         public PendingResultEntryDraft[] Entries { get; set; } = Array.Empty<PendingResultEntryDraft>();
     }
@@ -421,6 +422,9 @@ namespace GuildIdle.Player
             if (draft == null || string.IsNullOrWhiteSpace(draft.SourceType) || string.IsNullOrWhiteSpace(draft.SourceId) ||
                 string.IsNullOrWhiteSpace(draft.SourceExecutionId) || string.IsNullOrWhiteSpace(operationId) || !_sourceLifecycle.HasHandler(draft.SourceType))
                 return FormationFailure("InvalidFormation", "Registered source type, source id, execution id and operation id are required.");
+            var isCombat = string.Equals(draft.SourceType, PendingResultSourceType.Combat, StringComparison.Ordinal);
+            if (isCombat && draft.SourceSequence <= 0)
+                return FormationFailure("CombatSequenceRequired", "Combat result formation requires a positive source sequence.");
 
             var resultId = BuildResultId(draft.SourceType, draft.SourceExecutionId);
             var aggregateId = resultId;
@@ -434,6 +438,27 @@ namespace GuildIdle.Player
 
             var before = _state.ToSaveData();
             var aggregateExisted = _results.TryGetValue(resultId, out var result);
+            if (isCombat)
+            {
+                if (draft.SourceSequence <= _state.LastCombatResultSequence)
+                {
+                    var existing = Get(resultId);
+                    return new PendingResultFormationResult
+                    {
+                        Success = true,
+                        Replayed = true,
+                        Code = existing == null ? "Resolved" : "Existing",
+                        Result = existing,
+                        ResolvedImmediately = existing == null
+                    };
+                }
+                if (aggregateExisted)
+                    return FormationFailure("SourceConflict", "A new Combat source sequence cannot append to an existing result.");
+                if (draft.SourceSequence != _state.LastCombatResultSequence + 1)
+                    return FormationFailure("CombatSequenceGap", "Combat result source sequence must be the next monotonic value.");
+                if (!_state.TryAcceptCombatResultSequence(draft.SourceSequence))
+                    return FormationFailure("CombatSequenceGap", "Combat result source sequence could not be accepted.");
+            }
             if (!aggregateExisted)
             {
                 if (expectedResultRevision != 0)
@@ -564,6 +589,7 @@ namespace GuildIdle.Player
                 SourceId = calculatedResult.SourceId,
                 SourceExecutionId = calculatedResult.SourceExecutionId,
                 OwnerHeroId = calculatedResult.OwnerHeroId,
+                SourceSequence = calculatedResult.SourceSequence,
                 Entries = calculatedResult.Entries ?? Array.Empty<PendingResultEntryDraft>(),
                 OperationContext = $"combat|{broughtStackId}|{ContextFingerprint(combatContext)}|{expectedStorageRevision}|{DraftEntriesFingerprint(calculatedResult.Entries)}"
             };
@@ -575,6 +601,12 @@ namespace GuildIdle.Player
                     return FormationFailure("OperationConflict", "operationId was already used with another combat result payload.");
                 return new PendingResultFormationResult { Success = replayReceipt.success, Replayed = true, Code = replayReceipt.code, Result = Get(resultId), ResolvedImmediately = replayReceipt.resolved };
             }
+            if (combatDraft.SourceSequence <= 0)
+                return FormationFailure("CombatSequenceRequired", "Combat result formation requires a positive source sequence.");
+            if (combatDraft.SourceSequence <= _state.LastCombatResultSequence)
+                return CreateOrAppend(operationId, combatDraft, true, 0);
+            if (combatDraft.SourceSequence != _state.LastCombatResultSequence + 1)
+                return FormationFailure("CombatSequenceGap", "Combat result source sequence must be the next monotonic value.");
             if (expectedStorageRevision != _state.StorageRevision)
                 return FormationFailure("StaleStorageRevision", $"Expected storage revision {expectedStorageRevision}, current revision is {_state.StorageRevision}.");
             var before = _state.ToSaveData();
@@ -1048,6 +1080,8 @@ namespace GuildIdle.Player
         private static string FormationFingerprint(PendingResultDraft draft, bool makeClaimable, long expectedResultRevision)
         {
             var value = $"form|{draft.SourceType}|{draft.SourceId}|{draft.SourceExecutionId}|{draft.OwnerHeroId}|{makeClaimable}|{expectedResultRevision}";
+            if (draft.SourceSequence > 0)
+                value += $"|sequence:{draft.SourceSequence}";
             if (!string.IsNullOrWhiteSpace(draft.OperationContext))
                 return value + "|" + draft.OperationContext;
             foreach (var entry in draft.Entries ?? Array.Empty<PendingResultEntryDraft>())

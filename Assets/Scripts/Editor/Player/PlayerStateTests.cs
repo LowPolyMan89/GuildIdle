@@ -609,7 +609,7 @@ namespace GuildIdle.Editor.Player
             Assert.That(repaired.ToSaveData().resultSources[0].state, Is.EqualTo(PendingResultSourceState.Blocked));
             var retry = repaired.PendingResults.CreateCombatResult(
                 "retry-corrupt-combat",
-                new PendingResultDraft { SourceId = "combat-source", SourceExecutionId = "broken" },
+                new PendingResultDraft { SourceId = "combat-source", SourceExecutionId = "broken", SourceSequence = 1 },
                 null,
                 null,
                 repaired.Storage.GetSnapshot().Revision);

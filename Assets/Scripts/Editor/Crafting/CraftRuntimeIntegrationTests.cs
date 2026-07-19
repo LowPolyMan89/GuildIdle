@@ -395,7 +395,7 @@ namespace GuildIdle.Editor.Crafting
         }
 
         [Test]
-        public void MixedCraftAndCombatResolvedSourcesRetainNewestBySequenceAndEvictedClaimCannotRepeatRewards()
+        public void MixedCraftAndCombatRetentionRejectsEvictedClaimAndReplaysEvictedFormation()
         {
             var storage = new MemorySaveStorage();
             var state = CreateProductionState(LoadGeneratedConfigs().BuildDatabase(), storage);
@@ -403,22 +403,26 @@ namespace GuildIdle.Editor.Crafting
             SetPlayerState(state);
             var runtime = PlayerRuntimeComposition.CreateCraftRuntimeService();
             var pendingResults = PlayerRuntimeComposition.CreatePendingResultService();
-            var anchor = pendingResults.CreateOrAppend(
+            var anchorStorageRevision = state.Storage.GetSnapshot().Revision;
+            var anchor = pendingResults.CreateCombatResult(
                 "mixed-anchor-form",
-                CombatDraft("mixed-anchor", "resource_pine_wood"),
-                true);
+                CombatDraft("mixed-anchor", "resource_pine_wood", 1),
+                null,
+                null,
+                anchorStorageRevision);
             Assert.That(anchor.Success, Is.True, anchor.Message);
             const string anchorClaimOperation = "mixed-anchor-claim";
             var anchorRevision = anchor.Result.revision;
-            var anchorStorageRevision = state.Storage.GetSnapshot().Revision;
+            var anchorClaimStorageRevision = state.Storage.GetSnapshot().Revision;
             var anchorClaim = pendingResults.ClaimAll(
                 anchorClaimOperation,
                 anchor.Result.resultId,
                 anchorRevision,
-                anchorStorageRevision);
+                anchorClaimStorageRevision);
             Assert.That(anchorClaim.Success, Is.True, anchorClaim.Message);
             Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(1));
 
+            var combatSequence = 1L;
             for (var index = 0; index < 65; index++)
             {
                 if (index % 2 == 0)
@@ -440,10 +444,13 @@ namespace GuildIdle.Editor.Crafting
                 }
                 else
                 {
-                    var formed = pendingResults.CreateOrAppend(
+                    combatSequence++;
+                    var formed = pendingResults.CreateCombatResult(
                         $"mixed-combat-form-{index}",
-                        CombatDraft($"mixed-combat-{index}", "resource_pine_wood"),
-                        true);
+                        CombatDraft($"mixed-combat-{index}", "resource_pine_wood", combatSequence),
+                        null,
+                        null,
+                        state.Storage.GetSnapshot().Revision);
                     Assert.That(formed.Success, Is.True, formed.Message);
                     var discarded = pendingResults.DiscardAll(
                         $"mixed-combat-discard-{index}",
@@ -480,9 +487,20 @@ namespace GuildIdle.Editor.Crafting
                 anchorClaimOperation,
                 anchor.Result.resultId,
                 anchorRevision,
-                anchorStorageRevision);
+                anchorClaimStorageRevision);
             Assert.That(replay.Success, Is.False);
             Assert.That(replay.Code, Is.EqualTo("ResultNotFound"));
+            Assert.That(loaded.GetItem("resource_pine_wood"), Is.EqualTo(itemBeforeReplay));
+            var replayedFormation = loaded.PendingResults.CreateCombatResult(
+                "mixed-anchor-form",
+                CombatDraft("mixed-anchor", "resource_pine_wood", 1),
+                null,
+                null,
+                anchorStorageRevision);
+            Assert.That(replayedFormation.Success, Is.True, replayedFormation.Message);
+            Assert.That(replayedFormation.Replayed, Is.True);
+            Assert.That(replayedFormation.ResolvedImmediately, Is.True);
+            Assert.That(replayedFormation.Result, Is.Null);
             Assert.That(loaded.GetItem("resource_pine_wood"), Is.EqualTo(itemBeforeReplay));
             Assert.That(loaded.PendingResults.GetAll(), Is.Empty);
             Assert.That(loaded.GetCraftExecutions(), Is.Empty);
@@ -490,13 +508,14 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(Encoding.UTF8.GetByteCount(JsonUtility.ToJson(loaded.ToSaveData())), Is.LessThan(SaveSizeLimitBytes));
         }
 
-        private static PendingResultDraft CombatDraft(string sourceExecutionId, string itemId)
+        private static PendingResultDraft CombatDraft(string sourceExecutionId, string itemId, long sourceSequence)
         {
             return new PendingResultDraft
             {
                 SourceType = PendingResultSourceType.Combat,
                 SourceId = "mixed-retention-combat",
                 SourceExecutionId = sourceExecutionId,
+                SourceSequence = sourceSequence,
                 Entries = new[]
                 {
                     new PendingResultEntryDraft
