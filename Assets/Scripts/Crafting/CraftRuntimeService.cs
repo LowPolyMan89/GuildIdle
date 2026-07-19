@@ -811,6 +811,8 @@ namespace GuildIdle.Crafting
                     pendingResultId = pendingResultId
                 }
             };
+            while (receipts.Count > PlayerState.OperationReceiptRetentionLimit)
+                receipts.RemoveAt(0);
             execution.advanceReceipts = receipts.ToArray();
         }
 

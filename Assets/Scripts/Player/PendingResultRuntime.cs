@@ -657,7 +657,21 @@ namespace GuildIdle.Player
                 return new PendingResultMutationResult { Success = receipt.success, Replayed = true, Code = receipt.code, ResultRevision = receipt.resultRevision, StorageRevision = receipt.storageRevision, Resolved = receipt.resolved, Result = Get(resultId) };
             }
             if (!_results.TryGetValue(resultId, out var result))
+            {
+                if (_state.IsPendingResultSourceResolved(resultId))
+                {
+                    return new PendingResultMutationResult
+                    {
+                        Success = true,
+                        Replayed = true,
+                        Code = "Resolved",
+                        ResultRevision = expectedResultRevision == long.MaxValue ? long.MaxValue : expectedResultRevision + 1,
+                        StorageRevision = _state.StorageRevision,
+                        Resolved = true
+                    };
+                }
                 return MutationFailure("ResultNotFound", "PendingResult does not exist or has already been resolved.");
+            }
             if (result.revision != expectedResultRevision)
                 return MutationFailure("StaleResultRevision", $"Expected result revision {expectedResultRevision}, current revision is {result.revision}.");
             if (expectedStorageRevision.HasValue && requiresStorageRevision != null && requiresStorageRevision(result) && expectedStorageRevision.Value != _state.StorageRevision)

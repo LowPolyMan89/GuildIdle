@@ -10,6 +10,9 @@ namespace GuildIdle.Player
 {
     public sealed class PlayerState : IActivityRuntimeStore, IRewardBatchStore
     {
+        internal const int OperationReceiptRetentionLimit = 64;
+        internal const int ResolvedResultSourceRetentionLimit = 64;
+
         public const string EquippedItemStateId = "equipped";
         public const string OnStorageItemStateId = "on_storage";
 
@@ -803,6 +806,8 @@ namespace GuildIdle.Player
             LoadResultSourceReferences(saveData.resultSources);
             LoadOperationReceipts(saveData.operationReceipts);
             PendingResults.Load(saveData.pendingResults);
+            if (TrimResolvedResultSources())
+                WasNormalized = true;
         }
 
         private void Restore(SaveData saveData, bool wasNormalized)
@@ -1252,6 +1257,18 @@ namespace GuildIdle.Player
                 }
 
                 var stored = CloneCraftExecution(execution);
+                if (stored.advanceReceipts.Length > OperationReceiptRetentionLimit)
+                {
+                    var retained = new CraftAdvanceReceiptSaveData[OperationReceiptRetentionLimit];
+                    Array.Copy(
+                        stored.advanceReceipts,
+                        stored.advanceReceipts.Length - OperationReceiptRetentionLimit,
+                        retained,
+                        0,
+                        retained.Length);
+                    stored.advanceReceipts = retained;
+                    WasNormalized = true;
+                }
                 _craftExecutions.Add(stored.executionId, stored);
                 hero.CurrentActivityExecutionId = stored.executionId;
             }
@@ -1262,9 +1279,9 @@ namespace GuildIdle.Player
             _operationReceipts.Clear();
             if (receipts == null)
                 return;
-            if (receipts.Length > 64)
+            if (receipts.Length > OperationReceiptRetentionLimit)
                 WasNormalized = true;
-            var start = Math.Max(0, receipts.Length - 64);
+            var start = Math.Max(0, receipts.Length - OperationReceiptRetentionLimit);
             for (var index = start; index < receipts.Length; index++)
             {
                 var receipt = receipts[index];
@@ -1319,7 +1336,7 @@ namespace GuildIdle.Player
             if (receipt == null)
                 return;
             _operationReceipts.Add(CloneOperationReceipt(receipt));
-            while (_operationReceipts.Count > 64)
+            while (_operationReceipts.Count > OperationReceiptRetentionLimit)
                 _operationReceipts.RemoveAt(0);
         }
 
@@ -1383,7 +1400,46 @@ namespace GuildIdle.Player
                 return false;
             source.state = PendingResultSourceState.Resolved;
             source.resultId = result.resultId;
+            TrimResolvedResultSources(ResultSourceKey(result.sourceType, result.sourceExecutionId));
             return true;
+        }
+
+        internal bool IsPendingResultSourceResolved(string resultId)
+        {
+            if (string.IsNullOrWhiteSpace(resultId))
+                return false;
+            foreach (var source in _resultSources.Values)
+            {
+                if (source != null && string.Equals(source.resultId, resultId, StringComparison.Ordinal) &&
+                    string.Equals(source.state, PendingResultSourceState.Resolved, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
+        private bool TrimResolvedResultSources(string protectedSourceKey = null)
+        {
+            var resolvedKeys = new List<string>();
+            foreach (var pair in _resultSources)
+            {
+                if (pair.Value != null && string.Equals(pair.Value.state, PendingResultSourceState.Resolved, StringComparison.Ordinal))
+                    resolvedKeys.Add(pair.Key);
+            }
+            if (resolvedKeys.Count <= ResolvedResultSourceRetentionLimit)
+                return false;
+
+            resolvedKeys.Sort(StringComparer.Ordinal);
+            var removeCount = resolvedKeys.Count - ResolvedResultSourceRetentionLimit;
+            foreach (var key in resolvedKeys)
+            {
+                if (removeCount == 0)
+                    break;
+                if (string.Equals(key, protectedSourceKey, StringComparison.Ordinal))
+                    continue;
+                if (_resultSources.Remove(key))
+                    removeCount--;
+            }
+            return removeCount < resolvedKeys.Count - ResolvedResultSourceRetentionLimit;
         }
 
         internal void ReconcileCraftExecutions()
