@@ -198,72 +198,209 @@ namespace GuildIdle.Editor.Crafting
         }
 
         [Test]
-        public void LastCraftClaimIsRejectedAndFullyRolledBack()
+        public void LastCraftClaimFinalizesExecutionReleasesHeroAndReplaysWithoutDuplicateRewards()
         {
             var state = CompleteBasic(out var executionId, out var result);
             var operationId = "claim-craft-final";
-            var before = JsonUtility.ToJson(state.ToSaveData());
             var storageBefore = state.Storage.GetSnapshot();
-            var expBefore = state.GetHeroSkillExp("ren", "skill_crafting");
+            var savesBefore = _storage.SaveCalls;
+            var events = new List<PendingResultResolvedEvent>();
+            state.PendingResults.Resolved += events.Add;
 
-            var rejected = state.PendingResults.ClaimAll(
+            var claimed = state.PendingResults.ClaimAll(
+                operationId,
+                result.resultId,
+                result.revision,
+                storageBefore.Revision);
+            var replay = state.PendingResults.ClaimAll(
                 operationId,
                 result.resultId,
                 result.revision,
                 storageBefore.Revision);
 
-            Assert.That(rejected.Success, Is.False);
-            Assert.That(rejected.Code, Is.EqualTo(PendingResultMutationCode.CraftFinalizationNotAvailable));
-            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
-            Assert.That(state.Storage.GetSnapshot().Revision, Is.EqualTo(storageBefore.Revision));
-            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
-            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(expBefore));
-            Assert.That(state.PendingResults.Get(result.resultId).revision, Is.EqualTo(result.revision));
-            Assert.That(HasOperationReceipt(state, result.resultId, operationId), Is.False);
-            AssertCraftResultStillPending(state, executionId, result.resultId);
+            Assert.That(claimed.Success, Is.True);
+            Assert.That(claimed.Resolved, Is.True);
+            Assert.That(claimed.Code, Is.EqualTo("Resolved"));
+            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.EqualTo(1));
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(2));
+            AssertCraftFinalized(state, executionId, result.resultId);
+            Assert.That(HasOperationReceipt(state, result.resultId, operationId), Is.True);
+            Assert.That(_storage.SaveCalls, Is.EqualTo(savesBefore + 1));
+            Assert.That(events, Has.Count.EqualTo(1));
+            Assert.That(events[0].ResultId, Is.EqualTo(result.resultId));
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(replay.Resolved, Is.True);
+            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.EqualTo(1));
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(2));
+            Assert.That(_storage.SaveCalls, Is.EqualTo(savesBefore + 1));
+            Assert.That(events, Has.Count.EqualTo(1));
         }
 
         [Test]
-        public void LastCraftDiscardIsRejectedAndFullyRolledBack()
+        public void LastCraftDiscardFinalizesThroughTheSamePathWithoutApplyingRewards()
         {
             var state = CompleteBasic(out var executionId, out var result);
             var operationId = "discard-craft-final";
-            var before = JsonUtility.ToJson(state.ToSaveData());
-            var storageBefore = state.Storage.GetSnapshot();
-            var expBefore = state.GetHeroSkillExp("ren", "skill_crafting");
+            var savesBefore = _storage.SaveCalls;
 
-            var rejected = state.PendingResults.DiscardAll(operationId, result.resultId, result.revision);
+            var discarded = state.PendingResults.DiscardAll(operationId, result.resultId, result.revision);
 
-            Assert.That(rejected.Success, Is.False);
-            Assert.That(rejected.Code, Is.EqualTo(PendingResultMutationCode.CraftFinalizationNotAvailable));
-            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
-            Assert.That(state.Storage.GetSnapshot().Revision, Is.EqualTo(storageBefore.Revision));
+            Assert.That(discarded.Success, Is.True);
+            Assert.That(discarded.Resolved, Is.True);
             Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
-            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(expBefore));
-            Assert.That(state.PendingResults.Get(result.resultId).revision, Is.EqualTo(result.revision));
-            Assert.That(HasOperationReceipt(state, result.resultId, operationId), Is.False);
-            AssertCraftResultStillPending(state, executionId, result.resultId);
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.Zero);
+            AssertCraftFinalized(state, executionId, result.resultId);
+            Assert.That(HasOperationReceipt(state, result.resultId, operationId), Is.True);
+            Assert.That(_storage.SaveCalls, Is.EqualTo(savesBefore + 1));
+        }
+
+        [Test]
+        public void ItemOutputAndSkillExpResolveIndependentlyBeforeFinalization()
+        {
+            var state = CompleteBasic(out var executionId, out var result);
+            var output = FindEntry(result, RewardType.Item);
+            var discardedOutput = state.PendingResults.DiscardQuantity(
+                "discard-craft-output",
+                result.resultId,
+                output.entryId,
+                output.quantity,
+                result.revision);
+
+            var claimedExp = state.PendingResults.ClaimAll(
+                "claim-craft-exp-final",
+                result.resultId,
+                discardedOutput.ResultRevision,
+                state.Storage.GetSnapshot().Revision);
+
+            Assert.That(discardedOutput.Success, Is.True);
+            Assert.That(discardedOutput.Resolved, Is.False);
+            Assert.That(claimedExp.Success, Is.True);
+            Assert.That(claimedExp.Resolved, Is.True);
+            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(2));
+            AssertCraftFinalized(state, executionId, result.resultId);
         }
 
         [TestCase(true)]
         [TestCase(false)]
-        public void FinalCraftResolutionRemainsBlockedAfterLoad(bool claim)
+        public void FinalCraftResolutionAndReplayWorkAfterLoad(bool claim)
         {
             CompleteBasic(out var executionId, out var result);
             var loaded = SaveService.Load(_factory, _storage);
             var loadedResult = loaded.PendingResults.Get(result.resultId);
             var operationId = claim ? "claim-craft-final-loaded" : "discard-craft-final-loaded";
-            var before = JsonUtility.ToJson(loaded.ToSaveData());
+            var expectedStorageRevision = loaded.Storage.GetSnapshot().Revision;
 
-            var rejected = claim
-                ? loaded.PendingResults.ClaimAll(operationId, result.resultId, loadedResult.revision, loaded.Storage.GetSnapshot().Revision)
+            var resolved = claim
+                ? loaded.PendingResults.ClaimAll(operationId, result.resultId, loadedResult.revision, expectedStorageRevision)
                 : loaded.PendingResults.DiscardAll(operationId, result.resultId, loadedResult.revision);
+            var restored = SaveService.Load(_factory, _storage);
+            var replay = claim
+                ? restored.PendingResults.ClaimAll(operationId, result.resultId, loadedResult.revision, expectedStorageRevision)
+                : restored.PendingResults.DiscardAll(operationId, result.resultId, loadedResult.revision);
+
+            Assert.That(resolved.Success, Is.True);
+            Assert.That(resolved.Resolved, Is.True);
+            AssertCraftFinalized(loaded, executionId, result.resultId);
+            AssertCraftFinalized(restored, executionId, result.resultId);
+            Assert.That(restored.GetItem("consumable_roasted_rabbit_meat"), Is.EqualTo(claim ? 1 : 0));
+            Assert.That(restored.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(claim ? 2 : 0));
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(replay.Resolved, Is.True);
+        }
+
+        [Test]
+        public void FinalCraftClaimSaveFailureRestoresRewardsResultSourceExecutionOccupationAndReceipt()
+        {
+            var state = CompleteBasic(out var executionId, out var result);
+            var operationId = "claim-craft-final-save-failure";
+            var before = JsonUtility.ToJson(state.ToSaveData());
+            var persistedBefore = _storage.GetString(SaveService.SaveKey, string.Empty);
+            var events = new List<PendingResultResolvedEvent>();
+            state.PendingResults.Resolved += events.Add;
+            _storage.ThrowOnSaveCall = _storage.SaveCalls + 1;
+            LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save flush failure");
+
+            var failed = state.PendingResults.ClaimAll(
+                operationId,
+                result.resultId,
+                result.revision,
+                state.Storage.GetSnapshot().Revision);
+
+            Assert.That(failed.Success, Is.False);
+            Assert.That(failed.Code, Is.EqualTo("SaveFailed"));
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+            Assert.That(_storage.GetString(SaveService.SaveKey, string.Empty), Is.EqualTo(persistedBefore));
+            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.Zero);
+            Assert.That(HasOperationReceipt(state, result.resultId, operationId), Is.False);
+            Assert.That(events, Is.Empty);
+            AssertCraftResultStillPending(state, executionId, result.resultId);
+        }
+
+        [Test]
+        public void OccupationMismatchRejectsFinalizationBeforeMutationsAndDoesNotReleaseForeignOccupation()
+        {
+            var state = CompleteBasic(out var executionId, out var result);
+            Assert.That(state.ClearHeroBusy("ren", executionId), Is.True);
+            Assert.That(state.SetHeroBusy("ren", "foreign-execution"), Is.True);
+            var before = JsonUtility.ToJson(state.ToSaveData());
+
+            var rejected = state.PendingResults.ClaimAll(
+                "claim-craft-occupation-mismatch",
+                result.resultId,
+                result.revision,
+                state.Storage.GetSnapshot().Revision);
 
             Assert.That(rejected.Success, Is.False);
-            Assert.That(rejected.Code, Is.EqualTo(PendingResultMutationCode.CraftFinalizationNotAvailable));
-            Assert.That(JsonUtility.ToJson(loaded.ToSaveData()), Is.EqualTo(before));
-            Assert.That(HasOperationReceipt(loaded, result.resultId, operationId), Is.False);
-            AssertCraftResultStillPending(loaded, executionId, result.resultId);
+            Assert.That(rejected.Code, Is.EqualTo("SourceNotClaimable"));
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+            Assert.That(state.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo("foreign-execution"));
+            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.Zero);
+        }
+
+        [Test]
+        public void SourceFinalizationFailureRollsBackRewardsResultExecutionAndOccupation()
+        {
+            var state = CompleteBasic(out var executionId, out var result);
+            state.PendingResults.RegisterSourceHandler(new FailingCraftFinalizationHandler());
+            var before = JsonUtility.ToJson(state.ToSaveData());
+
+            var failed = state.PendingResults.ClaimAll(
+                "claim-craft-source-failure",
+                result.resultId,
+                result.revision,
+                state.Storage.GetSnapshot().Revision);
+
+            Assert.That(failed.Success, Is.False);
+            Assert.That(failed.Code, Is.EqualTo("SourceResolutionFailed"));
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+            Assert.That(state.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.Zero);
+            AssertCraftResultStillPending(state, executionId, result.resultId);
+        }
+
+        [Test]
+        public void RewardMutationFailureRollsBackSkillExpAndLeavesCraftPending()
+        {
+            var state = CompleteBasic(out var executionId, out var result);
+            FillStorage(state);
+            var before = JsonUtility.ToJson(state.ToSaveData());
+
+            var failed = state.PendingResults.ClaimAll(
+                "claim-craft-full-storage",
+                result.resultId,
+                result.revision,
+                state.Storage.GetSnapshot().Revision);
+
+            Assert.That(failed.Success, Is.False);
+            Assert.That(failed.Code, Is.EqualTo("Rejected"));
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.Zero);
+            AssertCraftResultStillPending(state, executionId, result.resultId);
         }
 
         [Test]
@@ -417,6 +554,7 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(runtime.Advance(executionId, 10d, "advance-before-corruption").Success, Is.True);
             var corrupted = state.ToSaveData();
             corrupted.pendingResults = Array.Empty<PendingResultSaveData>();
+            LogAssert.Expect(LogType.Error, $"[PlayerState] Craft execution '{executionId}' has a Pending source but no linked PendingResult and remains blocked for manual recovery.");
             var corruptedState = _factory.Create(corrupted);
 
             var advanced = Runtime(corruptedState).Advance(executionId, 1d, "advance-corrupt-result");
@@ -425,6 +563,44 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.DataIntegrityFailure));
             Assert.That(corruptedState.PendingResults.GetAll(), Is.Empty);
             Assert.That(corruptedState.GetCraftExecution(executionId).status, Is.EqualTo(CraftExecutionStatus.ResultPending));
+            Assert.That(corruptedState.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo(executionId));
+            Assert.That(FindCraftSourceReference(corruptedState, executionId).state, Is.EqualTo(PendingResultSourceState.Blocked));
+        }
+
+        [Test]
+        public void ResolvedSourceWithLeftoverExecutionAndNoResultIsReconciledWithoutRewards()
+        {
+            var state = CompleteBasic(out var executionId, out var result);
+            var interrupted = state.ToSaveData();
+            interrupted.pendingResults = Array.Empty<PendingResultSaveData>();
+            FindCraftSourceReference(interrupted, executionId).state = PendingResultSourceState.Resolved;
+            _storage.SetString(SaveService.SaveKey, JsonUtility.ToJson(interrupted));
+            _storage.Save();
+            var savesBefore = _storage.SaveCalls;
+
+            var reconciled = SaveService.Load(_factory, _storage);
+            var restored = SaveService.Load(_factory, _storage);
+
+            AssertCraftFinalized(reconciled, executionId, result.resultId);
+            AssertCraftFinalized(restored, executionId, result.resultId);
+            Assert.That(reconciled.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
+            Assert.That(reconciled.GetHeroSkillExp("ren", "skill_crafting"), Is.Zero);
+            Assert.That(_storage.SaveCalls, Is.EqualTo(savesBefore + 1));
+        }
+
+        [Test]
+        public void BlockedCraftSourceIsNotReconciledOrReleased()
+        {
+            var state = CompleteBasic(out var executionId, out _);
+            var blocked = state.ToSaveData();
+            blocked.pendingResults = Array.Empty<PendingResultSaveData>();
+            FindCraftSourceReference(blocked, executionId).state = PendingResultSourceState.Blocked;
+
+            var restored = _factory.Create(blocked);
+
+            Assert.That(restored.GetCraftExecution(executionId), Is.Not.Null);
+            Assert.That(restored.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo(executionId));
+            Assert.That(FindCraftSourceReference(restored, executionId).state, Is.EqualTo(PendingResultSourceState.Blocked));
         }
 
         [TestCase("other-output-item")]
@@ -1229,6 +1405,27 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(state.GetHeroCurrentActivityExecutionId(execution.heroId), Is.EqualTo(executionId));
         }
 
+        private static void AssertCraftFinalized(PlayerState state, string executionId, string resultId)
+        {
+            Assert.That(state.GetCraftExecution(executionId), Is.Null);
+            Assert.That(state.PendingResults.Get(resultId), Is.Null);
+            Assert.That(state.GetHeroCurrentActivityExecutionId("ren"), Is.Null.Or.Empty);
+            Assert.That(state.GetActiveHeroCount(), Is.Zero);
+            Assert.That(FindCraftSourceReference(state, executionId).state, Is.EqualTo(PendingResultSourceState.Resolved));
+        }
+
+        private static PendingResultSourceReferenceSaveData FindCraftSourceReference(PlayerState state, string executionId) =>
+            FindCraftSourceReference(state.ToSaveData(), executionId);
+
+        private static PendingResultSourceReferenceSaveData FindCraftSourceReference(SaveData saveData, string executionId)
+        {
+            foreach (var source in saveData?.resultSources ?? Array.Empty<PendingResultSourceReferenceSaveData>())
+                if (source != null && string.Equals(source.sourceType, PendingResultSourceType.Craft, StringComparison.Ordinal) &&
+                    string.Equals(source.sourceExecutionId, executionId, StringComparison.Ordinal)) return source;
+            Assert.Fail($"Missing Craft source reference for execution '{executionId}'.");
+            return null;
+        }
+
         private static PendingResultEntrySaveData FindEntry(PendingResultSaveData result, string rewardType)
         {
             foreach (var entry in result?.entries ?? Array.Empty<PendingResultEntrySaveData>())
@@ -1565,6 +1762,15 @@ namespace GuildIdle.Editor.Crafting
                 craftId = craftId,
                 enabled = true
             };
+        }
+
+        private sealed class FailingCraftFinalizationHandler : IPendingResultSourceHandler
+        {
+            public string SourceType => PendingResultSourceType.Craft;
+            public bool AcceptsOrigin(string origin) => string.Equals(origin, PendingResultOrigin.CraftOutput, StringComparison.Ordinal);
+            public bool TryBind(PendingResultSaveData result, bool makeClaimable, PendingResultBindMode mode) => true;
+            public bool CanClaim(PendingResultSaveData result) => true;
+            public bool Resolve(PendingResultSaveData result) => false;
         }
 
         private sealed class FaultInjectingCraftState : ICraftPlayerState

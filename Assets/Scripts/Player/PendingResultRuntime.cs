@@ -60,11 +60,6 @@ namespace GuildIdle.Player
         public PendingResultSaveData Result { get; set; }
     }
 
-    public static class PendingResultMutationCode
-    {
-        public const string CraftFinalizationNotAvailable = "CraftFinalizationNotAvailable";
-    }
-
     public sealed class PendingResultResolvedEvent
     {
         public string ResultId { get; set; }
@@ -102,6 +97,11 @@ namespace GuildIdle.Player
         bool Resolve(PendingResultSaveData result);
     }
 
+    internal interface IPendingResultSourceReconciler
+    {
+        void Reconcile();
+    }
+
     public enum PendingResultBindMode
     {
         Create,
@@ -133,6 +133,12 @@ namespace GuildIdle.Player
 
         public bool AcceptsOrigin(string sourceType, string origin) =>
             !string.IsNullOrWhiteSpace(sourceType) && _handlers.TryGetValue(sourceType, out var handler) && handler.AcceptsOrigin(origin);
+
+        public void Reconcile()
+        {
+            foreach (var handler in _handlers.Values)
+                if (handler is IPendingResultSourceReconciler reconciler) reconciler.Reconcile();
+        }
 
         private bool TryGet(PendingResultSaveData result, out IPendingResultSourceHandler handler)
         {
@@ -265,7 +271,7 @@ namespace GuildIdle.Player
         public bool Resolve(PendingResultSaveData result) => _state.ResolvePersistentResultSource(result);
     }
 
-    internal sealed class CraftPendingResultSourceHandler : IPendingResultSourceHandler
+    internal sealed class CraftPendingResultSourceHandler : IPendingResultSourceHandler, IPendingResultSourceReconciler
     {
         private readonly PlayerState _state;
 
@@ -311,14 +317,27 @@ namespace GuildIdle.Player
                    !_state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) &&
                    execution.status == CraftExecutionStatus.ResultPending && execution.completionRecorded &&
                    string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal) &&
+                   string.Equals(_state.GetHeroCurrentActivityExecutionId(execution.heroId), execution.executionId, StringComparison.Ordinal) &&
                    _state.CanClaimPersistentResultSource(result);
         }
 
         public bool Resolve(PendingResultSaveData result)
         {
-            // Execution completion and hero release are owned by the craft finalization workflow.
-            return CanClaim(result) && _state.ResolvePersistentResultSource(result);
+            var execution = result == null ? null : _state.GetCraftExecution(result.sourceExecutionId);
+            if (!CraftPendingResultValidator.ValidateForFinalization(execution, result) ||
+                _state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) ||
+                execution.status != CraftExecutionStatus.ResultPending || !execution.completionRecorded ||
+                !string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal) ||
+                !string.Equals(_state.GetHeroCurrentActivityExecutionId(execution.heroId), execution.executionId, StringComparison.Ordinal) ||
+                !_state.ResolvePersistentResultSource(result) ||
+                !_state.RemoveCraftExecution(execution.executionId))
+                return false;
+
+            return string.Equals(_state.GetHeroCurrentActivityExecutionId(execution.heroId), execution.executionId, StringComparison.Ordinal) &&
+                   _state.ClearHeroBusy(execution.heroId, execution.executionId);
         }
+
+        public void Reconcile() => _state.ReconcileCraftExecutions();
     }
 
     public sealed class PendingResultService : IPendingResultService
@@ -394,6 +413,7 @@ namespace GuildIdle.Player
                     UnityEngine.Debug.LogError($"[PendingResult] Result '{normalized.resultId}' could not bind to source and remains blocked for manual recovery.");
                 }
             }
+            _sourceLifecycle.Reconcile();
         }
 
         public PendingResultFormationResult CreateOrAppend(string operationId, PendingResultDraft draft, bool makeClaimable, long expectedResultRevision = 0)
@@ -657,14 +677,6 @@ namespace GuildIdle.Player
                 return MutationFailure("NothingChanged", "No entries could be processed.");
 
             NormalizeEntries(result);
-            if (result.entries.Length == 0 &&
-                string.Equals(result.sourceType, PendingResultSourceType.Craft, StringComparison.Ordinal))
-            {
-                _state.RestoreTransactional(before);
-                return MutationFailure(
-                    PendingResultMutationCode.CraftFinalizationNotAvailable,
-                    "Craft Result cannot be fully resolved until the craft finalization workflow is available.");
-            }
             var storageChanged = isClaim && StorageChanged(before);
             if (storageChanged)
                 _storage.CommitExternalMutation();
