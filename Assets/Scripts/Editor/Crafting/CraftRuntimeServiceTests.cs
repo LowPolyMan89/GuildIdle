@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using GuildIdle.Configs;
 using GuildIdle.Crafting;
 using GuildIdle.Editor.Configs;
@@ -172,6 +173,118 @@ namespace GuildIdle.Editor.Crafting
         }
 
         [Test]
+        public void SaveFailureAfterSetStringRestoresPersistedStateAndSuppressesEvent()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 3);
+            Seed(state, "resource_herb", 1);
+            Assert.That(state.Save(), Is.True);
+            var fatigue = state.GetHeroFatigue("ren");
+            var events = new List<CraftStartedEvent>();
+            _storage.ThrowOnSaveCall = _storage.SaveCalls + 1;
+            LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save flush failure");
+
+            var result = Runtime(state, events.Add).Start(Request("craft_basic", "op-late-save-failure"));
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Code, Is.EqualTo(CraftStartCode.SaveFailure));
+            Assert.That(state.GetItem("resource_rabbit_meat"), Is.EqualTo(3));
+            Assert.That(state.GetItem("resource_herb"), Is.EqualTo(1));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(fatigue));
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+            Assert.That(state.GetCraftExecutions(), Is.Empty);
+            Assert.That(HasStartReceipt(state, "op-late-save-failure", null), Is.False);
+            Assert.That(events, Is.Empty);
+
+            var loaded = SaveService.Load(_factory, _storage);
+            Assert.That(loaded.GetItem("resource_rabbit_meat"), Is.EqualTo(3));
+            Assert.That(loaded.GetItem("resource_herb"), Is.EqualTo(1));
+            Assert.That(loaded.GetHeroFatigue("ren"), Is.EqualTo(fatigue));
+            Assert.That(loaded.IsHeroBusy("ren"), Is.False);
+            Assert.That(loaded.GetCraftExecutions(), Is.Empty);
+            Assert.That(HasStartReceipt(loaded, "op-late-save-failure", null), Is.False);
+        }
+
+        [Test]
+        public void ProductionCompositionPublishesCraftStartedExactlyOnceAfterCommit()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 3);
+            Seed(state, "resource_herb", 1);
+            var events = new List<CraftStartedEvent>();
+            Action<CraftStartedEvent> handler = events.Add;
+            PlayerRuntimeComposition.CraftStarted += handler;
+            try
+            {
+                var result = PlayerRuntimeComposition.CreateCraftRuntimeService(state)
+                    .Start(Request("craft_basic", "op-production-event"));
+
+                Assert.That(result.Success, Is.True);
+                Assert.That(events, Has.Count.EqualTo(1));
+                Assert.That(events[0].ExecutionId, Is.EqualTo(result.ExecutionId));
+            }
+            finally
+            {
+                PlayerRuntimeComposition.CraftStarted -= handler;
+            }
+        }
+
+        [Test]
+        public void ProductionCompositionDoesNotPublishCraftStartedWhenSaveFails()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 3);
+            Seed(state, "resource_herb", 1);
+            var events = new List<CraftStartedEvent>();
+            Action<CraftStartedEvent> handler = events.Add;
+            PlayerRuntimeComposition.CraftStarted += handler;
+            _storage.ThrowOnSet = true;
+            LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save failure");
+            try
+            {
+                var result = PlayerRuntimeComposition.CreateCraftRuntimeService(state)
+                    .Start(Request("craft_basic", "op-production-save-failure"));
+
+                Assert.That(result.Success, Is.False);
+                Assert.That(result.Code, Is.EqualTo(CraftStartCode.SaveFailure));
+                Assert.That(events, Is.Empty);
+            }
+            finally
+            {
+                PlayerRuntimeComposition.CraftStarted -= handler;
+            }
+        }
+
+        [Test]
+        public void ProductionCompositionHandlerFailureDoesNotRollbackCommittedStart()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 3);
+            Seed(state, "resource_herb", 1);
+            Action<CraftStartedEvent> handler = _ => throw new InvalidOperationException("simulated craft event failure");
+            PlayerRuntimeComposition.CraftStarted += handler;
+            LogAssert.Expect(LogType.Exception, new Regex("InvalidOperationException: simulated craft event failure"));
+            try
+            {
+                var result = PlayerRuntimeComposition.CreateCraftRuntimeService(state)
+                    .Start(Request("craft_basic", "op-production-handler-failure"));
+
+                Assert.That(result.Success, Is.True);
+                Assert.That(state.GetCraftExecution(result.ExecutionId), Is.Not.Null);
+                Assert.That(state.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo(result.ExecutionId));
+                Assert.That(HasStartReceipt(state, "op-production-handler-failure", result.ExecutionId), Is.True);
+
+                var loaded = SaveService.Load(_factory, _storage);
+                Assert.That(loaded.GetCraftExecution(result.ExecutionId), Is.Not.Null);
+                Assert.That(loaded.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo(result.ExecutionId));
+            }
+            finally
+            {
+                PlayerRuntimeComposition.CraftStarted -= handler;
+            }
+        }
+
+        [Test]
         public void SameOperationKeyAndPayloadReplaysWithoutSecondExecutionOrCosts()
         {
             var state = NewState();
@@ -197,6 +310,80 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(state.GetItem("resource_herb"), Is.EqualTo(herb));
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(fatigue));
             Assert.That(_storage.SaveCalls, Is.EqualTo(saves));
+        }
+
+        [Test]
+        public void ReceiptWithoutLiveExecutionCannotReplaySuccessfully()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 5);
+            Seed(state, "resource_herb", 2);
+            var request = Request("craft_basic", "op-orphan-receipt");
+            var started = Runtime(state).Start(request);
+            Assert.That(started.Success, Is.True);
+
+            var orphanedSave = state.ToSaveData();
+            orphanedSave.craftRuntime.executions = Array.Empty<CraftExecutionSaveData>();
+            var receiptOnlyState = _factory.Create(orphanedSave);
+            Assert.That(SaveService.Save(receiptOnlyState, _storage), Is.True);
+            var loaded = SaveService.Load(_factory, _storage);
+            Assert.That(HasStartReceipt(loaded, request.OperationKey, started.ExecutionId), Is.True);
+            var meat = loaded.GetItem("resource_rabbit_meat");
+            var herb = loaded.GetItem("resource_herb");
+            var fatigue = loaded.GetHeroFatigue("ren");
+
+            var replay = Runtime(loaded).Start(request);
+
+            Assert.That(replay.Success, Is.False);
+            Assert.That(replay.Replayed, Is.False);
+            Assert.That(replay.Code, Is.EqualTo(CraftStartCode.TransactionFailure));
+            Assert.That(loaded.GetCraftExecutions(), Is.Empty);
+            Assert.That(loaded.IsHeroBusy("ren"), Is.False);
+            Assert.That(loaded.GetItem("resource_rabbit_meat"), Is.EqualTo(meat));
+            Assert.That(loaded.GetItem("resource_herb"), Is.EqualTo(herb));
+            Assert.That(loaded.GetHeroFatigue("ren"), Is.EqualTo(fatigue));
+        }
+
+        [Test]
+        public void ActiveExecutionReplaysAfterCraftReceiptIsEvictedByGlobalCap()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 5);
+            Seed(state, "resource_herb", 2);
+            var request = Request("craft_basic", "op-evicted-receipt");
+            var started = Runtime(state).Start(request);
+            Assert.That(started.Success, Is.True);
+
+            var adapter = new PlayerStateCraftAdapter(state);
+            for (var index = 0; index < 65; index++)
+            {
+                adapter.RecordOperationReceipt(new OperationReceiptSaveData
+                {
+                    aggregateId = "unrelated-test",
+                    operationId = $"unrelated-{index}",
+                    fingerprint = $"fingerprint-{index}",
+                    success = true,
+                    code = "Applied"
+                });
+            }
+            Assert.That(HasStartReceipt(state, request.OperationKey, started.ExecutionId), Is.False);
+            Assert.That(state.Save(), Is.True);
+
+            var loaded = SaveService.Load(_factory, _storage);
+            Assert.That(HasStartReceipt(loaded, request.OperationKey, started.ExecutionId), Is.False);
+            var meat = loaded.GetItem("resource_rabbit_meat");
+            var herb = loaded.GetItem("resource_herb");
+            var fatigue = loaded.GetHeroFatigue("ren");
+
+            var replay = Runtime(loaded).Start(request);
+
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(replay.ExecutionId, Is.EqualTo(started.ExecutionId));
+            Assert.That(loaded.GetCraftExecutions(), Has.Length.EqualTo(1));
+            Assert.That(loaded.GetItem("resource_rabbit_meat"), Is.EqualTo(meat));
+            Assert.That(loaded.GetItem("resource_herb"), Is.EqualTo(herb));
+            Assert.That(loaded.GetHeroFatigue("ren"), Is.EqualTo(fatigue));
         }
 
         [Test]
@@ -594,6 +781,7 @@ namespace GuildIdle.Editor.Crafting
             public int GetHeroFatigue(string heroId) => _inner.GetHeroFatigue(heroId);
             public bool SpendHeroFatigue(string heroId, int amount) => _inner.SpendHeroFatigue(heroId, amount);
             public bool IsHeroBusy(string heroId) => _inner.IsHeroBusy(heroId);
+            public string GetHeroOccupationOwnerId(string heroId) => _inner.GetHeroOccupationOwnerId(heroId);
             public int GetActiveHeroCount() => _inner.GetActiveHeroCount();
             public int GetActiveHeroLimit() => _inner.GetActiveHeroLimit();
             public bool TryOccupyHero(string heroId, string executionId) => !FailOccupation && _inner.TryOccupyHero(heroId, executionId);
@@ -625,6 +813,7 @@ namespace GuildIdle.Editor.Crafting
             private string _json;
             public int SaveCalls { get; private set; }
             public bool ThrowOnSet { get; set; }
+            public int ThrowOnSaveCall { get; set; } = -1;
             public bool HasKey(string key) => _json != null;
             public string GetString(string key, string defaultValue) => _json ?? defaultValue;
             public void SetString(string key, string value)
@@ -634,7 +823,14 @@ namespace GuildIdle.Editor.Crafting
                 _json = value;
             }
             public void DeleteKey(string key) => _json = null;
-            public void Save() => SaveCalls++;
+            public void Save()
+            {
+                SaveCalls++;
+                if (SaveCalls != ThrowOnSaveCall)
+                    return;
+                ThrowOnSaveCall = -1;
+                throw new InvalidOperationException("simulated save flush failure");
+            }
         }
     }
 }

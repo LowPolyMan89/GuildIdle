@@ -95,17 +95,45 @@ namespace GuildIdle.Player
             }
 
             storage ??= DefaultStorage;
+            var previousValueCaptured = false;
+            var hadPreviousValue = false;
+            string previousValue = null;
+            var valueWasReplaced = false;
             try
             {
+                hadPreviousValue = storage.HasKey(SaveKey);
+                if (hadPreviousValue)
+                    previousValue = storage.GetString(SaveKey, string.Empty);
+                previousValueCaptured = true;
+
                 var json = JsonUtility.ToJson(state.ToSaveData());
                 storage.SetString(SaveKey, json);
+                valueWasReplaced = true;
                 storage.Save();
                 return true;
             }
             catch (Exception exception)
             {
+                if (previousValueCaptured && valueWasReplaced)
+                    RestorePreviousValue(storage, hadPreviousValue, previousValue);
                 Debug.LogError($"[SaveService] Failed to save player state. {exception.Message}");
                 return false;
+            }
+        }
+
+        private static void RestorePreviousValue(ISaveStorage storage, bool hadPreviousValue, string previousValue)
+        {
+            try
+            {
+                if (hadPreviousValue)
+                    storage.SetString(SaveKey, previousValue);
+                else
+                    storage.DeleteKey(SaveKey);
+                storage.Save();
+            }
+            catch (Exception)
+            {
+                // Preserve the original Save error as the single failure reported to callers.
             }
         }
 

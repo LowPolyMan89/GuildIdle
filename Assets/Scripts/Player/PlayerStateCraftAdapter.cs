@@ -37,6 +37,7 @@ namespace GuildIdle.Player
         public int GetHeroFatigue(string heroId) => _state.GetHeroFatigue(heroId);
         public bool SpendHeroFatigue(string heroId, int amount) => _state.SpendHeroFatigue(heroId, amount);
         public bool IsHeroBusy(string heroId) => _state.IsHeroBusy(heroId);
+        public string GetHeroOccupationOwnerId(string heroId) => _state.GetHeroCurrentActivityExecutionId(heroId);
         public int GetActiveHeroCount() => _state.GetActiveHeroCount();
         public int GetActiveHeroLimit() => ActiveHeroLimitResolver.GetCurrentLimit(_activityAdapter);
         public bool TryOccupyHero(string heroId, string executionId) => _state.SetHeroBusy(heroId, executionId);

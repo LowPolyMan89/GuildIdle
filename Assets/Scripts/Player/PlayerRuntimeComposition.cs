@@ -12,6 +12,8 @@ namespace GuildIdle.Player
         private static readonly PlayerBootstrapDefinition BootstrapDefinition = new PlayerBootstrapDefinition("stage_arrival");
         private static PlayerStateFactory _playerStateFactory;
 
+        public static event Action<CraftStartedEvent> CraftStarted;
+
         public static ActivityRuntimeService CreateRuntimeService()
         {
             var state = Player.State;
@@ -53,7 +55,7 @@ namespace GuildIdle.Player
         {
             if (state == null)
                 throw new ArgumentNullException(nameof(state));
-            return new CraftRuntimeService(RuntimeConfigs.Crafts, new PlayerStateCraftAdapter(state));
+            return new CraftRuntimeService(RuntimeConfigs.Crafts, new PlayerStateCraftAdapter(state), HandleCraftStartedEvent);
         }
 
         public static IPendingResultService CreatePendingResultService()
@@ -158,6 +160,11 @@ namespace GuildIdle.Player
                 Player.Progression.Handle(new BuildingLevelChanged(runtimeEvent.targetId, runtimeEvent.value));
             else if (string.Equals(runtimeEvent.eventType, ActivityRuntimeEventType.ActivityCompleted, StringComparison.Ordinal))
                 Player.Progression.HandleActivityCompleted(runtimeEvent.targetId);
+        }
+
+        private static void HandleCraftStartedEvent(CraftStartedEvent craftStartedEvent)
+        {
+            CraftStarted?.Invoke(craftStartedEvent);
         }
 
         private static PlayerStateFactory GetPlayerStateFactory()

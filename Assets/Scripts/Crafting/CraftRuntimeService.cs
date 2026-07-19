@@ -17,6 +17,7 @@ namespace GuildIdle.Crafting
         int GetHeroFatigue(string heroId);
         bool SpendHeroFatigue(string heroId, int amount);
         bool IsHeroBusy(string heroId);
+        string GetHeroOccupationOwnerId(string heroId);
         int GetActiveHeroCount();
         int GetActiveHeroLimit();
         bool TryOccupyHero(string heroId, string executionId);
@@ -182,33 +183,45 @@ namespace GuildIdle.Crafting
             if (requireOperationKey && string.IsNullOrWhiteSpace(request.OperationKey))
                 return Blocked(request, CraftStartCode.OperationKeyRequired, "Craft start requires operationKey.", fingerprint);
 
-            if (requireOperationKey && _state.TryGetOperationReceipt(StartReceiptAggregateId, request.OperationKey, out var receipt))
+            if (requireOperationKey)
             {
-                if (!string.Equals(receipt.fingerprint, fingerprint, StringComparison.Ordinal))
+                var hasReceipt = _state.TryGetOperationReceipt(StartReceiptAggregateId, request.OperationKey, out var receipt);
+                if (hasReceipt && !string.Equals(receipt.fingerprint, fingerprint, StringComparison.Ordinal))
                     return Blocked(request, CraftStartCode.OperationReplayConflict, "operationKey was already used with another craft start payload.", fingerprint);
 
                 CraftExecutionSaveData replayed = null;
-                try
+                var matchingExecutionCount = 0;
+                foreach (var execution in _state.GetCraftExecutions() ?? Array.Empty<CraftExecutionSaveData>())
                 {
-                    if (!string.IsNullOrWhiteSpace(receipt.resultPayload))
-                        replayed = JsonUtility.FromJson<CraftExecutionSaveData>(receipt.resultPayload);
+                    if (execution == null || !string.Equals(execution.startOperationKey, request.OperationKey, StringComparison.Ordinal))
+                        continue;
+                    matchingExecutionCount++;
+                    replayed = execution;
                 }
-                catch (Exception)
-                {
-                    replayed = null;
-                }
-                if (!receipt.success || replayed == null ||
-                    !string.Equals(replayed.executionId, receipt.executionId, StringComparison.Ordinal) ||
-                    !string.Equals(replayed.startOperationKey, request.OperationKey, StringComparison.Ordinal) ||
-                    !string.Equals(replayed.startFingerprint, receipt.fingerprint, StringComparison.Ordinal))
-                    return Blocked(request, CraftStartCode.TransactionFailure, "Craft start receipt does not reference a valid persisted execution.", fingerprint);
 
-                return new PreflightResult
+                if (matchingExecutionCount > 1)
+                    return Blocked(request, CraftStartCode.TransactionFailure, "Multiple CraftExecutions reference the same craft start operationKey.", fingerprint);
+
+                if (replayed != null)
                 {
-                    Descriptor = DescriptorFromExecution(replayed),
-                    Fingerprint = fingerprint,
-                    ReplayedExecution = replayed
-                };
+                    if (!string.Equals(replayed.startFingerprint, fingerprint, StringComparison.Ordinal))
+                        return Blocked(request, CraftStartCode.OperationReplayConflict, "operationKey was already used with another craft start payload.", fingerprint);
+                    if (!IsValidReplayExecution(replayed, request, fingerprint) ||
+                        hasReceipt && (!receipt.success || !string.Equals(receipt.executionId, replayed.executionId, StringComparison.Ordinal)))
+                    {
+                        return Blocked(request, CraftStartCode.TransactionFailure, "Craft start idempotency data does not reference a valid live execution.", fingerprint);
+                    }
+
+                    return new PreflightResult
+                    {
+                        Descriptor = DescriptorFromExecution(replayed),
+                        Fingerprint = fingerprint,
+                        ReplayedExecution = replayed
+                    };
+                }
+
+                if (hasReceipt)
+                    return Blocked(request, CraftStartCode.TransactionFailure, "Craft start receipt has no matching live execution.", fingerprint);
             }
 
             if (!_configs.TryGetDefinition(request.CraftId, out var definition))
@@ -574,6 +587,20 @@ namespace GuildIdle.Crafting
 
         private static bool IsActive(CraftExecutionStatus status) =>
             status == CraftExecutionStatus.Running || status == CraftExecutionStatus.ResultPending;
+
+        private bool IsValidReplayExecution(CraftExecutionSaveData execution, CraftStartRequest request, string fingerprint)
+        {
+            return execution != null &&
+                   !string.IsNullOrWhiteSpace(execution.executionId) &&
+                   string.Equals(execution.craftId, request.CraftId, StringComparison.Ordinal) &&
+                   string.Equals(execution.heroId, request.HeroId, StringComparison.Ordinal) &&
+                   string.Equals(execution.stationBuildingId, request.StationBuildingId, StringComparison.Ordinal) &&
+                   execution.stationBuildingLevel == request.StationBuildingLevel &&
+                   string.Equals(execution.startOperationKey, request.OperationKey, StringComparison.Ordinal) &&
+                   string.Equals(execution.startFingerprint, fingerprint, StringComparison.Ordinal) &&
+                   IsActive(execution.status) &&
+                   string.Equals(_state.GetHeroOccupationOwnerId(execution.heroId), execution.executionId, StringComparison.Ordinal);
+        }
 
         private static CraftExecutionSaveData CloneExecution(CraftExecutionSaveData source)
         {
