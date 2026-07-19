@@ -829,6 +829,99 @@ namespace GuildIdle.Player.Editor
         }
 
         [Test]
+        public void DirectCombatCreateOrAppendIsRejectedWithoutConsumingSequence()
+        {
+            var draft = new PendingResultDraft
+            {
+                SourceType = PendingResultSourceType.Combat,
+                SourceId = "combat-direct-source",
+                SourceExecutionId = "combat-direct-execution",
+                SourceSequence = 1,
+                Entries = new[]
+                {
+                    new PendingResultEntryDraft
+                    {
+                        RewardType = "Resource",
+                        TargetId = "resource_pine_wood",
+                        Quantity = 1,
+                        Origin = PendingResultOrigin.CombatLoot
+                    }
+                }
+            };
+            var events = new List<PendingResultResolvedEvent>();
+            _state.PendingResults.Resolved += events.Add;
+            var before = JsonUtility.ToJson(_state.ToSaveData());
+
+            var rejected = _state.PendingResults.CreateOrAppend("direct-combat", draft, true);
+
+            Assert.That(rejected.Success, Is.False);
+            Assert.That(rejected.Code, Is.EqualTo("CombatDedicatedApiRequired"));
+            Assert.That(JsonUtility.ToJson(_state.ToSaveData()), Is.EqualTo(before));
+            Assert.That(_state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(_state.GetItem("resource_pine_wood"), Is.Zero);
+            Assert.That(events, Is.Empty);
+
+            var formed = _state.PendingResults.CreateCombatResult(
+                "dedicated-combat",
+                draft,
+                null,
+                null,
+                _state.Storage.GetSnapshot().Revision);
+
+            Assert.That(formed.Success, Is.True, formed.Message);
+            Assert.That(formed.Result, Is.Not.Null);
+            Assert.That(_state.ToSaveData().lastCombatResultSequence, Is.EqualTo(1));
+            Assert.That(_state.GetItem("resource_pine_wood"), Is.Zero);
+        }
+
+        [Test]
+        public void CombatFormationSaveFailureRollsBackHighWaterAndAllowsSameSequenceRetry()
+        {
+            var draft = new PendingResultDraft
+            {
+                SourceId = "combat-save-failure-source",
+                SourceExecutionId = "combat-save-failure-execution",
+                SourceSequence = 1,
+                Entries = new[]
+                {
+                    new PendingResultEntryDraft
+                    {
+                        RewardType = "Resource",
+                        TargetId = "resource_pine_wood",
+                        Quantity = 1,
+                        Origin = PendingResultOrigin.CombatLoot
+                    }
+                }
+            };
+            var before = JsonUtility.ToJson(_state.ToSaveData());
+            _storage.ThrowOnSet = true;
+            LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save failure");
+
+            var failed = _state.PendingResults.CreateCombatResult(
+                "combat-save-failure",
+                draft,
+                null,
+                null,
+                _state.Storage.GetSnapshot().Revision);
+
+            Assert.That(failed.Success, Is.False);
+            Assert.That(failed.Code, Is.EqualTo("SaveFailed"));
+            Assert.That(JsonUtility.ToJson(_state.ToSaveData()), Is.EqualTo(before));
+            _storage.ThrowOnSet = false;
+
+            var retried = _state.PendingResults.CreateCombatResult(
+                "combat-save-failure",
+                draft,
+                null,
+                null,
+                _state.Storage.GetSnapshot().Revision);
+
+            Assert.That(retried.Success, Is.True, retried.Message);
+            Assert.That(retried.Replayed, Is.False);
+            Assert.That(_state.ToSaveData().lastCombatResultSequence, Is.EqualTo(1));
+        }
+
+        [Test]
         public void CombatTransferConsumesOnceAndReturnsRemainderOnlyThroughClaim()
         {
             var added = _state.Storage.Add("add-consumables", _state.Storage.GetSnapshot().Revision, "consumable_hunting_potion", 10);
