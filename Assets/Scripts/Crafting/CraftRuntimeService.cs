@@ -781,46 +781,7 @@ namespace GuildIdle.Crafting
 
         private bool HasValidPendingResult(CraftExecutionSaveData execution)
         {
-            var result = _state.GetPendingResult(execution?.pendingResultId);
-            if (result == null ||
-                string.Equals(result.resultId, BuildCraftResultId(execution.executionId), StringComparison.Ordinal) == false ||
-                string.Equals(result.sourceType, PendingResultSourceType.Craft, StringComparison.Ordinal) == false ||
-                string.Equals(result.sourceId, execution.craftId, StringComparison.Ordinal) == false ||
-                string.Equals(result.sourceExecutionId, execution.executionId, StringComparison.Ordinal) == false ||
-                string.Equals(result.ownerHeroId, execution.heroId, StringComparison.Ordinal) == false ||
-                string.Equals(result.state, PendingResultState.ResultPending, StringComparison.Ordinal) == false ||
-                result.entries == null || result.entries.Length == 0)
-                return false;
-
-            var itemFound = false;
-            var skillExpFound = false;
-            foreach (var entry in result.entries)
-            {
-                if (entry == null || entry.quantity <= 0 ||
-                    !string.Equals(entry.origin, PendingResultOrigin.CraftOutput, StringComparison.Ordinal))
-                    return false;
-
-                if (string.Equals(entry.rewardType, RewardType.Item, StringComparison.Ordinal))
-                {
-                    if (itemFound || !string.Equals(entry.targetId, execution.outputItemId, StringComparison.Ordinal) ||
-                        entry.quantity > execution.outputCount)
-                        return false;
-                    itemFound = true;
-                    continue;
-                }
-
-                if (string.Equals(entry.rewardType, RewardType.SkillExp, StringComparison.Ordinal))
-                {
-                    if (skillExpFound || !string.Equals(entry.targetId, execution.skillId, StringComparison.Ordinal) ||
-                        entry.quantity > execution.skillExp)
-                        return false;
-                    skillExpFound = true;
-                    continue;
-                }
-
-                return false;
-            }
-            return itemFound || skillExpFound;
+            return CraftPendingResultValidator.Validate(execution, _state.GetPendingResult(execution?.pendingResultId));
         }
 
         private static CraftAdvanceReceiptSaveData FindAdvanceReceipt(CraftExecutionSaveData execution, string operationKey)
@@ -1091,6 +1052,52 @@ namespace GuildIdle.Crafting
         {
             public int Quantity;
             public string Kind;
+        }
+    }
+
+    internal static class CraftPendingResultValidator
+    {
+        public static bool Validate(CraftExecutionSaveData execution, PendingResultSaveData result)
+        {
+            if (execution == null || result == null ||
+                !string.Equals(result.resultId, $"result:{PendingResultSourceType.Craft}:{execution.executionId}", StringComparison.Ordinal) ||
+                !string.Equals(result.sourceType, PendingResultSourceType.Craft, StringComparison.Ordinal) ||
+                !string.Equals(result.sourceId, execution.craftId, StringComparison.Ordinal) ||
+                !string.Equals(result.sourceExecutionId, execution.executionId, StringComparison.Ordinal) ||
+                !string.Equals(result.ownerHeroId, execution.heroId, StringComparison.Ordinal) ||
+                !string.Equals(result.state, PendingResultState.ResultPending, StringComparison.Ordinal) ||
+                result.entries == null || result.entries.Length == 0)
+                return false;
+
+            var itemFound = false;
+            var skillExpFound = false;
+            foreach (var entry in result.entries)
+            {
+                if (entry == null || entry.quantity <= 0 ||
+                    !string.Equals(entry.origin, PendingResultOrigin.CraftOutput, StringComparison.Ordinal))
+                    return false;
+
+                if (string.Equals(entry.rewardType, RewardType.Item, StringComparison.Ordinal))
+                {
+                    if (itemFound || !string.Equals(entry.targetId, execution.outputItemId, StringComparison.Ordinal) ||
+                        entry.quantity > execution.outputCount)
+                        return false;
+                    itemFound = true;
+                    continue;
+                }
+
+                if (string.Equals(entry.rewardType, RewardType.SkillExp, StringComparison.Ordinal))
+                {
+                    if (skillExpFound || !string.Equals(entry.targetId, execution.skillId, StringComparison.Ordinal) ||
+                        entry.quantity > execution.skillExp)
+                        return false;
+                    skillExpFound = true;
+                    continue;
+                }
+
+                return false;
+            }
+            return itemFound || skillExpFound;
         }
     }
 }

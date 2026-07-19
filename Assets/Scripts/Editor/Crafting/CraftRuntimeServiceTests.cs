@@ -435,49 +435,10 @@ namespace GuildIdle.Editor.Crafting
         [TestCase("wrong-origin")]
         public void CorruptedSavedCraftResultEntriesFailImmutableSnapshotValidation(string corruption)
         {
-            var state = CompleteBasic(out var executionId, out var result);
+            var state = CompleteBasic(out var executionId, out _);
             var corrupted = state.ToSaveData();
-            var savedResult = corrupted.pendingResults[0];
-            var output = FindEntry(savedResult, RewardType.Item);
-            var skillExp = FindEntry(savedResult, RewardType.SkillExp);
-
-            switch (corruption)
-            {
-                case "other-output-item":
-                    output.targetId = "consumable_other";
-                    break;
-                case "excess-output-quantity":
-                    output.quantity = corrupted.craftRuntime.executions[0].outputCount + 1L;
-                    break;
-                case "other-skill":
-                    skillExp.targetId = "skill_other";
-                    break;
-                case "excess-skill-exp":
-                    skillExp.quantity = corrupted.craftRuntime.executions[0].skillExp + 1L;
-                    break;
-                case "additional-reward":
-                    var entries = new List<PendingResultEntrySaveData>(savedResult.entries)
-                    {
-                        new PendingResultEntrySaveData
-                        {
-                            entryId = "corrupt-additional-reward",
-                            sortOrder = 100,
-                            rewardType = RewardType.Resource,
-                            targetId = "resource_herb",
-                            quantity = 1,
-                            origin = PendingResultOrigin.CraftOutput
-                        }
-                    };
-                    savedResult.entries = entries.ToArray();
-                    break;
-                case "wrong-origin":
-                    output.origin = PendingResultOrigin.ActivityReward;
-                    LogAssert.Expect(LogType.Error, new Regex(@"\[PendingResult\] Corrupt result '.+' was quarantined; its source remains blocked to prevent reward reroll\."));
-                    break;
-                default:
-                    Assert.Fail($"Unknown corruption case '{corruption}'.");
-                    break;
-            }
+            CorruptCraftResult(corrupted, corruption);
+            ExpectCorruptCraftResultLoadLog(corruption);
 
             var loaded = _factory.Create(corrupted);
             var beforeAdvance = JsonUtility.ToJson(loaded.ToSaveData());
@@ -488,6 +449,157 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(advanced.Code, Is.EqualTo(CraftAdvanceCode.DataIntegrityFailure));
             Assert.That(JsonUtility.ToJson(loaded.ToSaveData()), Is.EqualTo(beforeAdvance));
             Assert.That(loaded.GetCraftExecution(executionId).status, Is.EqualTo(CraftExecutionStatus.ResultPending));
+        }
+
+        [TestCase("other-output-item")]
+        [TestCase("excess-output-quantity")]
+        [TestCase("other-skill")]
+        [TestCase("excess-skill-exp")]
+        [TestCase("additional-reward")]
+        [TestCase("wrong-origin")]
+        [TestCase("duplicate-item")]
+        [TestCase("duplicate-skill-exp")]
+        public void CorruptedCraftResultCannotBeClaimedDirectlyWithoutAdvance(string corruption)
+        {
+            var state = CompleteBasic(out var executionId, out _);
+            var corrupted = state.ToSaveData();
+            var resultId = corrupted.pendingResults[0].resultId;
+            var entryId = CorruptCraftResult(corrupted, corruption);
+            _storage.SetString(SaveService.SaveKey, JsonUtility.ToJson(corrupted));
+            _storage.Save();
+            ExpectCorruptCraftResultLoadLog(corruption);
+            var loaded = SaveService.Load(_factory, _storage);
+            var loadedResult = loaded.PendingResults.Get(resultId);
+            var expectedRevision = loadedResult?.revision ?? corrupted.pendingResults[0].revision;
+            var before = JsonUtility.ToJson(loaded.ToSaveData());
+            var persistedBefore = _storage.GetString(SaveService.SaveKey, string.Empty);
+            var savesBefore = _storage.SaveCalls;
+            var storageRevisionBefore = loaded.Storage.GetSnapshot().Revision;
+            var expBefore = loaded.GetHeroSkillExp("ren", "skill_crafting");
+            var operationId = $"claim-corrupt-direct:{corruption}";
+
+            var rejected = loaded.PendingResults.ClaimQuantity(
+                operationId,
+                resultId,
+                entryId,
+                1,
+                expectedRevision,
+                storageRevisionBefore);
+
+            Assert.That(rejected.Success, Is.False);
+            Assert.That(rejected.Code == "SourceNotClaimable" || rejected.Code == "ResultNotFound", Is.True);
+            Assert.That(JsonUtility.ToJson(loaded.ToSaveData()), Is.EqualTo(before));
+            Assert.That(_storage.GetString(SaveService.SaveKey, string.Empty), Is.EqualTo(persistedBefore));
+            Assert.That(_storage.SaveCalls, Is.EqualTo(savesBefore));
+            Assert.That(loaded.Storage.GetSnapshot().Revision, Is.EqualTo(storageRevisionBefore));
+            Assert.That(loaded.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(expBefore));
+            Assert.That(loaded.GetItem("consumable_roasted_rabbit_meat"), Is.Zero);
+            Assert.That(loadedResult == null || loaded.PendingResults.Get(resultId).revision == loadedResult.revision, Is.True);
+            Assert.That(HasOperationReceipt(loaded, resultId, operationId), Is.False);
+            AssertCraftExecutionStillOccupied(loaded, executionId, resultId);
+        }
+
+        [Test]
+        public void CorruptedCraftResultCannotDiscardInvalidEntryToBypassValidation()
+        {
+            var state = CompleteBasic(out var executionId, out _);
+            var corrupted = state.ToSaveData();
+            var resultId = corrupted.pendingResults[0].resultId;
+            var invalidEntryId = CorruptCraftResult(corrupted, "additional-reward");
+            var originalEntryId = FindEntry(corrupted.pendingResults[0], RewardType.Item).entryId;
+            _storage.SetString(SaveService.SaveKey, JsonUtility.ToJson(corrupted));
+            _storage.Save();
+            ExpectCorruptCraftResultLoadLog("additional-reward");
+            var loaded = SaveService.Load(_factory, _storage);
+            var loadedResult = loaded.PendingResults.Get(resultId);
+            var before = JsonUtility.ToJson(loaded.ToSaveData());
+            var persistedBefore = _storage.GetString(SaveService.SaveKey, string.Empty);
+            var savesBefore = _storage.SaveCalls;
+
+            var discard = loaded.PendingResults.DiscardQuantity(
+                "discard-corrupt-extra",
+                resultId,
+                invalidEntryId,
+                1,
+                loadedResult.revision);
+            var claim = loaded.PendingResults.ClaimQuantity(
+                "claim-after-corrupt-discard",
+                resultId,
+                originalEntryId,
+                1,
+                loadedResult.revision,
+                loaded.Storage.GetSnapshot().Revision);
+
+            Assert.That(discard.Success, Is.False);
+            Assert.That(discard.Code, Is.EqualTo("SourceNotClaimable"));
+            Assert.That(claim.Success, Is.False);
+            Assert.That(claim.Code, Is.EqualTo("SourceNotClaimable"));
+            Assert.That(JsonUtility.ToJson(loaded.ToSaveData()), Is.EqualTo(before));
+            Assert.That(_storage.GetString(SaveService.SaveKey, string.Empty), Is.EqualTo(persistedBefore));
+            Assert.That(_storage.SaveCalls, Is.EqualTo(savesBefore));
+            Assert.That(HasOperationReceipt(loaded, resultId, "discard-corrupt-extra"), Is.False);
+            Assert.That(HasOperationReceipt(loaded, resultId, "claim-after-corrupt-discard"), Is.False);
+            AssertCraftExecutionStillOccupied(loaded, executionId, resultId);
+        }
+
+        [Test]
+        public void ValidPartiallyResolvedCraftResultRemainsClaimableWithoutAdvance()
+        {
+            var state = CompleteBasic(out var executionId, out var result);
+            var output = FindEntry(result, RewardType.Item);
+            var discarded = state.PendingResults.DiscardQuantity(
+                "discard-valid-output",
+                result.resultId,
+                output.entryId,
+                output.quantity,
+                result.revision);
+            var skillExp = FindEntry(discarded.Result, RewardType.SkillExp);
+
+            var claimed = state.PendingResults.ClaimQuantity(
+                "claim-valid-partial",
+                result.resultId,
+                skillExp.entryId,
+                1,
+                discarded.ResultRevision,
+                state.Storage.GetSnapshot().Revision);
+
+            Assert.That(discarded.Success, Is.True);
+            Assert.That(claimed.Success, Is.True);
+            Assert.That(claimed.Resolved, Is.False);
+            Assert.That(state.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(1));
+            AssertEntry(claimed.Result, RewardType.SkillExp, "skill_crafting", 1, PendingResultOrigin.CraftOutput);
+            AssertCraftResultStillPending(state, executionId, result.resultId);
+        }
+
+        [Test]
+        public void ValidPartiallyResolvedCraftResultRemainsClaimableAfterSaveLoad()
+        {
+            var state = CompleteBasic(out var executionId, out var result);
+            var output = FindEntry(result, RewardType.Item);
+            var discarded = state.PendingResults.DiscardQuantity(
+                "discard-valid-output-before-load",
+                result.resultId,
+                output.entryId,
+                output.quantity,
+                result.revision);
+            Assert.That(discarded.Success, Is.True);
+            var loaded = SaveService.Load(_factory, _storage);
+            var loadedResult = loaded.PendingResults.Get(result.resultId);
+            var skillExp = FindEntry(loadedResult, RewardType.SkillExp);
+
+            var claimed = loaded.PendingResults.ClaimQuantity(
+                "claim-valid-partial-after-load",
+                result.resultId,
+                skillExp.entryId,
+                1,
+                loadedResult.revision,
+                loaded.Storage.GetSnapshot().Revision);
+
+            Assert.That(claimed.Success, Is.True);
+            Assert.That(claimed.Resolved, Is.False);
+            Assert.That(loaded.GetHeroSkillExp("ren", "skill_crafting"), Is.EqualTo(1));
+            AssertEntry(claimed.Result, RewardType.SkillExp, "skill_crafting", 1, PendingResultOrigin.CraftOutput);
+            AssertCraftResultStillPending(loaded, executionId, result.resultId);
         }
 
         [Test]
@@ -1103,12 +1215,17 @@ namespace GuildIdle.Editor.Crafting
 
         private static void AssertCraftResultStillPending(PlayerState state, string executionId, string resultId)
         {
+            AssertCraftExecutionStillOccupied(state, executionId, resultId);
+            Assert.That(state.PendingResults.Get(resultId), Is.Not.Null);
+        }
+
+        private static void AssertCraftExecutionStillOccupied(PlayerState state, string executionId, string resultId)
+        {
             var execution = state.GetCraftExecution(executionId);
             Assert.That(execution, Is.Not.Null);
             Assert.That(execution.status, Is.EqualTo(CraftExecutionStatus.ResultPending));
             Assert.That(execution.completionRecorded, Is.True);
             Assert.That(execution.pendingResultId, Is.EqualTo(resultId));
-            Assert.That(state.PendingResults.Get(resultId), Is.Not.Null);
             Assert.That(state.GetHeroCurrentActivityExecutionId(execution.heroId), Is.EqualTo(executionId));
         }
 
@@ -1118,6 +1235,84 @@ namespace GuildIdle.Editor.Crafting
                 if (entry != null && string.Equals(entry.rewardType, rewardType, StringComparison.Ordinal)) return entry;
             Assert.Fail($"Missing result entry of type '{rewardType}'.");
             return null;
+        }
+
+        private static string CorruptCraftResult(SaveData saveData, string corruption)
+        {
+            var result = saveData.pendingResults[0];
+            var execution = saveData.craftRuntime.executions[0];
+            var output = FindEntry(result, RewardType.Item);
+            var skillExp = FindEntry(result, RewardType.SkillExp);
+            switch (corruption)
+            {
+                case "other-output-item":
+                    output.targetId = "consumable_other";
+                    return output.entryId;
+                case "excess-output-quantity":
+                    output.quantity = execution.outputCount + 1L;
+                    return output.entryId;
+                case "other-skill":
+                    skillExp.targetId = "skill_other";
+                    return skillExp.entryId;
+                case "excess-skill-exp":
+                    skillExp.quantity = execution.skillExp + 1L;
+                    return skillExp.entryId;
+                case "additional-reward":
+                    var additional = new PendingResultEntrySaveData
+                    {
+                        entryId = "corrupt-additional-reward",
+                        sortOrder = 100,
+                        rewardType = RewardType.Resource,
+                        targetId = "resource_herb",
+                        quantity = 1,
+                        origin = PendingResultOrigin.CraftOutput
+                    };
+                    AppendEntry(result, additional);
+                    return additional.entryId;
+                case "wrong-origin":
+                    output.origin = PendingResultOrigin.ActivityReward;
+                    return output.entryId;
+                case "duplicate-item":
+                    var duplicateItem = CloneEntry(output, "corrupt-duplicate-item");
+                    AppendEntry(result, duplicateItem);
+                    return duplicateItem.entryId;
+                case "duplicate-skill-exp":
+                    var duplicateSkillExp = CloneEntry(skillExp, "corrupt-duplicate-skill-exp");
+                    AppendEntry(result, duplicateSkillExp);
+                    return duplicateSkillExp.entryId;
+                default:
+                    Assert.Fail($"Unknown corruption case '{corruption}'.");
+                    return null;
+            }
+        }
+
+        private static void ExpectCorruptCraftResultLoadLog(string corruption)
+        {
+            var pattern = string.Equals(corruption, "wrong-origin", StringComparison.Ordinal)
+                ? @"\[PendingResult\] Corrupt result '.+' was quarantined; its source remains blocked to prevent reward reroll\."
+                : @"\[PendingResult\] Result '.+' could not bind to source and remains blocked for manual recovery\.";
+            LogAssert.Expect(LogType.Error, new Regex(pattern));
+        }
+
+        private static void AppendEntry(PendingResultSaveData result, PendingResultEntrySaveData entry)
+        {
+            var entries = new List<PendingResultEntrySaveData>(result.entries) { entry };
+            result.entries = entries.ToArray();
+        }
+
+        private static PendingResultEntrySaveData CloneEntry(PendingResultEntrySaveData source, string entryId)
+        {
+            return new PendingResultEntrySaveData
+            {
+                entryId = entryId,
+                sortOrder = source.sortOrder + 100,
+                rewardType = source.rewardType,
+                targetId = source.targetId,
+                quantity = source.quantity,
+                origin = source.origin,
+                quality = source.quality,
+                instanceId = source.instanceId
+            };
         }
 
         private static void AssertEntry(PendingResultSaveData result, string rewardType, string targetId, long quantity, string origin)

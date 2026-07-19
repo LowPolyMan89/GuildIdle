@@ -278,9 +278,8 @@ namespace GuildIdle.Player
             if (mode == PendingResultBindMode.Append)
                 return false;
             var execution = result == null ? null : _state.GetCraftExecution(result.sourceExecutionId);
-            if (execution == null || _state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) ||
-                !string.Equals(execution.craftId, result.sourceId, StringComparison.Ordinal) ||
-                !string.Equals(execution.heroId, result.ownerHeroId, StringComparison.Ordinal) ||
+            if (!CraftPendingResultValidator.Validate(execution, result) ||
+                _state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) ||
                 (!string.IsNullOrWhiteSpace(execution.pendingResultId) &&
                  !string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal)))
                 return false;
@@ -308,10 +307,9 @@ namespace GuildIdle.Player
         public bool CanClaim(PendingResultSaveData result)
         {
             var execution = result == null ? null : _state.GetCraftExecution(result.sourceExecutionId);
-            return execution != null && !_state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) &&
+            return CraftPendingResultValidator.Validate(execution, result) &&
+                   !_state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) &&
                    execution.status == CraftExecutionStatus.ResultPending && execution.completionRecorded &&
-                   string.Equals(execution.craftId, result.sourceId, StringComparison.Ordinal) &&
-                   string.Equals(execution.heroId, result.ownerHeroId, StringComparison.Ordinal) &&
                    string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal) &&
                    _state.CanClaimPersistentResultSource(result);
         }
