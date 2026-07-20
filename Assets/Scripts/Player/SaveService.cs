@@ -6,7 +6,7 @@ namespace GuildIdle.Player
     public enum SaveLoadOrigin
     {
         Fresh,
-        ExistingV8
+        ExistingV9
     }
 
     public interface ISaveStorage
@@ -66,7 +66,7 @@ namespace GuildIdle.Player
                 if (state.WasNormalized)
                     Save(state, storage);
 
-                origin = SaveLoadOrigin.ExistingV8;
+                origin = SaveLoadOrigin.ExistingV9;
                 return state;
             }
             catch (SaveCompatibilityException exception)

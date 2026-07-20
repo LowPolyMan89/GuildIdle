@@ -1,4 +1,5 @@
 using System;
+using GuildIdle.Combat;
 using GuildIdle.Crafting;
 using GuildIdle.Core;
 
@@ -7,7 +8,7 @@ namespace GuildIdle.Player
     [Serializable]
     public sealed class SaveData
     {
-        public const int CurrentSaveVersion = 8;
+        public const int CurrentSaveVersion = 9;
 
         public int saveVersion = CurrentSaveVersion;
         public string currentStageId;
@@ -27,6 +28,7 @@ namespace GuildIdle.Player
         public string[] availableActivities = Array.Empty<string>();
         public ActivityRuntimeSaveData activityRuntime = new ActivityRuntimeSaveData();
         public CraftRuntimeSaveData craftRuntime = new CraftRuntimeSaveData();
+        public CombatRuntimeSaveData combatRuntime = new CombatRuntimeSaveData();
         public PendingResultSaveData[] pendingResults = Array.Empty<PendingResultSaveData>();
         public PendingResultSourceReferenceSaveData[] resultSources = Array.Empty<PendingResultSourceReferenceSaveData>();
         public long lastCombatResultSequence;

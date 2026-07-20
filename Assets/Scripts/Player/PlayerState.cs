@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using GuildIdle.Combat;
 using GuildIdle.Configs;
 using GuildIdle.Crafting;
 using GuildIdle.Core;
@@ -8,7 +9,7 @@ using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Player
 {
-    public sealed class PlayerState : IActivityRuntimeStore, IRewardBatchStore
+    public sealed class PlayerState : IActivityRuntimeStore, ICombatRuntimeStore, IRewardBatchStore
     {
         internal const int OperationReceiptRetentionLimit = 64;
         internal const int ResolvedResultSourceRetentionLimit = 64;
@@ -32,6 +33,7 @@ namespace GuildIdle.Player
         private readonly HashSet<string> _availableActivities = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, ActivityExecutionSaveData> _activityExecutions = new Dictionary<string, ActivityExecutionSaveData>(StringComparer.Ordinal);
         private readonly Dictionary<string, CraftExecutionSaveData> _craftExecutions = new Dictionary<string, CraftExecutionSaveData>(StringComparer.Ordinal);
+        private readonly Dictionary<string, CombatRuntimeAggregate> _combatAggregates = new Dictionary<string, CombatRuntimeAggregate>(StringComparer.Ordinal);
         private readonly Dictionary<string, QuestInstanceSaveData> _questInstances = new Dictionary<string, QuestInstanceSaveData>(StringComparer.Ordinal);
         private readonly Dictionary<string, PendingResultSourceReferenceSaveData> _resultSources = new Dictionary<string, PendingResultSourceReferenceSaveData>(StringComparer.Ordinal);
         private readonly List<OperationReceiptSaveData> _operationReceipts = new List<OperationReceiptSaveData>();
@@ -92,6 +94,7 @@ namespace GuildIdle.Player
                 availableActivities = BuildSortedArray(_availableActivities),
                 activityRuntime = BuildActivityRuntimeSaveData(),
                 craftRuntime = BuildCraftRuntimeSaveData(),
+                combatRuntime = BuildCombatRuntimeSaveData(),
                 pendingResults = PendingResults.GetSaveData(),
                 resultSources = BuildResultSourceReferences(),
                 lastCombatResultSequence = _lastCombatResultSequence,
@@ -649,7 +652,8 @@ namespace GuildIdle.Player
             if (!ValidateActivityExecution(execution, requireRunning: false))
                 return false;
 
-            if (_activityExecutions.ContainsKey(execution.executionId) || _craftExecutions.ContainsKey(execution.executionId))
+            if (_activityExecutions.ContainsKey(execution.executionId) || _craftExecutions.ContainsKey(execution.executionId) ||
+                _combatAggregates.ContainsKey(execution.executionId))
             {
                 Debug.LogError($"[PlayerState] Execution owner id '{execution.executionId}' already exists.");
                 return false;
@@ -743,7 +747,7 @@ namespace GuildIdle.Player
         public bool AddCraftExecution(CraftExecutionSaveData execution)
         {
             if (!ValidateCraftExecution(execution) || _craftExecutions.ContainsKey(execution.executionId) ||
-                _activityExecutions.ContainsKey(execution.executionId))
+                _activityExecutions.ContainsKey(execution.executionId) || _combatAggregates.ContainsKey(execution.executionId))
             {
                 Debug.LogError($"[PlayerState] Craft execution '{execution?.executionId}' is invalid or already exists.");
                 return false;
@@ -781,6 +785,76 @@ namespace GuildIdle.Player
             return _craftExecutions.Remove(executionId);
         }
 
+        public CombatRuntimeAggregate[] GetCombatAggregates()
+        {
+            var keys = SortedKeys(_combatAggregates);
+            var result = new CombatRuntimeAggregate[keys.Count];
+            for (var index = 0; index < result.Length; index++)
+                result[index] = CombatRuntimeSaveDataUtility.CloneAggregate(_combatAggregates[keys[index]]);
+            return result;
+        }
+
+        public CombatRuntimeAggregate GetCombatAggregate(string executionId)
+        {
+            return !string.IsNullOrWhiteSpace(executionId) && _combatAggregates.TryGetValue(executionId, out var aggregate)
+                ? CombatRuntimeSaveDataUtility.CloneAggregate(aggregate)
+                : null;
+        }
+
+        public bool AddCombatAggregate(CombatRuntimeAggregate aggregate)
+        {
+            if (!TryNormalizeCombatAggregate(aggregate, out var normalized))
+                return false;
+            var execution = normalized.execution;
+            if (execution.status != CombatExecutionStatus.Running ||
+                _combatAggregates.Count >= CombatRuntimeSaveDataUtility.PersistentCollectionLimit ||
+                _combatAggregates.ContainsKey(execution.executionId) || _activityExecutions.ContainsKey(execution.executionId) ||
+                _craftExecutions.ContainsKey(execution.executionId) || HasOtherUnfinishedCombat(execution.heroId, null))
+            {
+                Debug.LogError($"[PlayerState] Combat execution '{execution.executionId}' is duplicated or its hero already has unfinished combat.");
+                return false;
+            }
+            if (!CanApplyCombatOwnership(normalized))
+                return false;
+
+            _combatAggregates.Add(execution.executionId, normalized);
+            ApplyCombatOwnership(normalized);
+            return true;
+        }
+
+        public bool UpdateCombatAggregate(CombatRuntimeAggregate aggregate)
+        {
+            if (!TryNormalizeCombatAggregate(aggregate, out var normalized))
+                return false;
+            var executionId = normalized.execution.executionId;
+            if (!_combatAggregates.TryGetValue(executionId, out var previous) ||
+                !CombatRuntimeSaveDataUtility.HasSameIdentity(previous, normalized) ||
+                !IsValidCombatLifecycleTransition(previous.execution, normalized.execution) ||
+                HasOtherUnfinishedCombat(normalized.execution.heroId, executionId) ||
+                !CanApplyCombatOwnership(normalized))
+            {
+                Debug.LogError($"[PlayerState] Combat execution '{executionId}' update violates aggregate identity, lifecycle or hero ownership.");
+                return false;
+            }
+
+            _combatAggregates[executionId] = normalized;
+            if (CombatRuntimeSaveDataUtility.IsUnfinished(normalized.execution))
+                ApplyCombatOwnership(normalized);
+            else
+                ReleaseDirectCombatOwnership(previous);
+            return true;
+        }
+
+        public bool RemoveCombatAggregate(string executionId)
+        {
+            if (string.IsNullOrWhiteSpace(executionId) || !_combatAggregates.TryGetValue(executionId, out var aggregate) ||
+                CombatRuntimeSaveDataUtility.IsUnfinished(aggregate.execution))
+                return false;
+            _combatAggregates.Remove(executionId);
+            ReleaseDirectCombatOwnership(aggregate);
+            return true;
+        }
+
         private void Load(SaveData saveData)
         {
             saveData ??= new SaveData();
@@ -809,6 +883,7 @@ namespace GuildIdle.Player
             NormalizeOrphanEquippedInstances();
             LoadActivityRuntime(saveData.activityRuntime);
             LoadCraftRuntime(saveData.craftRuntime);
+            LoadCombatRuntime(saveData.combatRuntime);
             LoadResultSourceReferences(saveData.resultSources);
             LoadOperationReceipts(saveData.operationReceipts);
             PendingResults.Load(saveData.pendingResults);
@@ -832,6 +907,7 @@ namespace GuildIdle.Player
             _availableActivities.Clear();
             _activityExecutions.Clear();
             _craftExecutions.Clear();
+            _combatAggregates.Clear();
             _questInstances.Clear();
             _resultSources.Clear();
             _operationReceipts.Clear();
@@ -1280,6 +1356,198 @@ namespace GuildIdle.Player
                 _craftExecutions.Add(stored.executionId, stored);
                 hero.CurrentActivityExecutionId = stored.executionId;
             }
+        }
+
+        private void LoadCombatRuntime(CombatRuntimeSaveData runtime)
+        {
+            _combatAggregates.Clear();
+            if (runtime == null)
+            {
+                WasNormalized = true;
+                return;
+            }
+
+            var executions = runtime.executions ?? Array.Empty<CombatExecutionSaveData>();
+            var sessions = runtime.sessions ?? Array.Empty<CombatSessionSaveData>();
+            if (runtime.executions == null || runtime.sessions == null)
+                WasNormalized = true;
+            if (executions.Length > CombatRuntimeSaveDataUtility.PersistentCollectionLimit ||
+                sessions.Length > CombatRuntimeSaveDataUtility.PersistentCollectionLimit)
+            {
+                Debug.LogError("[PlayerState] Combat runtime exceeds the persistent aggregate limit and was rejected.");
+                WasNormalized = true;
+                return;
+            }
+
+            var duplicateExecutionIds = FindDuplicateExecutionIds(executions);
+            var duplicateSessionIds = FindDuplicateSessionIds(sessions);
+            var duplicateSessionExecutionIds = FindDuplicateSessionExecutionIds(sessions);
+            var orderedExecutions = new List<CombatExecutionSaveData>(executions);
+            orderedExecutions.Sort((left, right) => string.Compare(left?.executionId, right?.executionId, StringComparison.Ordinal));
+            var staged = new List<CombatRuntimeAggregate>();
+            var acceptedSessionIds = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var execution in orderedExecutions)
+            {
+                if (execution == null || string.IsNullOrWhiteSpace(execution.executionId) ||
+                    duplicateExecutionIds.Contains(execution.executionId))
+                {
+                    WasNormalized = true;
+                    continue;
+                }
+
+                CombatSessionSaveData matchingSession = null;
+                foreach (var session in sessions)
+                {
+                    if (session != null && string.Equals(session.sessionId, execution.sessionId, StringComparison.Ordinal) &&
+                        string.Equals(session.executionId, execution.executionId, StringComparison.Ordinal))
+                    {
+                        matchingSession = session;
+                        break;
+                    }
+                }
+                string error = null;
+                if (matchingSession == null || duplicateSessionIds.Contains(matchingSession.sessionId) ||
+                    duplicateSessionExecutionIds.Contains(matchingSession.executionId) ||
+                    !CombatRuntimeSaveDataUtility.TryNormalize(execution, matchingSession, out var aggregate, out var changed, out error) ||
+                    _activityExecutions.ContainsKey(execution.executionId) || _craftExecutions.ContainsKey(execution.executionId))
+                {
+                    Debug.LogError($"[PlayerState] Combat aggregate '{execution.executionId}' was rejected during load. {error}");
+                    WasNormalized = true;
+                    continue;
+                }
+
+                WasNormalized |= changed;
+                staged.Add(aggregate);
+                acceptedSessionIds.Add(aggregate.session.sessionId);
+            }
+
+            foreach (var session in sessions)
+            {
+                if (session == null || string.IsNullOrWhiteSpace(session.sessionId) || !acceptedSessionIds.Contains(session.sessionId))
+                    WasNormalized = true;
+            }
+
+            var unfinishedHeroCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var aggregate in staged)
+            {
+                if (!CombatRuntimeSaveDataUtility.IsUnfinished(aggregate.execution))
+                    continue;
+                unfinishedHeroCounts.TryGetValue(aggregate.execution.heroId, out var count);
+                unfinishedHeroCounts[aggregate.execution.heroId] = count + 1;
+            }
+
+            foreach (var aggregate in staged)
+            {
+                var execution = aggregate.execution;
+                if ((CombatRuntimeSaveDataUtility.IsUnfinished(execution) && unfinishedHeroCounts[execution.heroId] > 1) ||
+                    !CanApplyCombatOwnership(aggregate))
+                {
+                    Debug.LogError($"[PlayerState] Combat aggregate '{execution.executionId}' has conflicting hero ownership and was rejected.");
+                    WasNormalized = true;
+                    continue;
+                }
+                _combatAggregates.Add(execution.executionId, aggregate);
+                ApplyCombatOwnership(aggregate);
+            }
+        }
+
+        private bool TryNormalizeCombatAggregate(CombatRuntimeAggregate source, out CombatRuntimeAggregate normalized)
+        {
+            normalized = null;
+            if (!CombatRuntimeSaveDataUtility.TryNormalize(source?.execution, source?.session, out normalized, out _, out var error) ||
+                !_acquiredHeroes.Contains(normalized?.execution?.heroId))
+            {
+                Debug.LogError($"[PlayerState] Invalid combat aggregate. {error}");
+                normalized = null;
+                return false;
+            }
+            return true;
+        }
+
+        private bool CanApplyCombatOwnership(CombatRuntimeAggregate aggregate)
+        {
+            var execution = aggregate?.execution;
+            if (execution == null || !_acquiredHeroes.Contains(execution.heroId) || !_heroes.TryGetValue(execution.heroId, out var hero))
+                return false;
+            if (!CombatRuntimeSaveDataUtility.IsUnfinished(execution))
+                return true;
+            if (string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
+                return string.Equals(execution.occupationOwnerId, execution.executionId, StringComparison.Ordinal);
+            return string.Equals(hero.CurrentActivityExecutionId, execution.occupationOwnerId, StringComparison.Ordinal);
+        }
+
+        private void ApplyCombatOwnership(CombatRuntimeAggregate aggregate)
+        {
+            var execution = aggregate?.execution;
+            if (execution == null || !CombatRuntimeSaveDataUtility.IsUnfinished(execution) ||
+                !string.Equals(execution.occupationOwnerId, execution.executionId, StringComparison.Ordinal) ||
+                !_heroes.TryGetValue(execution.heroId, out var hero) || !string.IsNullOrWhiteSpace(hero.CurrentActivityExecutionId))
+                return;
+            hero.CurrentActivityExecutionId = execution.executionId;
+        }
+
+        private void ReleaseDirectCombatOwnership(CombatRuntimeAggregate aggregate)
+        {
+            var execution = aggregate?.execution;
+            if (execution == null || !string.Equals(execution.occupationOwnerId, execution.executionId, StringComparison.Ordinal) ||
+                !_heroes.TryGetValue(execution.heroId, out var hero) ||
+                !string.Equals(hero.CurrentActivityExecutionId, execution.executionId, StringComparison.Ordinal))
+                return;
+            hero.CurrentActivityExecutionId = null;
+        }
+
+        private bool HasOtherUnfinishedCombat(string heroId, string exceptExecutionId)
+        {
+            foreach (var pair in _combatAggregates)
+            {
+                if (!string.Equals(pair.Key, exceptExecutionId, StringComparison.Ordinal) &&
+                    string.Equals(pair.Value.execution.heroId, heroId, StringComparison.Ordinal) &&
+                    CombatRuntimeSaveDataUtility.IsUnfinished(pair.Value.execution))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool IsValidCombatLifecycleTransition(CombatExecutionSaveData previous, CombatExecutionSaveData next)
+        {
+            if (previous == null || next == null || next.status < previous.status ||
+                (previous.outcomeFinalized && !next.outcomeFinalized) ||
+                (previous.resultCreated && !next.resultCreated) ||
+                (previous.pendingResultResolved && !next.pendingResultResolved) ||
+                (previous.completionPublished && !next.completionPublished))
+                return false;
+            return !previous.outcomeFinalized || string.Equals(previous.outcome, next.outcome, StringComparison.Ordinal);
+        }
+
+        private static HashSet<string> FindDuplicateExecutionIds(CombatExecutionSaveData[] executions)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var duplicates = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var execution in executions)
+                if (execution != null && !string.IsNullOrWhiteSpace(execution.executionId) && !seen.Add(execution.executionId))
+                    duplicates.Add(execution.executionId);
+            return duplicates;
+        }
+
+        private static HashSet<string> FindDuplicateSessionIds(CombatSessionSaveData[] sessions)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var duplicates = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var session in sessions)
+                if (session != null && !string.IsNullOrWhiteSpace(session.sessionId) && !seen.Add(session.sessionId))
+                    duplicates.Add(session.sessionId);
+            return duplicates;
+        }
+
+        private static HashSet<string> FindDuplicateSessionExecutionIds(CombatSessionSaveData[] sessions)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var duplicates = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var session in sessions)
+                if (session != null && !string.IsNullOrWhiteSpace(session.executionId) && !seen.Add(session.executionId))
+                    duplicates.Add(session.executionId);
+            return duplicates;
         }
 
         private void LoadOperationReceipts(OperationReceiptSaveData[] receipts)
@@ -1802,6 +2070,19 @@ namespace GuildIdle.Player
             {
                 executions = GetCraftExecutions()
             };
+        }
+
+        private CombatRuntimeSaveData BuildCombatRuntimeSaveData()
+        {
+            var aggregates = GetCombatAggregates();
+            var executions = new CombatExecutionSaveData[aggregates.Length];
+            var sessions = new CombatSessionSaveData[aggregates.Length];
+            for (var index = 0; index < aggregates.Length; index++)
+            {
+                executions[index] = aggregates[index].execution;
+                sessions[index] = aggregates[index].session;
+            }
+            return new CombatRuntimeSaveData { executions = executions, sessions = sessions };
         }
 
         private string GetAvailableStateId()
