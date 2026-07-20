@@ -134,8 +134,9 @@ namespace GuildIdle.Combat
     [Serializable]
     public sealed class CombatRngStateSaveData
     {
-        public long state0;
-        public long state1;
+        public string algorithmId;
+        public int formatVersion;
+        public string state;
         public long drawCount;
     }
 
@@ -272,8 +273,9 @@ namespace GuildIdle.Combat
                 },
                 rng = source.rng == null ? new CombatRngStateSaveData() : new CombatRngStateSaveData
                 {
-                    state0 = source.rng.state0,
-                    state1 = source.rng.state1,
+                    algorithmId = source.rng.algorithmId,
+                    formatVersion = source.rng.formatVersion,
+                    state = source.rng.state,
                     drawCount = source.rng.drawCount
                 },
                 loot = CloneRewards(source.loot),
@@ -345,8 +347,10 @@ namespace GuildIdle.Combat
             if (string.IsNullOrWhiteSpace(session.sessionId) || string.IsNullOrWhiteSpace(session.executionId) ||
                 string.IsNullOrWhiteSpace(session.enemyGroupId) || string.IsNullOrWhiteSpace(session.combatMode) ||
                 InvalidTime(session.combatTimeSeconds) || session.scheduler == null || session.scheduler.nextSequence < 0 ||
-                session.rng == null || session.rng.drawCount < 0 || session.accumulatedEnemyExp < 0)
+                session.accumulatedEnemyExp < 0)
                 return Fail("Combat session has invalid identity, clock, scheduler or RNG state.", out error);
+            if (!ValidateRng(session.rng, out error))
+                return false;
             if (!WithinLimit(session.enemyQueue) || !WithinLimit(session.loot) || !WithinLimit(session.completionRewards))
                 return Fail("Combat session exceeds the persistent collection limit.", out error);
             if (!ValidateQueue(session.enemyQueue, out error) || !ValidateCombatant(session.hero, out error) ||
@@ -371,6 +375,15 @@ namespace GuildIdle.Combat
             if (!ValidateConsumable(session.broughtConsumable, out error) ||
                 !ValidateTerminalCandidate(session.terminalCandidate, out error))
                 return false;
+            return true;
+        }
+
+        private static bool ValidateRng(CombatRngStateSaveData rng, out string error)
+        {
+            error = null;
+            if (rng == null || string.IsNullOrWhiteSpace(rng.algorithmId) || rng.formatVersion <= 0 ||
+                string.IsNullOrWhiteSpace(rng.state) || rng.drawCount < 0)
+                return Fail("Combat RNG descriptor is invalid.", out error);
             return true;
         }
 

@@ -32,8 +32,9 @@ namespace GuildIdle.Editor.Player
             source.session.combatTimeSeconds = 12.75d;
             source.session.scheduler.nextSequence = 41;
             source.session.scheduler.lastResolvedEventKey = "event-40";
-            source.session.rng.state0 = -123456789L;
-            source.session.rng.state1 = 987654321L;
+            source.session.rng.algorithmId = "test-xoshiro";
+            source.session.rng.formatVersion = 3;
+            source.session.rng.state = "opaque-state-v3:0123456789abcdef";
             source.session.rng.drawCount = 17;
             source.session.hero.abilityCooldowns = new[]
             {
@@ -115,12 +116,22 @@ namespace GuildIdle.Editor.Player
             Assert.That(aggregate.session.executionId, Is.EqualTo("combat-a"));
             Assert.That(aggregate.session.combatTimeSeconds, Is.EqualTo(12.75d));
             Assert.That(aggregate.session.scheduler.nextSequence, Is.EqualTo(41));
-            Assert.That(aggregate.session.rng.state0, Is.EqualTo(-123456789L));
+            Assert.That(aggregate.session.rng.algorithmId, Is.EqualTo("test-xoshiro"));
+            Assert.That(aggregate.session.rng.formatVersion, Is.EqualTo(3));
+            Assert.That(aggregate.session.rng.state, Is.EqualTo("opaque-state-v3:0123456789abcdef"));
             Assert.That(aggregate.session.rng.drawCount, Is.EqualTo(17));
             Assert.That(aggregate.session.hero.statuses[0].statusInstanceId, Is.EqualTo("status-1"));
             Assert.That(aggregate.session.hero.independentModifiers[0].modifierInstanceId, Is.EqualTo("modifier-1"));
             Assert.That(restored.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo("combat-a"));
             Assert.That(after, Does.Not.Contain("derivedModifiers"));
+
+            Assert.That(SaveService.Save(restored, storage), Is.True);
+            var restoredAgain = SaveService.Load(_factory, storage, out var repeatedOrigin);
+            var repeated = JsonUtility.ToJson(restoredAgain.ToSaveData());
+            Assert.That(repeatedOrigin, Is.EqualTo(SaveLoadOrigin.ExistingV9));
+            Assert.That(repeated, Is.EqualTo(after));
+            Assert.That(restoredAgain.GetCombatAggregate("combat-a").session.rng.state,
+                Is.EqualTo("opaque-state-v3:0123456789abcdef"));
         }
 
         [Test]
@@ -132,8 +143,16 @@ namespace GuildIdle.Editor.Player
             var detached = state.GetCombatAggregate("combat-a");
             detached.session.hero.currentHp = 1;
             detached.session.enemyQueue[0].enemyId = "mutated";
+            detached.session.rng.algorithmId = "mutated-rng";
+            detached.session.rng.formatVersion = 99;
+            detached.session.rng.state = "mutated-state";
+            detached.session.rng.drawCount = 99;
             Assert.That(state.GetCombatAggregate("combat-a").session.hero.currentHp, Is.EqualTo(100));
             Assert.That(state.GetCombatAggregate("combat-a").session.enemyQueue[0].enemyId, Is.EqualTo("enemy-a"));
+            Assert.That(state.GetCombatAggregate("combat-a").session.rng.algorithmId, Is.EqualTo("test-rng"));
+            Assert.That(state.GetCombatAggregate("combat-a").session.rng.formatVersion, Is.EqualTo(1));
+            Assert.That(state.GetCombatAggregate("combat-a").session.rng.state, Is.EqualTo("fixture-state"));
+            Assert.That(state.GetCombatAggregate("combat-a").session.rng.drawCount, Is.Zero);
 
             var before = JsonUtility.ToJson(state.ToSaveData());
             var identityMutation = state.GetCombatAggregate("combat-a");
@@ -151,6 +170,38 @@ namespace GuildIdle.Editor.Player
             using (new SuppressedLogHandler())
                 Assert.That(state.AddCombatAggregate(Aggregate("combat-b", "session-b", "ren", "group-b", "enemy-b")), Is.False);
             Assert.That(state.GetCombatAggregates(), Has.Length.EqualTo(1));
+        }
+
+        [Test]
+        public void InvalidRngDescriptorIsRejectedAtomically()
+        {
+            var state = _factory.CreateDefault();
+            Assert.That(state.AddCombatAggregate(Aggregate("combat-a", "session-a", "ren", "group-a", "enemy-a")), Is.True);
+            var before = JsonUtility.ToJson(state.ToSaveData());
+            var invalidDescriptors = new[]
+            {
+                new CombatRngStateSaveData { algorithmId = " ", formatVersion = 1, state = "state", drawCount = 0 },
+                new CombatRngStateSaveData { algorithmId = "rng", formatVersion = 0, state = "state", drawCount = 0 },
+                new CombatRngStateSaveData { algorithmId = "rng", formatVersion = 1, state = " ", drawCount = 0 },
+                new CombatRngStateSaveData { algorithmId = "rng", formatVersion = 1, state = "state", drawCount = -1 }
+            };
+
+            foreach (var invalidDescriptor in invalidDescriptors)
+            {
+                var update = state.GetCombatAggregate("combat-a");
+                update.session.rng = invalidDescriptor;
+                using (new SuppressedLogHandler())
+                    Assert.That(state.UpdateCombatAggregate(update), Is.False);
+                Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+            }
+
+            var addState = _factory.CreateDefault();
+            var beforeAdd = JsonUtility.ToJson(addState.ToSaveData());
+            var invalidAdd = Aggregate("combat-b", "session-b", "ren", "group-b", "enemy-b");
+            invalidAdd.session.rng.state = null;
+            using (new SuppressedLogHandler())
+                Assert.That(addState.AddCombatAggregate(invalidAdd), Is.False);
+            Assert.That(JsonUtility.ToJson(addState.ToSaveData()), Is.EqualTo(beforeAdd));
         }
 
         [Test]
@@ -292,7 +343,12 @@ namespace GuildIdle.Editor.Player
                     hero = Combatant($"hero-{heroId}", heroId),
                     currentEnemy = Combatant(enemyCombatantId, enemyId),
                     scheduler = new CombatSchedulerStateSaveData(),
-                    rng = new CombatRngStateSaveData()
+                    rng = new CombatRngStateSaveData
+                    {
+                        algorithmId = "test-rng",
+                        formatVersion = 1,
+                        state = "fixture-state"
+                    }
                 }
             };
         }
