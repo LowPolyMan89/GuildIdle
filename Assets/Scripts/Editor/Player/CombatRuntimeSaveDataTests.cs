@@ -217,6 +217,33 @@ namespace GuildIdle.Editor.Player
             Assert.That(JsonUtility.ToJson(addState.ToSaveData()), Is.EqualTo(beforeAdd));
         }
 
+        [TestCase("over-limit")]
+        [TestCase("duplicate-event-key")]
+        [TestCase("duplicate-sequence")]
+        [TestCase("negative-sequence")]
+        [TestCase("sequence-at-next")]
+        [TestCase("duplicate-hero-attack")]
+        [TestCase("system-actor-attack")]
+        [TestCase("wrong-attack-phase")]
+        [TestCase("empty-event-key")]
+        [TestCase("empty-event-type")]
+        [TestCase("negative-timestamp")]
+        [TestCase("nan-timestamp")]
+        [TestCase("infinite-timestamp")]
+        public void InvalidPendingSchedulerIsRejectedAtomically(string scenario)
+        {
+            var state = _factory.CreateDefault();
+            var before = JsonUtility.ToJson(state.ToSaveData());
+            var aggregate = Aggregate("combat-invalid", "session-invalid", "ren", "group-invalid", "enemy-invalid");
+            ConfigureInvalidScheduler(aggregate.session.scheduler, scenario);
+
+            using (new SuppressedLogHandler())
+                Assert.That(state.AddCombatAggregate(aggregate), Is.False);
+
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+        }
+
         [Test]
         public void TerminalStateDoesNotReleaseHeroUntilExecutionAndPendingResultAreResolved()
         {
@@ -316,6 +343,10 @@ namespace GuildIdle.Editor.Player
             aggregate.session.currentEnemy.abilityCooldowns = Cooldowns(CollectionLimit);
             aggregate.session.currentEnemy.statuses = Statuses(CollectionLimit, "enemy-combatant-0");
             aggregate.session.currentEnemy.independentModifiers = Modifiers(CollectionLimit);
+            aggregate.session.scheduler.nextSequence = CollectionLimit;
+            aggregate.session.scheduler.scheduledEvents = new CombatScheduledEventSaveData[CollectionLimit];
+            for (var index = 0; index < CollectionLimit; index++)
+                aggregate.session.scheduler.scheduledEvents[index] = FutureEvent(index, $"future-{index:D2}");
             aggregate.session.loot = Rewards(CollectionLimit, "loot");
             aggregate.session.completionRewards = Rewards(CollectionLimit, "completion");
 
@@ -363,6 +394,121 @@ namespace GuildIdle.Editor.Player
                         state = "fixture-state"
                     }
                 }
+            };
+        }
+
+        private static void ConfigureInvalidScheduler(CombatSchedulerStateSaveData scheduler, string scenario)
+        {
+            switch (scenario)
+            {
+                case "over-limit":
+                    scheduler.nextSequence = CollectionLimit + 1;
+                    scheduler.scheduledEvents = new CombatScheduledEventSaveData[CollectionLimit + 1];
+                    for (var index = 0; index < scheduler.scheduledEvents.Length; index++)
+                        scheduler.scheduledEvents[index] = FutureEvent(index, $"future-{index}");
+                    return;
+                case "duplicate-event-key":
+                    scheduler.nextSequence = 2;
+                    scheduler.scheduledEvents = new[]
+                    {
+                        FutureEvent(0, "duplicate"),
+                        FutureEvent(1, "duplicate")
+                    };
+                    return;
+                case "duplicate-sequence":
+                    scheduler.nextSequence = 2;
+                    scheduler.scheduledEvents = new[]
+                    {
+                        FutureEvent(0, "future-a"),
+                        FutureEvent(0, "future-b")
+                    };
+                    return;
+                case "negative-sequence":
+                    scheduler.nextSequence = 1;
+                    scheduler.scheduledEvents = new[] { FutureEvent(-1, "negative-sequence") };
+                    return;
+                case "sequence-at-next":
+                    scheduler.nextSequence = 1;
+                    scheduler.scheduledEvents = new[] { FutureEvent(1, "sequence-at-next") };
+                    return;
+                case "duplicate-hero-attack":
+                    scheduler.nextSequence = 2;
+                    scheduler.scheduledEvents = new[]
+                    {
+                        ActorAttack(0, "hero-attack-a", CombatActorSide.Hero),
+                        ActorAttack(1, "hero-attack-b", CombatActorSide.Hero)
+                    };
+                    return;
+                case "system-actor-attack":
+                    scheduler.nextSequence = 1;
+                    scheduler.scheduledEvents = new[]
+                    {
+                        ActorAttack(0, "system-attack", CombatActorSide.System)
+                    };
+                    return;
+                case "wrong-attack-phase":
+                    scheduler.nextSequence = 1;
+                    scheduler.scheduledEvents = new[]
+                    {
+                        ActorAttack(0, "wrong-phase", CombatActorSide.Hero, 99)
+                    };
+                    return;
+                case "empty-event-key":
+                    scheduler.nextSequence = 1;
+                    scheduler.scheduledEvents = new[] { FutureEvent(0, " ") };
+                    return;
+                case "empty-event-type":
+                    scheduler.nextSequence = 1;
+                    scheduler.scheduledEvents = new[] { FutureEvent(0, "empty-type", " ") };
+                    return;
+                case "negative-timestamp":
+                    scheduler.nextSequence = 1;
+                    scheduler.scheduledEvents = new[] { FutureEvent(0, "negative-time", timestampSeconds: -1d) };
+                    return;
+                case "nan-timestamp":
+                    scheduler.nextSequence = 1;
+                    scheduler.scheduledEvents = new[] { FutureEvent(0, "nan-time", timestampSeconds: double.NaN) };
+                    return;
+                case "infinite-timestamp":
+                    scheduler.nextSequence = 1;
+                    scheduler.scheduledEvents = new[] { FutureEvent(0, "infinite-time", timestampSeconds: double.PositiveInfinity) };
+                    return;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+            }
+        }
+
+        private static CombatScheduledEventSaveData FutureEvent(
+            long sequence,
+            string eventKey,
+            string eventType = "future_event",
+            double timestampSeconds = 2d)
+        {
+            return new CombatScheduledEventSaveData
+            {
+                eventKey = eventKey,
+                eventType = eventType,
+                timestampSeconds = timestampSeconds,
+                phasePriority = 0,
+                actorSide = CombatActorSide.System,
+                sequence = sequence
+            };
+        }
+
+        private static CombatScheduledEventSaveData ActorAttack(
+            long sequence,
+            string eventKey,
+            CombatActorSide side,
+            int phasePriority = (int)CombatScheduledEventPhase.ActorAttack)
+        {
+            return new CombatScheduledEventSaveData
+            {
+                eventKey = eventKey,
+                eventType = CombatRuntimeService.ActorAttackEventType,
+                timestampSeconds = 2d,
+                phasePriority = phasePriority,
+                actorSide = side,
+                sequence = sequence
             };
         }
 

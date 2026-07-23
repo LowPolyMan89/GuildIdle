@@ -247,12 +247,14 @@ namespace GuildIdle.EditorTests.Player
 
             var first = service.AdvanceTo("execution", 1d);
             var drawCount = store.Value.session.rng.drawCount;
+            var updateCount = store.UpdateCount;
             var second = service.AdvanceTo("execution", 1d);
 
             Assert.That(first.Events, Is.Not.Empty);
             Assert.That(second.Success, Is.True);
             Assert.That(second.Events, Is.Empty);
             Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(drawCount));
+            Assert.That(store.UpdateCount, Is.EqualTo(updateCount));
         }
 
         [Test]
@@ -327,6 +329,31 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(store.Json, Is.EqualTo(before));
         }
 
+        [TestCase("not-hex", 0L, CombatAdvanceErrorCode.InvalidRngState)]
+        [TestCase("", 0L, CombatAdvanceErrorCode.InvalidRngState)]
+        [TestCase("0000000000000000", -1L, CombatAdvanceErrorCode.InvalidRngState)]
+        [TestCase("0000000000000000", long.MaxValue, CombatAdvanceErrorCode.ProcessingFailed)]
+        public void InvalidOrExhaustedRngStateReturnsTypedErrorWithoutMutation(
+            string rngState,
+            long drawCount,
+            CombatAdvanceErrorCode expectedError)
+        {
+            var source = Aggregate(100);
+            source.session.rng.state = rngState;
+            source.session.rng.drawCount = drawCount;
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var service = new CombatRuntimeService(store, DefaultDescriptors(), new CombatRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(expectedError));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
         [Test]
         public void DescriptorFailureReturnsTypedErrorWithoutUpdate()
         {
@@ -360,6 +387,39 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(result.Events, Is.Empty);
             Assert.That(store.UpdateCount, Is.EqualTo(1));
             Assert.That(store.Json, Is.EqualTo(before));
+        }
+
+        [Test]
+        public void MidAdvanceRngFailureRollsBackDetachedSimulationWithoutPublishingEvents()
+        {
+            var source = Aggregate(100);
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var beforeSession = JsonUtility.FromJson<CombatSessionSaveData>(
+                JsonUtility.ToJson(store.Value.session));
+            var rngFactory = new ThrowOnDrawRngFactory(4);
+            var service = new CombatRuntimeService(store, DefaultDescriptors(), rngFactory);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var persisted = store.Value.session;
+
+            Assert.That(rngFactory.SuccessfulDraws, Is.EqualTo(3));
+            Assert.That(rngFactory.ThrowObserved, Is.True);
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.ProcessingFailed));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+            Assert.That(persisted.hero.currentHp, Is.EqualTo(beforeSession.hero.currentHp));
+            Assert.That(persisted.currentEnemy.currentHp, Is.EqualTo(beforeSession.currentEnemy.currentHp));
+            Assert.That(persisted.combatTimeSeconds, Is.EqualTo(beforeSession.combatTimeSeconds));
+            Assert.That(persisted.hero.nextAttackAtSeconds, Is.EqualTo(beforeSession.hero.nextAttackAtSeconds));
+            Assert.That(persisted.currentEnemy.nextAttackAtSeconds, Is.EqualTo(beforeSession.currentEnemy.nextAttackAtSeconds));
+            Assert.That(persisted.scheduler.scheduledEvents, Is.Empty);
+            Assert.That(persisted.scheduler.nextSequence, Is.EqualTo(beforeSession.scheduler.nextSequence));
+            Assert.That(persisted.scheduler.lastResolvedEventKey, Is.EqualTo(beforeSession.scheduler.lastResolvedEventKey));
+            Assert.That(persisted.rng.state, Is.EqualTo(beforeSession.rng.state));
+            Assert.That(persisted.rng.drawCount, Is.EqualTo(beforeSession.rng.drawCount));
         }
 
         private static DescriptorProvider DefaultDescriptors()
@@ -585,6 +645,71 @@ namespace GuildIdle.EditorTests.Player
                         formatVersion = 1,
                         state = string.Join(",", _values.Select(value => value.ToString(CultureInfo.InvariantCulture))),
                         drawCount = _drawCount
+                    };
+                }
+            }
+        }
+
+        private sealed class ThrowOnDrawRngFactory : ICombatRngFactory
+        {
+            private readonly int _throwOnDraw;
+
+            public ThrowOnDrawRngFactory(int throwOnDraw)
+            {
+                _throwOnDraw = throwOnDraw;
+            }
+
+            public int SuccessfulDraws { get; private set; }
+            public bool ThrowObserved { get; private set; }
+
+            public bool TryRestore(
+                CombatRngStateSaveData state,
+                out ICombatRng rng,
+                out CombatAdvanceError error)
+            {
+                rng = new ThrowOnDrawRng(this, state, _throwOnDraw);
+                error = null;
+                return true;
+            }
+
+            private sealed class ThrowOnDrawRng : ICombatRng
+            {
+                private readonly ThrowOnDrawRngFactory _owner;
+                private readonly int _throwOnDraw;
+                private readonly CombatRngStateSaveData _initialState;
+                private int _drawAttempts;
+
+                public ThrowOnDrawRng(
+                    ThrowOnDrawRngFactory owner,
+                    CombatRngStateSaveData initialState,
+                    int throwOnDraw)
+                {
+                    _owner = owner;
+                    _throwOnDraw = throwOnDraw;
+                    _initialState = initialState;
+                }
+
+                public ulong NextUInt64()
+                {
+                    _drawAttempts++;
+                    if (_drawAttempts == _throwOnDraw)
+                    {
+                        _owner.ThrowObserved = true;
+                        throw new InvalidOperationException("Simulated mid-advance RNG failure.");
+                    }
+
+                    _owner.SuccessfulDraws++;
+                    return ulong.MaxValue;
+                }
+
+                public CombatRngStateSaveData CaptureState()
+                {
+                    return new CombatRngStateSaveData
+                    {
+                        algorithmId = _initialState.algorithmId,
+                        formatVersion = _initialState.formatVersion,
+                        state = _initialState.state,
+                        drawCount = _initialState.drawCount + _owner.SuccessfulDraws
                     };
                 }
             }

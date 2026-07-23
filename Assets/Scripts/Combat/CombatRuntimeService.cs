@@ -476,6 +476,9 @@ namespace GuildIdle.Combat
                     currentTime);
             }
 
+            if (CanReturnWithoutAdvance(stored.session, targetCombatTimeSeconds))
+                return CombatAdvanceResult.Succeeded(currentTime, new List<CombatEvent>());
+
             if (!TryResolveDescriptor(stored.session.hero, CombatActorSide.Hero, out var hero, out var error) ||
                 !TryResolveDescriptor(stored.session.currentEnemy, CombatActorSide.Enemy, out var enemy, out error))
             {
@@ -677,6 +680,29 @@ namespace GuildIdle.Combat
                     CombatAdvanceErrorCode.InvalidDescriptor,
                     $"Combat descriptor '{combatant.definitionId}' is invalid.");
                 return false;
+            }
+
+            return true;
+        }
+
+        private static bool CanReturnWithoutAdvance(
+            CombatSessionSaveData session,
+            double targetCombatTimeSeconds)
+        {
+            if (targetCombatTimeSeconds != session.combatTimeSeconds ||
+                session.scheduler.scheduledEvents == null ||
+                session.hero.currentHp <= 0 ||
+                session.currentEnemy.currentHp <= 0 ||
+                !HasPendingActorAttack(session.scheduler, CombatActorSide.Hero) ||
+                !HasPendingActorAttack(session.scheduler, CombatActorSide.Enemy))
+            {
+                return false;
+            }
+
+            foreach (var value in session.scheduler.scheduledEvents)
+            {
+                if (value == null || value.timestampSeconds <= targetCombatTimeSeconds)
+                    return false;
             }
 
             return true;

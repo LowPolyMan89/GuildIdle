@@ -129,6 +129,10 @@ namespace GuildIdle.Combat
     {
         public long nextSequence;
         public string lastResolvedEventKey;
+        // Invariant: this bounded collection contains pending events only. A successfully resolved
+        // event is removed before the aggregate is saved. lastResolvedEventKey only guards against
+        // replay of the most recently resolved event; future event types must provide any broader
+        // deduplication they require instead of treating it as a complete resolved-event history.
         public CombatScheduledEventSaveData[] scheduledEvents = Array.Empty<CombatScheduledEventSaveData>();
     }
 
