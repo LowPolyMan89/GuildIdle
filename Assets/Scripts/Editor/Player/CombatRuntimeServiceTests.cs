@@ -258,6 +258,24 @@ namespace GuildIdle.EditorTests.Player
         }
 
         [Test]
+        public void SameTimeNoOpWithUnsupportedRngReturnsTypedErrorWithoutUpdate()
+        {
+            var source = InitializedSameTimeAggregate();
+            source.session.rng.algorithmId = "unsupported";
+
+            AssertSameTimeRngError(source, CombatAdvanceErrorCode.UnsupportedRngDescriptor);
+        }
+
+        [Test]
+        public void SameTimeNoOpWithMalformedRngReturnsTypedErrorWithoutUpdate()
+        {
+            var source = InitializedSameTimeAggregate();
+            source.session.rng.state = "not-hex";
+
+            AssertSameTimeRngError(source, CombatAdvanceErrorCode.InvalidRngState);
+        }
+
+        [Test]
         public void RestoredResolvedEventKeyIsNotExecutedAgain()
         {
             var source = Aggregate(100);
@@ -429,6 +447,23 @@ namespace GuildIdle.EditorTests.Player
                 Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d)));
         }
 
+        private static void AssertSameTimeRngError(
+            CombatRuntimeAggregate source,
+            CombatAdvanceErrorCode expectedError)
+        {
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var service = new CombatRuntimeService(store, DefaultDescriptors(), new CombatRngFactory());
+
+            var result = service.AdvanceTo("execution", source.session.combatTimeSeconds);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(expectedError));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
         private static CombatActorDescriptor Descriptor(
             CombatActorSide side,
             CombatAttackCadence cadence,
@@ -486,6 +521,21 @@ namespace GuildIdle.EditorTests.Player
                     rng = CombatRngStateFactory.CreateSplitMix64(12345UL)
                 }
             };
+        }
+
+        private static CombatRuntimeAggregate InitializedSameTimeAggregate()
+        {
+            var source = Aggregate(100);
+            source.session.combatTimeSeconds = 1d;
+            source.session.hero.nextAttackAtSeconds = 2d;
+            source.session.currentEnemy.nextAttackAtSeconds = 2d;
+            source.session.scheduler.nextSequence = 2;
+            source.session.scheduler.scheduledEvents = new[]
+            {
+                Scheduled(2d, (int)CombatScheduledEventPhase.ActorAttack, CombatActorSide.Hero, 0),
+                Scheduled(2d, (int)CombatScheduledEventPhase.ActorAttack, CombatActorSide.Enemy, 1)
+            };
+            return source;
         }
 
         private static CombatScheduledEventSaveData Scheduled(

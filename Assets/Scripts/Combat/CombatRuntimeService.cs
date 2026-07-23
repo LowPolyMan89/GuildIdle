@@ -476,9 +476,6 @@ namespace GuildIdle.Combat
                     currentTime);
             }
 
-            if (CanReturnWithoutAdvance(stored.session, targetCombatTimeSeconds))
-                return CombatAdvanceResult.Succeeded(currentTime, new List<CombatEvent>());
-
             if (!TryResolveDescriptor(stored.session.hero, CombatActorSide.Hero, out var hero, out var error) ||
                 !TryResolveDescriptor(stored.session.currentEnemy, CombatActorSide.Enemy, out var enemy, out error))
             {
@@ -500,6 +497,9 @@ namespace GuildIdle.Combat
             };
             if (!TryRestoreRng(savedRng, out var rng, out error))
                 return CombatAdvanceResult.Failed(error, currentTime);
+
+            if (CanReturnWithoutAdvance(stored.session, targetCombatTimeSeconds))
+                return CombatAdvanceResult.Succeeded(currentTime, new List<CombatEvent>());
 
             var aggregate = CombatRuntimeSaveDataUtility.CloneAggregate(stored);
             var events = new List<CombatEvent>();
