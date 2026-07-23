@@ -1,0 +1,593 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using GuildIdle.Combat;
+using NUnit.Framework;
+using UnityEngine;
+
+namespace GuildIdle.EditorTests.Player
+{
+    public sealed class CombatRuntimeServiceTests
+    {
+        [Test]
+        public void ComparatorUsesTimestampPhaseSideAndSequence()
+        {
+            var values = new[]
+            {
+                Scheduled(2d, 0, CombatActorSide.Hero, 0),
+                Scheduled(1d, 1, CombatActorSide.Hero, 1),
+                Scheduled(1d, 0, CombatActorSide.Enemy, 2),
+                Scheduled(1d, 0, CombatActorSide.Hero, 4),
+                Scheduled(1d, 0, CombatActorSide.Hero, 3)
+            };
+
+            Array.Sort(values, CombatScheduledEventComparer.Instance);
+
+            Assert.That(values.Select(value => value.sequence), Is.EqualTo(new long[] { 3, 4, 2, 1, 0 }));
+        }
+
+        [Test]
+        public void HeroUsesDerivedIntervalAndEnemyRateIsConvertedToInterval()
+        {
+            var store = new MemoryStore(Aggregate(100));
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(2d)),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(2d)));
+            var service = new CombatRuntimeService(store, descriptors, new CombatRngFactory());
+
+            var beforeCooldown = service.AdvanceTo("execution", 0.49d);
+            var enemyAttack = service.AdvanceTo("execution", 0.5d);
+            var beforeHeroCooldown = service.AdvanceTo("execution", 1.99d);
+            var heroAttack = service.AdvanceTo("execution", 2d);
+
+            Assert.That(beforeCooldown.Events, Is.Empty);
+            Assert.That(enemyAttack.Events.OfType<CombatAttackEvent>().Single().ActorSide, Is.EqualTo(CombatActorSide.Enemy));
+            Assert.That(beforeHeroCooldown.Events.OfType<CombatAttackEvent>().Select(value => value.ActorSide),
+                Is.EqualTo(new[] { CombatActorSide.Enemy, CombatActorSide.Enemy }));
+            Assert.That(heroAttack.Events.OfType<CombatAttackEvent>().Select(value => value.ActorSide),
+                Is.EqualTo(new[] { CombatActorSide.Hero, CombatActorSide.Enemy }));
+        }
+
+        [TestCase(0d)]
+        [TestCase(-1d)]
+        public void NonPositiveEnemyRateReturnsTypedErrorWithoutMutation(double attacksPerSecond)
+        {
+            var source = Aggregate(100);
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d)),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(attacksPerSecond)));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+            var before = store.Json;
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.InvalidAttackCadence));
+            Assert.That(store.Json, Is.EqualTo(before));
+            Assert.That(store.UpdateCount, Is.Zero);
+        }
+
+        [Test]
+        public void DodgeIsFirstAndDoesNotConsumeDamageOrCritRolls()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0, 7, 9);
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d)),
+                Descriptor(
+                    CombatActorSide.Enemy,
+                    CombatAttackCadence.EnemyRate(0.1d),
+                    dodgeChancePercent: 100d));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Events.OfType<CombatDodgeEvent>().Single().Damage, Is.Zero);
+            Assert.That(result.Events.OfType<CombatDamageEvent>(), Is.Empty);
+            Assert.That(store.Value.session.currentEnemy.currentHp, Is.EqualTo(100));
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(1));
+            Assert.That(store.Value.session.rng.state, Is.EqualTo("7,9"));
+        }
+
+        [Test]
+        public void HitRollOrderIsDodgeThenInclusiveDamageThenCrit()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0, 1, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(
+                    CombatActorSide.Hero,
+                    CombatAttackCadence.HeroInterval(1d),
+                    damageMin: 5,
+                    damageMax: 6),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.1d)));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+            var damage = result.Events.OfType<CombatDamageEvent>().Single();
+
+            Assert.That(damage.DodgeRollPercent, Is.EqualTo(0d));
+            Assert.That(damage.BaseDamage, Is.EqualTo(6));
+            Assert.That(damage.CritRollPercent, Is.GreaterThan(99d));
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void BothInclusiveDamageBoundariesAreReachable()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(
+                0, 0, ulong.MaxValue,
+                0, 1, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(
+                    CombatActorSide.Hero,
+                    CombatAttackCadence.HeroInterval(1d),
+                    damageMin: 5,
+                    damageMax: 6),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.1d)));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 2d);
+
+            Assert.That(
+                result.Events.OfType<CombatDamageEvent>().Select(value => value.BaseDamage),
+                Is.EqualTo(new[] { 5, 6 }));
+        }
+
+        [Test]
+        public void CritThenResistanceThenCeilUsesCanonicalOrder()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0, 0, 0);
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(
+                    CombatActorSide.Hero,
+                    CombatAttackCadence.HeroInterval(1d),
+                    damageMin: 5,
+                    damageMax: 5,
+                    critChancePercent: 100d,
+                    critDamageMultiplier: 1.5d),
+                Descriptor(
+                    CombatActorSide.Enemy,
+                    CombatAttackCadence.EnemyRate(0.1d),
+                    physicalResistancePercent: 50d));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+            var damage = result.Events.OfType<CombatDamageEvent>().Single();
+
+            Assert.That(damage.Critical, Is.True);
+            Assert.That(damage.ResistancePercent, Is.EqualTo(50d));
+            Assert.That(damage.Damage, Is.EqualTo(4));
+        }
+
+        [Test]
+        public void SuccessfulHitDealsAtLeastOneAfterResistance()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d), damageMin: 0, damageMax: 0),
+                Descriptor(
+                    CombatActorSide.Enemy,
+                    CombatAttackCadence.EnemyRate(0.1d),
+                    physicalResistancePercent: 100d));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Events.OfType<CombatDamageEvent>().Single().Damage, Is.EqualTo(1));
+            Assert.That(store.Value.session.currentEnemy.currentHp, Is.EqualTo(99));
+        }
+
+        [Test]
+        public void HeroWinsTimestampTieAndKilledEnemyDoesNotAttack()
+        {
+            var source = Aggregate(10);
+            source.session.rng = ScriptedRngFactory.State(0, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d), damageMin: 10, damageMax: 10),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d), damageMin: 100, damageMax: 100));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Events.OfType<CombatAttackEvent>().Select(value => value.ActorSide),
+                Is.EqualTo(new[] { CombatActorSide.Hero }));
+            Assert.That(store.Value.session.currentEnemy.currentHp, Is.Zero);
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(100));
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void LargeDeltaProcessesEveryDueAttackInStableOrder()
+        {
+            var source = Aggregate(1000);
+            source.session.hero.maxHp = source.session.hero.currentHp = 1000;
+            source.session.rng = ScriptedRngFactory.State(Enumerable.Repeat(ulong.MaxValue, 30).ToArray());
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d), damageMin: 1, damageMax: 1),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.5d), damageMin: 1, damageMax: 1));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 5d);
+            var attacks = result.Events.OfType<CombatAttackEvent>().ToArray();
+
+            Assert.That(attacks.Select(value => value.TimestampSeconds),
+                Is.EqualTo(new[] { 1d, 2d, 2d, 3d, 4d, 4d, 5d }));
+            Assert.That(attacks.Select(value => value.ActorSide),
+                Is.EqualTo(new[]
+                {
+                    CombatActorSide.Hero,
+                    CombatActorSide.Hero,
+                    CombatActorSide.Enemy,
+                    CombatActorSide.Hero,
+                    CombatActorSide.Hero,
+                    CombatActorSide.Enemy,
+                    CombatActorSide.Hero
+                }));
+        }
+
+        [Test]
+        public void RepeatingAdvanceToSameTimeDoesNotReplayOrConsumeRng()
+        {
+            var store = new MemoryStore(Aggregate(100));
+            var service = new CombatRuntimeService(store, DefaultDescriptors(), new CombatRngFactory());
+
+            var first = service.AdvanceTo("execution", 1d);
+            var drawCount = store.Value.session.rng.drawCount;
+            var second = service.AdvanceTo("execution", 1d);
+
+            Assert.That(first.Events, Is.Not.Empty);
+            Assert.That(second.Success, Is.True);
+            Assert.That(second.Events, Is.Empty);
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(drawCount));
+        }
+
+        [Test]
+        public void RestoredResolvedEventKeyIsNotExecutedAgain()
+        {
+            var source = Aggregate(100);
+            var eventKey = "session:attack:hero:0";
+            source.session.scheduler.nextSequence = 1;
+            source.session.scheduler.lastResolvedEventKey = eventKey;
+            source.session.scheduler.scheduledEvents = new[]
+            {
+                new CombatScheduledEventSaveData
+                {
+                    eventKey = eventKey,
+                    eventType = CombatRuntimeService.ActorAttackEventType,
+                    timestampSeconds = 1d,
+                    phasePriority = (int)CombatScheduledEventPhase.ActorAttack,
+                    actorSide = CombatActorSide.Hero,
+                    sequence = 0
+                }
+            };
+            source.session.currentEnemy.nextAttackAtSeconds = 10d;
+            var store = new MemoryStore(source);
+            var service = new CombatRuntimeService(store, DefaultDescriptors(), new CombatRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.Value.session.rng.drawCount, Is.Zero);
+        }
+
+        [Test]
+        public void SaveLoadContinuesSameRngAndSchedulerPosition()
+        {
+            var initial = Aggregate(1000);
+            initial.session.hero.maxHp = initial.session.hero.currentHp = 1000;
+            var splitStore = new MemoryStore(initial);
+            var splitService = new CombatRuntimeService(splitStore, DefaultDescriptors(), new CombatRngFactory());
+            Assert.That(splitService.AdvanceTo("execution", 2d).Success, Is.True);
+
+            var reloadedStore = new MemoryStore(splitStore.Value);
+            var reloadedService = new CombatRuntimeService(reloadedStore, DefaultDescriptors(), new CombatRngFactory());
+            Assert.That(reloadedService.AdvanceTo("execution", 4d).Success, Is.True);
+
+            var continuousStore = new MemoryStore(initial);
+            var continuousService = new CombatRuntimeService(continuousStore, DefaultDescriptors(), new CombatRngFactory());
+            Assert.That(continuousService.AdvanceTo("execution", 4d).Success, Is.True);
+
+            Assert.That(
+                JsonUtility.ToJson(reloadedStore.Value.session),
+                Is.EqualTo(JsonUtility.ToJson(continuousStore.Value.session)));
+        }
+
+        [TestCase("unknown", CombatRngStateFactory.SplitMix64FormatVersion)]
+        [TestCase(CombatRngStateFactory.SplitMix64AlgorithmId, 99)]
+        public void UnsupportedRngDescriptorReturnsTypedErrorWithoutUpdate(string algorithmId, int formatVersion)
+        {
+            var source = Aggregate(100);
+            source.session.rng.algorithmId = algorithmId;
+            source.session.rng.formatVersion = formatVersion;
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var service = new CombatRuntimeService(store, DefaultDescriptors(), new CombatRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.UnsupportedRngDescriptor));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
+        [Test]
+        public void DescriptorFailureReturnsTypedErrorWithoutUpdate()
+        {
+            var store = new MemoryStore(Aggregate(100));
+            var before = store.Json;
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(null, null),
+                new CombatRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.DescriptorNotFound));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
+        [Test]
+        public void FailedAtomicUpdatePublishesNoEventsAndLeavesStateUntouched()
+        {
+            var store = new MemoryStore(Aggregate(100)) { RejectUpdates = true };
+            var before = store.Json;
+            var service = new CombatRuntimeService(store, DefaultDescriptors(), new CombatRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.StoreUpdateFailed));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.EqualTo(1));
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
+        private static DescriptorProvider DefaultDescriptors()
+        {
+            return new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d)),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d)));
+        }
+
+        private static CombatActorDescriptor Descriptor(
+            CombatActorSide side,
+            CombatAttackCadence cadence,
+            int damageMin = 2,
+            int damageMax = 2,
+            double critChancePercent = 0d,
+            double critDamageMultiplier = 2d,
+            double dodgeChancePercent = 0d,
+            double physicalResistancePercent = 0d,
+            double magicResistancePercent = 0d)
+        {
+            return new CombatActorDescriptor(
+                side,
+                cadence,
+                damageMin,
+                damageMax,
+                "physical",
+                critChancePercent,
+                critDamageMultiplier,
+                dodgeChancePercent,
+                physicalResistancePercent,
+                magicResistancePercent);
+        }
+
+        private static CombatRuntimeAggregate Aggregate(int enemyHp)
+        {
+            return new CombatRuntimeAggregate
+            {
+                execution = new CombatExecutionSaveData
+                {
+                    executionId = "execution",
+                    sessionId = "session",
+                    heroId = "hero"
+                },
+                session = new CombatSessionSaveData
+                {
+                    sessionId = "session",
+                    executionId = "execution",
+                    combatTimeSeconds = 0d,
+                    hero = new CombatantStateSaveData
+                    {
+                        combatantId = "hero-combatant",
+                        definitionId = "hero",
+                        currentHp = 100,
+                        maxHp = 100
+                    },
+                    currentEnemy = new CombatantStateSaveData
+                    {
+                        combatantId = "enemy-combatant",
+                        definitionId = "enemy",
+                        currentHp = enemyHp,
+                        maxHp = enemyHp
+                    },
+                    scheduler = new CombatSchedulerStateSaveData(),
+                    rng = CombatRngStateFactory.CreateSplitMix64(12345UL)
+                }
+            };
+        }
+
+        private static CombatScheduledEventSaveData Scheduled(
+            double timestamp,
+            int phase,
+            CombatActorSide side,
+            long sequence)
+        {
+            return new CombatScheduledEventSaveData
+            {
+                eventKey = $"event-{sequence}",
+                eventType = CombatRuntimeService.ActorAttackEventType,
+                timestampSeconds = timestamp,
+                phasePriority = phase,
+                actorSide = side,
+                sequence = sequence
+            };
+        }
+
+        private sealed class DescriptorProvider : ICombatDescriptorProvider
+        {
+            private readonly CombatActorDescriptor _hero;
+            private readonly CombatActorDescriptor _enemy;
+
+            public DescriptorProvider(CombatActorDescriptor hero, CombatActorDescriptor enemy)
+            {
+                _hero = hero;
+                _enemy = enemy;
+            }
+
+            public bool TryGetDescriptor(
+                CombatActorSide side,
+                string definitionId,
+                out CombatActorDescriptor descriptor,
+                out string error)
+            {
+                descriptor = side == CombatActorSide.Hero ? _hero : _enemy;
+                error = null;
+                return descriptor != null;
+            }
+        }
+
+        private sealed class MemoryStore : ICombatRuntimeStore
+        {
+            public MemoryStore(CombatRuntimeAggregate value)
+            {
+                Value = Clone(value);
+            }
+
+            public CombatRuntimeAggregate Value { get; private set; }
+            public bool RejectUpdates { get; set; }
+            public int UpdateCount { get; private set; }
+            public string Json => JsonUtility.ToJson(Value);
+
+            public CombatRuntimeAggregate[] GetCombatAggregates()
+            {
+                return new[] { Clone(Value) };
+            }
+
+            public CombatRuntimeAggregate GetCombatAggregate(string executionId)
+            {
+                return string.Equals(Value?.execution?.executionId, executionId, StringComparison.Ordinal)
+                    ? Clone(Value)
+                    : null;
+            }
+
+            public bool AddCombatAggregate(CombatRuntimeAggregate aggregate)
+            {
+                return false;
+            }
+
+            public bool UpdateCombatAggregate(CombatRuntimeAggregate aggregate)
+            {
+                UpdateCount++;
+                if (RejectUpdates)
+                    return false;
+                Value = Clone(aggregate);
+                return true;
+            }
+
+            public bool RemoveCombatAggregate(string executionId)
+            {
+                return false;
+            }
+
+            private static CombatRuntimeAggregate Clone(CombatRuntimeAggregate source)
+            {
+                return source == null
+                    ? null
+                    : JsonUtility.FromJson<CombatRuntimeAggregate>(JsonUtility.ToJson(source));
+            }
+        }
+
+        private sealed class ScriptedRngFactory : ICombatRngFactory
+        {
+            private const string AlgorithmId = "scripted";
+
+            public static CombatRngStateSaveData State(params ulong[] values)
+            {
+                return new CombatRngStateSaveData
+                {
+                    algorithmId = AlgorithmId,
+                    formatVersion = 1,
+                    state = string.Join(",", values.Select(value => value.ToString(CultureInfo.InvariantCulture))),
+                    drawCount = 0
+                };
+            }
+
+            public bool TryRestore(
+                CombatRngStateSaveData state,
+                out ICombatRng rng,
+                out CombatAdvanceError error)
+            {
+                rng = null;
+                error = null;
+                if (state == null || !string.Equals(state.algorithmId, AlgorithmId, StringComparison.Ordinal))
+                {
+                    error = new CombatAdvanceError(
+                        CombatAdvanceErrorCode.UnsupportedRngDescriptor,
+                        "Expected scripted RNG.");
+                    return false;
+                }
+
+                var values = new Queue<ulong>();
+                if (!string.IsNullOrEmpty(state.state))
+                {
+                    foreach (var value in state.state.Split(','))
+                        values.Enqueue(ulong.Parse(value, CultureInfo.InvariantCulture));
+                }
+
+                rng = new ScriptedRng(values, state.drawCount);
+                return true;
+            }
+
+            private sealed class ScriptedRng : ICombatRng
+            {
+                private readonly Queue<ulong> _values;
+                private long _drawCount;
+
+                public ScriptedRng(Queue<ulong> values, long drawCount)
+                {
+                    _values = values;
+                    _drawCount = drawCount;
+                }
+
+                public ulong NextUInt64()
+                {
+                    _drawCount++;
+                    return _values.Count == 0 ? ulong.MaxValue : _values.Dequeue();
+                }
+
+                public CombatRngStateSaveData CaptureState()
+                {
+                    return new CombatRngStateSaveData
+                    {
+                        algorithmId = AlgorithmId,
+                        formatVersion = 1,
+                        state = string.Join(",", _values.Select(value => value.ToString(CultureInfo.InvariantCulture))),
+                        drawCount = _drawCount
+                    };
+                }
+            }
+        }
+    }
+}

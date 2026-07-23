@@ -32,6 +32,18 @@ namespace GuildIdle.Editor.Player
             source.session.combatTimeSeconds = 12.75d;
             source.session.scheduler.nextSequence = 41;
             source.session.scheduler.lastResolvedEventKey = "event-40";
+            source.session.scheduler.scheduledEvents = new[]
+            {
+                new CombatScheduledEventSaveData
+                {
+                    eventKey = "event-41",
+                    eventType = CombatRuntimeService.ActorAttackEventType,
+                    timestampSeconds = 13d,
+                    phasePriority = (int)CombatScheduledEventPhase.ActorAttack,
+                    actorSide = CombatActorSide.Hero,
+                    sequence = 40
+                }
+            };
             source.session.rng.algorithmId = "test-xoshiro";
             source.session.rng.formatVersion = 3;
             source.session.rng.state = "opaque-state-v3:0123456789abcdef";
@@ -116,6 +128,7 @@ namespace GuildIdle.Editor.Player
             Assert.That(aggregate.session.executionId, Is.EqualTo("combat-a"));
             Assert.That(aggregate.session.combatTimeSeconds, Is.EqualTo(12.75d));
             Assert.That(aggregate.session.scheduler.nextSequence, Is.EqualTo(41));
+            Assert.That(aggregate.session.scheduler.scheduledEvents[0].eventKey, Is.EqualTo("event-41"));
             Assert.That(aggregate.session.rng.algorithmId, Is.EqualTo("test-xoshiro"));
             Assert.That(aggregate.session.rng.formatVersion, Is.EqualTo(3));
             Assert.That(aggregate.session.rng.state, Is.EqualTo("opaque-state-v3:0123456789abcdef"));

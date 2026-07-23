@@ -129,6 +129,18 @@ namespace GuildIdle.Combat
     {
         public long nextSequence;
         public string lastResolvedEventKey;
+        public CombatScheduledEventSaveData[] scheduledEvents = Array.Empty<CombatScheduledEventSaveData>();
+    }
+
+    [Serializable]
+    public sealed class CombatScheduledEventSaveData
+    {
+        public string eventKey;
+        public string eventType;
+        public double timestampSeconds;
+        public int phasePriority;
+        public CombatActorSide actorSide;
+        public long sequence;
     }
 
     [Serializable]
@@ -269,7 +281,8 @@ namespace GuildIdle.Combat
                 scheduler = source.scheduler == null ? new CombatSchedulerStateSaveData() : new CombatSchedulerStateSaveData
                 {
                     nextSequence = source.scheduler.nextSequence,
-                    lastResolvedEventKey = source.scheduler.lastResolvedEventKey
+                    lastResolvedEventKey = source.scheduler.lastResolvedEventKey,
+                    scheduledEvents = CloneScheduledEvents(source.scheduler.scheduledEvents)
                 },
                 rng = source.rng == null ? new CombatRngStateSaveData() : new CombatRngStateSaveData
                 {
@@ -349,6 +362,8 @@ namespace GuildIdle.Combat
                 InvalidTime(session.combatTimeSeconds) || session.scheduler == null || session.scheduler.nextSequence < 0 ||
                 session.accumulatedEnemyExp < 0)
                 return Fail("Combat session has invalid identity, clock, scheduler or RNG state.", out error);
+            if (!ValidateScheduler(session.scheduler, out error))
+                return false;
             if (!ValidateRng(session.rng, out error))
                 return false;
             if (!WithinLimit(session.enemyQueue) || !WithinLimit(session.loot) || !WithinLimit(session.completionRewards))
@@ -375,6 +390,40 @@ namespace GuildIdle.Combat
             if (!ValidateConsumable(session.broughtConsumable, out error) ||
                 !ValidateTerminalCandidate(session.terminalCandidate, out error))
                 return false;
+            return true;
+        }
+
+        private static bool ValidateScheduler(CombatSchedulerStateSaveData scheduler, out string error)
+        {
+            error = null;
+            if (!WithinLimit(scheduler.scheduledEvents))
+                return Fail("Combat scheduler exceeds the persistent collection limit.", out error);
+
+            var eventKeys = new HashSet<string>(StringComparer.Ordinal);
+            var sequences = new HashSet<long>();
+            var attackSides = new HashSet<CombatActorSide>();
+            foreach (var value in scheduler.scheduledEvents)
+            {
+                if (value == null || string.IsNullOrWhiteSpace(value.eventKey) ||
+                    string.IsNullOrWhiteSpace(value.eventType) || InvalidTime(value.timestampSeconds) ||
+                    (value.actorSide != CombatActorSide.Hero &&
+                     value.actorSide != CombatActorSide.Enemy &&
+                     value.actorSide != CombatActorSide.System) ||
+                    value.sequence < 0 || value.sequence >= scheduler.nextSequence ||
+                    !eventKeys.Add(value.eventKey) || !sequences.Add(value.sequence))
+                {
+                    return Fail("Combat scheduler contains an invalid or duplicated event.", out error);
+                }
+
+                if (string.Equals(value.eventType, CombatRuntimeService.ActorAttackEventType, StringComparison.Ordinal) &&
+                    (value.phasePriority != (int)CombatScheduledEventPhase.ActorAttack ||
+                     value.actorSide == CombatActorSide.System ||
+                     !attackSides.Add(value.actorSide)))
+                {
+                    return Fail("Combat scheduler contains an invalid or duplicated actor attack.", out error);
+                }
+            }
+
             return true;
         }
 
@@ -472,6 +521,7 @@ namespace GuildIdle.Combat
         {
             var changed = false;
             changed |= Sort(session.enemyQueue, CompareQueue);
+            changed |= Sort(session.scheduler.scheduledEvents, CombatScheduledEventComparer.Instance.Compare);
             changed |= CanonicalizeCombatant(session.hero);
             changed |= CanonicalizeCombatant(session.currentEnemy);
             changed |= Sort(session.loot, CompareReward);
@@ -493,7 +543,8 @@ namespace GuildIdle.Combat
         private static bool HasNullCollections(CombatSessionSaveData session)
         {
             return session.enemyQueue == null || session.loot == null || session.completionRewards == null ||
-                   HasNullCollections(session.hero) || HasNullCollections(session.currentEnemy) || session.scheduler == null || session.rng == null;
+                   HasNullCollections(session.hero) || HasNullCollections(session.currentEnemy) || session.scheduler == null ||
+                   session.scheduler.scheduledEvents == null || session.rng == null;
         }
 
         private static bool HasNullCollections(CombatantStateSaveData combatant)
@@ -516,6 +567,27 @@ namespace GuildIdle.Combat
                     queueIndex = value.queueIndex
                 };
             }
+            return result;
+        }
+
+        private static CombatScheduledEventSaveData[] CloneScheduledEvents(CombatScheduledEventSaveData[] source)
+        {
+            source ??= Array.Empty<CombatScheduledEventSaveData>();
+            var result = new CombatScheduledEventSaveData[source.Length];
+            for (var index = 0; index < result.Length; index++)
+            {
+                var value = source[index];
+                result[index] = value == null ? null : new CombatScheduledEventSaveData
+                {
+                    eventKey = value.eventKey,
+                    eventType = value.eventType,
+                    timestampSeconds = value.timestampSeconds,
+                    phasePriority = value.phasePriority,
+                    actorSide = value.actorSide,
+                    sequence = value.sequence
+                };
+            }
+
             return result;
         }
 
