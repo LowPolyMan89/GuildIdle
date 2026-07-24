@@ -25,6 +25,11 @@ namespace GuildIdle.Combat
         ActorAttack = 100
     }
 
+    public static class CombatStatIds
+    {
+        public const string HeroDamagePercent = "hero_damage_percent";
+    }
+
     public enum CombatAdvanceErrorCode
     {
         None = 0,
@@ -102,7 +107,8 @@ namespace GuildIdle.Combat
             DodgeChancePercent = dodgeChancePercent;
             PhysicalResistancePercent = physicalResistancePercent;
             MagicResistancePercent = magicResistancePercent;
-            DamageModifierStatId = damageModifierStatId;
+            DamageModifierStatId = damageModifierStatId ??
+                (side == CombatActorSide.Hero ? CombatStatIds.HeroDamagePercent : null);
         }
 
         public CombatActorSide Side { get; }

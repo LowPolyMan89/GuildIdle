@@ -802,6 +802,61 @@ namespace GuildIdle.EditorTests.Player
         }
 
         [Test]
+        public void ConfigDrivenHeroDamageModifierUsesProductionDescriptorStatId()
+        {
+            var source = Aggregate(100);
+            source.session.currentEnemy.definitionId = "enemy_wolf_leader";
+            var store = new MemoryStore(source);
+            var configs = new EnemiesConfigRepository(new EnemiesRuntimeConfigDto
+            {
+                enemies = new[]
+                {
+                    new EnemyConfigDto
+                    {
+                        enemyId = "enemy_wolf_leader",
+                        combatAbilityIds = new[] { "enemy_ability_intimidating_howl" }
+                    }
+                },
+                enemyAbilities = new[]
+                {
+                    new EnemyAbilityConfigDto
+                    {
+                        abilityId = "enemy_ability_intimidating_howl",
+                        trigger = CombatAbilityTriggers.OnBattleStart,
+                        chancePercent = 100f,
+                        effects = "ModifyStat: hero_damage_percent -3, duration 5 sec",
+                        target = "enemy"
+                    }
+                }
+            });
+            var hero = Descriptor(
+                CombatActorSide.Hero,
+                CombatAttackCadence.HeroInterval(1d),
+                damageMin: 100,
+                damageMax: 100);
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    hero,
+                    Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.01d))),
+                new CombatRngFactory(),
+                null,
+                new ConfigCombatAbilityDescriptorProvider(configs),
+                null,
+                new ConfigCombatStatusDescriptorProvider(configs));
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(hero.DamageModifierStatId, Is.EqualTo(CombatStatIds.HeroDamagePercent));
+            Assert.That(
+                result.Events
+                    .OfType<CombatDamageEvent>()
+                    .Single(value => value.ActorSide == CombatActorSide.Hero)
+                    .Damage,
+                Is.EqualTo(97));
+        }
+
+        [Test]
         public void AttackHitAbilityDoesNotDispatchOnDodge()
         {
             var source = Aggregate(100);
@@ -1139,8 +1194,7 @@ namespace GuildIdle.EditorTests.Player
                         CombatActorSide.Hero,
                         CombatAttackCadence.HeroInterval(1d),
                         damageMin: 10,
-                        damageMax: 10,
-                        damageModifierStatId: "hero_damage_percent"),
+                        damageMax: 10),
                     Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.01d))),
                 new CombatRngFactory(),
                 null,
@@ -1182,8 +1236,7 @@ namespace GuildIdle.EditorTests.Player
                     CombatActorSide.Hero,
                     CombatAttackCadence.HeroInterval(1d),
                     damageMin: 10,
-                    damageMax: 10,
-                    damageModifierStatId: "hero_damage_percent"),
+                    damageMax: 10),
                 Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.01d)));
 
             var uninterruptedStore = new MemoryStore(source);
@@ -1459,8 +1512,7 @@ namespace GuildIdle.EditorTests.Player
             double critDamageMultiplier = 2d,
             double dodgeChancePercent = 0d,
             double physicalResistancePercent = 0d,
-            double magicResistancePercent = 0d,
-            string damageModifierStatId = null)
+            double magicResistancePercent = 0d)
         {
             return new CombatActorDescriptor(
                 side,
@@ -1472,8 +1524,7 @@ namespace GuildIdle.EditorTests.Player
                 critDamageMultiplier,
                 dodgeChancePercent,
                 physicalResistancePercent,
-                magicResistancePercent,
-                damageModifierStatId);
+                magicResistancePercent);
         }
 
         private static CombatAbilityDescriptor StatusAbility(
