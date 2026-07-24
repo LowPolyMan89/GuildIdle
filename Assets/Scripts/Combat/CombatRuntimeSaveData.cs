@@ -108,10 +108,11 @@ namespace GuildIdle.Combat
         public string statusInstanceId;
         public string statusId;
         public string sourceCombatantId;
-        public int stacks;
+        public string[] stackIds = Array.Empty<string>();
         public double expiresAtSeconds;
         public double nextTickAtSeconds;
-        public string lastEventKey;
+        public string lastApplyEventKey;
+        public string lastTickEventKey;
     }
 
     [Serializable]
@@ -123,6 +124,7 @@ namespace GuildIdle.Combat
         public string operation;
         public float value;
         public double expiresAtSeconds;
+        public string appliedEventKey;
     }
 
     [Serializable]
@@ -146,6 +148,8 @@ namespace GuildIdle.Combat
         public int phasePriority;
         public CombatActorSide actorSide;
         public long sequence;
+        public string subjectCombatantId;
+        public string effectInstanceId;
     }
 
     [Serializable]
@@ -203,6 +207,7 @@ namespace GuildIdle.Combat
     internal static class CombatRuntimeSaveDataUtility
     {
         public const int PersistentCollectionLimit = 64;
+        public const int StatusStackLimit = 8;
 
         public static bool TryNormalize(
             CombatExecutionSaveData executionSource,
@@ -407,6 +412,7 @@ namespace GuildIdle.Combat
             var eventKeys = new HashSet<string>(StringComparer.Ordinal);
             var sequences = new HashSet<long>();
             var attackSides = new HashSet<CombatActorSide>();
+            var effectEvents = new HashSet<string>(StringComparer.Ordinal);
             foreach (var value in scheduler.scheduledEvents)
             {
                 if (value == null || string.IsNullOrWhiteSpace(value.eventKey) ||
@@ -422,10 +428,39 @@ namespace GuildIdle.Combat
 
                 if (string.Equals(value.eventType, CombatRuntimeService.ActorAttackEventType, StringComparison.Ordinal) &&
                     (value.phasePriority != (int)CombatScheduledEventPhase.ActorAttack ||
-                     value.actorSide == CombatActorSide.System ||
-                     !attackSides.Add(value.actorSide)))
+                      value.actorSide == CombatActorSide.System ||
+                      !string.IsNullOrWhiteSpace(value.subjectCombatantId) ||
+                      !string.IsNullOrWhiteSpace(value.effectInstanceId) ||
+                      !attackSides.Add(value.actorSide)))
                 {
                     return Fail("Combat scheduler contains an invalid or duplicated actor attack.", out error);
+                }
+
+                var isStatusTick = string.Equals(
+                    value.eventType,
+                    CombatStatusRuntime.StatusTickEventType,
+                    StringComparison.Ordinal);
+                var isStatusExpiration = string.Equals(
+                    value.eventType,
+                    CombatStatusRuntime.StatusExpirationEventType,
+                    StringComparison.Ordinal);
+                var isModifierExpiration = string.Equals(
+                    value.eventType,
+                    CombatStatusRuntime.ModifierExpirationEventType,
+                    StringComparison.Ordinal);
+                if ((isStatusTick || isStatusExpiration || isModifierExpiration) &&
+                    (value.actorSide == CombatActorSide.System ||
+                     string.IsNullOrWhiteSpace(value.subjectCombatantId) ||
+                     string.IsNullOrWhiteSpace(value.effectInstanceId) ||
+                     (isStatusTick &&
+                      value.phasePriority != (int)CombatScheduledEventPhase.StatusTick) ||
+                     (isStatusExpiration &&
+                      value.phasePriority != (int)CombatScheduledEventPhase.StatusExpiration) ||
+                     (isModifierExpiration &&
+                      value.phasePriority != (int)CombatScheduledEventPhase.ModifierExpiration) ||
+                     !effectEvents.Add($"{value.eventType}:{value.effectInstanceId}")))
+                {
+                    return Fail("Combat scheduler contains an invalid or duplicated status event.", out error);
                 }
             }
 
@@ -473,16 +508,34 @@ namespace GuildIdle.Combat
 
             var statusIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var value in combatant.statuses)
-                if (value == null || string.IsNullOrWhiteSpace(value.statusInstanceId) || string.IsNullOrWhiteSpace(value.statusId) ||
-                    string.IsNullOrWhiteSpace(value.sourceCombatantId) || value.stacks <= 0 || InvalidTime(value.expiresAtSeconds) ||
-                    InvalidTime(value.nextTickAtSeconds) || !statusIds.Add(value.statusInstanceId))
+            {
+                if (value == null || string.IsNullOrWhiteSpace(value.statusInstanceId) ||
+                    string.IsNullOrWhiteSpace(value.statusId) ||
+                    string.IsNullOrWhiteSpace(value.sourceCombatantId) ||
+                    value.stackIds == null || value.stackIds.Length == 0 ||
+                    value.stackIds.Length > StatusStackLimit ||
+                    InvalidTime(value.expiresAtSeconds) ||
+                    InvalidTime(value.nextTickAtSeconds) ||
+                    !statusIds.Add(value.statusInstanceId))
+                {
                     return Fail("Combat status state is invalid or duplicated.", out error);
+                }
+
+                var stackIds = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var stackId in value.stackIds)
+                {
+                    if (string.IsNullOrWhiteSpace(stackId) || !stackIds.Add(stackId))
+                        return Fail("Combat status stack identity is invalid or duplicated.", out error);
+                }
+            }
 
             var modifierIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var value in combatant.independentModifiers)
                 if (value == null || string.IsNullOrWhiteSpace(value.modifierInstanceId) || string.IsNullOrWhiteSpace(value.sourceId) ||
                     string.IsNullOrWhiteSpace(value.statId) || string.IsNullOrWhiteSpace(value.operation) || float.IsNaN(value.value) ||
-                    float.IsInfinity(value.value) || InvalidTime(value.expiresAtSeconds) || !modifierIds.Add(value.modifierInstanceId))
+                    float.IsInfinity(value.value) || InvalidTime(value.expiresAtSeconds) ||
+                    string.IsNullOrWhiteSpace(value.appliedEventKey) ||
+                    !modifierIds.Add(value.modifierInstanceId))
                     return Fail("Independent modifier state is invalid or duplicated.", out error);
             return true;
         }
@@ -541,6 +594,11 @@ namespace GuildIdle.Combat
             var changed = false;
             changed |= Sort(combatant.abilityCooldowns, (left, right) => CompareText(left?.abilityId, right?.abilityId));
             changed |= Sort(combatant.statuses, (left, right) => CompareText(left?.statusInstanceId, right?.statusInstanceId));
+            foreach (var status in combatant.statuses)
+            {
+                if (status != null)
+                    changed |= Sort(status.stackIds, CompareText);
+            }
             changed |= Sort(combatant.independentModifiers, (left, right) => CompareText(left?.modifierInstanceId, right?.modifierInstanceId));
             return changed;
         }
@@ -554,7 +612,22 @@ namespace GuildIdle.Combat
 
         private static bool HasNullCollections(CombatantStateSaveData combatant)
         {
-            return combatant != null && (combatant.abilityCooldowns == null || combatant.statuses == null || combatant.independentModifiers == null);
+            if (combatant == null)
+                return false;
+            if (combatant.abilityCooldowns == null ||
+                combatant.statuses == null ||
+                combatant.independentModifiers == null)
+            {
+                return true;
+            }
+
+            foreach (var status in combatant.statuses)
+            {
+                if (status != null && status.stackIds == null)
+                    return true;
+            }
+
+            return false;
         }
 
         private static CombatEnemyQueueEntrySaveData[] CloneQueue(CombatEnemyQueueEntrySaveData[] source)
@@ -589,7 +662,9 @@ namespace GuildIdle.Combat
                     timestampSeconds = value.timestampSeconds,
                     phasePriority = value.phasePriority,
                     actorSide = value.actorSide,
-                    sequence = value.sequence
+                    sequence = value.sequence,
+                    subjectCombatantId = value.subjectCombatantId,
+                    effectInstanceId = value.effectInstanceId
                 };
             }
 
@@ -624,10 +699,13 @@ namespace GuildIdle.Combat
                     statusInstanceId = value.statusInstanceId,
                     statusId = value.statusId,
                     sourceCombatantId = value.sourceCombatantId,
-                    stacks = value.stacks,
+                    stackIds = value.stackIds == null
+                        ? Array.Empty<string>()
+                        : (string[])value.stackIds.Clone(),
                     expiresAtSeconds = value.expiresAtSeconds,
                     nextTickAtSeconds = value.nextTickAtSeconds,
-                    lastEventKey = value.lastEventKey
+                    lastApplyEventKey = value.lastApplyEventKey,
+                    lastTickEventKey = value.lastTickEventKey
                 };
             }
             var modifiers = source.independentModifiers ?? Array.Empty<CombatTemporaryModifierSaveData>();
@@ -642,7 +720,8 @@ namespace GuildIdle.Combat
                     statId = value.statId,
                     operation = value.operation,
                     value = value.value,
-                    expiresAtSeconds = value.expiresAtSeconds
+                    expiresAtSeconds = value.expiresAtSeconds,
+                    appliedEventKey = value.appliedEventKey
                 };
             }
             return new CombatantStateSaveData

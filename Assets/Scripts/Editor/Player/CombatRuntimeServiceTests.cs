@@ -432,7 +432,7 @@ namespace GuildIdle.EditorTests.Player
                     statusInstanceId = "status-instance",
                     statusId = "status",
                     sourceCombatantId = "hero-combatant",
-                    stacks = 2,
+                    stackIds = new[] { "status-stack-1", "status-stack-2" },
                     expiresAtSeconds = 8d,
                     nextTickAtSeconds = 3d
                 }
@@ -446,7 +446,8 @@ namespace GuildIdle.EditorTests.Player
                     statId = "damage",
                     operation = "add",
                     value = 2f,
-                    expiresAtSeconds = 7d
+                    expiresAtSeconds = 7d,
+                    appliedEventKey = "modifier-apply-event"
                 }
             };
             source.session.rng = ScriptedRngFactory.State(0, 0, ulong.MaxValue);
@@ -471,7 +472,7 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(session.hero.currentHp, Is.EqualTo(100));
             Assert.That(session.hero.nextAttackAtSeconds, Is.EqualTo(2d));
             Assert.That(session.hero.abilityCooldowns.Single().nextReadyAtSeconds, Is.EqualTo(9d));
-            Assert.That(session.hero.statuses.Single().stacks, Is.EqualTo(2));
+            Assert.That(session.hero.statuses.Single().stackIds.Length, Is.EqualTo(2));
             Assert.That(session.hero.independentModifiers.Single().value, Is.EqualTo(2f));
             Assert.That(session.combatTimeSeconds, Is.EqualTo(1d));
             Assert.That(session.rng.drawCount, Is.EqualTo(3));
@@ -710,7 +711,7 @@ namespace GuildIdle.EditorTests.Player
         }
 
         [Test]
-        public void WolfLeaderFixturesCreateTypedRequestsWithoutApplyingStatusLifecycle()
+        public void WolfLeaderFixturesApplyStatusAndTemporaryModifierWithoutIdBranches()
         {
             var source = Aggregate(100);
             source.session.currentEnemy.definitionId = "enemy_wolf_leader";
@@ -753,7 +754,16 @@ namespace GuildIdle.EditorTests.Player
                 },
                 combatStatuses = new[]
                 {
-                    new CombatStatusConfigDto { statusId = "bleed_weak" }
+                    new CombatStatusConfigDto
+                    {
+                        statusId = "bleed_weak",
+                        durationSec = 6,
+                        tickIntervalSec = 3,
+                        maxStacks = 1,
+                        effectType = "DamageOverTime",
+                        damageType = "Bleed",
+                        damageValue = 1
+                    }
                 }
             });
             var descriptors = new DescriptorProvider(
@@ -764,7 +774,9 @@ namespace GuildIdle.EditorTests.Player
                 descriptors,
                 new ScriptedRngFactory(),
                 null,
-                new ConfigCombatAbilityDescriptorProvider(configs));
+                new ConfigCombatAbilityDescriptorProvider(configs),
+                null,
+                new ConfigCombatStatusDescriptorProvider(configs));
 
             var battleStart = service.AdvanceTo("execution", 0d);
             var attackHit = service.AdvanceTo("execution", 1d);
@@ -784,8 +796,9 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(claws.TargetCombatantId, Is.EqualTo("hero-combatant"));
             Assert.That(claws.Effect.Kind, Is.EqualTo(CombatEffectKind.ApplyStatus));
             Assert.That(claws.Effect.StatusId, Is.EqualTo("bleed_weak"));
-            Assert.That(store.Value.session.hero.statuses, Is.Empty);
-            Assert.That(store.Value.session.hero.independentModifiers, Is.Empty);
+            Assert.That(store.Value.session.hero.statuses.Single().statusId, Is.EqualTo("bleed_weak"));
+            Assert.That(store.Value.session.hero.independentModifiers.Single().statId,
+                Is.EqualTo("hero_damage_percent"));
         }
 
         [Test]
@@ -1034,11 +1047,390 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(second.Events, Is.Empty);
         }
 
+        [Test]
+        public void StatusDurationTicksMaxStackAndFinalTickExpirationOrderAreDeterministic()
+        {
+            var store = new MemoryStore(Aggregate(100));
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("ability-a", CombatAbilityTriggers.OnBattleStart, "bleed"),
+                    StatusAbility("ability-b", CombatAbilityTriggers.OnBattleStart, "bleed"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus("bleed", 2d, 1d, 1, CombatEffectKind.Damage, 1d));
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+
+            var applied = service.AdvanceTo("execution", 0d);
+            var status = store.Value.session.hero.statuses.Single();
+            var resolved = service.AdvanceTo("execution", 2d);
+
+            Assert.That(applied.Events.OfType<CombatStatusAppliedEvent>().Count(), Is.EqualTo(2));
+            Assert.That(status.stackIds.Length, Is.EqualTo(1));
+            Assert.That(status.expiresAtSeconds, Is.EqualTo(2d));
+            Assert.That(status.nextTickAtSeconds, Is.EqualTo(1d));
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(98));
+            Assert.That(store.Value.session.hero.statuses, Is.Empty);
+            Assert.That(
+                resolved.Events
+                    .Where(value => value.TimestampSeconds == 2d)
+                    .Select(value => value.GetType()),
+                Is.EqualTo(new[] { typeof(CombatStatusTickEvent), typeof(CombatStatusExpiredEvent) }));
+        }
+
+        [Test]
+        public void ReapplyAddsStableStacksToLimitThenRefreshesDuration()
+        {
+            var store = new MemoryStore(Aggregate(100));
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("stacking-hit", CombatAbilityTriggers.OnAttackHit, "stacking"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus("stacking", 2d, 10d, 2, CombatEffectKind.Damage, 1d));
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                    Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d))),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+
+            var result = service.AdvanceTo("execution", 3d);
+            var applications = result.Events.OfType<CombatStatusAppliedEvent>().ToArray();
+            var status = store.Value.session.hero.statuses.Single();
+
+            Assert.That(applications.Select(value => value.StackAdded),
+                Is.EqualTo(new[] { true, true, false }));
+            Assert.That(status.stackIds.Length, Is.EqualTo(2));
+            Assert.That(status.stackIds.Distinct().Count(), Is.EqualTo(2));
+            Assert.That(status.expiresAtSeconds, Is.EqualTo(5d));
+        }
+
+        [Test]
+        public void TemporaryDamageModifierAppliesAndExpiresBeforeSameTimestampAttack()
+        {
+            var store = new MemoryStore(Aggregate(100));
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    ModifierAbility(
+                        "howl",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "hero_damage_percent",
+                        -50d,
+                        2d));
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(
+                        CombatActorSide.Hero,
+                        CombatAttackCadence.HeroInterval(1d),
+                        damageMin: 10,
+                        damageMax: 10,
+                        damageModifierStatId: "hero_damage_percent"),
+                    Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.01d))),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                new StatusDescriptorProvider());
+
+            var result = service.AdvanceTo("execution", 2d);
+
+            Assert.That(result.Events.OfType<CombatDamageEvent>().Select(value => value.Damage),
+                Is.EqualTo(new[] { 5, 10 }));
+            Assert.That(result.Events.OfType<CombatTemporaryModifierAppliedEvent>().Count(), Is.EqualTo(1));
+            Assert.That(result.Events.OfType<CombatTemporaryModifierExpiredEvent>().Count(), Is.EqualTo(1));
+            Assert.That(store.Value.session.hero.independentModifiers, Is.Empty);
+        }
+
+        [Test]
+        public void DerivedStatusModifierMatchesAfterSaveLoadWithoutIndependentCopy()
+        {
+            var source = Aggregate(100);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("weakness", CombatAbilityTriggers.OnBattleStart, "weakness"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(new CombatStatusDescriptor(
+                    "weakness",
+                    2d,
+                    0d,
+                    1,
+                    modifierEffect: new CombatEffectDescriptor(
+                        CombatEffectKind.ModifyStat,
+                        statId: "hero_damage_percent",
+                        value: -50d,
+                        operation: CombatModifierOperations.Add)));
+            var descriptors = new DescriptorProvider(
+                Descriptor(
+                    CombatActorSide.Hero,
+                    CombatAttackCadence.HeroInterval(1d),
+                    damageMin: 10,
+                    damageMax: 10,
+                    damageModifierStatId: "hero_damage_percent"),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.01d)));
+
+            var uninterruptedStore = new MemoryStore(source);
+            var uninterrupted = new CombatRuntimeService(
+                uninterruptedStore,
+                descriptors,
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+            var uninterruptedResult = uninterrupted.AdvanceTo("execution", 2d);
+
+            var splitStore = new MemoryStore(source);
+            var beforeReload = new CombatRuntimeService(
+                splitStore,
+                descriptors,
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+            beforeReload.AdvanceTo("execution", 0d);
+            Assert.That(splitStore.Value.session.hero.independentModifiers, Is.Empty);
+
+            var reloadedStore = new MemoryStore(splitStore.Value);
+            var reloaded = new CombatRuntimeService(
+                reloadedStore,
+                descriptors,
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+            var reloadedResult = reloaded.AdvanceTo("execution", 2d);
+
+            Assert.That(reloadedResult.Events.OfType<CombatDamageEvent>().Select(value => value.Damage),
+                Is.EqualTo(uninterruptedResult.Events.OfType<CombatDamageEvent>().Select(value => value.Damage)));
+            Assert.That(reloadedStore.Value.session.currentEnemy.currentHp,
+                Is.EqualTo(uninterruptedStore.Value.session.currentEnemy.currentHp));
+            Assert.That(reloadedStore.Value.session.hero.independentModifiers, Is.Empty);
+        }
+
+        [Test]
+        public void StatusTickPrecedesActorAttacksAtSameTimestamp()
+        {
+            var store = new MemoryStore(Aggregate(100));
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("bleed-start", CombatAbilityTriggers.OnBattleStart, "bleed"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus("bleed", 2d, 1d, 1, CombatEffectKind.Damage, 1d));
+            var service = new CombatRuntimeService(
+                store,
+                DefaultDescriptors(),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var due = result.Events.Where(value => value.TimestampSeconds == 1d).ToArray();
+
+            Assert.That(due[0], Is.TypeOf<CombatStatusTickEvent>());
+            Assert.That(due.Skip(1).OfType<CombatAttackEvent>().Select(value => value.ActorSide),
+                Is.EqualTo(new[] { CombatActorSide.Hero, CombatActorSide.Enemy }));
+        }
+
+        [Test]
+        public void SimultaneousStatusEventsUseStableSchedulerSequence()
+        {
+            var store = new MemoryStore(Aggregate(100));
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("ability-a", CombatAbilityTriggers.OnBattleStart, "status-z"),
+                    StatusAbility("ability-b", CombatAbilityTriggers.OnBattleStart, "status-a"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus("status-z", 2d, 1d, 1, CombatEffectKind.Damage, 1d))
+                .Add(PeriodicStatus("status-a", 2d, 1d, 1, CombatEffectKind.Damage, 1d));
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Events.OfType<CombatStatusTickEvent>().Select(value => value.StatusId),
+                Is.EqualTo(new[] { "status-z", "status-a" }));
+        }
+
+        [Test]
+        public void SaveLoadBeforeOnAndAfterTickDoesNotDuplicateEffect()
+        {
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("bleed-start", CombatAbilityTriggers.OnBattleStart, "bleed"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus("bleed", 2d, 1d, 1, CombatEffectKind.Damage, 1d));
+            var initialStore = new MemoryStore(Aggregate(100));
+            new CombatRuntimeService(
+                    initialStore,
+                    SlowDescriptors(),
+                    new CombatRngFactory(),
+                    null,
+                    abilities,
+                    null,
+                    statuses)
+                .AdvanceTo("execution", 0d);
+
+            var beforeTickStore = new MemoryStore(initialStore.Value);
+            var beforeTickService = new CombatRuntimeService(
+                beforeTickStore,
+                SlowDescriptors(),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+            var firstTick = beforeTickService.AdvanceTo("execution", 1d);
+
+            var onTickStore = new MemoryStore(beforeTickStore.Value);
+            var onTickService = new CombatRuntimeService(
+                onTickStore,
+                SlowDescriptors(),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+            var replayAtTick = onTickService.AdvanceTo("execution", 1d);
+            var afterTick = onTickService.AdvanceTo("execution", 2d);
+
+            var afterTickStore = new MemoryStore(onTickStore.Value);
+            var afterTickService = new CombatRuntimeService(
+                afterTickStore,
+                SlowDescriptors(),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+            var replayAfterTick = afterTickService.AdvanceTo("execution", 2d);
+
+            Assert.That(firstTick.Events.OfType<CombatStatusTickEvent>().Count(), Is.EqualTo(1));
+            Assert.That(replayAtTick.Events, Is.Empty);
+            Assert.That(afterTick.Events.OfType<CombatStatusTickEvent>().Count(), Is.EqualTo(1));
+            Assert.That(replayAfterTick.Events, Is.Empty);
+            Assert.That(afterTickStore.Value.session.hero.currentHp, Is.EqualTo(98));
+        }
+
+        [Test]
+        public void StatusHandlerErrorDoesNotPersistPartialHpStacksOrTimers()
+        {
+            var store = new MemoryStore(Aggregate(100));
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("ability-a", CombatAbilityTriggers.OnBattleStart, "status-a"),
+                    StatusAbility("ability-b", CombatAbilityTriggers.OnBattleStart, "status-b"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus("status-a", 2d, 1d, 1, CombatEffectKind.Damage, 1d))
+                .Add(PeriodicStatus("status-b", 2d, 1d, 1, CombatEffectKind.Damage, 1d));
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+            service.AdvanceTo("execution", 0d);
+            var before = store.Json;
+            var updateCount = store.UpdateCount;
+            statuses.FailedStatusId = "status-b";
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.StatusDescriptorNotFound));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.Json, Is.EqualTo(before));
+            Assert.That(store.UpdateCount, Is.EqualTo(updateCount));
+        }
+
+        [Test]
+        public void AdditionalHealStatusFixtureUsesGenericEffectPipeline()
+        {
+            var source = Aggregate(100);
+            source.session.hero.currentHp = 50;
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility(
+                        "fixture-heal-ability",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "fixture-regeneration"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus(
+                    "fixture-regeneration",
+                    1d,
+                    1d,
+                    1,
+                    CombatEffectKind.Heal,
+                    7d));
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new CombatRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var tick = result.Events.OfType<CombatStatusTickEvent>().Single();
+
+            Assert.That(tick.EffectKind, Is.EqualTo(CombatEffectKind.Heal));
+            Assert.That(tick.Amount, Is.EqualTo(7));
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(57));
+        }
+
         private static DescriptorProvider DefaultDescriptors()
         {
             return new DescriptorProvider(
                 Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d)),
                 Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d)));
+        }
+
+        private static DescriptorProvider SlowDescriptors()
+        {
+            return new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.01d)));
         }
 
         private static void AssertSameTimeRngError(
@@ -1067,7 +1459,8 @@ namespace GuildIdle.EditorTests.Player
             double critDamageMultiplier = 2d,
             double dodgeChancePercent = 0d,
             double physicalResistancePercent = 0d,
-            double magicResistancePercent = 0d)
+            double magicResistancePercent = 0d,
+            string damageModifierStatId = null)
         {
             return new CombatActorDescriptor(
                 side,
@@ -1079,7 +1472,64 @@ namespace GuildIdle.EditorTests.Player
                 critDamageMultiplier,
                 dodgeChancePercent,
                 physicalResistancePercent,
-                magicResistancePercent);
+                magicResistancePercent,
+                damageModifierStatId);
+        }
+
+        private static CombatAbilityDescriptor StatusAbility(
+            string abilityId,
+            string trigger,
+            string statusId)
+        {
+            return new CombatAbilityDescriptor(
+                abilityId,
+                trigger,
+                100d,
+                "enemy",
+                0d,
+                new CombatEffectDescriptor(
+                    CombatEffectKind.ApplyStatus,
+                    statusId: statusId));
+        }
+
+        private static CombatAbilityDescriptor ModifierAbility(
+            string abilityId,
+            string trigger,
+            string statId,
+            double value,
+            double durationSeconds)
+        {
+            return new CombatAbilityDescriptor(
+                abilityId,
+                trigger,
+                100d,
+                "enemy",
+                0d,
+                new CombatEffectDescriptor(
+                    CombatEffectKind.ModifyStat,
+                    statId: statId,
+                    value: value,
+                    durationSeconds: durationSeconds,
+                    operation: CombatModifierOperations.Add));
+        }
+
+        private static CombatStatusDescriptor PeriodicStatus(
+            string statusId,
+            double durationSeconds,
+            double tickIntervalSeconds,
+            int maxStacks,
+            CombatEffectKind effectKind,
+            double value)
+        {
+            return new CombatStatusDescriptor(
+                statusId,
+                durationSeconds,
+                tickIntervalSeconds,
+                maxStacks,
+                new CombatEffectDescriptor(
+                    effectKind,
+                    value: value,
+                    damageType: effectKind == CombatEffectKind.Damage ? "fixture" : null));
         }
 
         private static CombatAbilityDescriptor Ability(
@@ -1295,6 +1745,42 @@ namespace GuildIdle.EditorTests.Player
             private static string Key(CombatActorSide side, string definitionId)
             {
                 return $"{side}:{definitionId}";
+            }
+        }
+
+        private sealed class StatusDescriptorProvider : ICombatStatusDescriptorProvider
+        {
+            private readonly Dictionary<string, CombatStatusDescriptor> _statuses =
+                new Dictionary<string, CombatStatusDescriptor>(StringComparer.Ordinal);
+
+            public string FailedStatusId { get; set; }
+
+            public StatusDescriptorProvider Add(CombatStatusDescriptor descriptor)
+            {
+                _statuses[descriptor.StatusId] = descriptor;
+                return this;
+            }
+
+            public bool TryGetStatus(
+                string statusId,
+                out CombatStatusDescriptor descriptor,
+                out string error)
+            {
+                if (string.Equals(statusId, FailedStatusId, StringComparison.Ordinal))
+                {
+                    descriptor = null;
+                    error = $"Simulated missing status '{statusId}'.";
+                    return false;
+                }
+
+                if (!_statuses.TryGetValue(statusId, out descriptor))
+                {
+                    error = $"Status '{statusId}' was not configured.";
+                    return false;
+                }
+
+                error = null;
+                return true;
             }
         }
 

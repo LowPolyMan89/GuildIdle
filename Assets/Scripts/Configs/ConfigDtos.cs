@@ -792,6 +792,8 @@ namespace GuildIdle.Configs
         public string effectType;
         public string damageType;
         public int damageValue;
+        public string statId;
+        public float statModifierValue;
     }
 
     [Serializable]

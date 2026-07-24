@@ -19,6 +19,9 @@ namespace GuildIdle.Combat
 
     public enum CombatScheduledEventPhase
     {
+        StatusTick = 10,
+        StatusExpiration = 20,
+        ModifierExpiration = 30,
         ActorAttack = 100
     }
 
@@ -45,7 +48,11 @@ namespace GuildIdle.Combat
         InvalidAbilityDescriptor = 18,
         UnsupportedAbilityTrigger = 19,
         UnsupportedAbilityTarget = 20,
-        AbilityDispatchFailed = 21
+        AbilityDispatchFailed = 21,
+        StatusDescriptorNotFound = 22,
+        InvalidStatusDescriptor = 23,
+        StatusProcessingFailed = 24,
+        EffectProcessingFailed = 25
     }
 
     public readonly struct CombatAttackCadence
@@ -82,7 +89,8 @@ namespace GuildIdle.Combat
             double critDamageMultiplier,
             double dodgeChancePercent,
             double physicalResistancePercent,
-            double magicResistancePercent)
+            double magicResistancePercent,
+            string damageModifierStatId = null)
         {
             Side = side;
             Cadence = cadence;
@@ -94,6 +102,7 @@ namespace GuildIdle.Combat
             DodgeChancePercent = dodgeChancePercent;
             PhysicalResistancePercent = physicalResistancePercent;
             MagicResistancePercent = magicResistancePercent;
+            DamageModifierStatId = damageModifierStatId;
         }
 
         public CombatActorSide Side { get; }
@@ -106,6 +115,7 @@ namespace GuildIdle.Combat
         public double DodgeChancePercent { get; }
         public double PhysicalResistancePercent { get; }
         public double MagicResistancePercent { get; }
+        public string DamageModifierStatId { get; }
 
         public bool TryGetResistancePercent(string damageType, out double resistancePercent)
         {
@@ -432,6 +442,7 @@ namespace GuildIdle.Combat
         private readonly ICombatRngFactory _rngFactory;
         private readonly ICombatEnemyQueueProvider _enemyQueue;
         private readonly CombatAbilityDispatcher _abilityDispatcher;
+        private readonly CombatStatusRuntime _statusRuntime;
 
         public CombatRuntimeService(
             ICombatRuntimeStore store,
@@ -439,7 +450,8 @@ namespace GuildIdle.Combat
             ICombatRngFactory rngFactory = null,
             ICombatEnemyQueueProvider enemyQueue = null,
             ICombatAbilityDescriptorProvider abilities = null,
-            CombatAbilityRegistry abilityRegistry = null)
+            CombatAbilityRegistry abilityRegistry = null,
+            ICombatStatusDescriptorProvider statuses = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _descriptors = descriptors ?? throw new ArgumentNullException(nameof(descriptors));
@@ -448,6 +460,7 @@ namespace GuildIdle.Combat
             _abilityDispatcher = new CombatAbilityDispatcher(
                 abilities ?? EmptyCombatAbilityDescriptorProvider.Instance,
                 abilityRegistry ?? new CombatAbilityRegistry());
+            _statusRuntime = statuses == null ? null : new CombatStatusRuntime(statuses);
         }
 
         public CombatAdvanceResult AdvanceTo(string executionId, double targetCombatTimeSeconds)
@@ -589,6 +602,50 @@ namespace GuildIdle.Combat
                         scheduledEvent.eventKey,
                         StringComparison.Ordinal);
                     scheduler.lastResolvedEventKey = scheduledEvent.eventKey;
+                    if (_statusRuntime != null &&
+                        _statusRuntime.IsScheduledEvent(scheduledEvent))
+                    {
+                        if (alreadyResolved)
+                            continue;
+                        if (!_statusRuntime.TryResolveScheduledEvent(
+                                aggregate.session,
+                                scheduledEvent,
+                                events,
+                                out _,
+                                out var statusHpMutated,
+                                out error))
+                        {
+                            return CombatAdvanceResult.Failed(error, currentTime);
+                        }
+
+                        if (statusHpMutated &&
+                            (aggregate.session.hero.currentHp <= 0 ||
+                             aggregate.session.currentEnemy.currentHp <= 0))
+                        {
+                            if (!TryHandleDefeatedCombatant(
+                                    aggregate.session,
+                                    scheduledEvent,
+                                    heroInterval,
+                                    rng,
+                                    events,
+                                    ref enemy,
+                                    ref enemyInterval,
+                                    out var queueCompleted,
+                                    out error))
+                            {
+                                return CombatAdvanceResult.Failed(error, currentTime);
+                            }
+
+                            if (queueCompleted)
+                            {
+                                resolvedCombatTime = scheduledEvent.timestampSeconds;
+                                break;
+                            }
+                        }
+
+                        continue;
+                    }
+
                     if (!string.Equals(scheduledEvent.eventType, ActorAttackEventType, StringComparison.Ordinal))
                     {
                         return CombatAdvanceResult.Failed(
@@ -625,12 +682,25 @@ namespace GuildIdle.Combat
 
                     var attackerDescriptor = scheduledEvent.actorSide == CombatActorSide.Hero ? hero : enemy;
                     var targetDescriptor = scheduledEvent.actorSide == CombatActorSide.Hero ? enemy : hero;
+                    var damageModifierPercent = 0d;
+                    if (_statusRuntime != null &&
+                        !_statusRuntime.TryGetStatModifier(
+                            attacker,
+                            attackerDescriptor.DamageModifierStatId,
+                            scheduledEvent.timestampSeconds,
+                            out damageModifierPercent,
+                            out error))
+                    {
+                        return CombatAdvanceResult.Failed(error, currentTime);
+                    }
+
                     if (!TryResolveAttack(
                             scheduledEvent,
                             attacker,
                             target,
                             attackerDescriptor,
                             targetDescriptor,
+                            damageModifierPercent,
                             rng,
                             events,
                             out var attackHit,
@@ -640,8 +710,9 @@ namespace GuildIdle.Combat
                     }
 
                     attacker.lastAttackEventKey = scheduledEvent.eventKey;
+                    var effectHpMutated = false;
                     if (attackHit &&
-                        !_abilityDispatcher.TryDispatch(
+                        !TryDispatchAndApplyEffects(
                             aggregate.session,
                             scheduledEvent.actorSide,
                             CombatAbilityTriggers.OnAttackHit,
@@ -650,20 +721,18 @@ namespace GuildIdle.Combat
                             rng,
                             events,
                             out _,
+                            out effectHpMutated,
                             out error))
                     {
                         return CombatAdvanceResult.Failed(error, currentTime);
                     }
 
-                    if (attacker.currentHp <= 0 || target.currentHp <= 0)
+                    if (attacker.currentHp <= 0 || target.currentHp <= 0 || effectHpMutated)
                     {
-                        if (aggregate.session.hero.currentHp <= 0)
+                        if (aggregate.session.hero.currentHp <= 0 ||
+                            aggregate.session.currentEnemy.currentHp <= 0)
                         {
-                            RemovePendingActorAttacks(scheduler);
-                        }
-                        else if (aggregate.session.currentEnemy.currentHp <= 0)
-                        {
-                            if (!TryAdvanceEnemyQueue(
+                            if (!TryHandleDefeatedCombatant(
                                     aggregate.session,
                                     scheduledEvent,
                                     heroInterval,
@@ -683,9 +752,27 @@ namespace GuildIdle.Combat
                                 break;
                             }
                         }
-                        else
+                        else if (attacker.currentHp > 0 && target.currentHp > 0)
                         {
-                            RemovePendingActorAttacks(scheduler);
+                            var interval = scheduledEvent.actorSide == CombatActorSide.Hero
+                                ? heroInterval
+                                : enemyInterval;
+                            if (scheduledEvent.timestampSeconds + interval <=
+                                scheduledEvent.timestampSeconds)
+                            {
+                                return CombatAdvanceResult.Failed(
+                                    CombatAdvanceErrorCode.InvalidAttackCadence,
+                                    "Attack cadence is too small to advance the scheduler clock.",
+                                    currentTime);
+                            }
+                            if (!TryScheduleAttack(
+                                    aggregate.session,
+                                    scheduledEvent.actorSide,
+                                    scheduledEvent.timestampSeconds + interval,
+                                    out error))
+                            {
+                                return CombatAdvanceResult.Failed(error, currentTime);
+                            }
                         }
                     }
                     else
@@ -770,6 +857,8 @@ namespace GuildIdle.Combat
                 !ValidPercent(descriptor.MagicResistancePercent) ||
                 InvalidNumber(descriptor.CritDamageMultiplier) ||
                 descriptor.CritDamageMultiplier < 1d ||
+                (descriptor.DamageModifierStatId != null &&
+                 string.IsNullOrWhiteSpace(descriptor.DamageModifierStatId)) ||
                 !descriptor.TryGetResistancePercent(descriptor.DamageType, out _))
             {
                 error = new CombatAdvanceError(
@@ -989,6 +1078,42 @@ namespace GuildIdle.Combat
             return false;
         }
 
+        private bool TryHandleDefeatedCombatant(
+            CombatSessionSaveData session,
+            CombatScheduledEventSaveData deathEvent,
+            double heroInterval,
+            ICombatRng rng,
+            List<CombatEvent> events,
+            ref CombatActorDescriptor enemyDescriptor,
+            ref double enemyInterval,
+            out bool queueCompleted,
+            out CombatAdvanceError error)
+        {
+            queueCompleted = false;
+            error = null;
+            if (session.hero.currentHp <= 0)
+            {
+                RemovePendingActorAttacks(session.scheduler);
+                return true;
+            }
+
+            if (session.currentEnemy.currentHp <= 0)
+            {
+                return TryAdvanceEnemyQueue(
+                    session,
+                    deathEvent,
+                    heroInterval,
+                    rng,
+                    events,
+                    ref enemyDescriptor,
+                    ref enemyInterval,
+                    out queueCompleted,
+                    out error);
+            }
+
+            return true;
+        }
+
         private bool TryAdvanceEnemyQueue(
             CombatSessionSaveData session,
             CombatScheduledEventSaveData deathEvent,
@@ -1046,6 +1171,9 @@ namespace GuildIdle.Combat
                 return false;
             }
 
+            _statusRuntime?.RemoveScheduledEventsForCombatant(
+                session.scheduler,
+                session.currentEnemy.combatantId);
             RemovePendingActorAttacks(session.scheduler, CombatActorSide.Enemy);
             var nextPosition = session.queuePosition + 1;
             if (nextPosition >= queue.Length)
@@ -1164,6 +1292,7 @@ namespace GuildIdle.Combat
             CombatantStateSaveData target,
             CombatActorDescriptor attackerDescriptor,
             CombatActorDescriptor targetDescriptor,
+            double damageModifierPercent,
             ICombatRng rng,
             List<CombatEvent> events,
             out bool attackHit,
@@ -1204,9 +1333,10 @@ namespace GuildIdle.Combat
                 return false;
             }
 
+            var afterModifier = baseDamage * (1d + damageModifierPercent / 100d);
             var afterCrit = critical
-                ? baseDamage * attackerDescriptor.CritDamageMultiplier
-                : baseDamage;
+                ? afterModifier * attackerDescriptor.CritDamageMultiplier
+                : afterModifier;
             var afterResistance = afterCrit * (1d - resistancePercent / 100d);
             if (InvalidNumber(afterResistance))
             {
@@ -1251,7 +1381,7 @@ namespace GuildIdle.Combat
             var owner = GetCombatant(session, ownerSide);
             var triggerEventKey =
                 $"{session.sessionId}:battle-start:{owner?.combatantId ?? ownerSide.ToString().ToLowerInvariant()}";
-            return _abilityDispatcher.TryDispatch(
+            return TryDispatchAndApplyEffects(
                 session,
                 ownerSide,
                 CombatAbilityTriggers.OnBattleStart,
@@ -1260,7 +1390,64 @@ namespace GuildIdle.Combat
                 rng,
                 events,
                 out stateChanged,
+                out _,
                 out error);
+        }
+
+        private bool TryDispatchAndApplyEffects(
+            CombatSessionSaveData session,
+            CombatActorSide ownerSide,
+            string trigger,
+            string triggerEventKey,
+            double timestampSeconds,
+            ICombatRng rng,
+            List<CombatEvent> events,
+            out bool stateChanged,
+            out bool hpMutated,
+            out CombatAdvanceError error)
+        {
+            stateChanged = false;
+            hpMutated = false;
+            error = null;
+            var firstEventIndex = events.Count;
+            if (!_abilityDispatcher.TryDispatch(
+                    session,
+                    ownerSide,
+                    trigger,
+                    triggerEventKey,
+                    timestampSeconds,
+                    rng,
+                    events,
+                    out stateChanged,
+                    out error))
+            {
+                return false;
+            }
+
+            if (_statusRuntime == null)
+                return true;
+
+            var requestCount = events.Count - firstEventIndex;
+            for (var offset = 0; offset < requestCount; offset++)
+            {
+                if (!(events[firstEventIndex + offset] is CombatEffectRequest request))
+                    continue;
+                if (!_statusRuntime.TryApplyEffectRequest(
+                        session,
+                        request,
+                        events,
+                        out var effectStateChanged,
+                        out var effectHpMutated,
+                        out error))
+                {
+                    return false;
+                }
+
+                stateChanged |= effectStateChanged;
+                hpMutated |= effectHpMutated;
+            }
+
+            return true;
         }
 
         private static CombatantStateSaveData GetCombatant(

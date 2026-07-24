@@ -15,7 +15,9 @@ namespace GuildIdle.Combat
     public enum CombatEffectKind
     {
         ApplyStatus = 0,
-        ModifyStat = 1
+        ModifyStat = 1,
+        Damage = 2,
+        Heal = 3
     }
 
     public sealed class CombatEffectDescriptor
@@ -25,13 +27,17 @@ namespace GuildIdle.Combat
             string statusId = null,
             string statId = null,
             double value = 0d,
-            double durationSeconds = 0d)
+            double durationSeconds = 0d,
+            string damageType = null,
+            string operation = null)
         {
             Kind = kind;
             StatusId = statusId;
             StatId = statId;
             Value = value;
             DurationSeconds = durationSeconds;
+            DamageType = damageType;
+            Operation = operation;
         }
 
         public CombatEffectKind Kind { get; }
@@ -39,6 +45,8 @@ namespace GuildIdle.Combat
         public string StatId { get; }
         public double Value { get; }
         public double DurationSeconds { get; }
+        public string DamageType { get; }
+        public string Operation { get; }
     }
 
     public sealed class CombatAbilityDescriptor
@@ -291,7 +299,8 @@ namespace GuildIdle.Combat
                 CombatEffectKind.ModifyStat,
                 statId: match.Groups["stat"].Value,
                 value: modifierValue,
-                durationSeconds: durationSeconds);
+                durationSeconds: durationSeconds,
+                operation: CombatModifierOperations.Add);
             return true;
         }
 

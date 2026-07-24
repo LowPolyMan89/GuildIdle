@@ -13,6 +13,7 @@ namespace GuildIdle.Editor.Player
     public sealed class CombatRuntimeSaveDataTests
     {
         private const int CollectionLimit = 64;
+        private const int StatusStackLimit = 8;
         private PlayerStateFactory _factory;
 
         [SetUp]
@@ -66,10 +67,11 @@ namespace GuildIdle.Editor.Player
                     statusInstanceId = "status-1",
                     statusId = "bleed_weak",
                     sourceCombatantId = "enemy-0",
-                    stacks = 2,
+                    stackIds = new[] { "status-1-stack-1", "status-1-stack-2" },
                     expiresAtSeconds = 20d,
                     nextTickAtSeconds = 13d,
-                    lastEventKey = "status-event"
+                    lastApplyEventKey = "status-apply-event",
+                    lastTickEventKey = "status-tick-event"
                 }
             };
             source.session.hero.independentModifiers = new[]
@@ -81,7 +83,8 @@ namespace GuildIdle.Editor.Player
                     statId = "damage",
                     operation = "Add",
                     value = 3.5f,
-                    expiresAtSeconds = 19d
+                    expiresAtSeconds = 19d,
+                    appliedEventKey = "modifier-apply-event"
                 }
             };
             source.session.loot = new[] { Reward("loot-1", 0, "Resource", "resource_pine_wood", 4, "combat_loot") };
@@ -557,16 +560,22 @@ namespace GuildIdle.Editor.Player
         {
             var result = new CombatStatusInstanceSaveData[count];
             for (var index = 0; index < count; index++)
+            {
+                var stackIds = new string[StatusStackLimit];
+                for (var stackIndex = 0; stackIndex < stackIds.Length; stackIndex++)
+                    stackIds[stackIndex] = $"status-stack-{index:D2}-{stackIndex:D2}";
                 result[index] = new CombatStatusInstanceSaveData
                 {
                     statusInstanceId = $"status-instance-{index:D2}",
                     statusId = $"status-{index:D2}",
                     sourceCombatantId = sourceCombatantId,
-                    stacks = index + 1,
+                    stackIds = stackIds,
                     expiresAtSeconds = index + 10d,
                     nextTickAtSeconds = index + 1d,
-                    lastEventKey = $"status-event-{index:D2}"
+                    lastApplyEventKey = $"status-apply-event-{index:D2}",
+                    lastTickEventKey = $"status-tick-event-{index:D2}"
                 };
+            }
             return result;
         }
 
@@ -581,7 +590,8 @@ namespace GuildIdle.Editor.Player
                     statId = $"stat-{index:D2}",
                     operation = "Add",
                     value = index + 0.5f,
-                    expiresAtSeconds = index + 10d
+                    expiresAtSeconds = index + 10d,
+                    appliedEventKey = $"modifier-apply-event-{index:D2}"
                 };
             return result;
         }
