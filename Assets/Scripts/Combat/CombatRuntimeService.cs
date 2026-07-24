@@ -36,7 +36,11 @@ namespace GuildIdle.Combat
         InvalidRngState = 9,
         UnsupportedScheduledEvent = 10,
         ProcessingFailed = 11,
-        StoreUpdateFailed = 12
+        StoreUpdateFailed = 12,
+        UnsupportedCombatMode = 13,
+        EnemyQueueNotFound = 14,
+        InvalidEnemyQueue = 15,
+        EnemyStateCreationFailed = 16
     }
 
     public readonly struct CombatAttackCadence
@@ -421,15 +425,18 @@ namespace GuildIdle.Combat
         private readonly ICombatRuntimeStore _store;
         private readonly ICombatDescriptorProvider _descriptors;
         private readonly ICombatRngFactory _rngFactory;
+        private readonly ICombatEnemyQueueProvider _enemyQueue;
 
         public CombatRuntimeService(
             ICombatRuntimeStore store,
             ICombatDescriptorProvider descriptors,
-            ICombatRngFactory rngFactory = null)
+            ICombatRngFactory rngFactory = null,
+            ICombatEnemyQueueProvider enemyQueue = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _descriptors = descriptors ?? throw new ArgumentNullException(nameof(descriptors));
             _rngFactory = rngFactory ?? new CombatRngFactory();
+            _enemyQueue = enemyQueue;
         }
 
         public CombatAdvanceResult AdvanceTo(string executionId, double targetCombatTimeSeconds)
@@ -451,7 +458,7 @@ namespace GuildIdle.Combat
             }
 
             var currentTime = stored.session?.combatTimeSeconds ?? 0d;
-            if (stored.session == null || stored.session.hero == null || stored.session.currentEnemy == null ||
+            if (stored.session == null || stored.session.hero == null ||
                 stored.session.scheduler == null || stored.session.rng == null)
             {
                 return CombatAdvanceResult.Failed(
@@ -473,6 +480,14 @@ namespace GuildIdle.Combat
                 return CombatAdvanceResult.Failed(
                     CombatAdvanceErrorCode.SimulationStopped,
                     "Combat simulation is stopped.",
+                    currentTime);
+            }
+
+            if (stored.session.currentEnemy == null)
+            {
+                return CombatAdvanceResult.Failed(
+                    CombatAdvanceErrorCode.InvalidAggregate,
+                    "Combat aggregate does not contain a current enemy.",
                     currentTime);
             }
 
@@ -506,6 +521,7 @@ namespace GuildIdle.Combat
             try
             {
                 var scheduler = aggregate.session.scheduler;
+                var resolvedCombatTime = targetCombatTimeSeconds;
                 scheduler.scheduledEvents ??= Array.Empty<CombatScheduledEventSaveData>();
                 if (aggregate.session.hero.currentHp > 0 &&
                     aggregate.session.currentEnemy.currentHp > 0)
@@ -590,7 +606,34 @@ namespace GuildIdle.Combat
                     attacker.lastAttackEventKey = scheduledEvent.eventKey;
                     if (attacker.currentHp <= 0 || target.currentHp <= 0)
                     {
-                        RemovePendingActorAttacks(scheduler);
+                        if (aggregate.session.hero.currentHp <= 0)
+                        {
+                            RemovePendingActorAttacks(scheduler);
+                        }
+                        else if (aggregate.session.currentEnemy.currentHp <= 0)
+                        {
+                            if (!TryAdvanceEnemyQueue(
+                                    aggregate.session,
+                                    scheduledEvent,
+                                    heroInterval,
+                                    ref enemy,
+                                    ref enemyInterval,
+                                    out var queueCompleted,
+                                    out error))
+                            {
+                                return CombatAdvanceResult.Failed(error, currentTime);
+                            }
+
+                            if (queueCompleted)
+                            {
+                                resolvedCombatTime = scheduledEvent.timestampSeconds;
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            RemovePendingActorAttacks(scheduler);
+                        }
                     }
                     else
                     {
@@ -613,7 +656,7 @@ namespace GuildIdle.Combat
                     }
                 }
 
-                aggregate.session.combatTimeSeconds = targetCombatTimeSeconds;
+                aggregate.session.combatTimeSeconds = resolvedCombatTime;
                 aggregate.session.rng = rng.CaptureState();
                 if (!_store.UpdateCombatAggregate(aggregate))
                 {
@@ -623,7 +666,7 @@ namespace GuildIdle.Combat
                         currentTime);
                 }
 
-                return CombatAdvanceResult.Succeeded(targetCombatTimeSeconds, events);
+                return CombatAdvanceResult.Succeeded(resolvedCombatTime, events);
             }
             catch (Exception exception)
             {
@@ -893,13 +936,131 @@ namespace GuildIdle.Combat
             return false;
         }
 
+        private bool TryAdvanceEnemyQueue(
+            CombatSessionSaveData session,
+            CombatScheduledEventSaveData deathEvent,
+            double heroInterval,
+            ref CombatActorDescriptor enemyDescriptor,
+            ref double enemyInterval,
+            out bool queueCompleted,
+            out CombatAdvanceError error)
+        {
+            queueCompleted = false;
+            error = null;
+            var queue = session.enemyQueue ?? Array.Empty<CombatEnemyQueueEntrySaveData>();
+            if (queue.Length == 0)
+            {
+                RemovePendingActorAttacks(session.scheduler);
+                return true;
+            }
+
+            if (!string.Equals(session.combatMode, CombatEnemyQueueBuilder.Queue1V1Mode, StringComparison.Ordinal))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.UnsupportedCombatMode,
+                    $"Combat mode '{session.combatMode ?? "<null>"}' cannot advance an enemy queue.");
+                return false;
+            }
+
+            if (session.queuePosition < 0 ||
+                session.queuePosition >= queue.Length ||
+                session.currentEnemy == null ||
+                session.currentEnemy.currentHp > 0)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidEnemyQueue,
+                    "Current enemy death does not match the saved queue position.");
+                return false;
+            }
+
+            RemovePendingActorAttacks(session.scheduler, CombatActorSide.Enemy);
+            var nextPosition = session.queuePosition + 1;
+            if (nextPosition >= queue.Length)
+            {
+                RemovePendingActorAttacks(session.scheduler);
+                session.queuePosition = queue.Length;
+                session.currentEnemy = null;
+                session.simulationStopped = true;
+                queueCompleted = true;
+                return true;
+            }
+
+            if (_enemyQueue == null)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.EnemyStateCreationFailed,
+                    "Combat runtime has no enemy queue provider for the next queue entry.");
+                return false;
+            }
+
+            var entry = queue[nextPosition];
+            if (!_enemyQueue.TryCreateEnemyState(entry, out var nextEnemy, out var providerError) ||
+                nextEnemy == null ||
+                nextEnemy.currentHp <= 0 ||
+                nextEnemy.currentHp != nextEnemy.maxHp ||
+                !string.Equals(nextEnemy.combatantId, entry?.combatantId, StringComparison.Ordinal) ||
+                !string.Equals(nextEnemy.definitionId, entry?.enemyId, StringComparison.Ordinal))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.EnemyStateCreationFailed,
+                    providerError ?? "The next enemy state is invalid.");
+                return false;
+            }
+
+            if (!TryResolveDescriptor(nextEnemy, CombatActorSide.Enemy, out var nextDescriptor, out error) ||
+                !TryResolveAttackInterval(nextDescriptor, out var nextEnemyInterval, out error))
+            {
+                return false;
+            }
+
+            session.queuePosition = nextPosition;
+            session.currentEnemy = nextEnemy;
+            enemyDescriptor = nextDescriptor;
+            enemyInterval = nextEnemyInterval;
+
+            if (!HasPendingActorAttack(session.scheduler, CombatActorSide.Hero))
+            {
+                var nextHeroAttack = deathEvent.timestampSeconds + heroInterval;
+                if (nextHeroAttack <= deathEvent.timestampSeconds ||
+                    !TryScheduleAttack(session, CombatActorSide.Hero, nextHeroAttack, out error))
+                {
+                    error ??= new CombatAdvanceError(
+                        CombatAdvanceErrorCode.InvalidAttackCadence,
+                        "Hero attack cadence did not continue across the enemy transition.");
+                    return false;
+                }
+            }
+
+            var firstEnemyAttack = deathEvent.timestampSeconds + nextEnemyInterval;
+            if (firstEnemyAttack <= deathEvent.timestampSeconds ||
+                !TryScheduleAttack(session, CombatActorSide.Enemy, firstEnemyAttack, out error))
+            {
+                error ??= new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidAttackCadence,
+                    "The next enemy did not receive a full initial attack cooldown.");
+                return false;
+            }
+
+            return true;
+        }
+
         private static void RemovePendingActorAttacks(CombatSchedulerStateSaveData scheduler)
+        {
+            RemovePendingActorAttacks(scheduler, null);
+        }
+
+        private static void RemovePendingActorAttacks(
+            CombatSchedulerStateSaveData scheduler,
+            CombatActorSide? side)
         {
             var retained = new List<CombatScheduledEventSaveData>(scheduler.scheduledEvents.Length);
             foreach (var value in scheduler.scheduledEvents)
             {
-                if (!string.Equals(value.eventType, ActorAttackEventType, StringComparison.Ordinal))
+                if (!string.Equals(value.eventType, ActorAttackEventType, StringComparison.Ordinal) ||
+                    (side.HasValue && value.actorSide != side.Value))
+                {
                     retained.Add(value);
+                }
             }
 
             scheduler.scheduledEvents = retained.ToArray();

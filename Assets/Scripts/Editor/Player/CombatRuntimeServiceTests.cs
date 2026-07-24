@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using GuildIdle.Combat;
+using GuildIdle.Configs;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -327,6 +328,230 @@ namespace GuildIdle.EditorTests.Player
                 Is.EqualTo(JsonUtility.ToJson(continuousStore.Value.session)));
         }
 
+        [Test]
+        public void CombatClearHallForestQueueBuildsFourWolvesThenLeaderFromConfigOrder()
+        {
+            var configs = EnemyConfigs(
+                new[]
+                {
+                    Enemy("enemy_lean_wolf", 35),
+                    Enemy("enemy_wolf_leader", 80)
+                },
+                new[]
+                {
+                    Group("enemy_group_underwood_wolves", "enemy_wolf_leader:1", 20, 1, 1),
+                    Group("enemy_group_underwood_wolves", "enemy_lean_wolf:1", 10, 4, 4)
+                });
+            var builder = new CombatEnemyQueueBuilder(
+                new ConfigCombatEnemyQueueProvider(configs),
+                new ScriptedRngFactory());
+            var source = new CombatSessionSaveData
+            {
+                sessionId = "forest-session",
+                executionId = "forest-execution",
+                enemyGroupId = "enemy_group_underwood_wolves",
+                combatMode = CombatEnemyQueueBuilder.Queue1V1Mode,
+                hero = new CombatantStateSaveData
+                {
+                    combatantId = "hero-combatant",
+                    definitionId = "hero",
+                    currentHp = 100,
+                    maxHp = 100
+                },
+                rng = ScriptedRngFactory.State()
+            };
+
+            var success = builder.TryBuild(source, out var session, out var error);
+
+            Assert.That(success, Is.True, error?.Message);
+            Assert.That(
+                session.enemyQueue.Select(value => value.enemyId),
+                Is.EqualTo(new[]
+                {
+                    "enemy_lean_wolf",
+                    "enemy_lean_wolf",
+                    "enemy_lean_wolf",
+                    "enemy_lean_wolf",
+                    "enemy_wolf_leader"
+                }));
+            Assert.That(session.enemyQueue.Select(value => value.queueIndex), Is.EqualTo(new[] { 0, 1, 2, 3, 4 }));
+            Assert.That(session.currentEnemy.definitionId, Is.EqualTo("enemy_lean_wolf"));
+            Assert.That(session.currentEnemy.currentHp, Is.EqualTo(35));
+            Assert.That(session.rng.drawCount, Is.Zero);
+        }
+
+        [Test]
+        public void AdditionalGroupUsesWeightedAlternativeAndCountWithoutIdSpecificBranches()
+        {
+            var configs = EnemyConfigs(
+                new[]
+                {
+                    Enemy("enemy-a", 10),
+                    Enemy("enemy-b", 20),
+                    Enemy("enemy-c", 30)
+                },
+                new[]
+                {
+                    Group("additional-group", "enemy-a:1", 10, 1, 3, 1),
+                    Group("additional-group", "enemy-b:1", 10, 1, 3, 1),
+                    Group("additional-group", "enemy-c:1", 20, 1, 1)
+                });
+            var builder = new CombatEnemyQueueBuilder(
+                new ConfigCombatEnemyQueueProvider(configs),
+                new ScriptedRngFactory());
+            var source = new CombatSessionSaveData
+            {
+                sessionId = "additional-session",
+                enemyGroupId = "additional-group",
+                combatMode = CombatEnemyQueueBuilder.Queue1V1Mode,
+                rng = ScriptedRngFactory.State(1, 3)
+            };
+
+            var success = builder.TryBuild(source, out var session, out var error);
+
+            Assert.That(success, Is.True, error?.Message);
+            Assert.That(
+                session.enemyQueue.Select(value => value.enemyId),
+                Is.EqualTo(new[] { "enemy-b", "enemy-c" }));
+            Assert.That(session.rng.drawCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void EnemyDeathStartsNextAtFullCooldownWithoutResettingHeroState()
+        {
+            var source = QueueAggregate("enemy-a", 1, "enemy-b");
+            source.session.hero.nextAttackAtSeconds = 0d;
+            source.session.hero.abilityCooldowns = new[]
+            {
+                new CombatAbilityCooldownSaveData { abilityId = "ability", nextReadyAtSeconds = 9d }
+            };
+            source.session.hero.statuses = new[]
+            {
+                new CombatStatusInstanceSaveData
+                {
+                    statusInstanceId = "status-instance",
+                    statusId = "status",
+                    sourceCombatantId = "hero-combatant",
+                    stacks = 2,
+                    expiresAtSeconds = 8d,
+                    nextTickAtSeconds = 3d
+                }
+            };
+            source.session.hero.independentModifiers = new[]
+            {
+                new CombatTemporaryModifierSaveData
+                {
+                    modifierInstanceId = "modifier",
+                    sourceId = "source",
+                    statId = "damage",
+                    operation = "add",
+                    value = 2f,
+                    expiresAtSeconds = 7d
+                }
+            };
+            source.session.rng = ScriptedRngFactory.State(0, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var enemyQueue = new ConfigCombatEnemyQueueProvider(
+                EnemyConfigs(
+                    new[] { Enemy("enemy-a", 1), Enemy("enemy-b", 20) },
+                    Array.Empty<EnemyGroupConfigDto>()));
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d), damageMin: 1, damageMax: 1),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.25d), damageMin: 1, damageMax: 1));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory(), enemyQueue);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var session = store.Value.session;
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(session.queuePosition, Is.EqualTo(1));
+            Assert.That(session.currentEnemy.definitionId, Is.EqualTo("enemy-b"));
+            Assert.That(session.currentEnemy.currentHp, Is.EqualTo(20));
+            Assert.That(session.currentEnemy.nextAttackAtSeconds, Is.EqualTo(5d));
+            Assert.That(session.hero.currentHp, Is.EqualTo(100));
+            Assert.That(session.hero.nextAttackAtSeconds, Is.EqualTo(2d));
+            Assert.That(session.hero.abilityCooldowns.Single().nextReadyAtSeconds, Is.EqualTo(9d));
+            Assert.That(session.hero.statuses.Single().stacks, Is.EqualTo(2));
+            Assert.That(session.hero.independentModifiers.Single().value, Is.EqualTo(2f));
+            Assert.That(session.combatTimeSeconds, Is.EqualTo(1d));
+            Assert.That(session.rng.drawCount, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void LargeAdvanceContinuesCombatClockAndRngAcrossQueueUntilCompletion()
+        {
+            var source = QueueAggregate("enemy-a", 1, "enemy-b");
+            source.session.rng = ScriptedRngFactory.State(
+                0, 0, ulong.MaxValue,
+                0, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var enemyQueue = new ConfigCombatEnemyQueueProvider(
+                EnemyConfigs(
+                    new[] { Enemy("enemy-a", 1), Enemy("enemy-b", 1) },
+                    Array.Empty<EnemyGroupConfigDto>()));
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d), damageMin: 1, damageMax: 1),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.1d), damageMin: 1, damageMax: 1));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory(), enemyQueue);
+
+            var result = service.AdvanceTo("execution", 10d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(result.Events.OfType<CombatAttackEvent>().Select(value => value.TimestampSeconds),
+                Is.EqualTo(new[] { 1d, 2d }));
+            Assert.That(result.CombatTimeSeconds, Is.EqualTo(2d));
+            Assert.That(store.Value.session.combatTimeSeconds, Is.EqualTo(2d));
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(6));
+            Assert.That(store.Value.session.queuePosition, Is.EqualTo(2));
+            Assert.That(store.Value.session.currentEnemy, Is.Null);
+            Assert.That(store.Value.session.simulationStopped, Is.True);
+        }
+
+        [Test]
+        public void SaveLoadBetweenEnemiesContinuesTheSameQueue()
+        {
+            var initial = QueueAggregate("enemy-a", 1, "enemy-b");
+            initial.session.rng = ScriptedRngFactory.State(
+                0, 0, ulong.MaxValue,
+                0, 0, ulong.MaxValue);
+            var enemyQueue = new ConfigCombatEnemyQueueProvider(
+                EnemyConfigs(
+                    new[] { Enemy("enemy-a", 1), Enemy("enemy-b", 1) },
+                    Array.Empty<EnemyGroupConfigDto>()));
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d), damageMin: 1, damageMax: 1),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.1d), damageMin: 1, damageMax: 1));
+
+            var splitStore = new MemoryStore(initial);
+            var splitService = new CombatRuntimeService(
+                splitStore,
+                descriptors,
+                new ScriptedRngFactory(),
+                enemyQueue);
+            Assert.That(splitService.AdvanceTo("execution", 1d).Success, Is.True);
+            Assert.That(splitStore.Value.session.queuePosition, Is.EqualTo(1));
+
+            var reloadedStore = new MemoryStore(splitStore.Value);
+            var reloadedService = new CombatRuntimeService(
+                reloadedStore,
+                descriptors,
+                new ScriptedRngFactory(),
+                enemyQueue);
+            Assert.That(reloadedService.AdvanceTo("execution", 2d).Success, Is.True);
+
+            var continuousStore = new MemoryStore(initial);
+            var continuousService = new CombatRuntimeService(
+                continuousStore,
+                descriptors,
+                new ScriptedRngFactory(),
+                enemyQueue);
+            Assert.That(continuousService.AdvanceTo("execution", 2d).Success, Is.True);
+
+            Assert.That(
+                JsonUtility.ToJson(reloadedStore.Value.session),
+                Is.EqualTo(JsonUtility.ToJson(continuousStore.Value.session)));
+        }
+
         [TestCase("unknown", CombatRngStateFactory.SplitMix64FormatVersion)]
         [TestCase(CombatRngStateFactory.SplitMix64AlgorithmId, 99)]
         public void UnsupportedRngDescriptorReturnsTypedErrorWithoutUpdate(string algorithmId, int formatVersion)
@@ -538,6 +763,75 @@ namespace GuildIdle.EditorTests.Player
             return source;
         }
 
+        private static CombatRuntimeAggregate QueueAggregate(
+            string firstEnemyId,
+            int firstEnemyHp,
+            string secondEnemyId)
+        {
+            var source = Aggregate(firstEnemyHp);
+            source.session.enemyGroupId = "group";
+            source.session.combatMode = CombatEnemyQueueBuilder.Queue1V1Mode;
+            source.session.enemyQueue = new[]
+            {
+                new CombatEnemyQueueEntrySaveData
+                {
+                    combatantId = "enemy-combatant",
+                    enemyId = firstEnemyId,
+                    level = 1,
+                    queueIndex = 0
+                },
+                new CombatEnemyQueueEntrySaveData
+                {
+                    combatantId = "enemy-combatant-1",
+                    enemyId = secondEnemyId,
+                    level = 1,
+                    queueIndex = 1
+                }
+            };
+            source.session.queuePosition = 0;
+            source.session.currentEnemy.definitionId = firstEnemyId;
+            return source;
+        }
+
+        private static EnemiesConfigRepository EnemyConfigs(
+            EnemyConfigDto[] enemies,
+            EnemyGroupConfigDto[] groups)
+        {
+            return new EnemiesConfigRepository(new EnemiesRuntimeConfigDto
+            {
+                enemies = enemies,
+                enemyLevels = new[]
+                {
+                    new EnemyLevelConfigDto { level = 1, hpMultiplier = 1f }
+                },
+                enemyGroups = groups
+            });
+        }
+
+        private static EnemyConfigDto Enemy(string enemyId, int hp)
+        {
+            return new EnemyConfigDto { enemyId = enemyId, hp = hp };
+        }
+
+        private static EnemyGroupConfigDto Group(
+            string groupId,
+            string enemyRef,
+            int sortOrder,
+            int minCount,
+            int maxCount,
+            int weight = 100)
+        {
+            return new EnemyGroupConfigDto
+            {
+                enemyGroupId = groupId,
+                enemyRef = enemyRef,
+                sortOrder = sortOrder,
+                minCount = minCount,
+                maxCount = maxCount,
+                weight = weight
+            };
+        }
+
         private static CombatScheduledEventSaveData Scheduled(
             double timestamp,
             int phase,
@@ -623,9 +917,13 @@ namespace GuildIdle.EditorTests.Player
 
             private static CombatRuntimeAggregate Clone(CombatRuntimeAggregate source)
             {
-                return source == null
-                    ? null
-                    : JsonUtility.FromJson<CombatRuntimeAggregate>(JsonUtility.ToJson(source));
+                if (source == null)
+                    return null;
+
+                var clone = JsonUtility.FromJson<CombatRuntimeAggregate>(JsonUtility.ToJson(source));
+                if (source.session?.currentEnemy == null && clone?.session != null)
+                    clone.session.currentEnemy = null;
+                return clone;
             }
         }
 
