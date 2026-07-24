@@ -1472,6 +1472,446 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(57));
         }
 
+        [Test]
+        public void ConfigDeathPreventionProviderUsesOnlyEnabledSkillsForCurrentHero()
+        {
+            var configs = new HeroesConfigRepository(new HeroesRuntimeConfigDto
+            {
+                heroes = new[]
+                {
+                    new HeroConfigDto { heroId = "fixture-hero" },
+                    new HeroConfigDto { heroId = "other-hero" }
+                },
+                heroUniqueSkills = new[]
+                {
+                    new HeroUniqueSkillConfigDto
+                    {
+                        heroId = "fixture-hero",
+                        skillId = "skill-b",
+                        enabled = true
+                    },
+                    new HeroUniqueSkillConfigDto
+                    {
+                        heroId = "fixture-hero",
+                        skillId = "skill-disabled",
+                        enabled = false
+                    },
+                    new HeroUniqueSkillConfigDto
+                    {
+                        heroId = "other-hero",
+                        skillId = "skill-other",
+                        enabled = true
+                    },
+                    new HeroUniqueSkillConfigDto
+                    {
+                        heroId = "fixture-hero",
+                        skillId = "skill-a",
+                        enabled = true
+                    }
+                },
+                heroSkillEffects = new[]
+                {
+                    DeathEffect("skill-b", "effect-b", 25f),
+                    DeathEffect("skill-disabled", "effect-disabled", 100f),
+                    DeathEffect("skill-other", "effect-other", 100f),
+                    DeathEffect("skill-a", "effect-a", 50f)
+                }
+            });
+            var provider = new ConfigCombatDeathPreventionDescriptorProvider(configs);
+
+            var success = provider.TryGetDescriptors(
+                CombatActorSide.Hero,
+                "fixture-hero",
+                out var descriptors,
+                out var error);
+
+            Assert.That(success, Is.True, error);
+            Assert.That(
+                descriptors.Select(value => value.EffectId),
+                Is.EqualTo(new[] { "effect-a", "effect-b" }));
+        }
+
+        [Test]
+        public void OverkillAttackUsesRawHpAndSuccessfulPreventionContinuesOnAttackHitOnce()
+        {
+            var source = Aggregate(100);
+            source.session.hero.maxHp = source.session.hero.currentHp = 5;
+            source.session.rng = ScriptedRngFactory.State(
+                ulong.MaxValue,
+                0,
+                ulong.MaxValue,
+                10000,
+                10000);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("after-save", CombatAbilityTriggers.OnAttackHit, "mark"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus("mark", 2d, 1d, 1, CombatEffectKind.Damage, 1d));
+            var prevention = new DeathPreventionDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    DeathDescriptor("fixture-skill", "fixture-save", 100d));
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(1d),
+                        damageMin: 10,
+                        damageMax: 10)),
+                new ScriptedRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses,
+                prevention);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var damage = result.Events.OfType<CombatDamageEvent>().Single();
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(damage.TargetHpBefore, Is.EqualTo(5));
+            Assert.That(damage.TargetRawHpAfter, Is.EqualTo(-5));
+            Assert.That(damage.TargetHpAfter, Is.EqualTo(1));
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(1));
+            Assert.That(store.Value.session.terminalCandidate, Is.Null);
+            Assert.That(result.Events.OfType<CombatDeathPreventionResultEvent>().Single().Successful, Is.True);
+            Assert.That(result.Events.OfType<CombatDeathPreventedEvent>().Count(), Is.EqualTo(1));
+            Assert.That(result.Events.OfType<CombatEffectRequest>().Count(), Is.EqualTo(1));
+            Assert.That(result.Events.OfType<CombatStatusAppliedEvent>().Count(), Is.EqualTo(1));
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(5));
+        }
+
+        [Test]
+        public void ExactZeroSkipsDeathPreventionAndCreatesOneDefeatCandidate()
+        {
+            var source = Aggregate(100);
+            source.session.hero.maxHp = source.session.hero.currentHp = 10;
+            source.session.rng = ScriptedRngFactory.State(ulong.MaxValue, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var prevention = new DeathPreventionDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    DeathDescriptor("fixture-skill", "fixture-save", 100d));
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(1d),
+                        damageMin: 10,
+                        damageMax: 10)),
+                new ScriptedRngFactory(),
+                null,
+                null,
+                null,
+                null,
+                prevention);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var candidate = store.Value.session.terminalCandidate;
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(result.Events.OfType<CombatDeathPreventionResultEvent>(), Is.Empty);
+            Assert.That(result.Events.OfType<CombatTerminalCandidateCreatedEvent>().Count(), Is.EqualTo(1));
+            Assert.That(candidate, Is.Not.Null);
+            Assert.That(candidate.kind, Is.EqualTo(CombatTerminalCandidateKinds.Defeat));
+            Assert.That(candidate.createdAtSeconds, Is.EqualTo(1d));
+            Assert.That(store.Value.session.hero.currentHp, Is.Zero);
+            Assert.That(store.Value.session.simulationStopped, Is.True);
+            Assert.That(store.Value.session.scheduler.scheduledEvents, Is.Empty);
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void MultipleDeathPreventionDescriptorsUseStableOrderAndStopAfterSuccess()
+        {
+            var source = Aggregate(100);
+            source.session.hero.maxHp = source.session.hero.currentHp = 1;
+            source.session.rng = ScriptedRngFactory.State(
+                ulong.MaxValue,
+                0,
+                ulong.MaxValue,
+                10000,
+                10000);
+            var store = new MemoryStore(source);
+            var prevention = new DeathPreventionDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    DeathDescriptor("skill-c", "effect-c", 100d),
+                    DeathDescriptor("skill-b", "effect-b", 100d),
+                    DeathDescriptor("skill-a", "effect-a", 0d));
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(1d),
+                        damageMin: 2,
+                        damageMax: 2)),
+                new ScriptedRngFactory(),
+                null,
+                null,
+                null,
+                null,
+                prevention);
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(
+                result.Events
+                    .OfType<CombatDeathPreventionResultEvent>()
+                    .Select(value => value.EffectId),
+                Is.EqualTo(new[] { "effect-a", "effect-b" }));
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(1));
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(5));
+            Assert.That(
+                store.Value.session.lastDeathPreventionOperation.effectId,
+                Is.EqualTo("effect-b"));
+        }
+
+        [Test]
+        public void FailedPreventionCreatesDefeatBeforeOnAttackHitDispatch()
+        {
+            var source = Aggregate(100);
+            source.session.hero.maxHp = source.session.hero.currentHp = 1;
+            source.session.rng = ScriptedRngFactory.State(
+                ulong.MaxValue,
+                0,
+                ulong.MaxValue,
+                10000);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("cancelled-after-death", CombatAbilityTriggers.OnAttackHit, "mark"));
+            var prevention = new DeathPreventionDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    DeathDescriptor("fixture-skill", "fixture-failure", 0d));
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(1d),
+                        damageMin: 2,
+                        damageMax: 2)),
+                new ScriptedRngFactory(),
+                null,
+                abilities,
+                null,
+                new StatusDescriptorProvider()
+                    .Add(PeriodicStatus("mark", 2d, 1d, 1, CombatEffectKind.Damage, 1d)),
+                prevention);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var preventionResult =
+                result.Events.OfType<CombatDeathPreventionResultEvent>().Single();
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(preventionResult.Successful, Is.False);
+            Assert.That(result.Events.OfType<CombatEffectRequest>(), Is.Empty);
+            Assert.That(result.Events.OfType<CombatStatusAppliedEvent>(), Is.Empty);
+            Assert.That(result.Events.OfType<CombatTerminalCandidateCreatedEvent>().Count(), Is.EqualTo(1));
+            Assert.That(store.Value.session.terminalCandidate, Is.Not.Null);
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(4));
+        }
+
+        [Test]
+        public void LethalImmediateEffectStopsRemainingInlineRequests()
+        {
+            var source = Aggregate(100);
+            source.session.hero.maxHp = source.session.hero.currentHp = 5;
+            source.session.rng = ScriptedRngFactory.State(
+                ulong.MaxValue,
+                0,
+                ulong.MaxValue,
+                10000);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    new CombatAbilityDescriptor(
+                        "a-lethal",
+                        CombatAbilityTriggers.OnAttackHit,
+                        100d,
+                        "enemy",
+                        0d,
+                        new CombatEffectDescriptor(CombatEffectKind.Damage, value: 10d)),
+                    StatusAbility("b-cancelled", CombatAbilityTriggers.OnAttackHit, "mark"));
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(1d),
+                        damageMin: 1,
+                        damageMax: 1)),
+                new ScriptedRngFactory(),
+                null,
+                abilities,
+                null,
+                new StatusDescriptorProvider()
+                    .Add(PeriodicStatus("mark", 2d, 1d, 1, CombatEffectKind.Damage, 1d)));
+
+            var result = service.AdvanceTo("execution", 1d);
+            var immediate = result.Events.OfType<CombatImmediateEffectEvent>().Single();
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(immediate.HpBefore, Is.EqualTo(4));
+            Assert.That(immediate.RawHpAfter, Is.EqualTo(-6));
+            Assert.That(immediate.HpAfter, Is.Zero);
+            Assert.That(
+                result.Events.OfType<CombatEffectRequest>().Select(value => value.SourceAbilityId),
+                Is.EqualTo(new[] { "a-lethal" }));
+            Assert.That(result.Events.OfType<CombatStatusAppliedEvent>(), Is.Empty);
+            Assert.That(store.Value.session.terminalCandidate, Is.Not.Null);
+            Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(4));
+        }
+
+        [Test]
+        public void OverkillStatusTickUsesTheSameTerminalBoundary()
+        {
+            var source = Aggregate(100);
+            source.session.hero.maxHp = source.session.hero.currentHp = 1;
+            source.session.rng = ScriptedRngFactory.State(10000, 10000);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    StatusAbility("bleed-start", CombatAbilityTriggers.OnBattleStart, "bleed"));
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus("bleed", 2d, 1d, 1, CombatEffectKind.Damage, 2d));
+            var prevention = new DeathPreventionDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    DeathDescriptor("fixture-skill", "fixture-save", 100d));
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new ScriptedRngFactory(),
+                null,
+                abilities,
+                null,
+                statuses,
+                prevention);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var tick = result.Events.OfType<CombatStatusTickEvent>().Single();
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(tick.HpBefore, Is.EqualTo(1));
+            Assert.That(tick.RawHpAfter, Is.EqualTo(-1));
+            Assert.That(tick.HpAfter, Is.EqualTo(1));
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(1));
+            Assert.That(store.Value.session.terminalCandidate, Is.Null);
+        }
+
+        [Test]
+        public void DeathPreventionProviderFailureRollsBackEntireTransition()
+        {
+            var source = Aggregate(100);
+            source.session.hero.maxHp = source.session.hero.currentHp = 1;
+            source.session.rng = ScriptedRngFactory.State(ulong.MaxValue, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(1d),
+                        damageMin: 2,
+                        damageMax: 2)),
+                new ScriptedRngFactory(),
+                null,
+                null,
+                null,
+                null,
+                new DeathPreventionDescriptorProvider { Fail = true });
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(
+                result.Error.Code,
+                Is.EqualTo(CombatAdvanceErrorCode.DeathPreventionDescriptorNotFound));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
+        [Test]
+        public void SaveLoadAfterSuccessfulPreventionDoesNotRepeatRollOrEvents()
+        {
+            var source = Aggregate(100);
+            source.session.hero.maxHp = source.session.hero.currentHp = 1;
+            source.session.rng = ScriptedRngFactory.State(
+                ulong.MaxValue,
+                0,
+                ulong.MaxValue,
+                10000);
+            var prevention = new DeathPreventionDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    DeathDescriptor("fixture-skill", "fixture-save", 100d));
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                Descriptor(
+                    CombatActorSide.Enemy,
+                    CombatAttackCadence.EnemyRate(1d),
+                    damageMin: 2,
+                    damageMax: 2));
+            var firstStore = new MemoryStore(source);
+            var firstService = new CombatRuntimeService(
+                firstStore,
+                descriptors,
+                new ScriptedRngFactory(),
+                null,
+                null,
+                null,
+                null,
+                prevention);
+            var first = firstService.AdvanceTo("execution", 1d);
+            var drawCount = firstStore.Value.session.rng.drawCount;
+
+            var reloadedStore = new MemoryStore(firstStore.Value);
+            var reloadedService = new CombatRuntimeService(
+                reloadedStore,
+                descriptors,
+                new ScriptedRngFactory(),
+                null,
+                null,
+                null,
+                null,
+                prevention);
+            var replay = reloadedService.AdvanceTo("execution", 1d);
+
+            Assert.That(first.Events.OfType<CombatDeathPreventedEvent>().Count(), Is.EqualTo(1));
+            Assert.That(replay.Success, Is.True, replay.Error?.Message);
+            Assert.That(replay.Events, Is.Empty);
+            Assert.That(reloadedStore.Value.session.rng.drawCount, Is.EqualTo(drawCount));
+        }
+
         private static DescriptorProvider DefaultDescriptors()
         {
             return new DescriptorProvider(
@@ -1581,6 +2021,40 @@ namespace GuildIdle.EditorTests.Player
                     effectKind,
                     value: value,
                     damageType: effectKind == CombatEffectKind.Damage ? "fixture" : null));
+        }
+
+        private static HeroSkillEffectConfigDto DeathEffect(
+            string skillId,
+            string effectId,
+            float chancePercent)
+        {
+            return new HeroSkillEffectConfigDto
+            {
+                skillId = skillId,
+                effectId = effectId,
+                trigger = CombatDeathPreventionTriggers.OnHealthBelowZero,
+                condition = CombatDeathPreventionConditions.HealthBelowZero,
+                chancePercent = chancePercent,
+                effect = CombatDeathPreventionEffects.PreventDeath,
+                target = CombatDeathPreventionTargets.Self,
+                value = 1f
+            };
+        }
+
+        private static CombatDeathPreventionDescriptor DeathDescriptor(
+            string skillId,
+            string effectId,
+            double chancePercent)
+        {
+            return new CombatDeathPreventionDescriptor(
+                skillId,
+                effectId,
+                CombatDeathPreventionTriggers.OnHealthBelowZero,
+                CombatDeathPreventionConditions.HealthBelowZero,
+                chancePercent,
+                CombatDeathPreventionEffects.PreventDeath,
+                CombatDeathPreventionTargets.Self,
+                1);
         }
 
         private static CombatAbilityDescriptor Ability(
@@ -1835,6 +2309,49 @@ namespace GuildIdle.EditorTests.Player
             }
         }
 
+        private sealed class DeathPreventionDescriptorProvider :
+            ICombatDeathPreventionDescriptorProvider
+        {
+            private readonly Dictionary<string, CombatDeathPreventionDescriptor[]> _descriptors =
+                new Dictionary<string, CombatDeathPreventionDescriptor[]>(StringComparer.Ordinal);
+
+            public bool Fail { get; set; }
+
+            public DeathPreventionDescriptorProvider Add(
+                CombatActorSide side,
+                string definitionId,
+                params CombatDeathPreventionDescriptor[] descriptors)
+            {
+                _descriptors[$"{side}:{definitionId}"] =
+                    descriptors ?? Array.Empty<CombatDeathPreventionDescriptor>();
+                return this;
+            }
+
+            public bool TryGetDescriptors(
+                CombatActorSide ownerSide,
+                string ownerDefinitionId,
+                out CombatDeathPreventionDescriptor[] descriptors,
+                out string error)
+            {
+                if (Fail)
+                {
+                    descriptors = null;
+                    error = "Simulated death-prevention provider failure.";
+                    return false;
+                }
+
+                if (!_descriptors.TryGetValue(
+                        $"{ownerSide}:{ownerDefinitionId}",
+                        out descriptors))
+                {
+                    descriptors = Array.Empty<CombatDeathPreventionDescriptor>();
+                }
+
+                error = null;
+                return true;
+            }
+        }
+
         private sealed class MemoryStore : ICombatRuntimeStore
         {
             public MemoryStore(CombatRuntimeAggregate value)
@@ -1886,6 +2403,10 @@ namespace GuildIdle.EditorTests.Player
                 var clone = JsonUtility.FromJson<CombatRuntimeAggregate>(JsonUtility.ToJson(source));
                 if (source.session?.currentEnemy == null && clone?.session != null)
                     clone.session.currentEnemy = null;
+                if (source.session?.terminalCandidate == null && clone?.session != null)
+                    clone.session.terminalCandidate = null;
+                if (source.session?.lastDeathPreventionOperation == null && clone?.session != null)
+                    clone.session.lastDeathPreventionOperation = null;
                 return clone;
             }
         }

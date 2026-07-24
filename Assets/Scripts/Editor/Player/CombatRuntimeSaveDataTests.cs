@@ -100,6 +100,15 @@ namespace GuildIdle.Editor.Player
                 nextAllowedUseAtSeconds = 17d,
                 lastAppliedEventKey = "consume-1"
             };
+            source.session.lastDeathPreventionOperation =
+                new CombatDeathPreventionOperationSaveData
+                {
+                    operationKey = "damage-1:death-prevention:hero:skill:effect",
+                    targetCombatantId = "hero:ren",
+                    effectId = "effect",
+                    chanceRoll = 2500,
+                    successful = true
+                };
             source.session.terminalCandidate = new CombatTerminalCandidateSaveData
             {
                 candidateId = "candidate-1",
@@ -129,6 +138,9 @@ namespace GuildIdle.Editor.Player
             Assert.That(aggregate.execution.sessionId, Is.EqualTo("session-a"));
             Assert.That(aggregate.execution.pendingResultId, Is.EqualTo("result:Combat:combat-a"));
             Assert.That(aggregate.session.executionId, Is.EqualTo("combat-a"));
+            Assert.That(
+                aggregate.session.lastDeathPreventionOperation.operationKey,
+                Is.EqualTo("damage-1:death-prevention:hero:skill:effect"));
             Assert.That(aggregate.session.combatTimeSeconds, Is.EqualTo(12.75d));
             Assert.That(aggregate.session.scheduler.nextSequence, Is.EqualTo(41));
             Assert.That(aggregate.session.scheduler.scheduledEvents[0].eventKey, Is.EqualTo("event-41"));
@@ -577,6 +589,24 @@ namespace GuildIdle.Editor.Player
                 };
             }
             return result;
+        }
+
+        [Test]
+        public void NegativeCombatantHpIsRejectedAtomically()
+        {
+            var state = _factory.CreateDefault();
+            Assert.That(
+                state.AddCombatAggregate(
+                    Aggregate("combat-a", "session-a", "ren", "group-a", "enemy-a")),
+                Is.True);
+            var before = JsonUtility.ToJson(state.ToSaveData());
+            var update = state.GetCombatAggregate("combat-a");
+            update.session.hero.currentHp = -1;
+
+            using (new SuppressedLogHandler())
+                Assert.That(state.UpdateCombatAggregate(update), Is.False);
+
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
         }
 
         private static CombatTemporaryModifierSaveData[] Modifiers(int count)

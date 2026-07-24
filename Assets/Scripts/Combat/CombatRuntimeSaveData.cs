@@ -64,6 +64,7 @@ namespace GuildIdle.Combat
         public long accumulatedEnemyExp;
         public CombatRewardEntrySaveData[] completionRewards = Array.Empty<CombatRewardEntrySaveData>();
         public CombatConsumableStateSaveData broughtConsumable;
+        public CombatDeathPreventionOperationSaveData lastDeathPreventionOperation;
         public CombatTerminalCandidateSaveData terminalCandidate;
         public bool simulationStopped;
     }
@@ -195,6 +196,17 @@ namespace GuildIdle.Combat
         public double createdAtSeconds;
     }
 
+    [Serializable]
+    public sealed class CombatDeathPreventionOperationSaveData
+    {
+        public string operationKey;
+        public string targetCombatantId;
+        public string effectId;
+        // Deterministic basis-point roll in the inclusive range 1..10000.
+        public int chanceRoll;
+        public bool successful;
+    }
+
     public interface ICombatRuntimeStore
     {
         CombatRuntimeAggregate[] GetCombatAggregates();
@@ -305,6 +317,8 @@ namespace GuildIdle.Combat
                 accumulatedEnemyExp = source.accumulatedEnemyExp,
                 completionRewards = CloneRewards(source.completionRewards),
                 broughtConsumable = CloneConsumable(source.broughtConsumable),
+                lastDeathPreventionOperation =
+                    CloneDeathPreventionOperation(source.lastDeathPreventionOperation),
                 terminalCandidate = CloneTerminalCandidate(source.terminalCandidate),
                 simulationStopped = source.simulationStopped
             };
@@ -398,6 +412,9 @@ namespace GuildIdle.Combat
                     return Fail("Current enemy does not match the saved queue position.", out error);
             }
             if (!ValidateConsumable(session.broughtConsumable, out error) ||
+                !ValidateDeathPreventionOperation(
+                    session.lastDeathPreventionOperation,
+                    out error) ||
                 !ValidateTerminalCandidate(session.terminalCandidate, out error))
                 return false;
             return true;
@@ -495,6 +512,7 @@ namespace GuildIdle.Combat
             error = null;
             if (combatant == null || string.IsNullOrWhiteSpace(combatant.combatantId) ||
                 string.IsNullOrWhiteSpace(combatant.definitionId) || combatant.maxHp <= 0 ||
+                combatant.currentHp < 0 ||
                 combatant.currentHp > combatant.maxHp || InvalidTime(combatant.nextAttackAtSeconds) ||
                 !WithinLimit(combatant.abilityCooldowns) || !WithinLimit(combatant.statuses) ||
                 !WithinLimit(combatant.independentModifiers))
@@ -572,6 +590,25 @@ namespace GuildIdle.Combat
             if (string.IsNullOrWhiteSpace(value.candidateId) || string.IsNullOrWhiteSpace(value.kind) ||
                 string.IsNullOrWhiteSpace(value.eventKey) || InvalidTime(value.createdAtSeconds))
                 return Fail("Combat terminal candidate is invalid.", out error);
+            return true;
+        }
+
+        private static bool ValidateDeathPreventionOperation(
+            CombatDeathPreventionOperationSaveData value,
+            out string error)
+        {
+            error = null;
+            if (value == null)
+                return true;
+            if (string.IsNullOrWhiteSpace(value.operationKey) ||
+                string.IsNullOrWhiteSpace(value.targetCombatantId) ||
+                string.IsNullOrWhiteSpace(value.effectId) ||
+                value.chanceRoll < 1 ||
+                value.chanceRoll > 10000)
+            {
+                return Fail("Combat death-prevention operation state is invalid.", out error);
+            }
+
             return true;
         }
 
@@ -776,12 +813,38 @@ namespace GuildIdle.Combat
 
         private static CombatTerminalCandidateSaveData CloneTerminalCandidate(CombatTerminalCandidateSaveData source)
         {
-            return source == null ? null : new CombatTerminalCandidateSaveData
+            return source == null ||
+                   (string.IsNullOrWhiteSpace(source.candidateId) &&
+                    string.IsNullOrWhiteSpace(source.kind) &&
+                    string.IsNullOrWhiteSpace(source.eventKey) &&
+                    source.createdAtSeconds == 0d)
+                ? null
+                : new CombatTerminalCandidateSaveData
             {
                 candidateId = source.candidateId,
                 kind = source.kind,
                 eventKey = source.eventKey,
                 createdAtSeconds = source.createdAtSeconds
+            };
+        }
+
+        private static CombatDeathPreventionOperationSaveData CloneDeathPreventionOperation(
+            CombatDeathPreventionOperationSaveData source)
+        {
+            return source == null ||
+                   (string.IsNullOrWhiteSpace(source.operationKey) &&
+                    string.IsNullOrWhiteSpace(source.targetCombatantId) &&
+                    string.IsNullOrWhiteSpace(source.effectId) &&
+                    source.chanceRoll == 0 &&
+                    !source.successful)
+                ? null
+                : new CombatDeathPreventionOperationSaveData
+            {
+                operationKey = source.operationKey,
+                targetCombatantId = source.targetCombatantId,
+                effectId = source.effectId,
+                chanceRoll = source.chanceRoll,
+                successful = source.successful
             };
         }
 

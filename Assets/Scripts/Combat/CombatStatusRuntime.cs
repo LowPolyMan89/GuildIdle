@@ -152,6 +152,7 @@ namespace GuildIdle.Combat
             string damageType,
             int amount,
             int hpBefore,
+            long rawHpAfter,
             int hpAfter)
             : base(
                 scheduledEvent.eventKey,
@@ -168,6 +169,7 @@ namespace GuildIdle.Combat
             DamageType = damageType;
             Amount = amount;
             HpBefore = hpBefore;
+            RawHpAfter = rawHpAfter;
             HpAfter = hpAfter;
         }
 
@@ -178,7 +180,51 @@ namespace GuildIdle.Combat
         public string DamageType { get; }
         public int Amount { get; }
         public int HpBefore { get; }
-        public int HpAfter { get; }
+        public long RawHpAfter { get; }
+        public int HpAfter { get; private set; }
+
+        internal void SetHpAfter(int value)
+        {
+            HpAfter = value;
+        }
+    }
+
+    public sealed class CombatImmediateEffectEvent : CombatEvent
+    {
+        public CombatImmediateEffectEvent(
+            CombatEffectRequest request,
+            CombatEffectKind effectKind,
+            int amount,
+            int hpBefore,
+            long rawHpAfter,
+            int hpAfter)
+            : base(
+                request.EventKey,
+                request.TimestampSeconds,
+                request.Sequence,
+                request.ActorSide,
+                request.SourceOwnerCombatantId,
+                request.TargetCombatantId)
+        {
+            SourceEffectId = request.SourceAbilityId;
+            EffectKind = effectKind;
+            Amount = amount;
+            HpBefore = hpBefore;
+            RawHpAfter = rawHpAfter;
+            HpAfter = hpAfter;
+        }
+
+        public string SourceEffectId { get; }
+        public CombatEffectKind EffectKind { get; }
+        public int Amount { get; }
+        public int HpBefore { get; }
+        public long RawHpAfter { get; }
+        public int HpAfter { get; private set; }
+
+        internal void SetHpAfter(int value)
+        {
+            HpAfter = value;
+        }
     }
 
     public sealed class CombatStatusExpiredEvent : CombatEvent
@@ -289,11 +335,11 @@ namespace GuildIdle.Combat
             CombatEffectRequest request,
             List<CombatEvent> events,
             out bool stateChanged,
-            out bool hpMutated,
+            out CombatHpMutation mutation,
             out CombatAdvanceError error)
         {
             stateChanged = false;
-            hpMutated = false;
+            mutation = null;
             error = null;
             if (session?.scheduler == null || request?.Effect == null || events == null)
             {
@@ -311,6 +357,8 @@ namespace GuildIdle.Combat
                     $"Combat effect target '{request.TargetCombatantId ?? "<null>"}' was not found.",
                     out error);
             }
+            if (target.currentHp <= 0)
+                return true;
 
             switch (request.Effect.Kind)
             {
@@ -336,15 +384,43 @@ namespace GuildIdle.Combat
                             target,
                             request.Effect,
                             1,
-                            out _,
-                            out _,
-                            out _,
-                            out hpMutated,
+                            out var amount,
+                            out var hpBefore,
+                            out var rawHpAfter,
+                            out var hpAfter,
+                            out var hpMutated,
                             out error))
                     {
                         return false;
                     }
 
+                    var immediateEvent = new CombatImmediateEffectEvent(
+                        request,
+                        request.Effect.Kind,
+                        amount,
+                        hpBefore,
+                        rawHpAfter,
+                        hpAfter);
+                    events.Add(immediateEvent);
+                    var targetSide = string.Equals(
+                        session.hero?.combatantId,
+                        target.combatantId,
+                        StringComparison.Ordinal)
+                        ? CombatActorSide.Hero
+                        : CombatActorSide.Enemy;
+                    mutation = new CombatHpMutation(
+                        request.EventKey,
+                        request.SourceAbilityId,
+                        request.TimestampSeconds,
+                        request.Sequence,
+                        request.SourceOwnerSide,
+                        request.SourceOwnerCombatantId,
+                        targetSide,
+                        target.combatantId,
+                        hpBefore,
+                        rawHpAfter,
+                        hpAfter,
+                        immediateEvent.SetHpAfter);
                     stateChanged = hpMutated;
                     return true;
                 default:
@@ -360,11 +436,11 @@ namespace GuildIdle.Combat
             CombatScheduledEventSaveData scheduledEvent,
             List<CombatEvent> events,
             out bool stateChanged,
-            out bool hpMutated,
+            out CombatHpMutation mutation,
             out CombatAdvanceError error)
         {
             stateChanged = false;
-            hpMutated = false;
+            mutation = null;
             error = null;
             if (session?.scheduler == null || scheduledEvent == null || events == null)
             {
@@ -382,6 +458,8 @@ namespace GuildIdle.Combat
                     $"Status event target '{scheduledEvent.subjectCombatantId ?? "<null>"}' was not found.",
                     out error);
             }
+            if (target.currentHp <= 0)
+                return true;
 
             if (string.Equals(scheduledEvent.eventType, StatusTickEventType, StringComparison.Ordinal))
             {
@@ -391,7 +469,7 @@ namespace GuildIdle.Combat
                     scheduledEvent,
                     events,
                     out stateChanged,
-                    out hpMutated,
+                    out mutation,
                     out error);
             }
 
@@ -743,11 +821,11 @@ namespace GuildIdle.Combat
             CombatScheduledEventSaveData scheduledEvent,
             List<CombatEvent> events,
             out bool stateChanged,
-            out bool hpMutated,
+            out CombatHpMutation mutation,
             out CombatAdvanceError error)
         {
             stateChanged = false;
-            hpMutated = false;
+            mutation = null;
             error = null;
             var status = FindStatus(target.statuses, scheduledEvent.effectInstanceId);
             if (status == null ||
@@ -774,12 +852,13 @@ namespace GuildIdle.Combat
             if (!TryApplyImmediateEffect(
                     target,
                     descriptor.PeriodicEffect,
-                    status.stackIds.Length,
-                    out var amount,
-                    out var hpBefore,
-                    out var hpAfter,
-                    out hpMutated,
-                    out error))
+                     status.stackIds.Length,
+                     out var amount,
+                     out var hpBefore,
+                     out var rawHpAfter,
+                     out var hpAfter,
+                     out var hpMutated,
+                     out error))
             {
                 return false;
             }
@@ -809,7 +888,7 @@ namespace GuildIdle.Combat
                 status.nextTickAtSeconds = nextTickAtSeconds;
             }
 
-            events.Add(new CombatStatusTickEvent(
+            var tickEvent = new CombatStatusTickEvent(
                 scheduledEvent,
                 status.sourceCombatantId,
                 target.combatantId,
@@ -820,7 +899,31 @@ namespace GuildIdle.Combat
                 descriptor.PeriodicEffect.DamageType,
                 amount,
                 hpBefore,
-                hpAfter));
+                rawHpAfter,
+                hpAfter);
+            events.Add(tickEvent);
+            if (hpMutated)
+            {
+                var targetSide = string.Equals(
+                    session.hero?.combatantId,
+                    target.combatantId,
+                    StringComparison.Ordinal)
+                    ? CombatActorSide.Hero
+                    : CombatActorSide.Enemy;
+                mutation = new CombatHpMutation(
+                    scheduledEvent.eventKey,
+                    status.statusId,
+                    scheduledEvent.timestampSeconds,
+                    scheduledEvent.sequence,
+                    scheduledEvent.actorSide,
+                    status.sourceCombatantId,
+                    targetSide,
+                    target.combatantId,
+                    hpBefore,
+                    rawHpAfter,
+                    hpAfter,
+                    tickEvent.SetHpAfter);
+            }
             stateChanged = true;
             return true;
         }
@@ -1093,12 +1196,14 @@ namespace GuildIdle.Combat
             int multiplier,
             out int amount,
             out int hpBefore,
+            out long rawHpAfter,
             out int hpAfter,
             out bool hpMutated,
             out CombatAdvanceError error)
         {
             amount = 0;
             hpBefore = target?.currentHp ?? 0;
+            rawHpAfter = hpBefore;
             hpAfter = hpBefore;
             hpMutated = false;
             error = null;
@@ -1126,9 +1231,12 @@ namespace GuildIdle.Combat
             }
 
             amount = scaled >= int.MaxValue ? int.MaxValue : (int)scaled;
+            rawHpAfter = effect.Kind == CombatEffectKind.Damage
+                ? (long)hpBefore - amount
+                : (long)hpBefore + amount;
             hpAfter = effect.Kind == CombatEffectKind.Damage
-                ? Math.Max(0, hpBefore - amount)
-                : (int)Math.Min((long)target.maxHp, (long)hpBefore + amount);
+                ? (int)Math.Max(0L, rawHpAfter)
+                : (int)Math.Min(target.maxHp, rawHpAfter);
             hpMutated = hpAfter != hpBefore;
             target.currentHp = hpAfter;
             return true;

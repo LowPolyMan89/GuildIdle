@@ -394,6 +394,11 @@ namespace GuildIdle.Combat
         }
     }
 
+    internal delegate bool TryHandleCombatEffectRequest(
+        CombatEffectRequest request,
+        out bool continueDispatch,
+        out CombatAdvanceError error);
+
     internal sealed class CombatAbilityDispatcher
     {
         private const int ChanceRollResolution = 10000;
@@ -418,6 +423,7 @@ namespace GuildIdle.Combat
             double timestampSeconds,
             ICombatRng rng,
             List<CombatEvent> events,
+            TryHandleCombatEffectRequest requestHandler,
             out bool stateChanged,
             out CombatAdvanceError error)
         {
@@ -553,7 +559,7 @@ namespace GuildIdle.Combat
                 }
 
                 cooldown.nextReadyAtSeconds = timestampSeconds + ability.CooldownSeconds;
-                events.Add(new CombatEffectRequest(
+                var request = new CombatEffectRequest(
                     operationKey,
                     triggerEventKey,
                     timestampSeconds,
@@ -563,7 +569,14 @@ namespace GuildIdle.Combat
                     ability.AbilityId,
                     trigger,
                     target.combatantId,
-                    ability.Effect));
+                    ability.Effect);
+                events.Add(request);
+                if (requestHandler == null)
+                    continue;
+                if (!requestHandler(request, out var continueDispatch, out error))
+                    return false;
+                if (!continueDispatch)
+                    break;
             }
 
             return true;
@@ -607,11 +620,18 @@ namespace GuildIdle.Combat
                 return false;
             if (effect.Kind == CombatEffectKind.ApplyStatus)
                 return !string.IsNullOrWhiteSpace(effect.StatusId);
-            return effect.Kind == CombatEffectKind.ModifyStat &&
-                   !string.IsNullOrWhiteSpace(effect.StatId) &&
+            if (effect.Kind == CombatEffectKind.ModifyStat)
+            {
+                return !string.IsNullOrWhiteSpace(effect.StatId) &&
+                       !InvalidNumber(effect.Value) &&
+                       !InvalidTime(effect.DurationSeconds) &&
+                       effect.DurationSeconds > 0d;
+            }
+
+            return (effect.Kind == CombatEffectKind.Damage ||
+                    effect.Kind == CombatEffectKind.Heal) &&
                    !InvalidNumber(effect.Value) &&
-                   !InvalidTime(effect.DurationSeconds) &&
-                   effect.DurationSeconds > 0d;
+                   effect.Value > 0d;
         }
 
         private static CombatantStateSaveData GetCombatant(

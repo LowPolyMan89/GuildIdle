@@ -57,7 +57,10 @@ namespace GuildIdle.Combat
         StatusDescriptorNotFound = 22,
         InvalidStatusDescriptor = 23,
         StatusProcessingFailed = 24,
-        EffectProcessingFailed = 25
+        EffectProcessingFailed = 25,
+        DeathPreventionDescriptorNotFound = 26,
+        InvalidDeathPreventionDescriptor = 27,
+        DeathPreventionFailed = 28
     }
 
     public readonly struct CombatAttackCadence
@@ -252,6 +255,7 @@ namespace GuildIdle.Combat
             double resistancePercent,
             int damage,
             int targetHpBefore,
+            long targetRawHpAfter,
             int targetHpAfter)
             : base(eventKey, timestampSeconds, sequence, actorSide, actorCombatantId, targetCombatantId)
         {
@@ -262,6 +266,7 @@ namespace GuildIdle.Combat
             ResistancePercent = resistancePercent;
             Damage = damage;
             TargetHpBefore = targetHpBefore;
+            TargetRawHpAfter = targetRawHpAfter;
             TargetHpAfter = targetHpAfter;
         }
 
@@ -272,7 +277,13 @@ namespace GuildIdle.Combat
         public double ResistancePercent { get; }
         public int Damage { get; }
         public int TargetHpBefore { get; }
-        public int TargetHpAfter { get; }
+        public long TargetRawHpAfter { get; }
+        public int TargetHpAfter { get; private set; }
+
+        internal void SetTargetHpAfter(int value)
+        {
+            TargetHpAfter = value;
+        }
     }
 
     public sealed class CombatAdvanceResult
@@ -449,6 +460,7 @@ namespace GuildIdle.Combat
         private readonly ICombatEnemyQueueProvider _enemyQueue;
         private readonly CombatAbilityDispatcher _abilityDispatcher;
         private readonly CombatStatusRuntime _statusRuntime;
+        private readonly CombatDeathPreventionResolver _deathPrevention;
 
         public CombatRuntimeService(
             ICombatRuntimeStore store,
@@ -457,7 +469,9 @@ namespace GuildIdle.Combat
             ICombatEnemyQueueProvider enemyQueue = null,
             ICombatAbilityDescriptorProvider abilities = null,
             CombatAbilityRegistry abilityRegistry = null,
-            ICombatStatusDescriptorProvider statuses = null)
+            ICombatStatusDescriptorProvider statuses = null,
+            ICombatDeathPreventionDescriptorProvider deathPrevention = null,
+            CombatDeathPreventionRegistry deathPreventionRegistry = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _descriptors = descriptors ?? throw new ArgumentNullException(nameof(descriptors));
@@ -467,6 +481,9 @@ namespace GuildIdle.Combat
                 abilities ?? EmptyCombatAbilityDescriptorProvider.Instance,
                 abilityRegistry ?? new CombatAbilityRegistry());
             _statusRuntime = statuses == null ? null : new CombatStatusRuntime(statuses);
+            _deathPrevention = new CombatDeathPreventionResolver(
+                deathPrevention ?? EmptyCombatDeathPreventionDescriptorProvider.Instance,
+                deathPreventionRegistry ?? new CombatDeathPreventionRegistry());
         }
 
         public CombatAdvanceResult AdvanceTo(string executionId, double targetCombatTimeSeconds)
@@ -549,6 +566,7 @@ namespace GuildIdle.Combat
             {
                 var scheduler = aggregate.session.scheduler;
                 var resolvedCombatTime = targetCombatTimeSeconds;
+                var terminalAtBattleStart = false;
                 scheduler.scheduledEvents ??= Array.Empty<CombatScheduledEventSaveData>();
                 if (!TryDispatchBattleStart(
                         aggregate.session,
@@ -557,27 +575,68 @@ namespace GuildIdle.Combat
                         rng,
                         events,
                         out var heroAbilityStateChanged,
+                        out var heroBattleStartTerminal,
                         out error) ||
+                    (heroBattleStartTerminal != null &&
+                     !TryHandleDefeatedCombatant(
+                         aggregate.session,
+                         ToScheduledEvent(heroBattleStartTerminal),
+                         heroInterval,
+                         rng,
+                         events,
+                         ref enemy,
+                         ref enemyInterval,
+                         out terminalAtBattleStart,
+                         out error)))
+                {
+                    return CombatAdvanceResult.Failed(error, currentTime);
+                }
+
+                var enemyAbilityStateChanged = false;
+                CombatHpMutation enemyBattleStartTerminal = null;
+                if (!terminalAtBattleStart &&
                     !TryDispatchBattleStart(
                         aggregate.session,
                         CombatActorSide.Enemy,
                         aggregate.session.combatTimeSeconds,
                         rng,
                         events,
-                        out var enemyAbilityStateChanged,
+                        out enemyAbilityStateChanged,
+                        out enemyBattleStartTerminal,
                         out error))
                 {
                     return CombatAdvanceResult.Failed(error, currentTime);
                 }
 
+                if (!terminalAtBattleStart &&
+                    enemyBattleStartTerminal != null &&
+                    !TryHandleDefeatedCombatant(
+                        aggregate.session,
+                        ToScheduledEvent(enemyBattleStartTerminal),
+                        heroInterval,
+                        rng,
+                        events,
+                        ref enemy,
+                        ref enemyInterval,
+                        out terminalAtBattleStart,
+                        out error))
+                {
+                    return CombatAdvanceResult.Failed(error, currentTime);
+                }
+
+                if (terminalAtBattleStart)
+                    resolvedCombatTime = aggregate.session.combatTimeSeconds;
+
                 if (!heroAbilityStateChanged &&
                     !enemyAbilityStateChanged &&
+                    !terminalAtBattleStart &&
                     CanReturnWithoutAdvance(aggregate.session, targetCombatTimeSeconds))
                 {
                     return CombatAdvanceResult.Succeeded(currentTime, events);
                 }
 
-                if (aggregate.session.hero.currentHp > 0 &&
+                if (!terminalAtBattleStart &&
+                    aggregate.session.hero.currentHp > 0 &&
                     aggregate.session.currentEnemy.currentHp > 0)
                 {
                     if (!HasPendingActorAttack(scheduler, CombatActorSide.Hero) &&
@@ -601,7 +660,8 @@ namespace GuildIdle.Combat
                     }
                 }
 
-                while (TryTakeNextDueEvent(scheduler, targetCombatTimeSeconds, out var scheduledEvent))
+                while (!terminalAtBattleStart &&
+                       TryTakeNextDueEvent(scheduler, targetCombatTimeSeconds, out var scheduledEvent))
                 {
                     var alreadyResolved = string.Equals(
                         scheduler.lastResolvedEventKey,
@@ -614,19 +674,30 @@ namespace GuildIdle.Combat
                         if (alreadyResolved)
                             continue;
                         if (!_statusRuntime.TryResolveScheduledEvent(
+                                 aggregate.session,
+                                 scheduledEvent,
+                                 events,
+                                 out _,
+                                 out var statusMutation,
+                                 out error))
+                        {
+                            return CombatAdvanceResult.Failed(error, currentTime);
+                        }
+
+                        var statusTargetSurvived = true;
+                        if (statusMutation != null &&
+                            !TryResolveTerminalBoundary(
                                 aggregate.session,
-                                scheduledEvent,
+                                statusMutation,
+                                rng,
                                 events,
-                                out _,
-                                out var statusHpMutated,
+                                out statusTargetSurvived,
                                 out error))
                         {
                             return CombatAdvanceResult.Failed(error, currentTime);
                         }
 
-                        if (statusHpMutated &&
-                            (aggregate.session.hero.currentHp <= 0 ||
-                             aggregate.session.currentEnemy.currentHp <= 0))
+                        if (statusMutation != null && !statusTargetSurvived)
                         {
                             if (!TryHandleDefeatedCombatant(
                                     aggregate.session,
@@ -636,13 +707,13 @@ namespace GuildIdle.Combat
                                     events,
                                     ref enemy,
                                     ref enemyInterval,
-                                    out var queueCompleted,
+                                    out var simulationTerminated,
                                     out error))
                             {
                                 return CombatAdvanceResult.Failed(error, currentTime);
                             }
 
-                            if (queueCompleted)
+                            if (simulationTerminated)
                             {
                                 resolvedCombatTime = scheduledEvent.timestampSeconds;
                                 break;
@@ -707,16 +778,55 @@ namespace GuildIdle.Combat
                             attackerDescriptor,
                             targetDescriptor,
                             damageModifierPercent,
-                            rng,
-                            events,
-                            out var attackHit,
-                            out error))
+                             rng,
+                             events,
+                             out var attackHit,
+                             out var attackMutation,
+                             out error))
                     {
                         return CombatAdvanceResult.Failed(error, currentTime);
                     }
 
                     attacker.lastAttackEventKey = scheduledEvent.eventKey;
-                    var effectHpMutated = false;
+                    var attackTargetSurvived = true;
+                    if (attackMutation != null &&
+                        !TryResolveTerminalBoundary(
+                            aggregate.session,
+                            attackMutation,
+                            rng,
+                            events,
+                            out attackTargetSurvived,
+                            out error))
+                    {
+                        return CombatAdvanceResult.Failed(error, currentTime);
+                    }
+
+                    if (attackMutation != null && !attackTargetSurvived)
+                    {
+                        if (!TryHandleDefeatedCombatant(
+                                aggregate.session,
+                                scheduledEvent,
+                                heroInterval,
+                                rng,
+                                events,
+                                ref enemy,
+                                ref enemyInterval,
+                                out var simulationTerminated,
+                                out error))
+                        {
+                            return CombatAdvanceResult.Failed(error, currentTime);
+                        }
+
+                        if (simulationTerminated)
+                        {
+                            resolvedCombatTime = scheduledEvent.timestampSeconds;
+                            break;
+                        }
+
+                        continue;
+                    }
+
+                    CombatHpMutation effectTerminalMutation = null;
                     if (attackHit &&
                         !TryDispatchAndApplyEffects(
                             aggregate.session,
@@ -727,61 +837,39 @@ namespace GuildIdle.Combat
                             rng,
                             events,
                             out _,
-                            out effectHpMutated,
+                            out _,
+                            out effectTerminalMutation,
                             out error))
                     {
                         return CombatAdvanceResult.Failed(error, currentTime);
                     }
 
-                    if (attacker.currentHp <= 0 || target.currentHp <= 0 || effectHpMutated)
+                    if (effectTerminalMutation != null)
                     {
-                        if (aggregate.session.hero.currentHp <= 0 ||
-                            aggregate.session.currentEnemy.currentHp <= 0)
+                        if (!TryHandleDefeatedCombatant(
+                                aggregate.session,
+                                ToScheduledEvent(effectTerminalMutation),
+                                heroInterval,
+                                rng,
+                                events,
+                                ref enemy,
+                                ref enemyInterval,
+                                out var simulationTerminated,
+                                out error))
                         {
-                            if (!TryHandleDefeatedCombatant(
-                                    aggregate.session,
-                                    scheduledEvent,
-                                    heroInterval,
-                                    rng,
-                                    events,
-                                    ref enemy,
-                                    ref enemyInterval,
-                                    out var queueCompleted,
-                                    out error))
-                            {
-                                return CombatAdvanceResult.Failed(error, currentTime);
-                            }
+                            return CombatAdvanceResult.Failed(error, currentTime);
+                        }
 
-                            if (queueCompleted)
-                            {
-                                resolvedCombatTime = scheduledEvent.timestampSeconds;
-                                break;
-                            }
-                        }
-                        else if (attacker.currentHp > 0 && target.currentHp > 0)
+                        if (simulationTerminated)
                         {
-                            var interval = scheduledEvent.actorSide == CombatActorSide.Hero
-                                ? heroInterval
-                                : enemyInterval;
-                            if (scheduledEvent.timestampSeconds + interval <=
-                                scheduledEvent.timestampSeconds)
-                            {
-                                return CombatAdvanceResult.Failed(
-                                    CombatAdvanceErrorCode.InvalidAttackCadence,
-                                    "Attack cadence is too small to advance the scheduler clock.",
-                                    currentTime);
-                            }
-                            if (!TryScheduleAttack(
-                                    aggregate.session,
-                                    scheduledEvent.actorSide,
-                                    scheduledEvent.timestampSeconds + interval,
-                                    out error))
-                            {
-                                return CombatAdvanceResult.Failed(error, currentTime);
-                            }
+                            resolvedCombatTime = effectTerminalMutation.TimestampSeconds;
+                            break;
                         }
+
+                        continue;
                     }
-                    else
+
+                    if (attacker.currentHp > 0 && target.currentHp > 0)
                     {
                         var interval = scheduledEvent.actorSide == CombatActorSide.Hero ? heroInterval : enemyInterval;
                         if (scheduledEvent.timestampSeconds + interval <= scheduledEvent.timestampSeconds)
@@ -1099,7 +1187,7 @@ namespace GuildIdle.Combat
             error = null;
             if (session.hero.currentHp <= 0)
             {
-                RemovePendingActorAttacks(session.scheduler);
+                queueCompleted = true;
                 return true;
             }
 
@@ -1137,6 +1225,8 @@ namespace GuildIdle.Combat
             if (queue.Length == 0)
             {
                 RemovePendingActorAttacks(session.scheduler);
+                session.simulationStopped = true;
+                queueCompleted = true;
                 return true;
             }
 
@@ -1236,12 +1326,27 @@ namespace GuildIdle.Combat
                     session,
                     CombatActorSide.Enemy,
                     deathEvent.timestampSeconds,
-                    rng,
-                    events,
-                    out _,
-                    out error))
+                     rng,
+                     events,
+                     out _,
+                     out var nextEnemyBattleStartTerminal,
+                     out error))
             {
                 return false;
+            }
+
+            if (nextEnemyBattleStartTerminal != null)
+            {
+                return TryHandleDefeatedCombatant(
+                    session,
+                    ToScheduledEvent(nextEnemyBattleStartTerminal),
+                    heroInterval,
+                    rng,
+                    events,
+                    ref enemyDescriptor,
+                    ref enemyInterval,
+                    out queueCompleted,
+                    out error);
             }
 
             if (!HasPendingActorAttack(session.scheduler, CombatActorSide.Hero))
@@ -1302,9 +1407,11 @@ namespace GuildIdle.Combat
             ICombatRng rng,
             List<CombatEvent> events,
             out bool attackHit,
+            out CombatHpMutation mutation,
             out CombatAdvanceError error)
         {
             attackHit = false;
+            mutation = null;
             error = null;
             events.Add(new CombatAttackEvent(
                 scheduledEvent.eventKey,
@@ -1355,8 +1462,9 @@ namespace GuildIdle.Combat
             var rounded = Math.Ceiling(afterResistance);
             var damage = rounded >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)rounded);
             var hpBefore = target.currentHp;
-            target.currentHp = Math.Max(0, target.currentHp - damage);
-            events.Add(new CombatDamageEvent(
+            var rawHpAfter = (long)hpBefore - damage;
+            target.currentHp = (int)Math.Max(0L, rawHpAfter);
+            var damageEvent = new CombatDamageEvent(
                 scheduledEvent.eventKey,
                 scheduledEvent.timestampSeconds,
                 scheduledEvent.sequence,
@@ -1370,7 +1478,22 @@ namespace GuildIdle.Combat
                 resistancePercent,
                 damage,
                 hpBefore,
-                target.currentHp));
+                rawHpAfter,
+                target.currentHp);
+            events.Add(damageEvent);
+            mutation = new CombatHpMutation(
+                scheduledEvent.eventKey,
+                null,
+                scheduledEvent.timestampSeconds,
+                scheduledEvent.sequence,
+                scheduledEvent.actorSide,
+                attacker.combatantId,
+                Opposite(scheduledEvent.actorSide),
+                target.combatantId,
+                hpBefore,
+                rawHpAfter,
+                target.currentHp,
+                damageEvent.SetTargetHpAfter);
             attackHit = true;
             return true;
         }
@@ -1382,6 +1505,7 @@ namespace GuildIdle.Combat
             ICombatRng rng,
             List<CombatEvent> events,
             out bool stateChanged,
+            out CombatHpMutation terminalMutation,
             out CombatAdvanceError error)
         {
             var owner = GetCombatant(session, ownerSide);
@@ -1397,6 +1521,7 @@ namespace GuildIdle.Combat
                 events,
                 out stateChanged,
                 out _,
+                out terminalMutation,
                 out error);
         }
 
@@ -1410,12 +1535,59 @@ namespace GuildIdle.Combat
             List<CombatEvent> events,
             out bool stateChanged,
             out bool hpMutated,
+            out CombatHpMutation terminalMutation,
             out CombatAdvanceError error)
         {
             stateChanged = false;
             hpMutated = false;
+            terminalMutation = null;
             error = null;
-            var firstEventIndex = events.Count;
+            var effectStateChanged = false;
+            var effectHpMutated = false;
+            CombatHpMutation resolvedTerminalMutation = null;
+
+            bool TryHandleRequest(
+                CombatEffectRequest request,
+                out bool continueDispatch,
+                out CombatAdvanceError requestError)
+            {
+                continueDispatch = true;
+                requestError = null;
+                if (_statusRuntime == null)
+                    return true;
+                if (!_statusRuntime.TryApplyEffectRequest(
+                        session,
+                        request,
+                        events,
+                        out var requestStateChanged,
+                        out var mutation,
+                        out requestError))
+                {
+                    return false;
+                }
+
+                effectStateChanged |= requestStateChanged;
+                effectHpMutated |= mutation != null;
+                if (mutation == null)
+                    return true;
+                if (!TryResolveTerminalBoundary(
+                        session,
+                        mutation,
+                        rng,
+                        events,
+                        out var targetSurvived,
+                        out requestError))
+                {
+                    return false;
+                }
+
+                if (targetSurvived)
+                    return true;
+                resolvedTerminalMutation = mutation;
+                continueDispatch = false;
+                return true;
+            }
+
             if (!_abilityDispatcher.TryDispatch(
                     session,
                     ownerSide,
@@ -1424,36 +1596,169 @@ namespace GuildIdle.Combat
                     timestampSeconds,
                     rng,
                     events,
-                    out stateChanged,
+                    TryHandleRequest,
+                    out var dispatchStateChanged,
                     out error))
             {
                 return false;
             }
 
-            if (_statusRuntime == null)
-                return true;
+            stateChanged = dispatchStateChanged || effectStateChanged;
+            hpMutated = effectHpMutated;
+            terminalMutation = resolvedTerminalMutation;
+            return true;
+        }
 
-            var requestCount = events.Count - firstEventIndex;
-            for (var offset = 0; offset < requestCount; offset++)
+        private bool TryResolveTerminalBoundary(
+            CombatSessionSaveData session,
+            CombatHpMutation mutation,
+            ICombatRng rng,
+            List<CombatEvent> events,
+            out bool targetSurvived,
+            out CombatAdvanceError error)
+        {
+            targetSurvived = false;
+            error = null;
+            var target = GetCombatant(session, mutation?.TargetSide ?? CombatActorSide.System);
+            if (session?.scheduler == null ||
+                mutation == null ||
+                target == null ||
+                rng == null ||
+                events == null ||
+                !string.Equals(
+                    target.combatantId,
+                    mutation.TargetCombatantId,
+                    StringComparison.Ordinal))
             {
-                if (!(events[firstEventIndex + offset] is CombatEffectRequest request))
-                    continue;
-                if (!_statusRuntime.TryApplyEffectRequest(
-                        session,
-                        request,
-                        events,
-                        out var effectStateChanged,
-                        out var effectHpMutated,
-                        out error))
-                {
-                    return false;
-                }
-
-                stateChanged |= effectStateChanged;
-                hpMutated |= effectHpMutated;
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.DeathPreventionFailed,
+                    "Terminal boundary requires a matching combatant, scheduler, mutation, RNG and event sink.");
+                return false;
             }
 
+            var normalizedHp = mutation.RawHpAfter <= 0L
+                ? 0
+                : (int)Math.Min(target.maxHp, mutation.RawHpAfter);
+            target.currentHp = normalizedHp;
+            mutation.SetFinalHp(normalizedHp);
+
+            if (HasTerminalCandidate(session))
+            {
+                target.currentHp = 0;
+                mutation.SetFinalHp(0);
+                session.simulationStopped = true;
+                session.combatTimeSeconds = mutation.TimestampSeconds;
+                session.scheduler.scheduledEvents = Array.Empty<CombatScheduledEventSaveData>();
+                return true;
+            }
+
+            var prevented = false;
+            if (mutation.RawHpAfter < 0L &&
+                !_deathPrevention.TryResolve(
+                    session,
+                    target,
+                    mutation,
+                    rng,
+                    events,
+                    out prevented,
+                    out error))
+            {
+                return false;
+            }
+
+            if (mutation.RawHpAfter < 0L && prevented)
+            {
+                targetSurvived = true;
+                return true;
+            }
+
+            if (target.currentHp > 0)
+            {
+                targetSurvived = true;
+                return true;
+            }
+
+            target.currentHp = 0;
+            mutation.SetFinalHp(0);
+            if (mutation.TargetSide == CombatActorSide.Enemy)
+            {
+                _statusRuntime?.RemoveScheduledEventsForCombatant(
+                    session.scheduler,
+                    target.combatantId);
+                RemovePendingActorAttacks(session.scheduler, CombatActorSide.Enemy);
+                return true;
+            }
+
+            if (mutation.TargetSide != CombatActorSide.Hero)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.DeathPreventionFailed,
+                    "Terminal boundary target must be a hero or enemy.");
+                return false;
+            }
+
+            var candidateEventKey =
+                $"{mutation.SourceEventKey}:terminal:defeat:{target.combatantId}";
+            var candidateId = $"{session.sessionId}:defeat";
+            session.terminalCandidate = new CombatTerminalCandidateSaveData
+            {
+                candidateId = candidateId,
+                eventKey = candidateEventKey,
+                kind = CombatTerminalCandidateKinds.Defeat,
+                createdAtSeconds = mutation.TimestampSeconds
+            };
+            session.simulationStopped = true;
+            session.combatTimeSeconds = mutation.TimestampSeconds;
+            session.scheduler.scheduledEvents = Array.Empty<CombatScheduledEventSaveData>();
+            if (!TryReserveSequence(session.scheduler, out var sequence))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.DeathPreventionFailed,
+                    "Combat scheduler sequence is exhausted during terminal candidate creation.");
+                return false;
+            }
+
+            events.Add(new CombatTerminalCandidateCreatedEvent(
+                candidateEventKey,
+                mutation.TimestampSeconds,
+                sequence,
+                target.combatantId,
+                mutation.SourceEffectId,
+                candidateId,
+                CombatTerminalCandidateKinds.Defeat,
+                0));
             return true;
+        }
+
+        private static CombatScheduledEventSaveData ToScheduledEvent(CombatHpMutation mutation)
+        {
+            return new CombatScheduledEventSaveData
+            {
+                eventKey = mutation.SourceEventKey,
+                eventType = "inline_hp_mutation",
+                timestampSeconds = mutation.TimestampSeconds,
+                phasePriority = (int)CombatScheduledEventPhase.ActorAttack,
+                actorSide = mutation.SourceSide,
+                sequence = mutation.Sequence,
+                subjectCombatantId = mutation.TargetCombatantId,
+                effectInstanceId = mutation.SourceEffectId
+            };
+        }
+
+        private static bool TryReserveSequence(
+            CombatSchedulerStateSaveData scheduler,
+            out long sequence)
+        {
+            sequence = scheduler.nextSequence;
+            if (sequence == long.MaxValue)
+                return false;
+            scheduler.nextSequence++;
+            return true;
+        }
+
+        private static bool HasTerminalCandidate(CombatSessionSaveData session)
+        {
+            return !string.IsNullOrWhiteSpace(session?.terminalCandidate?.candidateId);
         }
 
         private static CombatantStateSaveData GetCombatant(
