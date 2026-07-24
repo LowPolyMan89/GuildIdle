@@ -709,6 +709,290 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(persisted.rng.drawCount, Is.EqualTo(beforeSession.rng.drawCount));
         }
 
+        [Test]
+        public void WolfLeaderFixturesCreateTypedRequestsWithoutApplyingStatusLifecycle()
+        {
+            var source = Aggregate(100);
+            source.session.currentEnemy.definitionId = "enemy_wolf_leader";
+            source.session.rng = ScriptedRngFactory.State(0, 0, 0, 0, 0);
+            var store = new MemoryStore(source);
+            var configs = new EnemiesConfigRepository(new EnemiesRuntimeConfigDto
+            {
+                enemies = new[]
+                {
+                    new EnemyConfigDto
+                    {
+                        enemyId = "enemy_wolf_leader",
+                        combatAbilityIds = new[]
+                        {
+                            "enemy_ability_bleeding_claws",
+                            "enemy_ability_intimidating_howl"
+                        }
+                    }
+                },
+                enemyAbilities = new[]
+                {
+                    new EnemyAbilityConfigDto
+                    {
+                        abilityId = "enemy_ability_bleeding_claws",
+                        trigger = CombatAbilityTriggers.OnAttackHit,
+                        chancePercent = 100f,
+                        effects = "ApplyStatus: bleed_weak",
+                        target = "enemy",
+                        cooldownSec = 10
+                    },
+                    new EnemyAbilityConfigDto
+                    {
+                        abilityId = "enemy_ability_intimidating_howl",
+                        trigger = CombatAbilityTriggers.OnBattleStart,
+                        chancePercent = 100f,
+                        effects = "ModifyStat: hero_damage_percent -3, duration 5 sec",
+                        target = "enemy",
+                        cooldownSec = 0
+                    }
+                },
+                combatStatuses = new[]
+                {
+                    new CombatStatusConfigDto { statusId = "bleed_weak" }
+                }
+            });
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(10d)),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d)));
+            var service = new CombatRuntimeService(
+                store,
+                descriptors,
+                new ScriptedRngFactory(),
+                null,
+                new ConfigCombatAbilityDescriptorProvider(configs));
+
+            var battleStart = service.AdvanceTo("execution", 0d);
+            var attackHit = service.AdvanceTo("execution", 1d);
+
+            var howl = battleStart.Events.OfType<CombatEffectRequest>().Single();
+            Assert.That(howl.SourceAbilityId, Is.EqualTo("enemy_ability_intimidating_howl"));
+            Assert.That(howl.Trigger, Is.EqualTo(CombatAbilityTriggers.OnBattleStart));
+            Assert.That(howl.TargetCombatantId, Is.EqualTo("hero-combatant"));
+            Assert.That(howl.Effect.Kind, Is.EqualTo(CombatEffectKind.ModifyStat));
+            Assert.That(howl.Effect.StatId, Is.EqualTo("hero_damage_percent"));
+            Assert.That(howl.Effect.Value, Is.EqualTo(-3d));
+            Assert.That(howl.Effect.DurationSeconds, Is.EqualTo(5d));
+
+            var claws = attackHit.Events.OfType<CombatEffectRequest>().Single();
+            Assert.That(claws.SourceAbilityId, Is.EqualTo("enemy_ability_bleeding_claws"));
+            Assert.That(claws.Trigger, Is.EqualTo(CombatAbilityTriggers.OnAttackHit));
+            Assert.That(claws.TargetCombatantId, Is.EqualTo("hero-combatant"));
+            Assert.That(claws.Effect.Kind, Is.EqualTo(CombatEffectKind.ApplyStatus));
+            Assert.That(claws.Effect.StatusId, Is.EqualTo("bleed_weak"));
+            Assert.That(store.Value.session.hero.statuses, Is.Empty);
+            Assert.That(store.Value.session.hero.independentModifiers, Is.Empty);
+        }
+
+        [Test]
+        public void AttackHitAbilityDoesNotDispatchOnDodge()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    Ability(
+                        "ability-on-hit",
+                        CombatAbilityTriggers.OnAttackHit,
+                        "enemy",
+                        CombatEffectKind.ApplyStatus));
+            var descriptors = new DescriptorProvider(
+                Descriptor(
+                    CombatActorSide.Hero,
+                    CombatAttackCadence.HeroInterval(10d),
+                    dodgeChancePercent: 100d),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d)));
+            var service = new CombatRuntimeService(
+                store,
+                descriptors,
+                new ScriptedRngFactory(),
+                null,
+                abilities);
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Events.OfType<CombatDodgeEvent>().Count(), Is.EqualTo(1));
+            Assert.That(result.Events.OfType<CombatEffectRequest>(), Is.Empty);
+            Assert.That(store.Value.session.currentEnemy.abilityCooldowns, Is.Empty);
+        }
+
+        [Test]
+        public void EnemyBattleStartDispatchesWhenThatQueueCombatantBecomesActive()
+        {
+            var source = QueueAggregate("enemy-a", 1, "enemy-b");
+            source.session.rng = ScriptedRngFactory.State(0, 0, 0, 0);
+            var store = new MemoryStore(source);
+            var queueConfigs = EnemyConfigs(
+                new[] { Enemy("enemy-a", 1), Enemy("enemy-b", 10) },
+                Array.Empty<EnemyGroupConfigDto>());
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy-b",
+                    Ability(
+                        "ability-entry",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "enemy",
+                        CombatEffectKind.ApplyStatus));
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d), damageMin: 1, damageMax: 1),
+                    Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(0.1d))),
+                new ScriptedRngFactory(),
+                new ConfigCombatEnemyQueueProvider(queueConfigs),
+                abilities);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var request = result.Events.OfType<CombatEffectRequest>().Single();
+
+            Assert.That(request.SourceOwnerCombatantId, Is.EqualTo("enemy-combatant-1"));
+            Assert.That(request.TimestampSeconds, Is.EqualTo(1d));
+            Assert.That(request.TargetCombatantId, Is.EqualTo("hero-combatant"));
+            Assert.That(store.Value.session.currentEnemy.definitionId, Is.EqualTo("enemy-b"));
+            Assert.That(store.Value.session.currentEnemy.statuses, Is.Empty);
+        }
+
+        [Test]
+        public void EnemyTargetUsesOpponentOfAbilityOwnerForEitherSideAndOrderingIsStable()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0, 0, 0);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    Ability("ability-z", CombatAbilityTriggers.OnBattleStart, "enemy", CombatEffectKind.ApplyStatus),
+                    Ability("ability-a", CombatAbilityTriggers.OnBattleStart, "enemy", CombatEffectKind.ApplyStatus))
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    Ability("ability-m", CombatAbilityTriggers.OnBattleStart, "enemy", CombatEffectKind.ModifyStat));
+            var service = new CombatRuntimeService(
+                store,
+                DefaultDescriptors(),
+                new ScriptedRngFactory(),
+                null,
+                abilities);
+
+            var result = service.AdvanceTo("execution", 0d);
+            var requests = result.Events.OfType<CombatEffectRequest>().ToArray();
+
+            Assert.That(
+                requests.Select(value => value.SourceAbilityId),
+                Is.EqualTo(new[] { "ability-a", "ability-z", "ability-m" }));
+            Assert.That(requests.Select(value => value.Sequence), Is.EqualTo(new long[] { 0, 1, 2 }));
+            Assert.That(
+                requests.Select(value => value.TargetCombatantId),
+                Is.EqualTo(new[] { "enemy-combatant", "enemy-combatant", "hero-combatant" }));
+            Assert.That(requests.Select(value => value.EventKey).Distinct().Count(), Is.EqualTo(3));
+        }
+
+        [Test]
+        public void ChanceAndCooldownStateSurviveReloadWithoutRepeatingDispatch()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(99, 0, 0, 0, 0);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Enemy,
+                    "enemy",
+                    Ability(
+                        "ability-chance",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "enemy",
+                        CombatEffectKind.ApplyStatus,
+                        chancePercent: 1d),
+                    Ability(
+                        "ability-cooldown",
+                        CombatAbilityTriggers.OnAttackHit,
+                        "enemy",
+                        CombatEffectKind.ApplyStatus,
+                        cooldownSeconds: 10d));
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(10d)),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d)));
+            var splitStore = new MemoryStore(source);
+            var splitService = new CombatRuntimeService(
+                splitStore,
+                descriptors,
+                new ScriptedRngFactory(),
+                null,
+                abilities);
+
+            var first = splitService.AdvanceTo("execution", 1d);
+            var drawCount = splitStore.Value.session.rng.drawCount;
+            var chance = splitStore.Value.session.currentEnemy.abilityCooldowns
+                .Single(value => value.abilityId == "ability-chance");
+            var cooldown = splitStore.Value.session.currentEnemy.abilityCooldowns
+                .Single(value => value.abilityId == "ability-cooldown");
+            Assert.That(first.Events.OfType<CombatEffectRequest>().Select(value => value.SourceAbilityId),
+                Is.EqualTo(new[] { "ability-cooldown" }));
+            Assert.That(chance.lastChanceResolved, Is.True);
+            Assert.That(chance.lastChanceRoll, Is.EqualTo(100));
+            Assert.That(cooldown.nextReadyAtSeconds, Is.EqualTo(11d));
+
+            var reloadedStore = new MemoryStore(splitStore.Value);
+            var reloadedService = new CombatRuntimeService(
+                reloadedStore,
+                descriptors,
+                new ScriptedRngFactory(),
+                null,
+                abilities);
+            var replay = reloadedService.AdvanceTo("execution", 1d);
+            var duringCooldown = reloadedService.AdvanceTo("execution", 2d);
+
+            Assert.That(replay.Events, Is.Empty);
+            Assert.That(replay.Success, Is.True);
+            Assert.That(duringCooldown.Events.OfType<CombatEffectRequest>(), Is.Empty);
+            Assert.That(reloadedStore.Value.session.rng.drawCount, Is.EqualTo(drawCount + 3));
+            Assert.That(
+                reloadedStore.Value.session.currentEnemy.abilityCooldowns
+                    .Single(value => value.abilityId == "ability-cooldown")
+                    .lastChanceRoll,
+                Is.EqualTo(cooldown.lastChanceRoll));
+        }
+
+        [Test]
+        public void AdditionalAbilityFixtureDispatchesWithoutProductionIdBranch()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    Ability(
+                        "fixture_unrelated_ability",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "self",
+                        CombatEffectKind.ModifyStat));
+            var service = new CombatRuntimeService(
+                store,
+                DefaultDescriptors(),
+                new ScriptedRngFactory(),
+                null,
+                abilities);
+
+            var first = service.AdvanceTo("execution", 0d);
+            var second = service.AdvanceTo("execution", 0d);
+            var request = first.Events.OfType<CombatEffectRequest>().Single();
+
+            Assert.That(request.SourceAbilityId, Is.EqualTo("fixture_unrelated_ability"));
+            Assert.That(request.TargetCombatantId, Is.EqualTo("hero-combatant"));
+            Assert.That(request.EventKey, Does.Contain("fixture_unrelated_ability"));
+            Assert.That(second.Events, Is.Empty);
+        }
+
         private static DescriptorProvider DefaultDescriptors()
         {
             return new DescriptorProvider(
@@ -755,6 +1039,30 @@ namespace GuildIdle.EditorTests.Player
                 dodgeChancePercent,
                 physicalResistancePercent,
                 magicResistancePercent);
+        }
+
+        private static CombatAbilityDescriptor Ability(
+            string abilityId,
+            string trigger,
+            string target,
+            CombatEffectKind effectKind,
+            double chancePercent = 100d,
+            double cooldownSeconds = 0d)
+        {
+            var effect = effectKind == CombatEffectKind.ApplyStatus
+                ? new CombatEffectDescriptor(effectKind, statusId: "status-fixture")
+                : new CombatEffectDescriptor(
+                    effectKind,
+                    statId: "damage_percent",
+                    value: -1d,
+                    durationSeconds: 1d);
+            return new CombatAbilityDescriptor(
+                abilityId,
+                trigger,
+                chancePercent,
+                target,
+                cooldownSeconds,
+                effect);
         }
 
         private static CombatRuntimeAggregate Aggregate(int enemyHp)
@@ -913,6 +1221,39 @@ namespace GuildIdle.EditorTests.Player
                 descriptor = side == CombatActorSide.Hero ? _hero : _enemy;
                 error = null;
                 return descriptor != null;
+            }
+        }
+
+        private sealed class AbilityDescriptorProvider : ICombatAbilityDescriptorProvider
+        {
+            private readonly Dictionary<string, CombatAbilityDescriptor[]> _abilities =
+                new Dictionary<string, CombatAbilityDescriptor[]>(StringComparer.Ordinal);
+
+            public AbilityDescriptorProvider Add(
+                CombatActorSide side,
+                string definitionId,
+                params CombatAbilityDescriptor[] abilities)
+            {
+                _abilities[Key(side, definitionId)] =
+                    abilities ?? Array.Empty<CombatAbilityDescriptor>();
+                return this;
+            }
+
+            public bool TryGetAbilities(
+                CombatActorSide ownerSide,
+                string ownerDefinitionId,
+                out CombatAbilityDescriptor[] abilities,
+                out string error)
+            {
+                if (!_abilities.TryGetValue(Key(ownerSide, ownerDefinitionId), out abilities))
+                    abilities = Array.Empty<CombatAbilityDescriptor>();
+                error = null;
+                return true;
+            }
+
+            private static string Key(CombatActorSide side, string definitionId)
+            {
+                return $"{side}:{definitionId}";
             }
         }
 

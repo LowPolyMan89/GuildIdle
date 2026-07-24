@@ -586,6 +586,8 @@ namespace GuildIdle.Configs
     public sealed class EnemiesConfigRepository
     {
         private readonly Dictionary<string, EnemyConfigDto> _enemiesById = ItemsConfigRepository.NewIndex<EnemyConfigDto>();
+        private readonly Dictionary<string, EnemyAbilityConfigDto> _enemyAbilitiesById = ItemsConfigRepository.NewIndex<EnemyAbilityConfigDto>();
+        private readonly Dictionary<string, CombatStatusConfigDto> _combatStatusesById = ItemsConfigRepository.NewIndex<CombatStatusConfigDto>();
         private readonly Dictionary<string, List<EnemyGroupConfigDto>> _enemyGroupsById = new Dictionary<string, List<EnemyGroupConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<EnemyLootConfigDto>> _enemyLootByGroupId = new Dictionary<string, List<EnemyLootConfigDto>>(StringComparer.Ordinal);
 
@@ -611,6 +613,10 @@ namespace GuildIdle.Configs
 
             foreach (var enemy in Enemies)
                 ItemsConfigRepository.AddUnique(_enemiesById, enemy.enemyId, enemy, "Enemies/enemies");
+            foreach (var ability in EnemyAbilities)
+                ItemsConfigRepository.AddUnique(_enemyAbilitiesById, ability.abilityId, ability, "Enemies/enemyAbilities");
+            foreach (var status in CombatStatuses)
+                ItemsConfigRepository.AddUnique(_combatStatusesById, status.statusId, status, "Enemies/combatStatuses");
             foreach (var group in EnemyGroups)
                 ItemsConfigRepository.AddGrouped(_enemyGroupsById, group.enemyGroupId, group);
             foreach (var loot in EnemyLoot)
@@ -630,6 +636,18 @@ namespace GuildIdle.Configs
         {
             enemy = null;
             return !string.IsNullOrWhiteSpace(id) && _enemiesById.TryGetValue(id, out enemy);
+        }
+
+        public bool TryGetAbility(string id, out EnemyAbilityConfigDto ability)
+        {
+            ability = null;
+            return !string.IsNullOrWhiteSpace(id) && _enemyAbilitiesById.TryGetValue(id, out ability);
+        }
+
+        public bool TryGetCombatStatus(string id, out CombatStatusConfigDto status)
+        {
+            status = null;
+            return !string.IsNullOrWhiteSpace(id) && _combatStatusesById.TryGetValue(id, out status);
         }
 
         public EnemyGroupConfigDto[] GetGroup(string enemyGroupId)

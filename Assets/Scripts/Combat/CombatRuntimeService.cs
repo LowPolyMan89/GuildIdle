@@ -40,7 +40,12 @@ namespace GuildIdle.Combat
         UnsupportedCombatMode = 13,
         EnemyQueueNotFound = 14,
         InvalidEnemyQueue = 15,
-        EnemyStateCreationFailed = 16
+        EnemyStateCreationFailed = 16,
+        AbilityDescriptorNotFound = 17,
+        InvalidAbilityDescriptor = 18,
+        UnsupportedAbilityTrigger = 19,
+        UnsupportedAbilityTarget = 20,
+        AbilityDispatchFailed = 21
     }
 
     public readonly struct CombatAttackCadence
@@ -426,17 +431,23 @@ namespace GuildIdle.Combat
         private readonly ICombatDescriptorProvider _descriptors;
         private readonly ICombatRngFactory _rngFactory;
         private readonly ICombatEnemyQueueProvider _enemyQueue;
+        private readonly CombatAbilityDispatcher _abilityDispatcher;
 
         public CombatRuntimeService(
             ICombatRuntimeStore store,
             ICombatDescriptorProvider descriptors,
             ICombatRngFactory rngFactory = null,
-            ICombatEnemyQueueProvider enemyQueue = null)
+            ICombatEnemyQueueProvider enemyQueue = null,
+            ICombatAbilityDescriptorProvider abilities = null,
+            CombatAbilityRegistry abilityRegistry = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _descriptors = descriptors ?? throw new ArgumentNullException(nameof(descriptors));
             _rngFactory = rngFactory ?? new CombatRngFactory();
             _enemyQueue = enemyQueue;
+            _abilityDispatcher = new CombatAbilityDispatcher(
+                abilities ?? EmptyCombatAbilityDescriptorProvider.Instance,
+                abilityRegistry ?? new CombatAbilityRegistry());
         }
 
         public CombatAdvanceResult AdvanceTo(string executionId, double targetCombatTimeSeconds)
@@ -513,9 +524,6 @@ namespace GuildIdle.Combat
             if (!TryRestoreRng(savedRng, out var rng, out error))
                 return CombatAdvanceResult.Failed(error, currentTime);
 
-            if (CanReturnWithoutAdvance(stored.session, targetCombatTimeSeconds))
-                return CombatAdvanceResult.Succeeded(currentTime, new List<CombatEvent>());
-
             var aggregate = CombatRuntimeSaveDataUtility.CloneAggregate(stored);
             var events = new List<CombatEvent>();
             try
@@ -523,6 +531,33 @@ namespace GuildIdle.Combat
                 var scheduler = aggregate.session.scheduler;
                 var resolvedCombatTime = targetCombatTimeSeconds;
                 scheduler.scheduledEvents ??= Array.Empty<CombatScheduledEventSaveData>();
+                if (!TryDispatchBattleStart(
+                        aggregate.session,
+                        CombatActorSide.Hero,
+                        aggregate.session.combatTimeSeconds,
+                        rng,
+                        events,
+                        out var heroAbilityStateChanged,
+                        out error) ||
+                    !TryDispatchBattleStart(
+                        aggregate.session,
+                        CombatActorSide.Enemy,
+                        aggregate.session.combatTimeSeconds,
+                        rng,
+                        events,
+                        out var enemyAbilityStateChanged,
+                        out error))
+                {
+                    return CombatAdvanceResult.Failed(error, currentTime);
+                }
+
+                if (!heroAbilityStateChanged &&
+                    !enemyAbilityStateChanged &&
+                    CanReturnWithoutAdvance(aggregate.session, targetCombatTimeSeconds))
+                {
+                    return CombatAdvanceResult.Succeeded(currentTime, events);
+                }
+
                 if (aggregate.session.hero.currentHp > 0 &&
                     aggregate.session.currentEnemy.currentHp > 0)
                 {
@@ -598,12 +633,28 @@ namespace GuildIdle.Combat
                             targetDescriptor,
                             rng,
                             events,
+                            out var attackHit,
                             out error))
                     {
                         return CombatAdvanceResult.Failed(error, currentTime);
                     }
 
                     attacker.lastAttackEventKey = scheduledEvent.eventKey;
+                    if (attackHit &&
+                        !_abilityDispatcher.TryDispatch(
+                            aggregate.session,
+                            scheduledEvent.actorSide,
+                            CombatAbilityTriggers.OnAttackHit,
+                            scheduledEvent.eventKey,
+                            scheduledEvent.timestampSeconds,
+                            rng,
+                            events,
+                            out _,
+                            out error))
+                    {
+                        return CombatAdvanceResult.Failed(error, currentTime);
+                    }
+
                     if (attacker.currentHp <= 0 || target.currentHp <= 0)
                     {
                         if (aggregate.session.hero.currentHp <= 0)
@@ -616,6 +667,8 @@ namespace GuildIdle.Combat
                                     aggregate.session,
                                     scheduledEvent,
                                     heroInterval,
+                                    rng,
+                                    events,
                                     ref enemy,
                                     ref enemyInterval,
                                     out var queueCompleted,
@@ -940,6 +993,8 @@ namespace GuildIdle.Combat
             CombatSessionSaveData session,
             CombatScheduledEventSaveData deathEvent,
             double heroInterval,
+            ICombatRng rng,
+            List<CombatEvent> events,
             ref CombatActorDescriptor enemyDescriptor,
             ref double enemyInterval,
             out bool queueCompleted,
@@ -1043,6 +1098,17 @@ namespace GuildIdle.Combat
             session.currentEnemy = nextEnemy;
             enemyDescriptor = nextDescriptor;
             enemyInterval = nextEnemyInterval;
+            if (!TryDispatchBattleStart(
+                    session,
+                    CombatActorSide.Enemy,
+                    deathEvent.timestampSeconds,
+                    rng,
+                    events,
+                    out _,
+                    out error))
+            {
+                return false;
+            }
 
             if (!HasPendingActorAttack(session.scheduler, CombatActorSide.Hero))
             {
@@ -1100,8 +1166,10 @@ namespace GuildIdle.Combat
             CombatActorDescriptor targetDescriptor,
             ICombatRng rng,
             List<CombatEvent> events,
+            out bool attackHit,
             out CombatAdvanceError error)
         {
+            attackHit = false;
             error = null;
             events.Add(new CombatAttackEvent(
                 scheduledEvent.eventKey,
@@ -1167,7 +1235,32 @@ namespace GuildIdle.Combat
                 damage,
                 hpBefore,
                 target.currentHp));
+            attackHit = true;
             return true;
+        }
+
+        private bool TryDispatchBattleStart(
+            CombatSessionSaveData session,
+            CombatActorSide ownerSide,
+            double timestampSeconds,
+            ICombatRng rng,
+            List<CombatEvent> events,
+            out bool stateChanged,
+            out CombatAdvanceError error)
+        {
+            var owner = GetCombatant(session, ownerSide);
+            var triggerEventKey =
+                $"{session.sessionId}:battle-start:{owner?.combatantId ?? ownerSide.ToString().ToLowerInvariant()}";
+            return _abilityDispatcher.TryDispatch(
+                session,
+                ownerSide,
+                CombatAbilityTriggers.OnBattleStart,
+                triggerEventKey,
+                timestampSeconds,
+                rng,
+                events,
+                out stateChanged,
+                out error);
         }
 
         private static CombatantStateSaveData GetCombatant(
