@@ -478,6 +478,50 @@ namespace GuildIdle.EditorTests.Player
         }
 
         [Test]
+        public void MismatchedCurrentEnemyAndQueuePositionReturnsInvalidEnemyQueueWithoutUpdate()
+        {
+            var source = QueueAggregate("enemy-a", 1, "enemy-b");
+            source.session.currentEnemy.definitionId = "enemy-b";
+            source.session.rng = ScriptedRngFactory.State(0, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d), damageMin: 1, damageMax: 1),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d), damageMin: 1, damageMax: 1));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.InvalidEnemyQueue));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
+        [Test]
+        public void MismatchedNextQueueIndexReturnsInvalidEnemyQueueWithoutUpdate()
+        {
+            var source = QueueAggregate("enemy-a", 1, "enemy-b");
+            source.session.enemyQueue[1].queueIndex = 7;
+            source.session.rng = ScriptedRngFactory.State(0, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(1d), damageMin: 1, damageMax: 1),
+                Descriptor(CombatActorSide.Enemy, CombatAttackCadence.EnemyRate(1d), damageMin: 1, damageMax: 1));
+            var service = new CombatRuntimeService(store, descriptors, new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.InvalidEnemyQueue));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
+        [Test]
         public void LargeAdvanceContinuesCombatClockAndRngAcrossQueueUntilCompletion()
         {
             var source = QueueAggregate("enemy-a", 1, "enemy-b");

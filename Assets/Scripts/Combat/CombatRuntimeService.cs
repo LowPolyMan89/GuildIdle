@@ -973,6 +973,24 @@ namespace GuildIdle.Combat
                 return false;
             }
 
+            var currentEntry = queue[session.queuePosition];
+            if (currentEntry == null ||
+                currentEntry.queueIndex != session.queuePosition ||
+                !string.Equals(
+                    currentEntry.combatantId,
+                    session.currentEnemy.combatantId,
+                    StringComparison.Ordinal) ||
+                !string.Equals(
+                    currentEntry.enemyId,
+                    session.currentEnemy.definitionId,
+                    StringComparison.Ordinal))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidEnemyQueue,
+                    "Current enemy does not match the saved queue position.");
+                return false;
+            }
+
             RemovePendingActorAttacks(session.scheduler, CombatActorSide.Enemy);
             var nextPosition = session.queuePosition + 1;
             if (nextPosition >= queue.Length)
@@ -985,6 +1003,15 @@ namespace GuildIdle.Combat
                 return true;
             }
 
+            var entry = queue[nextPosition];
+            if (entry == null || entry.queueIndex != nextPosition)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidEnemyQueue,
+                    "Next enemy entry does not match its saved queue position.");
+                return false;
+            }
+
             if (_enemyQueue == null)
             {
                 error = new CombatAdvanceError(
@@ -993,7 +1020,6 @@ namespace GuildIdle.Combat
                 return false;
             }
 
-            var entry = queue[nextPosition];
             if (!_enemyQueue.TryCreateEnemyState(entry, out var nextEnemy, out var providerError) ||
                 nextEnemy == null ||
                 nextEnemy.currentHp <= 0 ||
