@@ -246,6 +246,18 @@ namespace GuildIdle.Combat
                 return Fail("Combat execution/session links do not form one aggregate.", out error);
             if (!string.Equals(execution.heroId, session.hero.definitionId, StringComparison.Ordinal))
                 return Fail("Combat execution hero does not match the session hero snapshot.", out error);
+            if (session.terminalCandidate != null &&
+                string.Equals(
+                    session.terminalCandidate.kind,
+                    CombatTerminalCandidateKinds.Defeat,
+                    StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(execution.outcome) &&
+                !string.Equals(execution.outcome, CombatTerminalCandidateKinds.Defeat, StringComparison.Ordinal))
+            {
+                return Fail(
+                    "Combat execution outcome conflicts with the saved defeat terminal candidate.",
+                    out error);
+            }
 
             aggregate = new CombatRuntimeAggregate { execution = execution, session = session };
             return true;
@@ -417,6 +429,21 @@ namespace GuildIdle.Combat
                     out error) ||
                 !ValidateTerminalCandidate(session.terminalCandidate, out error))
                 return false;
+            if (session.terminalCandidate != null &&
+                string.Equals(
+                    session.terminalCandidate.kind,
+                    CombatTerminalCandidateKinds.Defeat,
+                    StringComparison.Ordinal))
+            {
+                if (!session.simulationStopped)
+                    return Fail("Defeat terminal candidate requires a stopped simulation.", out error);
+                if (session.hero.currentHp != 0)
+                    return Fail("Defeat terminal candidate requires a defeated hero.", out error);
+                if (session.scheduler.scheduledEvents.Length != 0)
+                    return Fail("Defeat terminal candidate cannot retain scheduled events.", out error);
+                if (session.combatTimeSeconds != session.terminalCandidate.createdAtSeconds)
+                    return Fail("Defeat terminal candidate timestamp must match combat time.", out error);
+            }
             return true;
         }
 
@@ -590,6 +617,8 @@ namespace GuildIdle.Combat
             if (string.IsNullOrWhiteSpace(value.candidateId) || string.IsNullOrWhiteSpace(value.kind) ||
                 string.IsNullOrWhiteSpace(value.eventKey) || InvalidTime(value.createdAtSeconds))
                 return Fail("Combat terminal candidate is invalid.", out error);
+            if (!string.Equals(value.kind, CombatTerminalCandidateKinds.Defeat, StringComparison.Ordinal))
+                return Fail($"Combat terminal candidate kind '{value.kind}' is unsupported.", out error);
             return true;
         }
 

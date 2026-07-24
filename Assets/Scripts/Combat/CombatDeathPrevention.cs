@@ -210,11 +210,23 @@ namespace GuildIdle.Combat
                 return true;
             if (ownerSide != CombatActorSide.Hero ||
                 string.IsNullOrWhiteSpace(ownerDefinitionId) ||
-                !_configs.TryGet(ownerDefinitionId, out _))
+                !_configs.TryGet(ownerDefinitionId, out var hero))
             {
                 error =
                     $"Hero death-prevention owner '{ownerDefinitionId ?? "<null>"}' was not found.";
                 return false;
+            }
+
+            var configuredSkillIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var skillId in hero.uniqueSkillIds ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(skillId) ||
+                    !configuredSkillIds.Add(skillId))
+                {
+                    error =
+                        $"Hero '{ownerDefinitionId}' has a missing or duplicated unique skill reference.";
+                    return false;
+                }
             }
 
             var enabledSkillIds = new HashSet<string>(StringComparer.Ordinal);
@@ -222,17 +234,34 @@ namespace GuildIdle.Combat
                                   Array.Empty<HeroUniqueSkillConfigDto>())
             {
                 if (skill == null ||
-                    !skill.enabled ||
-                    !string.Equals(skill.heroId, ownerDefinitionId, StringComparison.Ordinal))
+                    !configuredSkillIds.Contains(skill.skillId))
                 {
                     continue;
                 }
 
-                if (string.IsNullOrWhiteSpace(skill.skillId) ||
-                    !enabledSkillIds.Add(skill.skillId))
+                if (!string.Equals(skill.heroId, ownerDefinitionId, StringComparison.Ordinal))
+                {
+                    error =
+                        $"Hero unique skill '{skill.skillId}' belongs to hero '{skill.heroId ?? "<null>"}' instead of '{ownerDefinitionId}'.";
+                    return false;
+                }
+
+                if (!skill.enabled)
+                    continue;
+                if (!enabledSkillIds.Add(skill.skillId))
                 {
                     error =
                         $"Hero '{ownerDefinitionId}' has a missing or duplicated enabled unique skill.";
+                    return false;
+                }
+            }
+
+            foreach (var skillId in configuredSkillIds)
+            {
+                if (!enabledSkillIds.Contains(skillId))
+                {
+                    error =
+                        $"Hero '{ownerDefinitionId}' unique skill '{skillId}' is missing from its enabled unique skills.";
                     return false;
                 }
             }

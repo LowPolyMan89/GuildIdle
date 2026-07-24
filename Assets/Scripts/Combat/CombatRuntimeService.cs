@@ -514,19 +514,20 @@ namespace GuildIdle.Combat
                     currentTime);
             }
 
+            if (stored.session.simulationStopped ||
+                HasTerminalCandidate(stored.session))
+            {
+                return CombatAdvanceResult.Failed(
+                    CombatAdvanceErrorCode.SimulationStopped,
+                    "Combat simulation is stopped.",
+                    currentTime);
+            }
+
             if (targetCombatTimeSeconds < currentTime)
             {
                 return CombatAdvanceResult.Failed(
                     CombatAdvanceErrorCode.InvalidRequest,
                     "Combat time cannot move backwards.",
-                    currentTime);
-            }
-
-            if (stored.session.simulationStopped)
-            {
-                return CombatAdvanceResult.Failed(
-                    CombatAdvanceErrorCode.SimulationStopped,
-                    "Combat simulation is stopped.",
                     currentTime);
             }
 

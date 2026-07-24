@@ -109,15 +109,6 @@ namespace GuildIdle.Editor.Player
                     chanceRoll = 2500,
                     successful = true
                 };
-            source.session.terminalCandidate = new CombatTerminalCandidateSaveData
-            {
-                candidateId = "candidate-1",
-                kind = "DefeatCandidate",
-                eventKey = "terminal-1",
-                createdAtSeconds = 12.75d
-            };
-            source.session.simulationStopped = true;
-
             Assert.That(state.AddCombatAggregate(source), Is.True);
             var resultPending = state.GetCombatAggregate("combat-a");
             resultPending.execution.status = CombatExecutionStatus.ResultPending;
@@ -259,6 +250,55 @@ namespace GuildIdle.Editor.Player
             Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
         }
 
+        [TestCase("simulation-running")]
+        [TestCase("living-hero")]
+        [TestCase("scheduled-event")]
+        [TestCase("timestamp-mismatch")]
+        [TestCase("unsupported-kind")]
+        [TestCase("conflicting-outcome")]
+        public void InvalidDefeatTerminalStateIsRejectedAtomically(string scenario)
+        {
+            var state = _factory.CreateDefault();
+            var before = JsonUtility.ToJson(state.ToSaveData());
+            var aggregate =
+                Aggregate("combat-terminal", "session-terminal", "ren", "group-terminal", "enemy-terminal");
+            ConfigureDefeatTerminal(aggregate, 3d);
+
+            switch (scenario)
+            {
+                case "simulation-running":
+                    aggregate.session.simulationStopped = false;
+                    break;
+                case "living-hero":
+                    aggregate.session.hero.currentHp = 1;
+                    break;
+                case "scheduled-event":
+                    aggregate.session.scheduler.nextSequence = 1;
+                    aggregate.session.scheduler.scheduledEvents =
+                        new[] { FutureEvent(0, "terminal-future") };
+                    break;
+                case "timestamp-mismatch":
+                    aggregate.session.terminalCandidate.createdAtSeconds = 2d;
+                    break;
+                case "unsupported-kind":
+                    aggregate.session.terminalCandidate.kind = "Victory";
+                    break;
+                case "conflicting-outcome":
+                    aggregate.execution.outcome = "Victory";
+                    aggregate.execution.outcomeFinalized = true;
+                    break;
+                default:
+                    Assert.Fail($"Unknown terminal scenario '{scenario}'.");
+                    break;
+            }
+
+            using (new SuppressedLogHandler())
+                Assert.That(state.AddCombatAggregate(aggregate), Is.False);
+
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+        }
+
         [Test]
         public void TerminalStateDoesNotReleaseHeroUntilExecutionAndPendingResultAreResolved()
         {
@@ -269,17 +309,21 @@ namespace GuildIdle.Editor.Player
             terminal.session.terminalCandidate = new CombatTerminalCandidateSaveData
             {
                 candidateId = "candidate-a",
-                kind = "VictoryCandidate",
+                kind = CombatTerminalCandidateKinds.Defeat,
                 eventKey = "terminal-a",
                 createdAtSeconds = 3d
             };
+            terminal.session.combatTimeSeconds = 3d;
+            terminal.session.hero.currentHp = 0;
+            terminal.session.scheduler.scheduledEvents =
+                Array.Empty<CombatScheduledEventSaveData>();
             terminal.session.simulationStopped = true;
             Assert.That(state.UpdateCombatAggregate(terminal), Is.True);
             Assert.That(state.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo("combat-a"));
 
             var pending = state.GetCombatAggregate("combat-a");
             pending.execution.status = CombatExecutionStatus.ResultPending;
-            pending.execution.outcome = "Victory";
+            pending.execution.outcome = "Defeat";
             pending.execution.outcomeFinalized = true;
             pending.execution.resultCreated = true;
             pending.execution.pendingResultId = "result:Combat:combat-a";
@@ -410,6 +454,24 @@ namespace GuildIdle.Editor.Player
                     }
                 }
             };
+        }
+
+        private static void ConfigureDefeatTerminal(
+            CombatRuntimeAggregate aggregate,
+            double createdAtSeconds)
+        {
+            aggregate.session.combatTimeSeconds = createdAtSeconds;
+            aggregate.session.hero.currentHp = 0;
+            aggregate.session.scheduler.scheduledEvents =
+                Array.Empty<CombatScheduledEventSaveData>();
+            aggregate.session.terminalCandidate = new CombatTerminalCandidateSaveData
+            {
+                candidateId = $"{aggregate.session.sessionId}:defeat",
+                kind = CombatTerminalCandidateKinds.Defeat,
+                eventKey = $"{aggregate.session.sessionId}:terminal:defeat",
+                createdAtSeconds = createdAtSeconds
+            };
+            aggregate.session.simulationStopped = true;
         }
 
         private static void ConfigureInvalidScheduler(CombatSchedulerStateSaveData scheduler, string scenario)

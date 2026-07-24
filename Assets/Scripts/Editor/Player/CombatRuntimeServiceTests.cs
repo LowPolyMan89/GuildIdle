@@ -1479,8 +1479,16 @@ namespace GuildIdle.EditorTests.Player
             {
                 heroes = new[]
                 {
-                    new HeroConfigDto { heroId = "fixture-hero" },
-                    new HeroConfigDto { heroId = "other-hero" }
+                    new HeroConfigDto
+                    {
+                        heroId = "fixture-hero",
+                        uniqueSkillIds = new[] { "skill-b", "skill-a" }
+                    },
+                    new HeroConfigDto
+                    {
+                        heroId = "other-hero",
+                        uniqueSkillIds = new[] { "skill-other" }
+                    }
                 },
                 heroUniqueSkills = new[]
                 {
@@ -1529,6 +1537,143 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(
                 descriptors.Select(value => value.EffectId),
                 Is.EqualTo(new[] { "effect-a", "effect-b" }));
+        }
+
+        [Test]
+        public void ConfigDeathPreventionProviderIgnoresEnabledSkillMissingFromHeroReferences()
+        {
+            var configs = new HeroesConfigRepository(new HeroesRuntimeConfigDto
+            {
+                heroes = new[]
+                {
+                    new HeroConfigDto
+                    {
+                        heroId = "fixture-hero",
+                        uniqueSkillIds = new[] { "referenced-skill" }
+                    }
+                },
+                heroUniqueSkills = new[]
+                {
+                    new HeroUniqueSkillConfigDto
+                    {
+                        heroId = "fixture-hero",
+                        skillId = "referenced-skill",
+                        enabled = true
+                    },
+                    new HeroUniqueSkillConfigDto
+                    {
+                        heroId = "fixture-hero",
+                        skillId = "unreferenced-skill",
+                        enabled = true
+                    }
+                },
+                heroSkillEffects = new[]
+                {
+                    DeathEffect("unreferenced-skill", "unreferenced-effect", 100f)
+                }
+            });
+            var provider = new ConfigCombatDeathPreventionDescriptorProvider(configs);
+
+            var success = provider.TryGetDescriptors(
+                CombatActorSide.Hero,
+                "fixture-hero",
+                out var descriptors,
+                out var error);
+
+            Assert.That(success, Is.True, error);
+            Assert.That(descriptors, Is.Empty);
+        }
+
+        [TestCase("empty-reference")]
+        [TestCase("duplicate-reference")]
+        [TestCase("missing-enabled-row")]
+        [TestCase("wrong-owner-row")]
+        public void ConfigDeathPreventionProviderRejectsInvalidHeroSkillReferences(string scenario)
+        {
+            var uniqueSkillIds = scenario switch
+            {
+                "empty-reference" => new[] { " " },
+                "duplicate-reference" => new[] { "skill-a", "skill-a" },
+                _ => new[] { "skill-a" }
+            };
+            var skills = scenario switch
+            {
+                "missing-enabled-row" => new[]
+                {
+                    new HeroUniqueSkillConfigDto
+                    {
+                        heroId = "fixture-hero",
+                        skillId = "skill-a",
+                        enabled = false
+                    }
+                },
+                "wrong-owner-row" => new[]
+                {
+                    new HeroUniqueSkillConfigDto
+                    {
+                        heroId = "other-hero",
+                        skillId = "skill-a",
+                        enabled = true
+                    }
+                },
+                _ => Array.Empty<HeroUniqueSkillConfigDto>()
+            };
+            var configs = new HeroesConfigRepository(new HeroesRuntimeConfigDto
+            {
+                heroes = new[]
+                {
+                    new HeroConfigDto
+                    {
+                        heroId = "fixture-hero",
+                        uniqueSkillIds = uniqueSkillIds
+                    },
+                    new HeroConfigDto { heroId = "other-hero" }
+                },
+                heroUniqueSkills = skills
+            });
+            var provider = new ConfigCombatDeathPreventionDescriptorProvider(configs);
+
+            var success = provider.TryGetDescriptors(
+                CombatActorSide.Hero,
+                "fixture-hero",
+                out var descriptors,
+                out var error);
+
+            Assert.That(success, Is.False);
+            Assert.That(descriptors, Is.Empty);
+            Assert.That(error, Is.Not.Empty);
+        }
+
+        [Test]
+        public void AdvanceToDoesNotContinueInconsistentTerminalSession()
+        {
+            var source = Aggregate(100);
+            source.session.hero.currentHp = 0;
+            source.session.combatTimeSeconds = 0d;
+            source.session.scheduler.scheduledEvents =
+                Array.Empty<CombatScheduledEventSaveData>();
+            source.session.terminalCandidate = new CombatTerminalCandidateSaveData
+            {
+                candidateId = "terminal:defeat",
+                kind = CombatTerminalCandidateKinds.Defeat,
+                eventKey = "terminal-event",
+                createdAtSeconds = 0d
+            };
+            source.session.simulationStopped = false;
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.SimulationStopped));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
         }
 
         [Test]
