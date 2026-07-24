@@ -900,7 +900,7 @@ namespace GuildIdle.EditorTests.Player
         public void ChanceAndCooldownStateSurviveReloadWithoutRepeatingDispatch()
         {
             var source = Aggregate(100);
-            source.session.rng = ScriptedRngFactory.State(99, 0, 0, 0, 0);
+            source.session.rng = ScriptedRngFactory.State(10100, 0, 0, 0, 0);
             var abilities = new AbilityDescriptorProvider()
                 .Add(
                     CombatActorSide.Enemy,
@@ -937,7 +937,7 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(first.Events.OfType<CombatEffectRequest>().Select(value => value.SourceAbilityId),
                 Is.EqualTo(new[] { "ability-cooldown" }));
             Assert.That(chance.lastChanceResolved, Is.True);
-            Assert.That(chance.lastChanceRoll, Is.EqualTo(100));
+            Assert.That(chance.lastChanceRoll, Is.EqualTo(101));
             Assert.That(cooldown.nextReadyAtSeconds, Is.EqualTo(11d));
 
             var reloadedStore = new MemoryStore(splitStore.Value);
@@ -959,6 +959,47 @@ namespace GuildIdle.EditorTests.Player
                     .Single(value => value.abilityId == "ability-cooldown")
                     .lastChanceRoll,
                 Is.EqualTo(cooldown.lastChanceRoll));
+        }
+
+        [TestCase(0.5d, 50, true)]
+        [TestCase(0.5d, 51, false)]
+        [TestCase(1.5d, 150, true)]
+        [TestCase(1.5d, 151, false)]
+        [TestCase(99.5d, 9950, true)]
+        [TestCase(99.5d, 9951, false)]
+        public void FractionalChanceUsesBasisPointBoundaries(
+            double chancePercent,
+            int chanceRoll,
+            bool expectedDispatch)
+        {
+            var source = Aggregate(100);
+            // One full range keeps the scripted value above RollInclusive's rejection threshold.
+            source.session.rng = ScriptedRngFactory.State((ulong)(10000 + chanceRoll - 1));
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    Ability(
+                        "ability-fractional-chance",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "self",
+                        CombatEffectKind.ModifyStat,
+                        chancePercent));
+            var service = new CombatRuntimeService(
+                store,
+                DefaultDescriptors(),
+                new ScriptedRngFactory(),
+                null,
+                abilities);
+
+            var result = service.AdvanceTo("execution", 0d);
+            var requests = result.Events.OfType<CombatEffectRequest>().ToArray();
+            var chance = store.Value.session.hero.abilityCooldowns.Single();
+
+            Assert.That(requests.Length, Is.EqualTo(expectedDispatch ? 1 : 0));
+            Assert.That(chance.lastChanceResolved, Is.True);
+            Assert.That(chance.lastChanceRoll, Is.EqualTo(chanceRoll));
         }
 
         [Test]

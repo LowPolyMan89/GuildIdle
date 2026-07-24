@@ -97,6 +97,7 @@ namespace GuildIdle.Combat
         public string abilityId;
         public double nextReadyAtSeconds;
         public string lastTriggerEventKey;
+        // Deterministic basis-point roll in the inclusive range 1..10000.
         public int lastChanceRoll;
         public bool lastChanceResolved;
     }

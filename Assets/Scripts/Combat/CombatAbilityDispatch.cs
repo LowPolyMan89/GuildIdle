@@ -387,6 +387,9 @@ namespace GuildIdle.Combat
 
     internal sealed class CombatAbilityDispatcher
     {
+        private const int ChanceRollResolution = 10000;
+        private const double ChanceRollsPerPercent = ChanceRollResolution / 100d;
+
         private readonly ICombatAbilityDescriptorProvider _provider;
         private readonly CombatAbilityRegistry _registry;
 
@@ -506,10 +509,13 @@ namespace GuildIdle.Combat
                 if (timestampSeconds < cooldown.nextReadyAtSeconds)
                     continue;
 
-                var chanceRoll = RollInclusive(rng, 1, 100);
+                var chanceRoll = RollInclusive(rng, 1, ChanceRollResolution);
                 cooldown.lastChanceRoll = chanceRoll;
                 cooldown.lastChanceResolved = true;
-                if (chanceRoll > ability.ChancePercent)
+                var successfulRolls = (int)Math.Round(
+                    ability.ChancePercent * ChanceRollsPerPercent,
+                    MidpointRounding.AwayFromZero);
+                if (chanceRoll > successfulRolls)
                     continue;
 
                 if (!_registry.TryResolveTarget(ability.Target, ownerSide, out var targetSide))
