@@ -232,6 +232,41 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
+        public void AddCombatAggregateRejectsDuplicateSessionIdAtomically()
+        {
+            var state = _factory.CreateDefault();
+            Assert.That(state.AddHero("aska"), Is.True);
+            var first = Aggregate(
+                "combat-first",
+                "shared-session",
+                "ren",
+                "group-first",
+                "enemy-first");
+            var second = Aggregate(
+                "combat-second",
+                "shared-session",
+                "aska",
+                "group-second",
+                "enemy-second");
+            Assert.That(state.AddCombatAggregate(first), Is.True);
+            var before = JsonUtility.ToJson(
+                state.GetCombatAggregate("combat-first"));
+
+            bool added;
+            using (new SuppressedLogHandler())
+                added = state.AddCombatAggregate(second);
+
+            Assert.That(added, Is.False);
+            Assert.That(
+                JsonUtility.ToJson(state.GetCombatAggregate("combat-first")),
+                Is.EqualTo(before));
+            Assert.That(state.GetCombatAggregate("combat-second"), Is.Null);
+            Assert.That(
+                state.GetHeroCurrentActivityExecutionId("aska"),
+                Is.Null);
+        }
+
+        [Test]
         public void InvalidRngDescriptorIsRejectedAtomically()
         {
             var state = _factory.CreateDefault();

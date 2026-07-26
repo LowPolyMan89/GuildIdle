@@ -66,6 +66,29 @@ namespace GuildIdle.Player
             ActiveHeroLimitResolver.GetCurrentLimit(_activityAdapter);
         public bool IsActivityAvailable(string activityId) =>
             _state.IsActivityAvailable(activityId);
+        public ActivityCheckResult CanStartActivity(
+            ActivityExecutionContext context) =>
+            ActivityResolver.CanStart(context, _activityAdapter);
+        public bool IsActivityCompleted(string activityId) =>
+            _state.IsActivityCompleted(activityId);
+        public bool HasUnfinishedActivityExecution(string activityId)
+        {
+            foreach (var execution in _state.GetActivityExecutions())
+            {
+                if (execution != null &&
+                    string.Equals(
+                        execution.activityId,
+                        activityId,
+                        StringComparison.Ordinal) &&
+                    execution.status != ActivityRuntimeStatus.Completed &&
+                    execution.status != ActivityRuntimeStatus.Cancelled)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
         public ActivityExecutionSaveData GetActivityExecution(string executionId) =>
             _state.GetActivityExecution(executionId);
 

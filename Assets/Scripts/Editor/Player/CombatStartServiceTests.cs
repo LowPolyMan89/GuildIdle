@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using GuildIdle.Activities;
 using GuildIdle.Combat;
 using GuildIdle.Configs;
 using GuildIdle.Core;
@@ -162,6 +163,89 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
+        public void DirectStartRejectsMissingActivityRequirement()
+        {
+            var database = CreateIntegrationDatabase(
+                new[]
+                {
+                    new ActivityRequirementConfigDto
+                    {
+                        activityId = "combat-activity",
+                        reqType = "BuildingLevel",
+                        targetId = "building_hall",
+                        value = 1
+                    }
+                });
+            var state = CreateIntegrationState(database);
+            var beforeFatigue = state.GetHeroFatigue("ren");
+
+            var result = CreateIntegrationService(database, state).Start(
+                IntegrationDirect(state, "requirement-operation"));
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(
+                result.Code,
+                Is.EqualTo(CombatStartCode.ActivityRequirementsNotMet));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(beforeFatigue));
+            Assert.That(state.GetHeroCurrentActivityExecutionId("ren"), Is.Null);
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+            Assert.That(state.ToSaveData().operationReceipts, Is.Empty);
+        }
+
+        [Test]
+        public void DirectStartRejectsCompletedNonRepeatableActivity()
+        {
+            var database = CreateIntegrationDatabase();
+            var state = CreateIntegrationState(database);
+            Assert.That(state.CompleteActivity("combat-activity"), Is.True);
+            var beforeFatigue = state.GetHeroFatigue("ren");
+
+            var result = CreateIntegrationService(database, state).Start(
+                IntegrationDirect(state, "completed-operation"));
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Code, Is.EqualTo(CombatStartCode.ActivityCompleted));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(beforeFatigue));
+            Assert.That(state.GetHeroCurrentActivityExecutionId("ren"), Is.Null);
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+        }
+
+        [Test]
+        public void DirectStartRejectsAnotherUnfinishedExecutionOfSameNonRepeatableActivity()
+        {
+            var database = CreateIntegrationDatabase();
+            var state = CreateIntegrationState(database);
+            Assert.That(state.AddHero("aska"), Is.True);
+            var service = CreateIntegrationService(database, state);
+            var firstCommand = IntegrationDirect(
+                state,
+                "existing-combat-operation");
+            firstCommand.HeroId = "aska";
+            var first = service.Start(firstCommand);
+            Assert.That(first.Success, Is.True);
+            var beforeAggregate = JsonUtility.ToJson(
+                state.GetCombatAggregate(first.ExecutionId));
+            var beforeFatigue = state.GetHeroFatigue("ren");
+
+            var result = service.Start(
+                IntegrationDirect(state, "parallel-operation"));
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(
+                result.Code,
+                Is.EqualTo(CombatStartCode.ActivityAlreadyRunning));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(beforeFatigue));
+            Assert.That(
+                state.GetHeroCurrentActivityExecutionId("ren"),
+                Is.Null);
+            Assert.That(state.GetCombatAggregates(), Has.Length.EqualTo(1));
+            Assert.That(
+                JsonUtility.ToJson(
+                    state.GetCombatAggregate(first.ExecutionId)),
+                Is.EqualTo(beforeAggregate));
+        }
+
+        [Test]
         public void ReplayReturnsSameIdsWithoutRepeatingCostsQueueOrSeed()
         {
             var fixture = new Fixture();
@@ -267,6 +351,44 @@ namespace GuildIdle.Editor.Player
             Assert.That(replay.ExecutionId, Is.EqualTo(first.ExecutionId));
             Assert.That(loadedState.Fatigue, Is.EqualTo(5));
             Assert.That(loadedIdentity.SeedCalls, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void ReplayReceiptWithoutAggregateReturnsCorruptedReplayStateAtomically()
+        {
+            var fixture = new Fixture();
+            var command = fixture.Direct();
+            var first = fixture.Service.Start(command);
+            Assert.That(first.Success, Is.True);
+            fixture.State.Aggregates.Clear();
+            fixture.State.BusyOwner = null;
+            var beforeFatigue = fixture.State.Fatigue;
+            var beforeRevision = fixture.State.StorageRevision;
+            var beforeSaveCalls = fixture.State.SaveCalls;
+            var beforeReceipts = JsonUtility.ToJson(
+                new ReceiptCollection
+                {
+                    receipts = fixture.State.Receipts.ToArray()
+                });
+
+            var replay = fixture.Service.Start(command);
+
+            Assert.That(replay.Success, Is.False);
+            Assert.That(replay.Replayed, Is.False);
+            Assert.That(
+                replay.Code,
+                Is.EqualTo(CombatStartCode.CorruptedReplayState));
+            Assert.That(fixture.State.Fatigue, Is.EqualTo(beforeFatigue));
+            Assert.That(fixture.State.StorageRevision, Is.EqualTo(beforeRevision));
+            Assert.That(fixture.State.BusyOwner, Is.Null);
+            Assert.That(fixture.State.SaveCalls, Is.EqualTo(beforeSaveCalls));
+            Assert.That(
+                JsonUtility.ToJson(
+                    new ReceiptCollection
+                    {
+                        receipts = fixture.State.Receipts.ToArray()
+                    }),
+                Is.EqualTo(beforeReceipts));
         }
 
         [TestCase("extract")]
@@ -483,7 +605,54 @@ namespace GuildIdle.Editor.Player
                 Is.EqualTo(2));
         }
 
-        private static ConfigDatabase CreateIntegrationDatabase()
+        private static PlayerState CreateIntegrationState(
+            ConfigDatabase database)
+        {
+            RuntimeConfigs.SetDatabaseForTests(database);
+            var state = SaveService.Load(
+                TestPlayerComposition.CreatePlayerStateFactory(database),
+                new MemorySaveStorage());
+            Assert.That(
+                state.SetActivityAvailable("combat-activity", true),
+                Is.True);
+            return state;
+        }
+
+        private static CombatStartService CreateIntegrationService(
+            ConfigDatabase database,
+            PlayerState state)
+        {
+            return new CombatStartService(
+                new PlayerStateCombatStartAdapter(
+                    state,
+                    database.Formulas,
+                    database.Items),
+                new ConfigCombatStartActivityDescriptorProvider(
+                    database.Activities),
+                database.CombatConsumables,
+                new ConfigCombatEnemyQueueProvider(database.Enemies),
+                identity: new IdentityProvider());
+        }
+
+        private static CombatStartCommand IntegrationDirect(
+            PlayerState state,
+            string operationId)
+        {
+            return new CombatStartCommand
+            {
+                OperationId = operationId,
+                Kind = CombatStartKind.Direct,
+                SourceActivityId = "combat-activity",
+                SourceRequestId = $"{operationId}-request",
+                HeroId = "ren",
+                EnemyGroupId = "enemy-group",
+                CombatMode = CombatEnemyQueueBuilder.Queue1V1Mode,
+                ExpectedStorageRevision = state.Storage.GetSnapshot().Revision
+            };
+        }
+
+        private static ConfigDatabase CreateIntegrationDatabase(
+            ActivityRequirementConfigDto[] requirements = null)
         {
             return new ConfigDatabase(
                 new ItemsRuntimeConfigDto
@@ -511,6 +680,11 @@ namespace GuildIdle.Editor.Player
                             heroId = "ren",
                             enabled = true,
                             baseStats = new HeroBaseStatsDto { endurance = 5 }
+                        },
+                        new HeroConfigDto
+                        {
+                            heroId = "aska",
+                            enabled = true
                         }
                     }
                 },
@@ -522,9 +696,12 @@ namespace GuildIdle.Editor.Player
                         {
                             id = "combat-activity",
                             type = "CombatTask",
-                            fatigueCost = 5
+                            fatigueCost = 5,
+                            isRepeatable = false
                         }
                     },
+                    requirements = requirements ??
+                                   Array.Empty<ActivityRequirementConfigDto>(),
                     combatDetails = new[]
                     {
                         new CombatDetailConfigDto
@@ -561,7 +738,7 @@ namespace GuildIdle.Editor.Player
                         {
                             buildingId = "building_hall",
                             level = 0,
-                            activeHeroLimit = 1
+                            activeHeroLimit = 2
                         },
                         new BuildingLevelConfigDto
                         {
@@ -722,6 +899,13 @@ namespace GuildIdle.Editor.Player
             public void Save()
             {
             }
+        }
+
+        [Serializable]
+        private sealed class ReceiptCollection
+        {
+            public OperationReceiptSaveData[] receipts =
+                Array.Empty<OperationReceiptSaveData>();
         }
 
         private sealed class Fixture
@@ -1044,6 +1228,17 @@ namespace GuildIdle.Editor.Player
             public int GetActiveHeroLimit() => ActiveLimit;
             public bool IsActivityAvailable(string activityId) =>
                 ActivityAvailable;
+            public ActivityCheckResult CanStartActivity(
+                ActivityExecutionContext context) =>
+                new ActivityCheckResult
+                {
+                    activityId = context?.activityId,
+                    context = context,
+                    canStart = true
+                };
+            public bool IsActivityCompleted(string activityId) => false;
+            public bool HasUnfinishedActivityExecution(string activityId) =>
+                false;
             public ActivityExecutionSaveData GetActivityExecution(
                 string executionId) =>
                 Activity != null &&
@@ -1180,7 +1375,8 @@ namespace GuildIdle.Editor.Player
                     aggregate?.execution == null ||
                     aggregate.session == null ||
                     aggregate.session.loadoutKind == CombatLoadoutKind.Consumable &&
-                    aggregate.session.broughtConsumable == null)
+                    aggregate.session.broughtConsumable == null ||
+                    HasSession(aggregate.session.sessionId))
                 {
                     return false;
                 }
@@ -1204,6 +1400,22 @@ namespace GuildIdle.Editor.Player
 
                 Aggregates.Add(CloneAggregate(aggregate));
                 return true;
+            }
+
+            private bool HasSession(string sessionId)
+            {
+                foreach (var aggregate in Aggregates)
+                {
+                    if (string.Equals(
+                            aggregate?.session?.sessionId,
+                            sessionId,
+                            StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
             }
 
             public void PublishCombatStartCommit()

@@ -1,4 +1,5 @@
 using System;
+using GuildIdle.Activities;
 using GuildIdle.Configs;
 using GuildIdle.Core;
 using GuildIdle.Player;
@@ -37,7 +38,11 @@ namespace GuildIdle.Combat
         EnemyQueueInvalid = 20,
         HeroSnapshotInvalid = 21,
         TransactionFailure = 22,
-        SaveFailure = 23
+        SaveFailure = 23,
+        ActivityRequirementsNotMet = 24,
+        ActivityCompleted = 25,
+        ActivityAlreadyRunning = 26,
+        CorruptedReplayState = 27
     }
 
     public sealed class CombatStartCommand
@@ -85,18 +90,21 @@ namespace GuildIdle.Combat
             string activityId,
             string enemyGroupId,
             string combatMode,
-            int fatigueCost)
+            int fatigueCost,
+            bool isRepeatable = false)
         {
             ActivityId = activityId;
             EnemyGroupId = enemyGroupId;
             CombatMode = combatMode;
             FatigueCost = fatigueCost;
+            IsRepeatable = isRepeatable;
         }
 
         public string ActivityId { get; }
         public string EnemyGroupId { get; }
         public string CombatMode { get; }
         public int FatigueCost { get; }
+        public bool IsRepeatable { get; }
     }
 
     public interface ICombatStartActivityDescriptorProvider
@@ -143,7 +151,8 @@ namespace GuildIdle.Combat
                 activity.id,
                 details.enemyGroupId,
                 details.combatMode,
-                activity.fatigueCost);
+                activity.fatigueCost,
+                activity.isRepeatable);
             return true;
         }
     }
@@ -187,6 +196,9 @@ namespace GuildIdle.Combat
         int GetActiveHeroCount();
         int GetActiveHeroLimit();
         bool IsActivityAvailable(string activityId);
+        ActivityCheckResult CanStartActivity(ActivityExecutionContext context);
+        bool IsActivityCompleted(string activityId);
+        bool HasUnfinishedActivityExecution(string activityId);
         ActivityExecutionSaveData GetActivityExecution(string executionId);
         bool BindLinkedCombatExecution(
             string sourceExecutionId,
@@ -421,16 +433,28 @@ namespace GuildIdle.Combat
                         out failure);
                 }
 
+                var receiptPayload = hasReceipt
+                    ? ParseReceiptPayload(receipt)
+                    : null;
                 if (!AggregateMatchesCommand(matchingOperationAggregate, command) ||
                     hasReceipt &&
                     (!receipt.success ||
+                     receiptPayload == null ||
                      !string.Equals(
                          receipt.executionId,
                          matchingOperationAggregate.execution.executionId,
+                         StringComparison.Ordinal) ||
+                     !string.Equals(
+                         receiptPayload.executionId,
+                         matchingOperationAggregate.execution.executionId,
+                         StringComparison.Ordinal) ||
+                     !string.Equals(
+                         receiptPayload.sessionId,
+                         matchingOperationAggregate.session.sessionId,
                          StringComparison.Ordinal)))
                 {
                     return FailPreflight(
-                        CombatStartCode.TransactionFailure,
+                        CombatStartCode.CorruptedReplayState,
                         "Combat start idempotency data does not reference a valid aggregate.",
                         out failure);
                 }
@@ -445,28 +469,10 @@ namespace GuildIdle.Combat
 
             if (hasReceipt)
             {
-                var payload = ParseReceiptPayload(receipt);
-                if (!receipt.success || payload == null)
-                {
-                    return FailPreflight(
-                        CombatStartCode.TransactionFailure,
-                        "Combat start receipt is malformed.",
-                        out failure);
-                }
-
-                preflight = new Preflight
-                {
-                    Fingerprint = fingerprint,
-                    Replay = new CombatStartResult
-                    {
-                        Success = true,
-                        Replayed = true,
-                        Code = CombatStartCode.Replayed,
-                        ExecutionId = payload.executionId,
-                        SessionId = payload.sessionId
-                    }
-                };
-                return true;
+                return FailPreflight(
+                    CombatStartCode.CorruptedReplayState,
+                    "Combat start receipt has no corresponding combat aggregate.",
+                    out failure);
             }
 
             if (!TryValidateCommand(command, out var loadoutKind, out failure))
@@ -520,6 +526,15 @@ namespace GuildIdle.Combat
                     out failure);
             }
 
+            if (!TryCreateIdentifiers(
+                    command.OperationId,
+                    out var executionId,
+                    out var sessionId,
+                    out failure))
+            {
+                return false;
+            }
+
             StorageActionContext storageContext;
             if (command.Kind == CombatStartKind.Direct)
             {
@@ -550,6 +565,37 @@ namespace GuildIdle.Combat
                     return FailPreflight(
                         CombatStartCode.InsufficientFatigue,
                         "Hero has insufficient fatigue for direct combat start.",
+                        out failure);
+                }
+
+                var eligibility = _state.CanStartActivity(
+                    new ActivityExecutionContext
+                    {
+                        activityId = command.SourceActivityId,
+                        heroId = command.HeroId,
+                        executionId = executionId
+                    });
+                if (eligibility == null || !eligibility.canStart)
+                {
+                    return FailPreflight(
+                        CombatStartCode.ActivityRequirementsNotMet,
+                        FirstEligibilityMessage(eligibility),
+                        out failure);
+                }
+                if (!activity.IsRepeatable &&
+                    _state.IsActivityCompleted(command.SourceActivityId))
+                {
+                    return FailPreflight(
+                        CombatStartCode.ActivityCompleted,
+                        $"Activity '{command.SourceActivityId}' is non-repeatable and already completed.",
+                        out failure);
+                }
+                if (!activity.IsRepeatable &&
+                    HasUnfinishedActivity(command.SourceActivityId))
+                {
+                    return FailPreflight(
+                        CombatStartCode.ActivityAlreadyRunning,
+                        $"Activity '{command.SourceActivityId}' is non-repeatable and already has an unfinished execution.",
                         out failure);
                 }
             }
@@ -621,6 +667,8 @@ namespace GuildIdle.Combat
                     loadoutKind,
                     stack,
                     consumable,
+                    executionId,
+                    sessionId,
                     out var aggregate,
                     out failure))
             {
@@ -763,25 +811,13 @@ namespace GuildIdle.Combat
             CombatLoadoutKind loadoutKind,
             ItemStackSaveData stack,
             CombatConsumableDescriptor consumable,
+            string executionId,
+            string sessionId,
             out CombatRuntimeAggregate aggregate,
             out CombatStartResult failure)
         {
             aggregate = null;
             failure = null;
-            var executionId = _identity.CreateExecutionId();
-            var sessionId = _identity.CreateSessionId();
-            if (string.IsNullOrWhiteSpace(executionId) ||
-                string.IsNullOrWhiteSpace(sessionId) ||
-                string.Equals(executionId, sessionId, StringComparison.Ordinal) ||
-                string.Equals(executionId, command.OperationId, StringComparison.Ordinal) ||
-                string.Equals(sessionId, command.OperationId, StringComparison.Ordinal))
-            {
-                return FailPreflight(
-                    CombatStartCode.TransactionFailure,
-                    "Combat execution, session and operation identifiers must be distinct and non-empty.",
-                    out failure);
-            }
-
             if (!_state.TryCreateHeroCombatant(
                     command.HeroId,
                     sessionId,
@@ -862,6 +898,63 @@ namespace GuildIdle.Combat
             }
 
             return true;
+        }
+
+        private bool TryCreateIdentifiers(
+            string operationId,
+            out string executionId,
+            out string sessionId,
+            out CombatStartResult failure)
+        {
+            executionId = _identity.CreateExecutionId();
+            sessionId = _identity.CreateSessionId();
+            failure = null;
+            if (!string.IsNullOrWhiteSpace(executionId) &&
+                !string.IsNullOrWhiteSpace(sessionId) &&
+                !string.Equals(executionId, sessionId, StringComparison.Ordinal) &&
+                !string.Equals(executionId, operationId, StringComparison.Ordinal) &&
+                !string.Equals(sessionId, operationId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return FailPreflight(
+                CombatStartCode.TransactionFailure,
+                "Combat execution, session and operation identifiers must be distinct and non-empty.",
+                out failure);
+        }
+
+        private bool HasUnfinishedActivity(string activityId)
+        {
+            if (_state.HasUnfinishedActivityExecution(activityId))
+                return true;
+            foreach (var aggregate in _state.GetCombatAggregates() ??
+                                      Array.Empty<CombatRuntimeAggregate>())
+            {
+                if (aggregate?.execution != null &&
+                    CombatRuntimeSaveDataUtility.IsUnfinished(aggregate.execution) &&
+                    string.Equals(
+                        aggregate.execution.sourceActivityId,
+                        activityId,
+                        StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string FirstEligibilityMessage(ActivityCheckResult result)
+        {
+            foreach (var issue in result?.issues ??
+                                  Array.Empty<ActivityRequirementIssue>())
+            {
+                if (!string.IsNullOrWhiteSpace(issue?.message))
+                    return issue.message;
+            }
+
+            return "Combat activity requirements are not satisfied.";
         }
 
         private CombatRuntimeAggregate FindOperationAggregate(

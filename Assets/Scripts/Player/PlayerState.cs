@@ -809,9 +809,11 @@ namespace GuildIdle.Player
             if (execution.status != CombatExecutionStatus.Running ||
                 _combatAggregates.Count >= CombatRuntimeSaveDataUtility.PersistentCollectionLimit ||
                 _combatAggregates.ContainsKey(execution.executionId) || _activityExecutions.ContainsKey(execution.executionId) ||
-                _craftExecutions.ContainsKey(execution.executionId) || HasOtherUnfinishedCombat(execution.heroId, null))
+                _craftExecutions.ContainsKey(execution.executionId) ||
+                HasCombatSession(normalized.session.sessionId) ||
+                HasOtherUnfinishedCombat(execution.heroId, null))
             {
-                Debug.LogError($"[PlayerState] Combat execution '{execution.executionId}' is duplicated or its hero already has unfinished combat.");
+                Debug.LogError($"[PlayerState] Combat execution '{execution.executionId}' or session '{normalized.session.sessionId}' is duplicated, or its hero already has unfinished combat.");
                 return false;
             }
             if (!CanApplyCombatOwnership(normalized))
@@ -820,6 +822,22 @@ namespace GuildIdle.Player
             _combatAggregates.Add(execution.executionId, normalized);
             ApplyCombatOwnership(normalized);
             return true;
+        }
+
+        private bool HasCombatSession(string sessionId)
+        {
+            foreach (var aggregate in _combatAggregates.Values)
+            {
+                if (string.Equals(
+                        aggregate?.session?.sessionId,
+                        sessionId,
+                        StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public bool UpdateCombatAggregate(CombatRuntimeAggregate aggregate)
