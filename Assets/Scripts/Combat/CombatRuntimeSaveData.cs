@@ -459,6 +459,7 @@ namespace GuildIdle.Combat
                     return Fail("Current enemy does not match the saved queue position.", out error);
             }
             if (!ValidateLoadout(session, out error) ||
+                !ValidateConsumableSchedule(session, out error) ||
                 !ValidateDeathPreventionOperation(
                     session.lastDeathPreventionOperation,
                     out error) ||
@@ -492,6 +493,7 @@ namespace GuildIdle.Combat
             var sequences = new HashSet<long>();
             var attackSides = new HashSet<CombatActorSide>();
             var effectEvents = new HashSet<string>(StringComparer.Ordinal);
+            var hasConsumableCheck = false;
             foreach (var value in scheduler.scheduledEvents)
             {
                 if (value == null || string.IsNullOrWhiteSpace(value.eventKey) ||
@@ -540,6 +542,27 @@ namespace GuildIdle.Combat
                      !effectEvents.Add($"{value.eventType}:{value.effectInstanceId}")))
                 {
                     return Fail("Combat scheduler contains an invalid or duplicated status event.", out error);
+                }
+
+                if (string.Equals(
+                        value.eventType,
+                        CombatRuntimeService.ConsumableCheckEventType,
+                        StringComparison.Ordinal) &&
+                    (hasConsumableCheck ||
+                     value.phasePriority != (int)CombatScheduledEventPhase.ConsumableCheck ||
+                     value.actorSide != CombatActorSide.System ||
+                     !string.IsNullOrWhiteSpace(value.subjectCombatantId) ||
+                     !string.IsNullOrWhiteSpace(value.effectInstanceId)))
+                {
+                    return Fail("Combat scheduler contains an invalid or duplicated consumable check.", out error);
+                }
+
+                if (string.Equals(
+                        value.eventType,
+                        CombatRuntimeService.ConsumableCheckEventType,
+                        StringComparison.Ordinal))
+                {
+                    hasConsumableCheck = true;
                 }
             }
 
@@ -658,6 +681,53 @@ namespace GuildIdle.Combat
                 value.initialQuantity <= 0 || value.remainingQuantity < 0 || value.remainingQuantity > value.initialQuantity ||
                 InvalidTime(value.nextCheckAtSeconds) || InvalidTime(value.nextAllowedUseAtSeconds))
                 return Fail("Brought consumable state is invalid.", out error);
+            return true;
+        }
+
+        private static bool ValidateConsumableSchedule(
+            CombatSessionSaveData session,
+            out string error)
+        {
+            error = null;
+            CombatScheduledEventSaveData pending = null;
+            foreach (var value in session.scheduler.scheduledEvents)
+            {
+                if (!string.Equals(
+                        value.eventType,
+                        CombatRuntimeService.ConsumableCheckEventType,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                pending = value;
+                break;
+            }
+
+            if (pending == null)
+                return true;
+            if (session.loadoutKind != CombatLoadoutKind.Consumable ||
+                session.broughtConsumable == null ||
+                session.broughtConsumable.remainingQuantity <= 0 ||
+                session.simulationStopped ||
+                session.terminalCandidate != null ||
+                session.hero.currentHp <= 0 ||
+                session.currentEnemy?.currentHp <= 0 ||
+                pending.timestampSeconds != session.broughtConsumable.nextCheckAtSeconds ||
+                string.Equals(
+                    pending.eventKey,
+                    session.broughtConsumable.lastAppliedEventKey,
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    pending.eventKey,
+                    session.scheduler.lastResolvedEventKey,
+                    StringComparison.Ordinal))
+            {
+                return Fail(
+                    "Pending consumable check does not match the saved consumable state.",
+                    out error);
+            }
+
             return true;
         }
 

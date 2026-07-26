@@ -71,6 +71,118 @@ namespace GuildIdle.Combat
         bool TryGet(string itemId, out CombatConsumableDescriptor descriptor);
     }
 
+    public sealed class EmptyCombatConsumableDescriptorProvider :
+        ICombatConsumableDescriptorProvider
+    {
+        public static readonly EmptyCombatConsumableDescriptorProvider Instance =
+            new EmptyCombatConsumableDescriptorProvider();
+
+        private EmptyCombatConsumableDescriptorProvider()
+        {
+        }
+
+        public bool TryGet(string itemId, out CombatConsumableDescriptor descriptor)
+        {
+            descriptor = null;
+            return false;
+        }
+    }
+
+    public delegate bool TryEvaluateCombatConsumableCondition(
+        CombatConsumableConditionDescriptor condition,
+        CombatantStateSaveData hero,
+        out bool satisfied,
+        out string error);
+
+    public sealed class CombatConsumableConditionRegistry
+    {
+        private readonly Dictionary<string, TryEvaluateCombatConsumableCondition> _handlers =
+            new Dictionary<string, TryEvaluateCombatConsumableCondition>(StringComparer.Ordinal);
+
+        public CombatConsumableConditionRegistry()
+        {
+            Register(
+                CombatConsumableConditionKind.HpPercent,
+                CombatConsumableComparisonOperator.LessOrEqual,
+                TryEvaluateHpPercentLessOrEqual);
+        }
+
+        public void Register(
+            CombatConsumableConditionKind kind,
+            CombatConsumableComparisonOperator comparisonOperator,
+            TryEvaluateCombatConsumableCondition handler)
+        {
+            if (handler == null)
+                throw new ArgumentNullException(nameof(handler));
+            _handlers[Key(kind, comparisonOperator)] = handler;
+        }
+
+        public bool IsRegistered(
+            CombatConsumableConditionKind kind,
+            CombatConsumableComparisonOperator comparisonOperator)
+        {
+            return _handlers.ContainsKey(Key(kind, comparisonOperator));
+        }
+
+        public bool TryEvaluate(
+            CombatConsumableConditionDescriptor condition,
+            CombatantStateSaveData hero,
+            out bool satisfied,
+            out string error)
+        {
+            satisfied = false;
+            error = null;
+            if (condition == null ||
+                !_handlers.TryGetValue(Key(condition.Kind, condition.Operator), out var handler))
+            {
+                error =
+                    $"Combat consumable condition '{condition?.Kind.ToString() ?? "<null>"} " +
+                    $"{condition?.Operator.ToString() ?? "<null>"}' is not registered.";
+                return false;
+            }
+
+            try
+            {
+                return handler(condition, hero, out satisfied, out error);
+            }
+            catch (Exception exception)
+            {
+                error = $"Combat consumable condition handler failed: {exception.Message}";
+                return false;
+            }
+        }
+
+        private static bool TryEvaluateHpPercentLessOrEqual(
+            CombatConsumableConditionDescriptor condition,
+            CombatantStateSaveData hero,
+            out bool satisfied,
+            out string error)
+        {
+            satisfied = false;
+            error = null;
+            if (hero == null ||
+                hero.maxHp <= 0 ||
+                double.IsNaN(condition.Value) ||
+                double.IsInfinity(condition.Value) ||
+                condition.Value < 0d ||
+                condition.Value > 100d)
+            {
+                error = "hp_percent condition requires a live hero with max HP and a finite threshold from 0 to 100.";
+                return false;
+            }
+
+            satisfied = hero.currentHp * 100.0d / hero.maxHp <= condition.Value;
+            return true;
+        }
+
+        private static string Key(
+            CombatConsumableConditionKind kind,
+            CombatConsumableComparisonOperator comparisonOperator)
+        {
+            return $"{(int)kind}:{(int)comparisonOperator}";
+        }
+    }
+
     public sealed class CombatConsumableDescriptorRepository : ICombatConsumableDescriptorProvider
     {
         private readonly Dictionary<string, CombatConsumableDescriptor> _descriptors =

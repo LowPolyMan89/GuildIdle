@@ -2057,6 +2057,595 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(reloadedStore.Value.session.rng.drawCount, Is.EqualTo(drawCount));
         }
 
+        [Test]
+        public void ConsumableUsesRoastedMeatAtExactThresholdAndPublishesTypedEvents()
+        {
+            var source = ConsumableAggregate(40, 3);
+            var store = new MemoryStore(source);
+            var service = ConsumableService(store, ConsumableProvider());
+
+            var result = service.AdvanceTo("execution", 1d);
+            var request = result.Events.OfType<CombatEffectRequest>().Single();
+            var immediate = result.Events.OfType<CombatImmediateEffectEvent>().Single();
+            var used = result.Events.OfType<CombatConsumableUsedEvent>().Single();
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(65));
+            Assert.That(store.Value.session.broughtConsumable.remainingQuantity, Is.EqualTo(2));
+            Assert.That(store.Value.session.broughtConsumable.nextCheckAtSeconds, Is.EqualTo(2d));
+            Assert.That(store.Value.session.broughtConsumable.nextAllowedUseAtSeconds, Is.EqualTo(6d));
+            Assert.That(store.Value.session.broughtConsumable.lastAppliedEventKey, Is.EqualTo(used.EventKey));
+            Assert.That(used.ItemId, Is.EqualTo("consumable_roasted_rabbit_meat"));
+            Assert.That(used.SourceStackId, Is.EqualTo("stack-roasted-meat"));
+            Assert.That(used.QuantityBefore, Is.EqualTo(3));
+            Assert.That(used.QuantityAfter, Is.EqualTo(2));
+            Assert.That(request.SourceKind, Is.EqualTo(CombatEffectSourceKind.Consumable));
+            Assert.That(request.SourceDescriptorId, Is.EqualTo("consumable_roasted_rabbit_meat"));
+            Assert.That(request.SourceAbilityId, Is.Null);
+            Assert.That(immediate.SourceKind, Is.EqualTo(CombatEffectSourceKind.Consumable));
+            Assert.That(Array.IndexOf(result.Events, used), Is.LessThan(Array.IndexOf(result.Events, request)));
+            Assert.That(Array.IndexOf(result.Events, request), Is.LessThan(Array.IndexOf(result.Events, immediate)));
+        }
+
+        [Test]
+        public void ConsumableConditionAboveThresholdAdvancesOnlyInterval()
+        {
+            var source = ConsumableAggregate(41, 2);
+            source.session.broughtConsumable.nextAllowedUseAtSeconds = 7d;
+            var store = new MemoryStore(source);
+            var service = ConsumableService(store, ConsumableProvider());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(result.Events.OfType<CombatConsumableUsedEvent>(), Is.Empty);
+            Assert.That(result.Events.OfType<CombatImmediateEffectEvent>(), Is.Empty);
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(41));
+            Assert.That(store.Value.session.broughtConsumable.remainingQuantity, Is.EqualTo(2));
+            Assert.That(store.Value.session.broughtConsumable.nextCheckAtSeconds, Is.EqualTo(2d));
+            Assert.That(store.Value.session.broughtConsumable.nextAllowedUseAtSeconds, Is.EqualTo(7d));
+        }
+
+        [Test]
+        public void ConsumableHealIsCappedAtMaxHp()
+        {
+            var store = new MemoryStore(ConsumableAggregate(90, 1));
+            var service = ConsumableService(
+                store,
+                ConsumableProvider(threshold: 100d));
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(100));
+            Assert.That(result.Events.OfType<CombatImmediateEffectEvent>().Single().HpAfter,
+                Is.EqualTo(100));
+        }
+
+        [Test]
+        public void LargeDeltaProcessesEveryConsumableCheckFromPreviousDueTimestamp()
+        {
+            var source = ConsumableAggregate(10, 3);
+            var store = new MemoryStore(source);
+            var service = ConsumableService(
+                store,
+                ConsumableProvider(heal: 1d, cooldown: 5d, interval: 1d));
+
+            var result = service.AdvanceTo("execution", 10d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(
+                result.Events.OfType<CombatConsumableUsedEvent>()
+                    .Select(value => value.TimestampSeconds),
+                Is.EqualTo(new[] { 1d, 6d }));
+            Assert.That(store.Value.session.broughtConsumable.remainingQuantity, Is.EqualTo(1));
+            Assert.That(store.Value.session.broughtConsumable.nextCheckAtSeconds, Is.EqualTo(11d));
+            Assert.That(store.Value.session.broughtConsumable.nextAllowedUseAtSeconds, Is.EqualTo(11d));
+        }
+
+        [Test]
+        public void ZeroCooldownUsesAtEveryIntervalAndStopsSchedulingAtQuantityZero()
+        {
+            var source = ConsumableAggregate(10, 3);
+            var store = new MemoryStore(source);
+            var service = ConsumableService(
+                store,
+                ConsumableProvider(heal: 1d, cooldown: 0d, interval: 1d));
+
+            var result = service.AdvanceTo("execution", 10d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(
+                result.Events.OfType<CombatConsumableUsedEvent>()
+                    .Select(value => value.TimestampSeconds),
+                Is.EqualTo(new[] { 1d, 2d, 3d }));
+            Assert.That(store.Value.session.broughtConsumable.remainingQuantity, Is.Zero);
+            Assert.That(
+                store.Value.session.scheduler.scheduledEvents.Count(
+                    value => value.eventType == CombatRuntimeService.ConsumableCheckEventType),
+                Is.Zero);
+        }
+
+        [Test]
+        public void StatusTickAtSameTimestampRunsBeforeConsumableCheck()
+        {
+            var source = ConsumableAggregate(50, 1);
+            source.session.hero.statuses = new[]
+            {
+                new CombatStatusInstanceSaveData
+                {
+                    statusInstanceId = "status-instance",
+                    statusId = "damage-status",
+                    sourceCombatantId = "enemy-combatant",
+                    stackIds = new[] { "stack-1" },
+                    expiresAtSeconds = 1d,
+                    nextTickAtSeconds = 1d
+                }
+            };
+            source.session.scheduler.nextSequence = 1;
+            source.session.scheduler.scheduledEvents = new[]
+            {
+                new CombatScheduledEventSaveData
+                {
+                    eventKey = "status-tick",
+                    eventType = "status_tick",
+                    timestampSeconds = 1d,
+                    phasePriority = (int)CombatScheduledEventPhase.StatusTick,
+                    actorSide = CombatActorSide.Enemy,
+                    sequence = 0,
+                    subjectCombatantId = "hero-combatant",
+                    effectInstanceId = "status-instance"
+                }
+            };
+            var statuses = new StatusDescriptorProvider()
+                .Add(PeriodicStatus(
+                    "damage-status",
+                    1d,
+                    1d,
+                    1,
+                    CombatEffectKind.Damage,
+                    10d));
+            var store = new MemoryStore(source);
+            var service = ConsumableService(
+                store,
+                ConsumableProvider(),
+                statuses: statuses);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var tick = result.Events.OfType<CombatStatusTickEvent>().Single();
+            var used = result.Events.OfType<CombatConsumableUsedEvent>().Single();
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(Array.IndexOf(result.Events, tick), Is.LessThan(Array.IndexOf(result.Events, used)));
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(65));
+        }
+
+        [Test]
+        public void DeathPreventionRunsBeforeConsumableCheckAtSameTimestamp()
+        {
+            var source = ConsumableAggregate(10, 1);
+            source.session.rng = ScriptedRngFactory.State(
+                ulong.MaxValue,
+                0,
+                ulong.MaxValue,
+                0);
+            var store = new MemoryStore(source);
+            var prevention = new DeathPreventionDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    DeathDescriptor("fixture-skill", "fixture-save", 100d));
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                Descriptor(
+                    CombatActorSide.Enemy,
+                    CombatAttackCadence.EnemyRate(1d),
+                    damageMin: 20,
+                    damageMax: 20));
+            var service = ConsumableService(
+                store,
+                ConsumableProvider(),
+                descriptors: descriptors,
+                rngFactory: new ScriptedRngFactory(),
+                deathPrevention: prevention);
+
+            var result = service.AdvanceTo("execution", 1d);
+            var prevented = result.Events.OfType<CombatDeathPreventedEvent>().Single();
+            var used = result.Events.OfType<CombatConsumableUsedEvent>().Single();
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(Array.IndexOf(result.Events, prevented), Is.LessThan(Array.IndexOf(result.Events, used)));
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(26));
+            Assert.That(store.Value.session.terminalCandidate, Is.Null);
+        }
+
+        [Test]
+        public void DefeatAtSameTimestampBlocksConsumableUse()
+        {
+            var source = ConsumableAggregate(10, 1);
+            source.session.rng = ScriptedRngFactory.State(
+                ulong.MaxValue,
+                0,
+                ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(100d)),
+                Descriptor(
+                    CombatActorSide.Enemy,
+                    CombatAttackCadence.EnemyRate(1d),
+                    damageMin: 10,
+                    damageMax: 10));
+            var service = ConsumableService(
+                store,
+                ConsumableProvider(),
+                descriptors: descriptors,
+                rngFactory: new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(result.Events.OfType<CombatConsumableUsedEvent>(), Is.Empty);
+            Assert.That(store.Value.session.broughtConsumable.remainingQuantity, Is.EqualTo(1));
+            Assert.That(store.Value.session.terminalCandidate.kind, Is.EqualTo(CombatTerminalCandidateKinds.Defeat));
+            Assert.That(store.Value.session.simulationStopped, Is.True);
+        }
+
+        [Test]
+        public void LastEnemyDeathAtSameTimestampBlocksConsumableUse()
+        {
+            var source = ConsumableAggregate(40, 1);
+            source.session.currentEnemy.currentHp = 1;
+            source.session.currentEnemy.maxHp = 1;
+            source.session.rng = ScriptedRngFactory.State(
+                ulong.MaxValue,
+                0,
+                ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var descriptors = new DescriptorProvider(
+                Descriptor(
+                    CombatActorSide.Hero,
+                    CombatAttackCadence.HeroInterval(1d),
+                    damageMin: 1,
+                    damageMax: 1),
+                Descriptor(
+                    CombatActorSide.Enemy,
+                    CombatAttackCadence.EnemyRate(0.01d)));
+            var service = ConsumableService(
+                store,
+                ConsumableProvider(),
+                descriptors: descriptors,
+                rngFactory: new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(result.Events.OfType<CombatConsumableUsedEvent>(), Is.Empty);
+            Assert.That(store.Value.session.broughtConsumable.remainingQuantity, Is.EqualTo(1));
+            Assert.That(store.Value.session.simulationStopped, Is.True);
+            Assert.That(
+                store.Value.session.scheduler.scheduledEvents.Count(
+                    value => value.eventType == CombatRuntimeService.ConsumableCheckEventType),
+                Is.Zero);
+        }
+
+        [Test]
+        public void QuantityZeroAndStoppedSessionNeverUseConsumable()
+        {
+            var emptyStore = new MemoryStore(ConsumableAggregate(40, 0));
+            var emptyService = ConsumableService(emptyStore, ConsumableProvider());
+
+            var empty = emptyService.AdvanceTo("execution", 1d);
+
+            Assert.That(empty.Success, Is.True, empty.Error?.Message);
+            Assert.That(empty.Events.OfType<CombatConsumableUsedEvent>(), Is.Empty);
+            Assert.That(
+                emptyStore.Value.session.scheduler.scheduledEvents.Count(
+                    value => value.eventType == CombatRuntimeService.ConsumableCheckEventType),
+                Is.Zero);
+
+            var stoppedSource = ConsumableAggregate(40, 1);
+            stoppedSource.session.simulationStopped = true;
+            var stoppedStore = new MemoryStore(stoppedSource);
+            var before = stoppedStore.Json;
+            var stopped = ConsumableService(stoppedStore, ConsumableProvider())
+                .AdvanceTo("execution", 1d);
+
+            Assert.That(stopped.Success, Is.False);
+            Assert.That(stopped.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.SimulationStopped));
+            Assert.That(stopped.Events, Is.Empty);
+            Assert.That(stoppedStore.Json, Is.EqualTo(before));
+        }
+
+        [Test]
+        public void ConsumableTimerContinuesAcrossEnemyTransition()
+        {
+            var source = QueueAggregate("enemy-a", 1, "enemy-b");
+            source.session.hero.currentHp = 40;
+            AddConsumable(source, 1, nextCheckAtSeconds: 2d);
+            source.session.rng = ScriptedRngFactory.State(
+                ulong.MaxValue, 0, ulong.MaxValue,
+                ulong.MaxValue, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var enemyQueue = new ConfigCombatEnemyQueueProvider(
+                EnemyConfigs(
+                    new[] { Enemy("enemy-a", 1), Enemy("enemy-b", 100) },
+                    Array.Empty<EnemyGroupConfigDto>()));
+            var descriptors = new DescriptorProvider(
+                Descriptor(
+                    CombatActorSide.Hero,
+                    CombatAttackCadence.HeroInterval(1d),
+                    damageMin: 1,
+                    damageMax: 1),
+                Descriptor(
+                    CombatActorSide.Enemy,
+                    CombatAttackCadence.EnemyRate(0.01d),
+                    damageMin: 1,
+                    damageMax: 1));
+            var service = ConsumableService(
+                store,
+                ConsumableProvider(),
+                descriptors: descriptors,
+                rngFactory: new ScriptedRngFactory(),
+                enemyQueue: enemyQueue);
+
+            var result = service.AdvanceTo("execution", 2d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(store.Value.session.queuePosition, Is.EqualTo(1));
+            Assert.That(result.Events.OfType<CombatConsumableUsedEvent>().Single().TimestampSeconds, Is.EqualTo(2d));
+            Assert.That(store.Value.session.broughtConsumable.remainingQuantity, Is.Zero);
+        }
+
+        [Test]
+        public void SaveLoadRestoresOneMissingCheckWithoutRepeatingUse()
+        {
+            var firstStore = new MemoryStore(ConsumableAggregate(40, 2));
+            var provider = ConsumableProvider();
+            var firstService = ConsumableService(firstStore, provider);
+            var first = firstService.AdvanceTo("execution", 1d);
+            var reloadedStore = new MemoryStore(firstStore.Value);
+            reloadedStore.Value.session.scheduler.scheduledEvents =
+                reloadedStore.Value.session.scheduler.scheduledEvents
+                    .Where(value => value.eventType != CombatRuntimeService.ConsumableCheckEventType)
+                    .ToArray();
+            var reloadedService = ConsumableService(reloadedStore, provider);
+
+            var replay = reloadedService.AdvanceTo("execution", 1d);
+            var duringCooldown = reloadedService.AdvanceTo("execution", 2d);
+
+            Assert.That(first.Events.OfType<CombatConsumableUsedEvent>().Count(), Is.EqualTo(1));
+            Assert.That(replay.Success, Is.True, replay.Error?.Message);
+            Assert.That(replay.Events.OfType<CombatConsumableUsedEvent>(), Is.Empty);
+            Assert.That(duringCooldown.Success, Is.True, duringCooldown.Error?.Message);
+            Assert.That(duringCooldown.Events.OfType<CombatConsumableUsedEvent>(), Is.Empty);
+            Assert.That(reloadedStore.Value.session.broughtConsumable.remainingQuantity, Is.EqualTo(1));
+            Assert.That(reloadedStore.Value.session.broughtConsumable.nextCheckAtSeconds, Is.EqualTo(3d));
+            Assert.That(
+                reloadedStore.Value.session.scheduler.scheduledEvents.Count(
+                    value => value.eventType == CombatRuntimeService.ConsumableCheckEventType),
+                Is.EqualTo(1));
+        }
+
+        [Test]
+        public void CustomConditionAndEffectRegistriesRequireNoOrchestrationBranch()
+        {
+            const CombatConsumableConditionKind customKind =
+                (CombatConsumableConditionKind)91;
+            const CombatConsumableComparisonOperator customOperator =
+                (CombatConsumableComparisonOperator)92;
+            const CombatEffectKind customEffectKind = (CombatEffectKind)93;
+            var conditions = new CombatConsumableConditionRegistry();
+            conditions.Register(customKind, customOperator, AlwaysConsumableCondition);
+            var effects = new CombatEffectExecutorRegistry();
+            effects.Register(customEffectKind, ExecuteFixtureConsumableEffect);
+            var descriptor = new CombatConsumableDescriptor(
+                "consumable_roasted_rabbit_meat",
+                CombatConsumableUsePlace.Combat,
+                new CombatConsumableConditionDescriptor(customKind, customOperator, 1d),
+                new CombatEffectDescriptor(customEffectKind),
+                0d,
+                1d,
+                10);
+            var store = new MemoryStore(ConsumableAggregate(100, 1));
+            var service = ConsumableService(
+                store,
+                new ConsumableDescriptorProvider(descriptor),
+                conditions: conditions,
+                effects: effects);
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(result.Events.OfType<FixtureConsumableEffectEvent>().Count(), Is.EqualTo(1));
+            Assert.That(store.Value.session.broughtConsumable.remainingQuantity, Is.Zero);
+        }
+
+        [Test]
+        public void ConsumableFailuresAndRejectedStoreRollBackWholeTransition()
+        {
+            var missingStore = new MemoryStore(ConsumableAggregate(40, 1));
+            AssertConsumableRollback(
+                missingStore,
+                ConsumableService(
+                    missingStore,
+                    EmptyCombatConsumableDescriptorProvider.Instance),
+                CombatAdvanceErrorCode.ConsumableDescriptorNotFound);
+
+            var conditionRegistry = new CombatConsumableConditionRegistry();
+            conditionRegistry.Register(
+                CombatConsumableConditionKind.HpPercent,
+                CombatConsumableComparisonOperator.LessOrEqual,
+                FailingConsumableCondition);
+            var conditionStore = new MemoryStore(ConsumableAggregate(40, 1));
+            AssertConsumableRollback(
+                conditionStore,
+                ConsumableService(
+                    conditionStore,
+                    ConsumableProvider(),
+                    conditions: conditionRegistry),
+                CombatAdvanceErrorCode.ConsumableConditionFailed);
+
+            var effectStore = new MemoryStore(ConsumableAggregate(40, 1));
+            var invalidEffectProvider = new ConsumableDescriptorProvider(
+                new CombatConsumableDescriptor(
+                    "consumable_roasted_rabbit_meat",
+                    CombatConsumableUsePlace.Combat,
+                    new CombatConsumableConditionDescriptor(
+                        CombatConsumableConditionKind.HpPercent,
+                        CombatConsumableComparisonOperator.LessOrEqual,
+                        40d),
+                    new CombatEffectDescriptor(
+                        CombatEffectKind.ApplyStatus,
+                        statusId: "missing-status"),
+                    5d,
+                    1d,
+                    10));
+            AssertConsumableRollback(
+                effectStore,
+                ConsumableService(effectStore, invalidEffectProvider),
+                CombatAdvanceErrorCode.StatusDescriptorNotFound);
+
+            var rejectedStore = new MemoryStore(ConsumableAggregate(40, 1))
+            {
+                RejectUpdates = true
+            };
+            AssertConsumableRollback(
+                rejectedStore,
+                ConsumableService(rejectedStore, ConsumableProvider()),
+                CombatAdvanceErrorCode.StoreUpdateFailed,
+                expectedUpdateCount: 1);
+        }
+
+        private static CombatRuntimeService ConsumableService(
+            MemoryStore store,
+            ICombatConsumableDescriptorProvider consumables,
+            CombatConsumableConditionRegistry conditions = null,
+            ICombatStatusDescriptorProvider statuses = null,
+            ICombatDescriptorProvider descriptors = null,
+            ICombatRngFactory rngFactory = null,
+            ICombatDeathPreventionDescriptorProvider deathPrevention = null,
+            ICombatEnemyQueueProvider enemyQueue = null,
+            CombatEffectExecutorRegistry effects = null)
+        {
+            return new CombatRuntimeService(
+                store,
+                descriptors ?? SlowDescriptors(),
+                rngFactory ?? new CombatRngFactory(),
+                enemyQueue,
+                null,
+                null,
+                statuses,
+                deathPrevention,
+                null,
+                consumables,
+                conditions,
+                effects);
+        }
+
+        private static ICombatConsumableDescriptorProvider ConsumableProvider(
+            double heal = 25d,
+            double cooldown = 5d,
+            double interval = 1d,
+            double threshold = 40d)
+        {
+            return new ConsumableDescriptorProvider(
+                new CombatConsumableDescriptor(
+                    "consumable_roasted_rabbit_meat",
+                    CombatConsumableUsePlace.Combat,
+                    new CombatConsumableConditionDescriptor(
+                        CombatConsumableConditionKind.HpPercent,
+                        CombatConsumableComparisonOperator.LessOrEqual,
+                        threshold),
+                    new CombatEffectDescriptor(
+                        CombatEffectKind.Heal,
+                        value: heal),
+                    cooldown,
+                    interval,
+                    10));
+        }
+
+        private static CombatRuntimeAggregate ConsumableAggregate(
+            int heroHp,
+            int quantity,
+            double nextCheckAtSeconds = 1d)
+        {
+            var aggregate = Aggregate(1000);
+            aggregate.session.hero.currentHp = heroHp;
+            aggregate.session.hero.maxHp = 100;
+            AddConsumable(aggregate, quantity, nextCheckAtSeconds);
+            return aggregate;
+        }
+
+        private static void AddConsumable(
+            CombatRuntimeAggregate aggregate,
+            int quantity,
+            double nextCheckAtSeconds)
+        {
+            aggregate.session.loadoutKind = CombatLoadoutKind.Consumable;
+            aggregate.session.broughtConsumable = new CombatConsumableStateSaveData
+            {
+                sourceStackId = "stack-roasted-meat",
+                itemId = "consumable_roasted_rabbit_meat",
+                initialQuantity = Math.Max(1, quantity),
+                remainingQuantity = quantity,
+                nextCheckAtSeconds = nextCheckAtSeconds
+            };
+        }
+
+        private static bool AlwaysConsumableCondition(
+            CombatConsumableConditionDescriptor condition,
+            CombatantStateSaveData hero,
+            out bool satisfied,
+            out string error)
+        {
+            satisfied = true;
+            error = null;
+            return true;
+        }
+
+        private static bool FailingConsumableCondition(
+            CombatConsumableConditionDescriptor condition,
+            CombatantStateSaveData hero,
+            out bool satisfied,
+            out string error)
+        {
+            satisfied = false;
+            error = "Simulated consumable condition failure.";
+            return false;
+        }
+
+        private static bool ExecuteFixtureConsumableEffect(
+            CombatSessionSaveData session,
+            CombatEffectRequest request,
+            List<CombatEvent> events,
+            out bool stateChanged,
+            out CombatHpMutation mutation,
+            out CombatAdvanceError error)
+        {
+            stateChanged = true;
+            mutation = null;
+            error = null;
+            events.Add(new FixtureConsumableEffectEvent(request));
+            return true;
+        }
+
+        private static void AssertConsumableRollback(
+            MemoryStore store,
+            CombatRuntimeService service,
+            CombatAdvanceErrorCode expectedError,
+            int expectedUpdateCount = 0)
+        {
+            var before = store.Json;
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(expectedError));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.EqualTo(expectedUpdateCount));
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
         private static DescriptorProvider DefaultDescriptors()
         {
             return new DescriptorProvider(
@@ -2382,6 +2971,44 @@ namespace GuildIdle.EditorTests.Player
                 descriptor = side == CombatActorSide.Hero ? _hero : _enemy;
                 error = null;
                 return descriptor != null;
+            }
+        }
+
+        private sealed class ConsumableDescriptorProvider :
+            ICombatConsumableDescriptorProvider
+        {
+            private readonly CombatConsumableDescriptor _descriptor;
+
+            public ConsumableDescriptorProvider(CombatConsumableDescriptor descriptor)
+            {
+                _descriptor = descriptor;
+            }
+
+            public bool TryGet(
+                string itemId,
+                out CombatConsumableDescriptor descriptor)
+            {
+                descriptor = string.Equals(
+                    itemId,
+                    _descriptor?.ItemId,
+                    StringComparison.Ordinal)
+                    ? _descriptor
+                    : null;
+                return descriptor != null;
+            }
+        }
+
+        private sealed class FixtureConsumableEffectEvent : CombatEvent
+        {
+            public FixtureConsumableEffectEvent(CombatEffectRequest request)
+                : base(
+                    request.EventKey,
+                    request.TimestampSeconds,
+                    request.Sequence,
+                    request.ActorSide,
+                    request.ActorCombatantId,
+                    request.TargetCombatantId)
+            {
             }
         }
 

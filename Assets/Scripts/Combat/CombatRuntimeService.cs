@@ -22,7 +22,8 @@ namespace GuildIdle.Combat
         StatusTick = 10,
         StatusExpiration = 20,
         ModifierExpiration = 30,
-        ActorAttack = 100
+        ActorAttack = 100,
+        ConsumableCheck = 200
     }
 
     public static class CombatStatIds
@@ -60,7 +61,11 @@ namespace GuildIdle.Combat
         EffectProcessingFailed = 25,
         DeathPreventionDescriptorNotFound = 26,
         InvalidDeathPreventionDescriptor = 27,
-        DeathPreventionFailed = 28
+        DeathPreventionFailed = 28,
+        ConsumableDescriptorNotFound = 29,
+        InvalidConsumableDescriptor = 30,
+        ConsumableConditionFailed = 31,
+        ConsumableProcessingFailed = 32
     }
 
     public readonly struct CombatAttackCadence
@@ -286,6 +291,40 @@ namespace GuildIdle.Combat
         }
     }
 
+    public sealed class CombatConsumableUsedEvent : CombatEvent
+    {
+        public CombatConsumableUsedEvent(
+            string eventKey,
+            double timestampSeconds,
+            long sequence,
+            string itemId,
+            string sourceStackId,
+            int quantityBefore,
+            int quantityAfter,
+            double nextAllowedUseAtSeconds,
+            string targetCombatantId)
+            : base(
+                eventKey,
+                timestampSeconds,
+                sequence,
+                CombatActorSide.System,
+                null,
+                targetCombatantId)
+        {
+            ItemId = itemId;
+            SourceStackId = sourceStackId;
+            QuantityBefore = quantityBefore;
+            QuantityAfter = quantityAfter;
+            NextAllowedUseAtSeconds = nextAllowedUseAtSeconds;
+        }
+
+        public string ItemId { get; }
+        public string SourceStackId { get; }
+        public int QuantityBefore { get; }
+        public int QuantityAfter { get; }
+        public double NextAllowedUseAtSeconds { get; }
+    }
+
     public sealed class CombatAdvanceResult
     {
         private CombatAdvanceResult(
@@ -452,6 +491,8 @@ namespace GuildIdle.Combat
     public sealed class CombatRuntimeService
     {
         public const string ActorAttackEventType = "actor_attack";
+        public const string ConsumableCheckEventType = "consumable_check";
+        public const string ConsumableAutoUseTrigger = "AutoUse";
         private const double PercentScale = 100d / 9007199254740992d;
 
         private readonly ICombatRuntimeStore _store;
@@ -460,7 +501,10 @@ namespace GuildIdle.Combat
         private readonly ICombatEnemyQueueProvider _enemyQueue;
         private readonly CombatAbilityDispatcher _abilityDispatcher;
         private readonly CombatStatusRuntime _statusRuntime;
+        private readonly CombatStatusRuntime _effectRuntime;
         private readonly CombatDeathPreventionResolver _deathPrevention;
+        private readonly ICombatConsumableDescriptorProvider _consumables;
+        private readonly CombatConsumableConditionRegistry _consumableConditions;
 
         public CombatRuntimeService(
             ICombatRuntimeStore store,
@@ -471,7 +515,10 @@ namespace GuildIdle.Combat
             CombatAbilityRegistry abilityRegistry = null,
             ICombatStatusDescriptorProvider statuses = null,
             ICombatDeathPreventionDescriptorProvider deathPrevention = null,
-            CombatDeathPreventionRegistry deathPreventionRegistry = null)
+            CombatDeathPreventionRegistry deathPreventionRegistry = null,
+            ICombatConsumableDescriptorProvider consumables = null,
+            CombatConsumableConditionRegistry consumableConditions = null,
+            CombatEffectExecutorRegistry effects = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _descriptors = descriptors ?? throw new ArgumentNullException(nameof(descriptors));
@@ -480,10 +527,19 @@ namespace GuildIdle.Combat
             _abilityDispatcher = new CombatAbilityDispatcher(
                 abilities ?? EmptyCombatAbilityDescriptorProvider.Instance,
                 abilityRegistry ?? new CombatAbilityRegistry());
-            _statusRuntime = statuses == null ? null : new CombatStatusRuntime(statuses);
+            _statusRuntime = statuses == null
+                ? null
+                : new CombatStatusRuntime(statuses, effects);
+            _effectRuntime = _statusRuntime ??
+                new CombatStatusRuntime(
+                    EmptyCombatStatusDescriptorProvider.Instance,
+                    effects);
             _deathPrevention = new CombatDeathPreventionResolver(
                 deathPrevention ?? EmptyCombatDeathPreventionDescriptorProvider.Instance,
                 deathPreventionRegistry ?? new CombatDeathPreventionRegistry());
+            _consumables = consumables ?? EmptyCombatConsumableDescriptorProvider.Instance;
+            _consumableConditions =
+                consumableConditions ?? new CombatConsumableConditionRegistry();
         }
 
         public CombatAdvanceResult AdvanceTo(string executionId, double targetCombatTimeSeconds)
@@ -569,6 +625,13 @@ namespace GuildIdle.Combat
                 var resolvedCombatTime = targetCombatTimeSeconds;
                 var terminalAtBattleStart = false;
                 scheduler.scheduledEvents ??= Array.Empty<CombatScheduledEventSaveData>();
+                if (!TryEnsureConsumableSchedule(
+                        aggregate.session,
+                        out var consumableScheduleChanged,
+                        out error))
+                {
+                    return CombatAdvanceResult.Failed(error, currentTime);
+                }
                 if (!TryDispatchBattleStart(
                         aggregate.session,
                         CombatActorSide.Hero,
@@ -630,6 +693,7 @@ namespace GuildIdle.Combat
 
                 if (!heroAbilityStateChanged &&
                     !enemyAbilityStateChanged &&
+                    !consumableScheduleChanged &&
                     !terminalAtBattleStart &&
                     CanReturnWithoutAdvance(aggregate.session, targetCombatTimeSeconds))
                 {
@@ -719,6 +783,33 @@ namespace GuildIdle.Combat
                                 resolvedCombatTime = scheduledEvent.timestampSeconds;
                                 break;
                             }
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(
+                            scheduledEvent.eventType,
+                            ConsumableCheckEventType,
+                            StringComparison.Ordinal))
+                    {
+                        if (alreadyResolved)
+                            continue;
+                        if (!TryResolveConsumableCheck(
+                                aggregate.session,
+                                scheduledEvent,
+                                rng,
+                                events,
+                                out var consumableTerminal,
+                                out error))
+                        {
+                            return CombatAdvanceResult.Failed(error, currentTime);
+                        }
+
+                        if (consumableTerminal)
+                        {
+                            resolvedCombatTime = scheduledEvent.timestampSeconds;
+                            break;
                         }
 
                         continue;
@@ -1064,6 +1155,408 @@ namespace GuildIdle.Combat
             return true;
         }
 
+        private bool TryEnsureConsumableSchedule(
+            CombatSessionSaveData session,
+            out bool changed,
+            out CombatAdvanceError error)
+        {
+            changed = false;
+            error = null;
+            var scheduler = session?.scheduler;
+            if (scheduler?.scheduledEvents == null)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidAggregate,
+                    "Consumable scheduling requires a combat session and scheduler.");
+                return false;
+            }
+
+            CombatScheduledEventSaveData pending = null;
+            foreach (var value in scheduler.scheduledEvents)
+            {
+                if (!string.Equals(
+                        value?.eventType,
+                        ConsumableCheckEventType,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (pending != null)
+                {
+                    error = new CombatAdvanceError(
+                        CombatAdvanceErrorCode.InvalidAggregate,
+                        "Combat scheduler contains duplicated consumable checks.");
+                    return false;
+                }
+
+                pending = value;
+            }
+
+            var state = session.broughtConsumable;
+            if (session.loadoutKind != CombatLoadoutKind.Consumable || state == null)
+            {
+                if (pending == null)
+                    return true;
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidAggregate,
+                    "Combat scheduler retains a consumable check without a consumable loadout.");
+                return false;
+            }
+
+            if (state.remainingQuantity <= 0 ||
+                session.simulationStopped ||
+                HasTerminalCandidate(session) ||
+                session.hero?.currentHp <= 0 ||
+                session.currentEnemy?.currentHp <= 0)
+            {
+                if (pending == null)
+                    return true;
+                RemovePendingConsumableChecks(scheduler);
+                changed = true;
+                return true;
+            }
+
+            if (pending != null)
+            {
+                if (pending.actorSide != CombatActorSide.System ||
+                    pending.phasePriority != (int)CombatScheduledEventPhase.ConsumableCheck ||
+                    !string.IsNullOrWhiteSpace(pending.subjectCombatantId) ||
+                    !string.IsNullOrWhiteSpace(pending.effectInstanceId) ||
+                    pending.timestampSeconds != state.nextCheckAtSeconds ||
+                    string.Equals(
+                        pending.eventKey,
+                        state.lastAppliedEventKey,
+                        StringComparison.Ordinal) ||
+                    string.Equals(
+                        pending.eventKey,
+                        scheduler.lastResolvedEventKey,
+                        StringComparison.Ordinal))
+                {
+                    error = new CombatAdvanceError(
+                        CombatAdvanceErrorCode.InvalidAggregate,
+                        "Combat scheduler contains an invalid consumable check.");
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (!TryScheduleConsumableCheck(
+                    session,
+                    state.nextCheckAtSeconds,
+                    out error))
+            {
+                return false;
+            }
+
+            changed = true;
+            return true;
+        }
+
+        private bool TryResolveConsumableCheck(
+            CombatSessionSaveData session,
+            CombatScheduledEventSaveData scheduledEvent,
+            ICombatRng rng,
+            List<CombatEvent> events,
+            out bool terminal,
+            out CombatAdvanceError error)
+        {
+            terminal = false;
+            error = null;
+            var state = session?.broughtConsumable;
+            if (session?.scheduler == null ||
+                state == null ||
+                scheduledEvent == null ||
+                events == null ||
+                scheduledEvent.actorSide != CombatActorSide.System ||
+                scheduledEvent.phasePriority != (int)CombatScheduledEventPhase.ConsumableCheck ||
+                scheduledEvent.timestampSeconds != state.nextCheckAtSeconds)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.ConsumableProcessingFailed,
+                    "Consumable check does not match the saved combat state.");
+                return false;
+            }
+
+            if (session.simulationStopped ||
+                HasTerminalCandidate(session) ||
+                session.hero?.currentHp <= 0 ||
+                session.currentEnemy?.currentHp <= 0)
+            {
+                return true;
+            }
+
+            if (string.Equals(
+                    state.lastAppliedEventKey,
+                    scheduledEvent.eventKey,
+                    StringComparison.Ordinal))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.ConsumableProcessingFailed,
+                    "Consumable check event was already applied.");
+                return false;
+            }
+
+            if (state.remainingQuantity <= 0)
+                return true;
+
+            CombatConsumableDescriptor descriptor;
+            try
+            {
+                if (!_consumables.TryGet(state.itemId, out descriptor) ||
+                    descriptor == null)
+                {
+                    error = new CombatAdvanceError(
+                        CombatAdvanceErrorCode.ConsumableDescriptorNotFound,
+                        $"Combat consumable descriptor '{state.itemId}' was not found.");
+                    return false;
+                }
+            }
+            catch (Exception exception)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidConsumableDescriptor,
+                    $"Combat consumable provider failed: {exception.Message}");
+                return false;
+            }
+
+            if (!ValidateConsumableDescriptor(state, descriptor, out error))
+                return false;
+
+            var nextCheckAtSeconds =
+                scheduledEvent.timestampSeconds + descriptor.CheckIntervalSeconds;
+            if (InvalidTime(nextCheckAtSeconds) ||
+                nextCheckAtSeconds <= scheduledEvent.timestampSeconds)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidConsumableDescriptor,
+                    "Combat consumable check interval does not advance scheduler time.");
+                return false;
+            }
+
+            if (!_consumableConditions.TryEvaluate(
+                    descriptor.Condition,
+                    session.hero,
+                    out var conditionSatisfied,
+                    out var conditionError))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.ConsumableConditionFailed,
+                    conditionError ?? "Combat consumable condition evaluation failed.");
+                return false;
+            }
+
+            if (!conditionSatisfied ||
+                scheduledEvent.timestampSeconds < state.nextAllowedUseAtSeconds)
+            {
+                state.nextCheckAtSeconds = nextCheckAtSeconds;
+                return TryScheduleConsumableCheck(
+                    session,
+                    nextCheckAtSeconds,
+                    out error);
+            }
+
+            var nextAllowedUseAtSeconds =
+                scheduledEvent.timestampSeconds + descriptor.CooldownSeconds;
+            if (InvalidTime(nextAllowedUseAtSeconds) ||
+                nextAllowedUseAtSeconds < scheduledEvent.timestampSeconds)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidConsumableDescriptor,
+                    "Combat consumable cooldown produces an invalid timestamp.");
+                return false;
+            }
+
+            if (!TryReserveSequence(session.scheduler, out var effectSequence))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.ConsumableProcessingFailed,
+                    "Combat scheduler sequence is exhausted during consumable use.");
+                return false;
+            }
+
+            var effectEventKey = $"{scheduledEvent.eventKey}:effect";
+            var request = new CombatEffectRequest(
+                effectEventKey,
+                scheduledEvent.eventKey,
+                scheduledEvent.timestampSeconds,
+                effectSequence,
+                CombatEffectSourceKind.Consumable,
+                CombatActorSide.Hero,
+                session.hero.combatantId,
+                descriptor.ItemId,
+                ConsumableAutoUseTrigger,
+                session.hero.combatantId,
+                descriptor.Effect);
+            var quantityBefore = state.remainingQuantity;
+            var quantityAfter = quantityBefore - 1;
+            events.Add(new CombatConsumableUsedEvent(
+                scheduledEvent.eventKey,
+                scheduledEvent.timestampSeconds,
+                scheduledEvent.sequence,
+                state.itemId,
+                state.sourceStackId,
+                quantityBefore,
+                quantityAfter,
+                nextAllowedUseAtSeconds,
+                session.hero.combatantId));
+            events.Add(request);
+            if (!_effectRuntime.TryApplyEffectRequest(
+                    session,
+                    request,
+                    events,
+                    out _,
+                    out var mutation,
+                    out error))
+            {
+                return false;
+            }
+
+            if (mutation != null &&
+                !TryResolveTerminalBoundary(
+                    session,
+                    mutation,
+                    rng,
+                    events,
+                    out var targetSurvived,
+                    out error))
+            {
+                return false;
+            }
+
+            state.remainingQuantity = quantityAfter;
+            state.nextAllowedUseAtSeconds = nextAllowedUseAtSeconds;
+            state.nextCheckAtSeconds = nextCheckAtSeconds;
+            state.lastAppliedEventKey = scheduledEvent.eventKey;
+            terminal = session.simulationStopped || HasTerminalCandidate(session);
+            if (terminal || state.remainingQuantity == 0)
+                return true;
+
+            return TryScheduleConsumableCheck(
+                session,
+                nextCheckAtSeconds,
+                out error);
+        }
+
+        private bool ValidateConsumableDescriptor(
+            CombatConsumableStateSaveData state,
+            CombatConsumableDescriptor descriptor,
+            out CombatAdvanceError error)
+        {
+            error = null;
+            if (state == null ||
+                descriptor == null ||
+                !string.Equals(state.itemId, descriptor.ItemId, StringComparison.Ordinal) ||
+                descriptor.UsePlace != CombatConsumableUsePlace.Combat ||
+                descriptor.Condition == null ||
+                !_consumableConditions.IsRegistered(
+                    descriptor.Condition.Kind,
+                    descriptor.Condition.Operator) ||
+                InvalidTime(descriptor.CooldownSeconds) ||
+                InvalidTime(descriptor.CheckIntervalSeconds) ||
+                descriptor.CheckIntervalSeconds <= 0d ||
+                !ValidateConsumableEffect(descriptor.Effect))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidConsumableDescriptor,
+                    $"Combat consumable descriptor '{descriptor?.ItemId ?? "<null>"}' is invalid or unsupported.");
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool ValidateConsumableEffect(CombatEffectDescriptor effect)
+        {
+            if (effect == null || !_effectRuntime.IsEffectSupported(effect.Kind))
+                return false;
+            if (effect.Kind == CombatEffectKind.ApplyStatus)
+                return !string.IsNullOrWhiteSpace(effect.StatusId);
+            if (effect.Kind == CombatEffectKind.ModifyStat)
+            {
+                return !string.IsNullOrWhiteSpace(effect.StatId) &&
+                       !InvalidNumber(effect.Value) &&
+                       !InvalidTime(effect.DurationSeconds) &&
+                       effect.DurationSeconds > 0d;
+            }
+
+            if (effect.Kind == CombatEffectKind.Damage ||
+                effect.Kind == CombatEffectKind.Heal)
+            {
+                return !InvalidNumber(effect.Value) && effect.Value > 0d;
+            }
+
+            return true;
+        }
+
+        private static bool TryScheduleConsumableCheck(
+            CombatSessionSaveData session,
+            double timestampSeconds,
+            out CombatAdvanceError error)
+        {
+            error = null;
+            if (session?.scheduler?.scheduledEvents == null ||
+                InvalidTime(timestampSeconds))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.ConsumableProcessingFailed,
+                    "Consumable check requires a valid scheduler timestamp.");
+                return false;
+            }
+
+            foreach (var value in session.scheduler.scheduledEvents)
+            {
+                if (string.Equals(
+                        value?.eventType,
+                        ConsumableCheckEventType,
+                        StringComparison.Ordinal))
+                {
+                    error = new CombatAdvanceError(
+                        CombatAdvanceErrorCode.ConsumableProcessingFailed,
+                        "Combat scheduler already contains a pending consumable check.");
+                    return false;
+                }
+            }
+
+            if (session.scheduler.scheduledEvents.Length >=
+                CombatRuntimeSaveDataUtility.PersistentCollectionLimit)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.ConsumableProcessingFailed,
+                    "Combat scheduler reached its bounded event limit.");
+                return false;
+            }
+
+            if (!TryReserveSequence(session.scheduler, out var sequence))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.ConsumableProcessingFailed,
+                    "Combat scheduler sequence is exhausted.");
+                return false;
+            }
+
+            var scheduledEvent = new CombatScheduledEventSaveData
+            {
+                eventKey = $"{session.sessionId}:consumable:check:{sequence}",
+                eventType = ConsumableCheckEventType,
+                timestampSeconds = timestampSeconds,
+                phasePriority = (int)CombatScheduledEventPhase.ConsumableCheck,
+                actorSide = CombatActorSide.System,
+                sequence = sequence
+            };
+            var expanded =
+                new CombatScheduledEventSaveData[session.scheduler.scheduledEvents.Length + 1];
+            Array.Copy(
+                session.scheduler.scheduledEvents,
+                expanded,
+                session.scheduler.scheduledEvents.Length);
+            expanded[expanded.Length - 1] = scheduledEvent;
+            Array.Sort(expanded, CombatScheduledEventComparer.Instance);
+            session.scheduler.scheduledEvents = expanded;
+            return true;
+        }
+
         private static bool TryScheduleInitialAttack(
             CombatSessionSaveData session,
             CombatActorSide side,
@@ -1226,6 +1719,7 @@ namespace GuildIdle.Combat
             if (queue.Length == 0)
             {
                 RemovePendingActorAttacks(session.scheduler);
+                RemovePendingConsumableChecks(session.scheduler);
                 session.simulationStopped = true;
                 queueCompleted = true;
                 return true;
@@ -1276,6 +1770,7 @@ namespace GuildIdle.Combat
             if (nextPosition >= queue.Length)
             {
                 RemovePendingActorAttacks(session.scheduler);
+                RemovePendingConsumableChecks(session.scheduler);
                 session.queuePosition = queue.Length;
                 session.currentEnemy = null;
                 session.simulationStopped = true;
@@ -1396,6 +1891,27 @@ namespace GuildIdle.Combat
             }
 
             scheduler.scheduledEvents = retained.ToArray();
+        }
+
+        private static void RemovePendingConsumableChecks(
+            CombatSchedulerStateSaveData scheduler)
+        {
+            var retained = new List<CombatScheduledEventSaveData>(
+                scheduler?.scheduledEvents?.Length ?? 0);
+            foreach (var value in scheduler?.scheduledEvents ??
+                                  Array.Empty<CombatScheduledEventSaveData>())
+            {
+                if (!string.Equals(
+                        value?.eventType,
+                        ConsumableCheckEventType,
+                        StringComparison.Ordinal))
+                {
+                    retained.Add(value);
+                }
+            }
+
+            if (scheduler != null)
+                scheduler.scheduledEvents = retained.ToArray();
         }
 
         private static bool TryResolveAttack(

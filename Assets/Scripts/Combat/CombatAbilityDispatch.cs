@@ -20,6 +20,13 @@ namespace GuildIdle.Combat
         Heal = 3
     }
 
+    public enum CombatEffectSourceKind
+    {
+        Ability = 0,
+        Status = 1,
+        Consumable = 2
+    }
+
     public sealed class CombatEffectDescriptor
     {
         public CombatEffectDescriptor(
@@ -88,6 +95,33 @@ namespace GuildIdle.Combat
             string trigger,
             string targetCombatantId,
             CombatEffectDescriptor effect)
+            : this(
+                eventKey,
+                triggerEventKey,
+                timestampSeconds,
+                sequence,
+                CombatEffectSourceKind.Ability,
+                sourceOwnerSide,
+                sourceOwnerCombatantId,
+                sourceAbilityId,
+                trigger,
+                targetCombatantId,
+                effect)
+        {
+        }
+
+        public CombatEffectRequest(
+            string eventKey,
+            string triggerEventKey,
+            double timestampSeconds,
+            long sequence,
+            CombatEffectSourceKind sourceKind,
+            CombatActorSide sourceOwnerSide,
+            string sourceOwnerCombatantId,
+            string sourceDescriptorId,
+            string trigger,
+            string targetCombatantId,
+            CombatEffectDescriptor effect)
             : base(
                 eventKey,
                 timestampSeconds,
@@ -97,17 +131,21 @@ namespace GuildIdle.Combat
                 targetCombatantId)
         {
             TriggerEventKey = triggerEventKey;
+            SourceKind = sourceKind;
             SourceOwnerSide = sourceOwnerSide;
             SourceOwnerCombatantId = sourceOwnerCombatantId;
-            SourceAbilityId = sourceAbilityId;
+            SourceDescriptorId = sourceDescriptorId;
             Trigger = trigger;
             Effect = effect;
         }
 
         public string TriggerEventKey { get; }
+        public CombatEffectSourceKind SourceKind { get; }
         public CombatActorSide SourceOwnerSide { get; }
         public string SourceOwnerCombatantId { get; }
-        public string SourceAbilityId { get; }
+        public string SourceDescriptorId { get; }
+        public string SourceAbilityId =>
+            SourceKind == CombatEffectSourceKind.Ability ? SourceDescriptorId : null;
         public string Trigger { get; }
         public CombatEffectDescriptor Effect { get; }
     }
@@ -564,6 +602,7 @@ namespace GuildIdle.Combat
                     triggerEventKey,
                     timestampSeconds,
                     sequence,
+                    CombatEffectSourceKind.Ability,
                     ownerSide,
                     owner.combatantId,
                     ability.AbilityId,

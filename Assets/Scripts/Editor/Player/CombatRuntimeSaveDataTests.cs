@@ -304,6 +304,7 @@ namespace GuildIdle.Editor.Player
         [TestCase("negative-sequence")]
         [TestCase("sequence-at-next")]
         [TestCase("duplicate-hero-attack")]
+        [TestCase("duplicate-consumable-check")]
         [TestCase("system-actor-attack")]
         [TestCase("wrong-attack-phase")]
         [TestCase("empty-event-key")]
@@ -591,6 +592,14 @@ namespace GuildIdle.Editor.Player
                         ActorAttack(1, "hero-attack-b", CombatActorSide.Hero)
                     };
                     return;
+                case "duplicate-consumable-check":
+                    scheduler.nextSequence = 2;
+                    scheduler.scheduledEvents = new[]
+                    {
+                        ConsumableCheck(0, "consumable-check-a"),
+                        ConsumableCheck(1, "consumable-check-b")
+                    };
+                    return;
                 case "system-actor-attack":
                     scheduler.nextSequence = 1;
                     scheduler.scheduledEvents = new[]
@@ -660,6 +669,21 @@ namespace GuildIdle.Editor.Player
                 timestampSeconds = 2d,
                 phasePriority = phasePriority,
                 actorSide = side,
+                sequence = sequence
+            };
+        }
+
+        private static CombatScheduledEventSaveData ConsumableCheck(
+            long sequence,
+            string eventKey)
+        {
+            return new CombatScheduledEventSaveData
+            {
+                eventKey = eventKey,
+                eventType = CombatRuntimeService.ConsumableCheckEventType,
+                timestampSeconds = 2d,
+                phasePriority = (int)CombatScheduledEventPhase.ConsumableCheck,
+                actorSide = CombatActorSide.System,
                 sequence = sequence
             };
         }

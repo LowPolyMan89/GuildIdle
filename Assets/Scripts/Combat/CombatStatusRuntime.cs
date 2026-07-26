@@ -46,6 +46,26 @@ namespace GuildIdle.Combat
             out string error);
     }
 
+    public sealed class EmptyCombatStatusDescriptorProvider : ICombatStatusDescriptorProvider
+    {
+        public static readonly EmptyCombatStatusDescriptorProvider Instance =
+            new EmptyCombatStatusDescriptorProvider();
+
+        private EmptyCombatStatusDescriptorProvider()
+        {
+        }
+
+        public bool TryGetStatus(
+            string statusId,
+            out CombatStatusDescriptor descriptor,
+            out string error)
+        {
+            descriptor = null;
+            error = $"Combat status '{statusId ?? "<null>"}' was not found.";
+            return false;
+        }
+    }
+
     public sealed class ConfigCombatStatusDescriptorProvider : ICombatStatusDescriptorProvider
     {
         private readonly EnemiesConfigRepository _configs;
@@ -206,7 +226,8 @@ namespace GuildIdle.Combat
                 request.SourceOwnerCombatantId,
                 request.TargetCombatantId)
         {
-            SourceEffectId = request.SourceAbilityId;
+            SourceEffectId = request.SourceDescriptorId;
+            SourceKind = request.SourceKind;
             EffectKind = effectKind;
             Amount = amount;
             HpBefore = hpBefore;
@@ -215,6 +236,7 @@ namespace GuildIdle.Combat
         }
 
         public string SourceEffectId { get; }
+        public CombatEffectSourceKind SourceKind { get; }
         public CombatEffectKind EffectKind { get; }
         public int Amount { get; }
         public int HpBefore { get; }
@@ -309,6 +331,39 @@ namespace GuildIdle.Combat
         public double Value { get; }
     }
 
+    public delegate bool TryExecuteCombatEffect(
+        CombatSessionSaveData session,
+        CombatEffectRequest request,
+        List<CombatEvent> events,
+        out bool stateChanged,
+        out CombatHpMutation mutation,
+        out CombatAdvanceError error);
+
+    public sealed class CombatEffectExecutorRegistry
+    {
+        private readonly Dictionary<CombatEffectKind, TryExecuteCombatEffect> _handlers =
+            new Dictionary<CombatEffectKind, TryExecuteCombatEffect>();
+
+        public void Register(
+            CombatEffectKind kind,
+            TryExecuteCombatEffect handler)
+        {
+            if (handler == null)
+                throw new ArgumentNullException(nameof(handler));
+            _handlers[kind] = handler;
+        }
+
+        internal IEnumerable<KeyValuePair<CombatEffectKind, TryExecuteCombatEffect>>
+            Handlers => _handlers;
+
+        internal bool TryGet(
+            CombatEffectKind kind,
+            out TryExecuteCombatEffect handler)
+        {
+            return _handlers.TryGetValue(kind, out handler);
+        }
+    }
+
     internal sealed class CombatStatusRuntime
     {
         public const string StatusTickEventType = "status_tick";
@@ -316,10 +371,27 @@ namespace GuildIdle.Combat
         public const string ModifierExpirationEventType = "modifier_expiration";
 
         private readonly ICombatStatusDescriptorProvider _provider;
+        private readonly CombatEffectExecutorRegistry _effects;
 
-        public CombatStatusRuntime(ICombatStatusDescriptorProvider provider)
+        public CombatStatusRuntime(
+            ICombatStatusDescriptorProvider provider,
+            CombatEffectExecutorRegistry effects = null)
         {
             _provider = provider ?? throw new ArgumentNullException(nameof(provider));
+            _effects = new CombatEffectExecutorRegistry();
+            _effects.Register(CombatEffectKind.ApplyStatus, TryExecuteApplyStatus);
+            _effects.Register(CombatEffectKind.ModifyStat, TryExecuteModifyStat);
+            _effects.Register(CombatEffectKind.Damage, TryExecuteImmediate);
+            _effects.Register(CombatEffectKind.Heal, TryExecuteImmediate);
+            if (effects == null)
+                return;
+            foreach (var value in effects.Handlers)
+                _effects.Register(value.Key, value.Value);
+        }
+
+        public bool IsEffectSupported(CombatEffectKind kind)
+        {
+            return _effects.TryGet(kind, out _);
         }
 
         public bool IsScheduledEvent(CombatScheduledEventSaveData scheduledEvent)
@@ -360,75 +432,127 @@ namespace GuildIdle.Combat
             if (target.currentHp <= 0)
                 return true;
 
-            switch (request.Effect.Kind)
+            if (!_effects.TryGet(request.Effect.Kind, out var handler))
             {
-                case CombatEffectKind.ApplyStatus:
-                    return TryApplyStatus(
-                        session,
-                        target,
-                        request,
-                        events,
-                        out stateChanged,
-                        out error);
-                case CombatEffectKind.ModifyStat:
-                    return TryApplyIndependentModifier(
-                        session,
-                        target,
-                        request,
-                        events,
-                        out stateChanged,
-                        out error);
-                case CombatEffectKind.Damage:
-                case CombatEffectKind.Heal:
-                    if (!TryApplyImmediateEffect(
-                            target,
-                            request.Effect,
-                            1,
-                            out var amount,
-                            out var hpBefore,
-                            out var rawHpAfter,
-                            out var hpAfter,
-                            out var hpMutated,
-                            out error))
-                    {
-                        return false;
-                    }
-
-                    var immediateEvent = new CombatImmediateEffectEvent(
-                        request,
-                        request.Effect.Kind,
-                        amount,
-                        hpBefore,
-                        rawHpAfter,
-                        hpAfter);
-                    events.Add(immediateEvent);
-                    var targetSide = string.Equals(
-                        session.hero?.combatantId,
-                        target.combatantId,
-                        StringComparison.Ordinal)
-                        ? CombatActorSide.Hero
-                        : CombatActorSide.Enemy;
-                    mutation = new CombatHpMutation(
-                        request.EventKey,
-                        request.SourceAbilityId,
-                        request.TimestampSeconds,
-                        request.Sequence,
-                        request.SourceOwnerSide,
-                        request.SourceOwnerCombatantId,
-                        targetSide,
-                        target.combatantId,
-                        hpBefore,
-                        rawHpAfter,
-                        hpAfter,
-                        immediateEvent.SetHpAfter);
-                    stateChanged = hpMutated;
-                    return true;
-                default:
-                    return Fail(
-                        CombatAdvanceErrorCode.EffectProcessingFailed,
-                        $"Combat effect kind '{request.Effect.Kind}' is not supported.",
-                        out error);
+                return Fail(
+                    CombatAdvanceErrorCode.EffectProcessingFailed,
+                    $"Combat effect kind '{request.Effect.Kind}' is not registered.",
+                    out error);
             }
+
+            try
+            {
+                return handler(
+                    session,
+                    request,
+                    events,
+                    out stateChanged,
+                    out mutation,
+                    out error);
+            }
+            catch (Exception exception)
+            {
+                stateChanged = false;
+                mutation = null;
+                return Fail(
+                    CombatAdvanceErrorCode.EffectProcessingFailed,
+                    $"Combat effect handler failed: {exception.Message}",
+                    out error);
+            }
+        }
+
+        private bool TryExecuteApplyStatus(
+            CombatSessionSaveData session,
+            CombatEffectRequest request,
+            List<CombatEvent> events,
+            out bool stateChanged,
+            out CombatHpMutation mutation,
+            out CombatAdvanceError error)
+        {
+            mutation = null;
+            var target = FindCombatant(session, request.TargetCombatantId);
+            return TryApplyStatus(
+                session,
+                target,
+                request,
+                events,
+                out stateChanged,
+                out error);
+        }
+
+        private bool TryExecuteModifyStat(
+            CombatSessionSaveData session,
+            CombatEffectRequest request,
+            List<CombatEvent> events,
+            out bool stateChanged,
+            out CombatHpMutation mutation,
+            out CombatAdvanceError error)
+        {
+            mutation = null;
+            var target = FindCombatant(session, request.TargetCombatantId);
+            return TryApplyIndependentModifier(
+                session,
+                target,
+                request,
+                events,
+                out stateChanged,
+                out error);
+        }
+
+        private static bool TryExecuteImmediate(
+            CombatSessionSaveData session,
+            CombatEffectRequest request,
+            List<CombatEvent> events,
+            out bool stateChanged,
+            out CombatHpMutation mutation,
+            out CombatAdvanceError error)
+        {
+            stateChanged = false;
+            mutation = null;
+            var target = FindCombatant(session, request.TargetCombatantId);
+            if (!TryApplyImmediateEffect(
+                    target,
+                    request.Effect,
+                    1,
+                    out var amount,
+                    out var hpBefore,
+                    out var rawHpAfter,
+                    out var hpAfter,
+                    out var hpMutated,
+                    out error))
+            {
+                return false;
+            }
+
+            var immediateEvent = new CombatImmediateEffectEvent(
+                request,
+                request.Effect.Kind,
+                amount,
+                hpBefore,
+                rawHpAfter,
+                hpAfter);
+            events.Add(immediateEvent);
+            var targetSide = string.Equals(
+                session.hero?.combatantId,
+                target.combatantId,
+                StringComparison.Ordinal)
+                ? CombatActorSide.Hero
+                : CombatActorSide.Enemy;
+            mutation = new CombatHpMutation(
+                request.EventKey,
+                request.SourceDescriptorId,
+                request.TimestampSeconds,
+                request.Sequence,
+                request.SourceOwnerSide,
+                request.SourceOwnerCombatantId,
+                targetSide,
+                target.combatantId,
+                hpBefore,
+                rawHpAfter,
+                hpAfter,
+                immediateEvent.SetHpAfter);
+            stateChanged = hpMutated;
+            return true;
         }
 
         public bool TryResolveScheduledEvent(
@@ -793,7 +917,7 @@ namespace GuildIdle.Combat
             var modifier = new CombatTemporaryModifierSaveData
             {
                 modifierInstanceId = modifierInstanceId,
-                sourceId = request.SourceAbilityId ?? request.SourceOwnerCombatantId,
+                sourceId = request.SourceDescriptorId ?? request.SourceOwnerCombatantId,
                 statId = effect.StatId,
                 operation = CombatModifierOperations.Add,
                 value = (float)effect.Value,

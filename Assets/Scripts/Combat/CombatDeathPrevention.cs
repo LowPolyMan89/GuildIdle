@@ -402,7 +402,7 @@ namespace GuildIdle.Combat
         public int FinalHp { get; }
     }
 
-    internal sealed class CombatHpMutation
+    public sealed class CombatHpMutation
     {
         private readonly Action<int> _setEventFinalHp;
 
