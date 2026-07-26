@@ -39,6 +39,86 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void Validate_CombatConsumableResolvesCanonicalStorageRule()
+        {
+            var report = ConfigCrossConfigValidator.Validate(
+                CombatConsumableValidationCollection("valid"));
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+        }
+
+        [Test]
+        public void Validate_DisabledConsumableDoesNotRequireSupportedDescriptorGrammar()
+        {
+            var report = ConfigCrossConfigValidator.Validate(
+                CombatConsumableValidationCollection(
+                    "disabled",
+                    enabled: "FALSE",
+                    usePlace: "unsupported_place",
+                    useCondition: "unsupported_condition",
+                    effect: "UnsupportedEffect"));
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+        }
+
+        [TestCase("inventory", "hp_percent<=40", "RestoreHealthFlat:25", "5", "1")]
+        [TestCase("combat", "HP_PERCENT<=40", "RestoreHealthFlat:25", "5", "1")]
+        [TestCase("combat", "hp_percent<40", "RestoreHealthFlat:25", "5", "1")]
+        [TestCase("combat", "hp_percent<=40", "restorehealthflat:25", "5", "1")]
+        [TestCase("combat", "hp_percent<=40", "RestoreHealthFlat:0", "5", "1")]
+        [TestCase("combat", "hp_percent<=40", "RestoreHealthFlat:25", "-1", "1")]
+        [TestCase("combat", "hp_percent<=40", "RestoreHealthFlat:25", "5", "0")]
+        public void Validate_RejectsInvalidEnabledCombatConsumable(
+            string usePlace,
+            string useCondition,
+            string effect,
+            string cooldownSeconds,
+            string checkIntervalSeconds)
+        {
+            var report = ConfigCrossConfigValidator.Validate(
+                CombatConsumableValidationCollection(
+                    "invalid",
+                    usePlace: usePlace,
+                    useCondition: useCondition,
+                    effect: effect,
+                    cooldownSeconds: cooldownSeconds,
+                    checkIntervalSeconds: checkIntervalSeconds));
+
+            Assert.That(report.Success, Is.False);
+        }
+
+        [TestCase("single", "20")]
+        [TestCase("stack", "0")]
+        public void Validate_RejectsIncompatibleCombatConsumableStorageRule(
+            string mode,
+            string maxStack)
+        {
+            var report = ConfigCrossConfigValidator.Validate(
+                CombatConsumableValidationCollection(
+                    "invalid-storage",
+                    storageMode: mode,
+                    maxStack: maxStack));
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("StorageRule"));
+        }
+
+        [TestCase(0)]
+        [TestCase(2)]
+        public void Validate_RequiresExactlyOneCombatConsumableStorageRule(int ruleCount)
+        {
+            var report = ConfigCrossConfigValidator.Validate(
+                CombatConsumableValidationCollection(
+                    $"rule-count-{ruleCount}",
+                    storageRuleCount: ruleCount));
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(
+                report.ToDisplayMessage(),
+                Does.Contain($"exactly one matching StorageRules.item_kind; found {ruleCount}"));
+        }
+
+        [Test]
         public void Validate_DangerAndBuildReferencesUseUniversalFormulaRegistry()
         {
             var valid = Collection(
@@ -1418,6 +1498,65 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Sheet("CraftDefinitions",
                     Row("craft_id", "target_item_id", "materials", "required_recipe_item_id", "enabled"),
                     Row("craft_test", targetItemId, materials, requiredRecipeItemId, craftEnabled)));
+        }
+
+        private static ConfigSourceSettingsCollection CombatConsumableValidationCollection(
+            string suffix,
+            string enabled = "TRUE",
+            string usePlace = "combat",
+            string useCondition = "hp_percent<=40",
+            string effect = "RestoreHealthFlat:25",
+            string cooldownSeconds = "5",
+            string checkIntervalSeconds = "1",
+            string storageMode = "stack",
+            string maxStack = "20",
+            int storageRuleCount = 1)
+        {
+            var storageRows = new List<ConfigSheetRow>
+            {
+                Row("storage_rule_id", "item_kind", "mode", "max_stack")
+            };
+            for (var index = 0; index < storageRuleCount; index++)
+            {
+                storageRows.Add(
+                    Row(
+                        $"storage_consumable_{index}",
+                        "consumable",
+                        storageMode,
+                        maxStack));
+            }
+
+            return Collection(
+                Source(
+                    "items_configs",
+                    "Items Configs",
+                    $"combat-consumable-items-{suffix}.json",
+                    Download(
+                        Sheet(
+                            "Расходники",
+                            Row(
+                                "id",
+                                "kind",
+                                "use_place",
+                                "use_condition",
+                                "effects",
+                                "cooldown_seconds",
+                                "check_interval_seconds",
+                                "enabled"),
+                            Row(
+                                "consumable_fixture",
+                                "consumable",
+                                usePlace,
+                                useCondition,
+                                effect,
+                                cooldownSeconds,
+                                checkIntervalSeconds,
+                                enabled)))),
+                Source(
+                    "storage_configs",
+                    "Storage Configs",
+                    $"combat-consumable-storage-{suffix}.json",
+                    Download(Sheet("StorageRules", storageRows.ToArray()))));
         }
 
         private static ConfigSheetDownload EmptyDownload()

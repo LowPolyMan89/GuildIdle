@@ -1,8 +1,11 @@
+using GuildIdle.Combat;
+
 namespace GuildIdle.Configs
 {
     public sealed class ConfigDatabase
     {
         public ItemsConfigRepository Items { get; }
+        public CombatConsumableDescriptorRepository CombatConsumables { get; }
         public HeroesConfigRepository Heroes { get; }
         public ActivitiesConfigRepository Activities { get; }
         public BuildingsConfigRepository Buildings { get; }
@@ -29,6 +32,8 @@ namespace GuildIdle.Configs
             LocalisationRuntimeConfigDto localisation)
         {
             Items = new ItemsConfigRepository(items);
+            Storage = new StorageConfigRepository(storage);
+            CombatConsumables = new CombatConsumableDescriptorRepository(Items, Storage);
             Heroes = new HeroesConfigRepository(heroes);
             Activities = new ActivitiesConfigRepository(activities);
             Buildings = new BuildingsConfigRepository(buildings);
@@ -38,7 +43,6 @@ namespace GuildIdle.Configs
             Formulas = new FormulasConfigRepository(formulas);
             Loot = new LootConfigRepository(loot);
             Map = new MapConfigRepository(map);
-            Storage = new StorageConfigRepository(storage);
             Localisation = new LocalisationConfigRepository(localisation);
         }
     }

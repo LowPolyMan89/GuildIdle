@@ -1063,7 +1063,16 @@ namespace GuildIdle.Editor.Activities
                     },
                     consumables = new[]
                     {
-                        new ConsumableConfigDto { id = "test_work_consumable", kind = "consumable" }
+                        new ConsumableConfigDto
+                        {
+                            id = "test_work_consumable",
+                            kind = "consumable",
+                            usePlace = "combat",
+                            useCondition = "hp_percent<=40",
+                            effects = new[] { "RestoreHealthFlat:25" },
+                            cooldownSeconds = 5d,
+                            checkIntervalSeconds = 1d
+                        }
                     },
                     currencies = new[]
                     {

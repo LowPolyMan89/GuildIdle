@@ -68,7 +68,16 @@ namespace GuildIdle.Editor.Configs
                 },
                 consumables = new[]
                 {
-                    new ConsumableConfigDto { id = "consumable_hunting_potion", kind = "consumable" }
+                    new ConsumableConfigDto
+                    {
+                        id = "consumable_hunting_potion",
+                        kind = "consumable",
+                        usePlace = "combat",
+                        useCondition = "hp_percent<=40",
+                        effects = new[] { "RestoreHealthFlat:25" },
+                        cooldownSeconds = 5d,
+                        checkIntervalSeconds = 1d
+                    }
                 },
                 currencies = new[]
                 {

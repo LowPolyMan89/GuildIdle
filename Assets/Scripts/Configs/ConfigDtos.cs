@@ -218,8 +218,8 @@ namespace GuildIdle.Configs
         public string usePlace;
         public string useCondition;
         public string[] effects = Array.Empty<string>();
-        public int cooldownSeconds;
-        public int checkIntervalSeconds;
+        public double cooldownSeconds;
+        public double checkIntervalSeconds;
 
         public string Id => id;
         public string NameId => nameId;

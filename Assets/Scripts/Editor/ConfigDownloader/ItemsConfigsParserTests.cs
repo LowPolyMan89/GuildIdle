@@ -62,7 +62,104 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"requiredBuildings\": ["));
             Assert.That(runtimeJson, Does.Contain("\"buildingId\": \"building_forge\""));
             Assert.That(runtimeJson, Does.Contain("\"requiredSkills\": []"));
-            Assert.That(runtimeJson, Does.Contain("\"effects\": [\"ModifyRisk: hunting_combat_risk -10%\", \"ModifyReward: resource_thin_hide +1\"]"));
+            Assert.That(runtimeJson, Does.Contain("\"effects\": [\"RestoreHealthFlat:25\"]"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_ExportsOnlyEnabledConsumablesAndPreservesFractionalSeconds()
+        {
+            var download = CreateValidDownload();
+            var consumables = FindSheet(download, "Расходники");
+            consumables.rows = Append(
+                consumables.rows,
+                Row(
+                    "consumable_disabled",
+                    "Disabled",
+                    "item.consumable_disabled.name",
+                    "item.consumable_disabled.description",
+                    "icon_consumable_disabled",
+                    "consumable",
+                    "Common",
+                    "unsupported_place",
+                    "unsupported_condition",
+                    "UnsupportedEffect",
+                    "1.25",
+                    "disabled",
+                    "0.25",
+                    "FALSE"));
+            WriteRaw(download);
+
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out var runtimeJson);
+
+            Assert.That(report.Success, Is.True, report.ToDisplayMessage());
+            Assert.That(runtimeJson, Does.Contain("\"cooldownSeconds\": 0.5"));
+            Assert.That(runtimeJson, Does.Contain("\"checkIntervalSeconds\": 0.5"));
+            Assert.That(runtimeJson, Does.Not.Contain("consumable_disabled"));
+
+            var dto = JsonUtility.FromJson<GuildIdle.Configs.ItemsRuntimeConfigDto>(runtimeJson);
+            Assert.That(dto.consumables, Has.Length.EqualTo(1));
+            Assert.That(dto.consumables[0].cooldownSeconds, Is.EqualTo(0.5d));
+            Assert.That(dto.consumables[0].checkIntervalSeconds, Is.EqualTo(0.5d));
+            var provider = new GuildIdle.Combat.CombatConsumableDescriptorRepository(
+                new GuildIdle.Configs.ItemsConfigRepository(dto),
+                new GuildIdle.Configs.StorageConfigRepository(
+                    new GuildIdle.Configs.StorageRuntimeConfigDto
+                    {
+                        storageRules = new[]
+                        {
+                            new GuildIdle.Configs.StorageRuleConfigDto
+                            {
+                                storageRuleId = "storage_consumable",
+                                itemKind = "consumable",
+                                mode = "stack",
+                                maxStack = 20
+                            }
+                        }
+                    }));
+            Assert.That(provider.TryGet("consumable_disabled", out _), Is.False);
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RequiresEnabledColumnForConsumables()
+        {
+            var download = CreateValidDownload();
+            var consumables = FindSheet(download, "Расходники");
+            consumables.rows[0].cells[13] = "legacy_enabled";
+            WriteRaw(download);
+
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("column 'enabled'").And.Contain("Required column is missing"));
+        }
+
+        [TestCase("kind", "resource")]
+        [TestCase("use_place", "inventory")]
+        [TestCase("use_condition", "HP_PERCENT<=40")]
+        [TestCase("use_condition", "hp_percent<40")]
+        [TestCase("use_condition", "hp_percent<=")]
+        [TestCase("use_condition", "hp_percent<=101")]
+        [TestCase("use_condition", "hp_percent<=NaN")]
+        [TestCase("use_condition", "hp_percent<=40;hp_percent<=20")]
+        [TestCase("effects", "restorehealthflat:25")]
+        [TestCase("effects", "RestoreHealthFlat")]
+        [TestCase("effects", "RestoreHealthFlat:25;RestoreHealthFlat:10")]
+        [TestCase("effects", "RestoreHealthFlat:NaN")]
+        [TestCase("effects", "RestoreHealthFlat:0")]
+        [TestCase("cooldown_seconds", "-1")]
+        [TestCase("cooldown_seconds", "Infinity")]
+        [TestCase("check_interval_seconds", "0")]
+        [TestCase("check_interval_seconds", "-1")]
+        public void BuildRuntimeJson_RejectsInvalidEnabledCombatConsumable(string column, string value)
+        {
+            var download = CreateValidDownload();
+            SetCell(FindSheet(download, "Расходники"), 1, column, value);
+            WriteRaw(download);
+
+            var report = new ItemsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain($"column '{column}'"));
         }
 
         [Test]
@@ -413,8 +510,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("craft_simple_shield", "item_simple_shield", "building_forge", "30", "skill_production", "building_forge:1", "resource_pine_plank:2;resource_copper_ingot:1", "", "0", "FALSE", "1", "TRUE", "note", "1", "10"),
                         Row("craft_aska_bow", "item_aska_bow", "building_carpentry", "30", "skill_crafting", "building_carpentry:1", "resource_pine_plank:2", "recipe_aska_bow", "1", "TRUE", "1", "TRUE", "note", "1", "10")),
                     Sheet("Расходники",
-                        Row("id", "Название", "name_id", "description_id", "icon_id", "kind", "rarity_id", "use_place", "use_condition", "effects", "cooldown_seconds", "check_interval_seconds", "notes"),
-                        Row("consumable_hunting_potion", "Зелье охоты", "item.consumable_hunting_potion.name", "item.consumable_hunting_potion.description", "icon_consumable_hunting_potion", "consumable", "Common", "work", "activity_id=hunt_rabbits", "ModifyRisk: hunting_combat_risk -10%; ModifyReward: resource_thin_hide +1", "0", "5", "note")),
+                        Row("id", "Название", "name_id", "description_id", "icon_id", "kind", "rarity_id", "use_place", "use_condition", "effects", "cooldown_seconds", "notes", "check_interval_seconds", "enabled"),
+                        Row("consumable_hunting_potion", "Зелье охоты", "item.consumable_hunting_potion.name", "item.consumable_hunting_potion.description", "icon_consumable_hunting_potion", "consumable", "Common", "combat", "hp_percent<=40", "RestoreHealthFlat:25", "0.5", "note", "0.5", "TRUE")),
                     Sheet("Валюты",
                         Row("currency_id", "icon_id", "name_id", "description_id", "notes"),
                         Row("gold_id", "gold_icon", "gold_name_id", "gold_description_id", "note")),
@@ -487,6 +584,19 @@ namespace GuildIdle.Editor.ConfigDownloader
             }
 
             throw new InvalidOperationException($"Missing test sheet {sheetName}.");
+        }
+
+        private static void SetCell(
+            ConfigDownloadedSheet sheet,
+            int dataRowIndex,
+            string column,
+            string value)
+        {
+            var columnIndex = Array.IndexOf(sheet.rows[0].cells, column);
+            if (columnIndex < 0)
+                throw new InvalidOperationException($"Missing test column {column}.");
+
+            sheet.rows[dataRowIndex].cells[columnIndex] = value;
         }
 
         private static void WriteRaw(ConfigSheetDownload download)

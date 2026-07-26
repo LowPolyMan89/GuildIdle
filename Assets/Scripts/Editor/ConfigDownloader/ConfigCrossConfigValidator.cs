@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using GuildIdle.Combat;
 using GuildIdle.Core;
 using UnityEngine;
 
@@ -2150,29 +2151,129 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static void ValidateConsumables(ItemsRegistry items, ConfigRegistry registry, ConfigPipelineReport report)
             {
-                if (!items.Source.TryGetTable(ConsumablesSheet, out var table))
-                    return;
-
-                foreach (var row in table.DataRows)
+                if (!items.Source.TryGetTable(ConsumablesSheet, out var table) ||
+                    !table.HasColumn("enabled"))
                 {
-                    var useCondition = row.Get("use_condition");
-                    var activityId = ExtractValueAfterPrefix(useCondition, "activity_id=");
-                    if (!IsBlank(activityId))
+                    return;
+                }
+
+                foreach (var row in RuntimeRows(table))
+                {
+                    if (!CombatConsumableConfigParser.TryParseSource(
+                            row.Get("kind"),
+                            row.Get("use_place"),
+                            row.Get("use_condition"),
+                            row.Get("effects"),
+                            row.Get("cooldown_seconds"),
+                            row.Get("check_interval_seconds"),
+                            out _,
+                            out _,
+                            out _,
+                            out _,
+                            out var parseError))
                     {
-                        if (TryGetRequiredRegistry(report, registry.Activity, "Activity Configs") &&
-                            !registry.Activity.ActivityIds.Contains(activityId))
-                        {
-                            AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "use_condition", activityId, "use_condition activity_id does not exist in Activity Configs / Activities.id.");
-                        }
+                        var column = ConsumableErrorColumn(parseError);
+                        AddIssue(
+                            report,
+                            items.Source.DisplayName,
+                            table.Name,
+                            row.RowNumber,
+                            column,
+                            row.Get(column),
+                            parseError);
                     }
 
-                    foreach (var effect in SplitSemicolon(row.Get("effects")))
+                    if (!TryGetRequiredRegistry(report, registry.Storage, "Storage Configs") ||
+                        !registry.Storage.Source.TryGetTable("StorageRules", out var storageRules))
                     {
-                        var resourceId = ExtractModifyRewardResource(effect);
-                        if (!IsBlank(resourceId) && !items.ResourceIds.Contains(resourceId))
-                            AddIssue(report, items.Source.DisplayName, table.Name, row.RowNumber, "effects", resourceId, "effects references missing Items Configs / Ресурсы.id.");
+                        continue;
+                    }
+
+                    ConfigSheetDataRow matchingRule = null;
+                    var matchingRuleCount = 0;
+                    foreach (var storageRule in storageRules.DataRows)
+                    {
+                        if (!string.Equals(
+                                storageRule.Get("item_kind"),
+                                row.Get("kind"),
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        matchingRuleCount++;
+                        matchingRule = storageRule;
+                    }
+
+                    if (matchingRuleCount != 1)
+                    {
+                        AddIssue(
+                            report,
+                            items.Source.DisplayName,
+                            table.Name,
+                            row.RowNumber,
+                            "kind",
+                            row.Get("kind"),
+                            $"Enabled combat consumable requires exactly one matching StorageRules.item_kind; found {matchingRuleCount}.");
+                        continue;
+                    }
+
+                    if (!string.Equals(matchingRule.Get("mode"), "stack", StringComparison.OrdinalIgnoreCase))
+                    {
+                        AddIssue(
+                            report,
+                            registry.Storage.Source.DisplayName,
+                            "StorageRules",
+                            matchingRule.RowNumber,
+                            "mode",
+                            matchingRule.Get("mode"),
+                            "Combat consumable StorageRule mode must be 'stack'.");
+                    }
+
+                    if (!int.TryParse(
+                            matchingRule.Get("max_stack"),
+                            NumberStyles.Integer,
+                            CultureInfo.InvariantCulture,
+                            out var maxStack) ||
+                        maxStack <= 0)
+                    {
+                        AddIssue(
+                            report,
+                            registry.Storage.Source.DisplayName,
+                            "StorageRules",
+                            matchingRule.RowNumber,
+                            "max_stack",
+                            matchingRule.Get("max_stack"),
+                            "Combat consumable StorageRule max_stack must be an Int32 greater than 0.");
                     }
                 }
+            }
+
+            private static string ConsumableErrorColumn(string error)
+            {
+                if (error != null && error.StartsWith("kind", StringComparison.Ordinal))
+                    return "kind";
+                if (error != null && error.StartsWith("use_place", StringComparison.Ordinal))
+                    return "use_place";
+                if (error != null &&
+                    (error.StartsWith("use_condition", StringComparison.Ordinal) ||
+                     error.StartsWith("Unknown condition", StringComparison.Ordinal) ||
+                     error.StartsWith("hp_percent", StringComparison.Ordinal)))
+                {
+                    return "use_condition";
+                }
+                if (error != null &&
+                    (error.StartsWith("effects", StringComparison.Ordinal) ||
+                     error.StartsWith("effect", StringComparison.Ordinal) ||
+                     error.StartsWith("Unknown effect", StringComparison.Ordinal) ||
+                     error.StartsWith("RestoreHealthFlat", StringComparison.Ordinal)))
+                {
+                    return "effects";
+                }
+                if (error != null && error.StartsWith("cooldown_seconds", StringComparison.Ordinal))
+                    return "cooldown_seconds";
+
+                return "check_interval_seconds";
             }
 
             private static void ValidateActionConflicts(ItemsRegistry items, ConfigRegistry registry, ConfigPipelineReport report)
@@ -3186,49 +3287,5 @@ namespace GuildIdle.Editor.ConfigDownloader
                 yield return currencies;
         }
 
-        private static IEnumerable<string> SplitSemicolon(string raw)
-        {
-            if (string.IsNullOrWhiteSpace(raw))
-                yield break;
-
-            foreach (var part in raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                var value = part.Trim();
-                if (!string.IsNullOrWhiteSpace(value))
-                    yield return value;
-            }
-        }
-
-        private static string ExtractValueAfterPrefix(string raw, string prefix)
-        {
-            if (string.IsNullOrWhiteSpace(raw))
-                return string.Empty;
-
-            var index = raw.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
-                return string.Empty;
-
-            var start = index + prefix.Length;
-            var end = raw.IndexOfAny(new[] { ';', ' ', '\t', '\r', '\n' }, start);
-            return end < 0 ? raw.Substring(start).Trim() : raw.Substring(start, end - start).Trim();
-        }
-
-        private static string ExtractModifyRewardResource(string effect)
-        {
-            if (string.IsNullOrWhiteSpace(effect) ||
-                effect.IndexOf("ModifyReward", StringComparison.OrdinalIgnoreCase) < 0)
-            {
-                return string.Empty;
-            }
-
-            foreach (var token in effect.Split(new[] { ' ', ':', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                var value = token.Trim();
-                if (value.StartsWith("resource_", StringComparison.OrdinalIgnoreCase))
-                    return value;
-            }
-
-            return string.Empty;
-        }
     }
 }

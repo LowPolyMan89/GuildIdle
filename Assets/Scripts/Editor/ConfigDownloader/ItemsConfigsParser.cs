@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using GuildIdle.Combat;
 using UnityEditor;
 
 namespace GuildIdle.Editor.ConfigDownloader
@@ -73,7 +74,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             [ConsumablesSheet] = new[]
             {
                 "id", "Название", "name_id", "description_id", "icon_id", "kind", "rarity_id",
-                "use_place", "use_condition", "effects", "cooldown_seconds", "check_interval_seconds", "notes"
+                "use_place", "use_condition", "effects", "cooldown_seconds", "check_interval_seconds", "enabled", "notes"
             },
             [CurrenciesSheet] = new[] { "currency_id", "icon_id", "name_id", "description_id", "notes" }
         };
@@ -249,7 +250,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     ["equipmentArmor"] = BuildRows(EquipmentArmorSheet, BuildEquipmentArmorRow),
                     ["recipes"] = BuildEnabledRows(RecipesSheet, BuildRecipeRow),
                     ["craftDefinitions"] = BuildEnabledRows(CraftDefinitionsSheet, BuildCraftDefinitionRow),
-                    ["consumables"] = BuildRows(ConsumablesSheet, BuildConsumableRow),
+                    ["consumables"] = BuildEnabledRows(ConsumablesSheet, BuildConsumableRow),
                     ["currencies"] = BuildRows(CurrenciesSheet, BuildCurrencyRow)
                 };
 
@@ -381,8 +382,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                          {
                              "tier", "craft_duration_sec", "visibility_item_count", "output_count", "skill_exp",
                              "weapon_damage_min", "weapon_damage_max", "weapon_attack_interval",
-                             "physical_resist_bonus", "magic_resist_bonus", "max_hp_bonus", "cooldown_seconds",
-                             "check_interval_seconds"
+                             "physical_resist_bonus", "magic_resist_bonus", "max_hp_bonus"
                          })
                 {
                     if (!row.Table.HasColumn(column))
@@ -435,9 +435,87 @@ namespace GuildIdle.Editor.ConfigDownloader
             private void ValidateConsumable(ConfigSheetDataRow row)
             {
                 ValidateRequired(row, "use_place");
+                ValidateRequired(row, "use_condition");
                 ValidateRequired(row, "effects");
-                ValidateNumberGreaterThanOrEqual(row, "cooldown_seconds", 0, "cooldown_seconds must be greater than or equal to 0.");
-                ValidateNumberGreaterThan(row, "check_interval_seconds", 0, "check_interval_seconds must be greater than 0.");
+                ValidateRequired(row, "cooldown_seconds");
+                ValidateRequired(row, "check_interval_seconds");
+
+                var scalarsValid = true;
+                if (!CombatConsumableConfigParser.TryParseFiniteDouble(
+                        row.Get("cooldown_seconds"),
+                        out _))
+                {
+                    AddIssue(
+                        row.Table.Name,
+                        row.RowNumber,
+                        "cooldown_seconds",
+                        row.Get("cooldown_seconds"),
+                        "cooldown_seconds must be a finite invariant double.");
+                    scalarsValid = false;
+                }
+                if (!CombatConsumableConfigParser.TryParseFiniteDouble(
+                        row.Get("check_interval_seconds"),
+                        out _))
+                {
+                    AddIssue(
+                        row.Table.Name,
+                        row.RowNumber,
+                        "check_interval_seconds",
+                        row.Get("check_interval_seconds"),
+                        "check_interval_seconds must be a finite invariant double.");
+                    scalarsValid = false;
+                }
+
+                if (!TryParseBool(row, "enabled", required: true, out var enabled) || !enabled)
+                    return;
+                if (!scalarsValid)
+                    return;
+
+                if (CombatConsumableConfigParser.TryParseSource(
+                        row.Get("kind"),
+                        row.Get("use_place"),
+                        row.Get("use_condition"),
+                        row.Get("effects"),
+                        row.Get("cooldown_seconds"),
+                        row.Get("check_interval_seconds"),
+                        out _,
+                        out _,
+                        out _,
+                        out _,
+                        out var error))
+                {
+                    return;
+                }
+
+                var column = ConsumableErrorColumn(error);
+                AddIssue(row.Table.Name, row.RowNumber, column, row.Get(column), error);
+            }
+
+            private static string ConsumableErrorColumn(string error)
+            {
+                if (error != null && error.StartsWith("kind", StringComparison.Ordinal))
+                    return "kind";
+                if (error != null && error.StartsWith("use_place", StringComparison.Ordinal))
+                    return "use_place";
+                if (error != null &&
+                    (error.StartsWith("use_condition", StringComparison.Ordinal) ||
+                     error.StartsWith("Unknown condition", StringComparison.Ordinal) ||
+                     error.StartsWith("hp_percent", StringComparison.Ordinal)))
+                {
+                    return "use_condition";
+                }
+                if (error != null &&
+                    (error.StartsWith("effects", StringComparison.Ordinal) ||
+                     error.StartsWith("effect", StringComparison.Ordinal) ||
+                     error.StartsWith("Unknown effect", StringComparison.Ordinal) ||
+                     error.StartsWith("RestoreHealthFlat", StringComparison.Ordinal)))
+                {
+                    return "effects";
+                }
+                if (error != null && error.StartsWith("cooldown_seconds", StringComparison.Ordinal))
+                    return "cooldown_seconds";
+
+                return "check_interval_seconds";
             }
 
             private void ValidateEquipmentSlot(ConfigSheetDataRow row)

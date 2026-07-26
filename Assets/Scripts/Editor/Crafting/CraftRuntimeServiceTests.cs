@@ -1629,8 +1629,8 @@ namespace GuildIdle.Editor.Crafting
                     },
                     consumables = new[]
                     {
-                        new ConsumableConfigDto { id = "consumable_roasted_rabbit_meat", kind = "consumable" },
-                        new ConsumableConfigDto { id = "consumable_other", kind = "consumable" }
+                        Consumable("consumable_roasted_rabbit_meat"),
+                        Consumable("consumable_other")
                     },
                     craftDefinitions = new[]
                     {
@@ -1754,6 +1754,20 @@ namespace GuildIdle.Editor.Crafting
                     }
                 },
                 null);
+        }
+
+        private static ConsumableConfigDto Consumable(string id)
+        {
+            return new ConsumableConfigDto
+            {
+                id = id,
+                kind = "consumable",
+                usePlace = "combat",
+                useCondition = "hp_percent<=40",
+                effects = new[] { "RestoreHealthFlat:25" },
+                cooldownSeconds = 5d,
+                checkIntervalSeconds = 1d
+            };
         }
 
         private static CraftDefinitionConfigDto Definition(

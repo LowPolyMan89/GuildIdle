@@ -1,4 +1,5 @@
 using System;
+using GuildIdle.Combat;
 using GuildIdle.Localisation;
 using UnityEngine;
 
@@ -21,6 +22,8 @@ namespace GuildIdle.Configs
         public static string LastError { get; private set; }
 
         public static ItemsConfigRepository Items => GetRepository(database => database.Items, "Items");
+        public static ICombatConsumableDescriptorProvider CombatConsumables =>
+            GetRepository(database => database.CombatConsumables, "CombatConsumables");
         public static HeroesConfigRepository Heroes => GetRepository(database => database.Heroes, "Heroes");
         public static ActivitiesConfigRepository Activities => GetRepository(database => database.Activities, "Activities");
         public static BuildingsConfigRepository Buildings => GetRepository(database => database.Buildings, "Buildings");
