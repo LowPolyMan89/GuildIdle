@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace GuildIdle.Combat
 {
@@ -9,6 +10,13 @@ namespace GuildIdle.Combat
         Running = 1,
         ResultPending = 2,
         Completed = 3
+    }
+
+    public enum CombatLoadoutKind
+    {
+        None = 0,
+        Empty = 1,
+        Consumable = 2
     }
 
     [Serializable]
@@ -35,6 +43,8 @@ namespace GuildIdle.Combat
         public string sourceRequestId;
         public string occupationOwnerId;
         public string heroId;
+        public string startOperationId;
+        public string startFingerprint;
         public CombatExecutionStatus status = CombatExecutionStatus.Running;
         public string outcome;
         public bool outcomeFinalized;
@@ -63,6 +73,7 @@ namespace GuildIdle.Combat
         public CombatRewardEntrySaveData[] loot = Array.Empty<CombatRewardEntrySaveData>();
         public long accumulatedEnemyExp;
         public CombatRewardEntrySaveData[] completionRewards = Array.Empty<CombatRewardEntrySaveData>();
+        public CombatLoadoutKind loadoutKind;
         public CombatConsumableStateSaveData broughtConsumable;
         public CombatDeathPreventionOperationSaveData lastDeathPreventionOperation;
         public CombatTerminalCandidateSaveData terminalCandidate;
@@ -178,13 +189,24 @@ namespace GuildIdle.Combat
     [Serializable]
     public sealed class CombatConsumableStateSaveData
     {
-        public string originStackId;
+        public string sourceStackId;
+        [SerializeField, HideInInspector]
+        private string originStackId;
         public string itemId;
         public int initialQuantity;
         public int remainingQuantity;
         public double nextCheckAtSeconds;
         public double nextAllowedUseAtSeconds;
         public string lastAppliedEventKey;
+
+        internal string ResolveSourceStackId()
+        {
+            return string.IsNullOrWhiteSpace(sourceStackId)
+                ? originStackId
+                : sourceStackId;
+        }
+
+        internal bool HasLegacySourceStackId => !string.IsNullOrWhiteSpace(originStackId);
     }
 
     [Serializable]
@@ -234,7 +256,8 @@ namespace GuildIdle.Combat
             if (executionSource == null || sessionSource == null)
                 return Fail("Combat aggregate requires both execution and session.", out error);
 
-            changed = HasNullCollections(sessionSource);
+            changed = HasNullCollections(sessionSource) ||
+                      sessionSource.broughtConsumable?.HasLegacySourceStackId == true;
             var execution = CloneExecution(executionSource);
             var session = CloneSession(sessionSource);
             changed |= Canonicalize(session);
@@ -285,6 +308,8 @@ namespace GuildIdle.Combat
                 sourceRequestId = source.sourceRequestId,
                 occupationOwnerId = source.occupationOwnerId,
                 heroId = source.heroId,
+                startOperationId = source.startOperationId,
+                startFingerprint = source.startFingerprint,
                 status = source.status,
                 outcome = source.outcome,
                 outcomeFinalized = source.outcomeFinalized,
@@ -328,6 +353,7 @@ namespace GuildIdle.Combat
                 loot = CloneRewards(source.loot),
                 accumulatedEnemyExp = source.accumulatedEnemyExp,
                 completionRewards = CloneRewards(source.completionRewards),
+                loadoutKind = source.loadoutKind,
                 broughtConsumable = CloneConsumable(source.broughtConsumable),
                 lastDeathPreventionOperation =
                     CloneDeathPreventionOperation(source.lastDeathPreventionOperation),
@@ -349,11 +375,17 @@ namespace GuildIdle.Combat
                    string.Equals(a.sourceRequestId, b.sourceRequestId, StringComparison.Ordinal) &&
                    string.Equals(a.occupationOwnerId, b.occupationOwnerId, StringComparison.Ordinal) &&
                    string.Equals(a.heroId, b.heroId, StringComparison.Ordinal) &&
+                   string.Equals(a.startOperationId, b.startOperationId, StringComparison.Ordinal) &&
+                   string.Equals(a.startFingerprint, b.startFingerprint, StringComparison.Ordinal) &&
                    a.startedAtUnixSeconds == b.startedAtUnixSeconds &&
                    string.Equals(left.session.sessionId, right.session.sessionId, StringComparison.Ordinal) &&
                    string.Equals(left.session.executionId, right.session.executionId, StringComparison.Ordinal) &&
                    string.Equals(left.session.enemyGroupId, right.session.enemyGroupId, StringComparison.Ordinal) &&
                    string.Equals(left.session.combatMode, right.session.combatMode, StringComparison.Ordinal) &&
+                   left.session.loadoutKind == right.session.loadoutKind &&
+                   SameConsumableIdentity(
+                       left.session.broughtConsumable,
+                       right.session.broughtConsumable) &&
                    SameCombatantIdentity(left.session.hero, right.session.hero);
         }
 
@@ -375,6 +407,9 @@ namespace GuildIdle.Combat
             if (execution.status != CombatExecutionStatus.Running && execution.status != CombatExecutionStatus.ResultPending &&
                 execution.status != CombatExecutionStatus.Completed)
                 return Fail("Combat execution has an unsupported lifecycle status.", out error);
+            if (string.IsNullOrWhiteSpace(execution.startOperationId) !=
+                string.IsNullOrWhiteSpace(execution.startFingerprint))
+                return Fail("Combat start idempotency marker is incomplete.", out error);
             if (execution.outcomeFinalized != !string.IsNullOrWhiteSpace(execution.outcome))
                 return Fail("Combat execution outcome flags are inconsistent.", out error);
             if (execution.resultCreated != !string.IsNullOrWhiteSpace(execution.pendingResultId) ||
@@ -423,7 +458,7 @@ namespace GuildIdle.Combat
                     !string.Equals(queueEntry.enemyId, session.currentEnemy.definitionId, StringComparison.Ordinal))
                     return Fail("Current enemy does not match the saved queue position.", out error);
             }
-            if (!ValidateConsumable(session.broughtConsumable, out error) ||
+            if (!ValidateLoadout(session, out error) ||
                 !ValidateDeathPreventionOperation(
                     session.lastDeathPreventionOperation,
                     out error) ||
@@ -597,12 +632,29 @@ namespace GuildIdle.Combat
             return true;
         }
 
+        private static bool ValidateLoadout(CombatSessionSaveData session, out string error)
+        {
+            error = null;
+            if (session.loadoutKind == CombatLoadoutKind.Empty)
+            {
+                return session.broughtConsumable == null ||
+                       Fail("Empty combat loadout cannot retain brought consumable state.", out error);
+            }
+
+            if (session.loadoutKind == CombatLoadoutKind.Consumable)
+            {
+                return session.broughtConsumable != null
+                    ? ValidateConsumable(session.broughtConsumable, out error)
+                    : Fail("Consumable combat loadout requires brought consumable state.", out error);
+            }
+
+            return Fail("Combat loadout kind is invalid.", out error);
+        }
+
         private static bool ValidateConsumable(CombatConsumableStateSaveData value, out string error)
         {
             error = null;
-            if (value == null)
-                return true;
-            if (string.IsNullOrWhiteSpace(value.originStackId) || string.IsNullOrWhiteSpace(value.itemId) ||
+            if (value == null || string.IsNullOrWhiteSpace(value.sourceStackId) || string.IsNullOrWhiteSpace(value.itemId) ||
                 value.initialQuantity <= 0 || value.remainingQuantity < 0 || value.remainingQuantity > value.initialQuantity ||
                 InvalidTime(value.nextCheckAtSeconds) || InvalidTime(value.nextAllowedUseAtSeconds))
                 return Fail("Brought consumable state is invalid.", out error);
@@ -644,6 +696,13 @@ namespace GuildIdle.Combat
         private static bool Canonicalize(CombatSessionSaveData session)
         {
             var changed = false;
+            if (session.loadoutKind == CombatLoadoutKind.None)
+            {
+                session.loadoutKind = session.broughtConsumable == null
+                    ? CombatLoadoutKind.Empty
+                    : CombatLoadoutKind.Consumable;
+                changed = true;
+            }
             changed |= Sort(session.enemyQueue, CompareQueue);
             changed |= Sort(session.scheduler.scheduledEvents, CombatScheduledEventComparer.Instance.Compare);
             changed |= CanonicalizeCombatant(session.hero);
@@ -828,9 +887,19 @@ namespace GuildIdle.Combat
 
         private static CombatConsumableStateSaveData CloneConsumable(CombatConsumableStateSaveData source)
         {
-            return source == null ? null : new CombatConsumableStateSaveData
+            var sourceStackId = source?.ResolveSourceStackId();
+            return source == null ||
+                   (string.IsNullOrWhiteSpace(sourceStackId) &&
+                    string.IsNullOrWhiteSpace(source.itemId) &&
+                    source.initialQuantity == 0 &&
+                    source.remainingQuantity == 0 &&
+                    source.nextCheckAtSeconds == 0d &&
+                    source.nextAllowedUseAtSeconds == 0d &&
+                    string.IsNullOrWhiteSpace(source.lastAppliedEventKey))
+                ? null
+                : new CombatConsumableStateSaveData
             {
-                originStackId = source.originStackId,
+                sourceStackId = sourceStackId,
                 itemId = source.itemId,
                 initialQuantity = source.initialQuantity,
                 remainingQuantity = source.remainingQuantity,
@@ -881,7 +950,22 @@ namespace GuildIdle.Combat
         {
             return left != null && right != null &&
                    string.Equals(left.combatantId, right.combatantId, StringComparison.Ordinal) &&
-                   string.Equals(left.definitionId, right.definitionId, StringComparison.Ordinal);
+                   string.Equals(left.definitionId, right.definitionId, StringComparison.Ordinal) &&
+                   left.maxHp == right.maxHp;
+        }
+
+        private static bool SameConsumableIdentity(
+            CombatConsumableStateSaveData left,
+            CombatConsumableStateSaveData right)
+        {
+            if (left == null || right == null)
+                return left == null && right == null;
+            return string.Equals(
+                       left.sourceStackId,
+                       right.sourceStackId,
+                       StringComparison.Ordinal) &&
+                   string.Equals(left.itemId, right.itemId, StringComparison.Ordinal) &&
+                   left.initialQuantity == right.initialQuantity;
         }
 
         private static int CompareQueue(CombatEnemyQueueEntrySaveData left, CombatEnemyQueueEntrySaveData right)

@@ -483,6 +483,67 @@ namespace GuildIdle.Player
             return true;
         }
 
+        internal bool TryGetCombatSourceStack(
+            string stackId,
+            StorageActionContext actionContext,
+            out ItemStackSaveData stack,
+            out string code,
+            out string error)
+        {
+            stack = null;
+            code = null;
+            error = null;
+            if (string.IsNullOrWhiteSpace(stackId) ||
+                !_state.MutableItemStacks.TryGetValue(stackId, out var source) ||
+                source == null)
+            {
+                code = "StackNotFound";
+                error = $"Storage stack '{stackId ?? "<null>"}' was not found.";
+                return false;
+            }
+
+            if (source.quantity <= 0 ||
+                !IsAvailable(source.stateId, source.contextType, source.contextId, actionContext))
+            {
+                code = "StackUnavailable";
+                error = $"Storage stack '{stackId}' is not available to this combat source.";
+                return false;
+            }
+
+            stack = CloneStack(source);
+            return true;
+        }
+
+        internal bool TryExtractCombatSourceStack(
+            string stackId,
+            int quantity,
+            StorageActionContext actionContext,
+            out string itemId,
+            out string error)
+        {
+            itemId = null;
+            if (!TryGetCombatSourceStack(
+                    stackId,
+                    actionContext,
+                    out var source,
+                    out _,
+                    out error) ||
+                quantity <= 0 ||
+                quantity > source.quantity)
+            {
+                error ??= "Combat stack extraction quantity is invalid.";
+                return false;
+            }
+
+            itemId = source.itemId;
+            if (quantity == source.quantity)
+                _state.MutableItemStacks.Remove(source.stackId);
+            else
+                _state.MutableItemStacks[source.stackId].quantity -= quantity;
+            _state.StorageRevision++;
+            return true;
+        }
+
         internal void NotifyExternalMutation()
         {
             Changed?.Invoke(GetSnapshot());

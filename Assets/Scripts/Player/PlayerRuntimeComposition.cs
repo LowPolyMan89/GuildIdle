@@ -1,5 +1,6 @@
 using System;
 using GuildIdle.Activities;
+using GuildIdle.Combat;
 using GuildIdle.Core;
 using GuildIdle.Crafting;
 using GuildIdle.Progression;
@@ -14,6 +15,7 @@ namespace GuildIdle.Player
 
         public static event Action<CraftStartedEvent> CraftStarted;
         public static event Action<CraftResultPendingEvent> CraftResultPending;
+        public static event Action<CombatStartedEvent> CombatStarted;
 
         public static ActivityRuntimeService CreateRuntimeService()
         {
@@ -61,6 +63,30 @@ namespace GuildIdle.Player
                 new PlayerStateCraftAdapter(state),
                 HandleCraftStartedEvent,
                 HandleCraftResultPendingEvent);
+        }
+
+        public static CombatStartService CreateCombatStartService()
+        {
+            var state = Player.State;
+            if (state == null)
+                throw new InvalidOperationException(
+                    "Player state is not loaded yet. Call Player.Load() or wait for config load.");
+            return CreateCombatStartService(state);
+        }
+
+        public static CombatStartService CreateCombatStartService(PlayerState state)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+            return new CombatStartService(
+                new PlayerStateCombatStartAdapter(
+                    state,
+                    RuntimeConfigs.Formulas,
+                    RuntimeConfigs.Items),
+                new ConfigCombatStartActivityDescriptorProvider(RuntimeConfigs.Activities),
+                RuntimeConfigs.CombatConsumables,
+                new ConfigCombatEnemyQueueProvider(RuntimeConfigs.Enemies),
+                eventSink: HandleCombatStartedEvent);
         }
 
         public static IPendingResultService CreatePendingResultService()
@@ -175,6 +201,11 @@ namespace GuildIdle.Player
         private static void HandleCraftResultPendingEvent(CraftResultPendingEvent craftResultPendingEvent)
         {
             CraftResultPending?.Invoke(craftResultPendingEvent);
+        }
+
+        private static void HandleCombatStartedEvent(CombatStartedEvent combatStartedEvent)
+        {
+            CombatStarted?.Invoke(combatStartedEvent);
         }
 
         private static PlayerStateFactory GetPlayerStateFactory()

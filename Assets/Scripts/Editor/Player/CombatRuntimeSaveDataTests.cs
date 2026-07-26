@@ -92,7 +92,7 @@ namespace GuildIdle.Editor.Player
             source.session.completionRewards = new[] { Reward("reward-1", 0, "Gold", "gold_id", 7, "activity_loot_in_combat") };
             source.session.broughtConsumable = new CombatConsumableStateSaveData
             {
-                originStackId = "stack-food",
+                sourceStackId = "stack-food",
                 itemId = "item_food",
                 initialQuantity = 3,
                 remainingQuantity = 2,
@@ -151,6 +151,46 @@ namespace GuildIdle.Editor.Player
             Assert.That(repeated, Is.EqualTo(after));
             Assert.That(restoredAgain.GetCombatAggregate("combat-a").session.rng.state,
                 Is.EqualTo("opaque-state-v3:0123456789abcdef"));
+        }
+
+        [Test]
+        public void LegacyOriginStackIdNormalizesIntoSourceStackId()
+        {
+            var aggregate = Aggregate(
+                "combat-legacy-loadout",
+                "session-legacy-loadout",
+                "ren",
+                "group-legacy-loadout",
+                "enemy-legacy-loadout");
+            aggregate.session.loadoutKind = CombatLoadoutKind.Consumable;
+            aggregate.session.broughtConsumable = new CombatConsumableStateSaveData
+            {
+                sourceStackId = "legacy-stack",
+                itemId = "item-food",
+                initialQuantity = 2,
+                remainingQuantity = 1
+            };
+            var save = _factory.CreateDefault().ToSaveData();
+            save.combatRuntime = new CombatRuntimeSaveData
+            {
+                executions = new[] { aggregate.execution },
+                sessions = new[] { aggregate.session }
+            };
+            var legacyJson = JsonUtility.ToJson(save).Replace(
+                "\"sourceStackId\":\"legacy-stack\"",
+                "\"originStackId\":\"legacy-stack\"");
+            var storage = new MemorySaveStorage();
+            storage.SetString(SaveService.SaveKey, legacyJson);
+
+            var restored = SaveService.Load(_factory, storage, out var origin);
+            var normalizedJson = storage.GetString(SaveService.SaveKey, string.Empty);
+
+            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV9));
+            Assert.That(
+                restored.GetCombatAggregate("combat-legacy-loadout").session.broughtConsumable.sourceStackId,
+                Is.EqualTo("legacy-stack"));
+            Assert.That(normalizedJson, Does.Contain("\"sourceStackId\":\"legacy-stack\""));
+            Assert.That(normalizedJson, Does.Not.Contain("\"originStackId\":\"legacy-stack\""));
         }
 
         [Test]
