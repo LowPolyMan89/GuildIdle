@@ -2070,9 +2070,7 @@ namespace GuildIdle.Combat
             {
                 continueDispatch = true;
                 requestError = null;
-                if (_statusRuntime == null)
-                    return true;
-                if (!_statusRuntime.TryApplyEffectRequest(
+                if (!_effectRuntime.TryApplyEffectRequest(
                         session,
                         request,
                         events,

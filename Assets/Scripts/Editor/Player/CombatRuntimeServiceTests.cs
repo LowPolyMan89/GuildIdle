@@ -904,11 +904,12 @@ namespace GuildIdle.EditorTests.Player
                 .Add(
                     CombatActorSide.Enemy,
                     "enemy-b",
-                    Ability(
+                    ImmediateAbility(
                         "ability-entry",
                         CombatAbilityTriggers.OnBattleStart,
                         "enemy",
-                        CombatEffectKind.ApplyStatus));
+                        CombatEffectKind.Heal,
+                        1d));
             var service = new CombatRuntimeService(
                 store,
                 new DescriptorProvider(
@@ -938,12 +939,27 @@ namespace GuildIdle.EditorTests.Player
                 .Add(
                     CombatActorSide.Hero,
                     "hero",
-                    Ability("ability-z", CombatAbilityTriggers.OnBattleStart, "enemy", CombatEffectKind.ApplyStatus),
-                    Ability("ability-a", CombatAbilityTriggers.OnBattleStart, "enemy", CombatEffectKind.ApplyStatus))
+                    ImmediateAbility(
+                        "ability-z",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "enemy",
+                        CombatEffectKind.Heal,
+                        1d),
+                    ImmediateAbility(
+                        "ability-a",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "enemy",
+                        CombatEffectKind.Heal,
+                        1d))
                 .Add(
                     CombatActorSide.Enemy,
                     "enemy",
-                    Ability("ability-m", CombatAbilityTriggers.OnBattleStart, "enemy", CombatEffectKind.ModifyStat));
+                    ImmediateAbility(
+                        "ability-m",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "enemy",
+                        CombatEffectKind.Heal,
+                        1d));
             var service = new CombatRuntimeService(
                 store,
                 DefaultDescriptors(),
@@ -973,17 +989,19 @@ namespace GuildIdle.EditorTests.Player
                 .Add(
                     CombatActorSide.Enemy,
                     "enemy",
-                    Ability(
+                    ImmediateAbility(
                         "ability-chance",
                         CombatAbilityTriggers.OnBattleStart,
                         "enemy",
-                        CombatEffectKind.ApplyStatus,
+                        CombatEffectKind.Heal,
+                        1d,
                         chancePercent: 1d),
-                    Ability(
+                    ImmediateAbility(
                         "ability-cooldown",
                         CombatAbilityTriggers.OnAttackHit,
                         "enemy",
-                        CombatEffectKind.ApplyStatus,
+                        CombatEffectKind.Heal,
+                        1d,
                         cooldownSeconds: 10d));
             var descriptors = new DescriptorProvider(
                 Descriptor(CombatActorSide.Hero, CombatAttackCadence.HeroInterval(10d)),
@@ -1100,6 +1118,195 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(request.TargetCombatantId, Is.EqualTo("hero-combatant"));
             Assert.That(request.EventKey, Does.Contain("fixture_unrelated_ability"));
             Assert.That(second.Events, Is.Empty);
+        }
+
+        [Test]
+        public void AbilityUsesCustomEffectExecutorWhenStatusesAreNull()
+        {
+            var source = Aggregate(100);
+            source.session.hero.currentHp = 50;
+            source.session.rng = ScriptedRngFactory.State(0);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    ImmediateAbility(
+                        "custom-heal",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "self",
+                        CombatEffectKind.Heal,
+                        7d));
+            var effects = new CombatEffectExecutorRegistry();
+            effects.Register(CombatEffectKind.Heal, ExecuteFixtureAbilityEffect);
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new ScriptedRngFactory(),
+                null,
+                abilities,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                effects);
+
+            var result = service.AdvanceTo("execution", 0d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(result.Events.OfType<FixtureAbilityEffectEvent>().Count(), Is.EqualTo(1));
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(57));
+        }
+
+        [Test]
+        public void ImmediateDamageAbilityAppliesWhenStatusesAreNull()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    ImmediateAbility(
+                        "immediate-damage",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "enemy",
+                        CombatEffectKind.Damage,
+                        7d));
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new ScriptedRngFactory(),
+                null,
+                abilities);
+
+            var result = service.AdvanceTo("execution", 0d);
+            var effect = result.Events.OfType<CombatImmediateEffectEvent>().Single();
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(effect.EffectKind, Is.EqualTo(CombatEffectKind.Damage));
+            Assert.That(effect.HpBefore, Is.EqualTo(100));
+            Assert.That(effect.HpAfter, Is.EqualTo(93));
+            Assert.That(store.Value.session.currentEnemy.currentHp, Is.EqualTo(93));
+        }
+
+        [Test]
+        public void ImmediateHealAbilityAppliesWhenStatusesAreNull()
+        {
+            var source = Aggregate(100);
+            source.session.hero.currentHp = 50;
+            source.session.rng = ScriptedRngFactory.State(0);
+            var store = new MemoryStore(source);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    ImmediateAbility(
+                        "immediate-heal",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "self",
+                        CombatEffectKind.Heal,
+                        7d));
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new ScriptedRngFactory(),
+                null,
+                abilities);
+
+            var result = service.AdvanceTo("execution", 0d);
+            var effect = result.Events.OfType<CombatImmediateEffectEvent>().Single();
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(effect.EffectKind, Is.EqualTo(CombatEffectKind.Heal));
+            Assert.That(effect.HpBefore, Is.EqualTo(50));
+            Assert.That(effect.HpAfter, Is.EqualTo(57));
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(57));
+        }
+
+        [Test]
+        public void ApplyStatusAbilityWithoutProviderReturnsTypedError()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0);
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    StatusAbility(
+                        "missing-status",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "status-without-provider"));
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new ScriptedRngFactory(),
+                null,
+                abilities);
+
+            var result = service.AdvanceTo("execution", 0d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.StatusDescriptorNotFound));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
+        [Test]
+        public void AbilityEffectHandlerErrorRollsBackWholeTransition()
+        {
+            var source = Aggregate(100);
+            source.session.rng = ScriptedRngFactory.State(0);
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var hpBefore = store.Value.session.hero.currentHp;
+            var cooldownsBefore = store.Value.session.hero.abilityCooldowns.Length;
+            var schedulerBefore = JsonUtility.ToJson(store.Value.session.scheduler);
+            var rngBefore = JsonUtility.ToJson(store.Value.session.rng);
+            var abilities = new AbilityDescriptorProvider()
+                .Add(
+                    CombatActorSide.Hero,
+                    "hero",
+                    ImmediateAbility(
+                        "failing-damage",
+                        CombatAbilityTriggers.OnBattleStart,
+                        "enemy",
+                        CombatEffectKind.Damage,
+                        7d,
+                        cooldownSeconds: 5d));
+            var effects = new CombatEffectExecutorRegistry();
+            effects.Register(CombatEffectKind.Damage, FailFixtureAbilityEffect);
+            var service = new CombatRuntimeService(
+                store,
+                SlowDescriptors(),
+                new ScriptedRngFactory(),
+                null,
+                abilities,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                effects);
+
+            var result = service.AdvanceTo("execution", 0d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code, Is.EqualTo(CombatAdvanceErrorCode.EffectProcessingFailed));
+            Assert.That(result.Events, Is.Empty);
+            Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(hpBefore));
+            Assert.That(store.Value.session.hero.abilityCooldowns.Length, Is.EqualTo(cooldownsBefore));
+            Assert.That(JsonUtility.ToJson(store.Value.session.scheduler), Is.EqualTo(schedulerBefore));
+            Assert.That(JsonUtility.ToJson(store.Value.session.rng), Is.EqualTo(rngBefore));
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
         }
 
         [Test]
@@ -2629,6 +2836,41 @@ namespace GuildIdle.EditorTests.Player
             return true;
         }
 
+        private static bool ExecuteFixtureAbilityEffect(
+            CombatSessionSaveData session,
+            CombatEffectRequest request,
+            List<CombatEvent> events,
+            out bool stateChanged,
+            out CombatHpMutation mutation,
+            out CombatAdvanceError error)
+        {
+            session.hero.currentHp += 7;
+            stateChanged = true;
+            mutation = null;
+            error = null;
+            events.Add(new FixtureAbilityEffectEvent(request));
+            return true;
+        }
+
+        private static bool FailFixtureAbilityEffect(
+            CombatSessionSaveData session,
+            CombatEffectRequest request,
+            List<CombatEvent> events,
+            out bool stateChanged,
+            out CombatHpMutation mutation,
+            out CombatAdvanceError error)
+        {
+            session.hero.currentHp = 1;
+            session.scheduler.nextSequence = long.MaxValue;
+            events.Add(new FixtureAbilityEffectEvent(request));
+            stateChanged = true;
+            mutation = null;
+            error = new CombatAdvanceError(
+                CombatAdvanceErrorCode.EffectProcessingFailed,
+                "Simulated ability effect failure.");
+            return false;
+        }
+
         private static void AssertConsumableRollback(
             MemoryStore store,
             CombatRuntimeService service,
@@ -2813,6 +3055,27 @@ namespace GuildIdle.EditorTests.Player
                 target,
                 cooldownSeconds,
                 effect);
+        }
+
+        private static CombatAbilityDescriptor ImmediateAbility(
+            string abilityId,
+            string trigger,
+            string target,
+            CombatEffectKind effectKind,
+            double value,
+            double chancePercent = 100d,
+            double cooldownSeconds = 0d)
+        {
+            return new CombatAbilityDescriptor(
+                abilityId,
+                trigger,
+                chancePercent,
+                target,
+                cooldownSeconds,
+                new CombatEffectDescriptor(
+                    effectKind,
+                    value: value,
+                    damageType: effectKind == CombatEffectKind.Damage ? "fixture" : null));
         }
 
         private static CombatRuntimeAggregate Aggregate(int enemyHp)
@@ -3001,6 +3264,20 @@ namespace GuildIdle.EditorTests.Player
         private sealed class FixtureConsumableEffectEvent : CombatEvent
         {
             public FixtureConsumableEffectEvent(CombatEffectRequest request)
+                : base(
+                    request.EventKey,
+                    request.TimestampSeconds,
+                    request.Sequence,
+                    request.ActorSide,
+                    request.ActorCombatantId,
+                    request.TargetCombatantId)
+            {
+            }
+        }
+
+        private sealed class FixtureAbilityEffectEvent : CombatEvent
+        {
+            public FixtureAbilityEffectEvent(CombatEffectRequest request)
                 : base(
                     request.EventKey,
                     request.TimestampSeconds,
