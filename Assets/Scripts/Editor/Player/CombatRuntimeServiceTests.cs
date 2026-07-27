@@ -206,7 +206,9 @@ namespace GuildIdle.EditorTests.Player
 
             Assert.That(result.Events.OfType<CombatAttackEvent>().Select(value => value.ActorSide),
                 Is.EqualTo(new[] { CombatActorSide.Hero }));
-            Assert.That(store.Value.session.currentEnemy.currentHp, Is.Zero);
+            Assert.That(store.Value.session.currentEnemy, Is.Null);
+            Assert.That(store.Value.session.terminalCandidate.kind,
+                Is.EqualTo(CombatTerminalCandidateKinds.Victory));
             Assert.That(store.Value.session.hero.currentHp, Is.EqualTo(100));
             Assert.That(store.Value.session.rng.drawCount, Is.EqualTo(3));
         }

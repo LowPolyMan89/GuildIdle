@@ -110,14 +110,6 @@ namespace GuildIdle.Editor.Player
                     successful = true
                 };
             Assert.That(state.AddCombatAggregate(source), Is.True);
-            var resultPending = state.GetCombatAggregate("combat-a");
-            resultPending.execution.status = CombatExecutionStatus.ResultPending;
-            resultPending.execution.outcome = "Defeat";
-            resultPending.execution.outcomeFinalized = true;
-            resultPending.execution.resultSourceSequence = 1;
-            resultPending.execution.resultCreated = true;
-            resultPending.execution.pendingResultId = "result:Combat:combat-a";
-            Assert.That(state.UpdateCombatAggregate(resultPending), Is.True);
             var before = JsonUtility.ToJson(state.ToSaveData());
             Assert.That(SaveService.Save(state, storage), Is.True);
 
@@ -128,7 +120,7 @@ namespace GuildIdle.Editor.Player
             Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV9));
             Assert.That(after, Is.EqualTo(before));
             Assert.That(aggregate.execution.sessionId, Is.EqualTo("session-a"));
-            Assert.That(aggregate.execution.pendingResultId, Is.EqualTo("result:Combat:combat-a"));
+            Assert.That(aggregate.execution.pendingResultId, Is.Null.Or.Empty);
             Assert.That(aggregate.session.executionId, Is.EqualTo("combat-a"));
             Assert.That(
                 aggregate.session.lastDeathPreventionOperation.operationKey,

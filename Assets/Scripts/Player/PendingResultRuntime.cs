@@ -304,6 +304,13 @@ namespace GuildIdle.Player
                 ? null
                 : _state.GetCombatAggregate(result.sourceExecutionId);
             var execution = aggregate?.execution;
+            if (aggregate == null &&
+                string.IsNullOrWhiteSpace(result?.ownerHeroId))
+            {
+                return _state.TryBindPersistentResultSource(
+                    result,
+                    mode != PendingResultBindMode.Create);
+            }
             if (!Matches(result, aggregate) ||
                 _state.IsPendingResultSourceQuarantined(
                     result.sourceType,
@@ -345,6 +352,9 @@ namespace GuildIdle.Player
                 ? null
                 : _state.GetCombatAggregate(result.sourceExecutionId);
             var execution = aggregate?.execution;
+            if (aggregate == null &&
+                string.IsNullOrWhiteSpace(result?.ownerHeroId))
+                return _state.CanClaimPersistentResultSource(result);
             return Matches(result, aggregate) &&
                    execution.status == CombatExecutionStatus.ResultPending &&
                    execution.resultCreated &&
@@ -362,6 +372,9 @@ namespace GuildIdle.Player
                 ? null
                 : _state.GetCombatAggregate(result.sourceExecutionId);
             var execution = aggregate?.execution;
+            if (aggregate == null &&
+                string.IsNullOrWhiteSpace(result?.ownerHeroId))
+                return _state.ResolvePersistentResultSource(result);
             if (!CanClaim(result) ||
                 !_state.ResolvePersistentResultSource(result))
                 return false;

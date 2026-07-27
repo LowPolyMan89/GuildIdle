@@ -1153,7 +1153,14 @@ namespace GuildIdle.Combat
         private static CombatEnemyRewardOperationSaveData CloneEnemyRewardOperation(
             CombatEnemyRewardOperationSaveData source)
         {
-            return source == null ? null : new CombatEnemyRewardOperationSaveData
+            return source == null ||
+                   (string.IsNullOrWhiteSpace(source.operationKey) &&
+                    string.IsNullOrWhiteSpace(source.combatantId) &&
+                    string.IsNullOrWhiteSpace(source.enemyId) &&
+                    source.queueIndex == 0 &&
+                    source.enemyExp == 0)
+                ? null
+                : new CombatEnemyRewardOperationSaveData
             {
                 operationKey = source.operationKey,
                 combatantId = source.combatantId,
@@ -1166,7 +1173,9 @@ namespace GuildIdle.Combat
         private static CombatDefeatLossSaveData CloneDefeatLoss(
             CombatDefeatLossSaveData source)
         {
-            if (source == null)
+            if (source == null ||
+                (source.lossPercent == 0 &&
+                 (source.entries == null || source.entries.Length == 0)))
                 return null;
             var entries = source.entries ?? Array.Empty<CombatDefeatLossEntrySaveData>();
             var copies = new CombatDefeatLossEntrySaveData[entries.Length];

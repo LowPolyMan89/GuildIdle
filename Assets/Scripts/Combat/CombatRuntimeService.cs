@@ -1743,10 +1743,22 @@ namespace GuildIdle.Combat
             var queue = session.enemyQueue ?? Array.Empty<CombatEnemyQueueEntrySaveData>();
             if (queue.Length == 0)
             {
-                error = new CombatAdvanceError(
-                    CombatAdvanceErrorCode.InvalidEnemyQueue,
-                    "Running combat cannot resolve an empty enemy queue.");
-                return false;
+                if (session.currentEnemy == null ||
+                    session.currentEnemy.currentHp > 0)
+                {
+                    error = new CombatAdvanceError(
+                        CombatAdvanceErrorCode.InvalidEnemyQueue,
+                        "Legacy empty enemy queue requires a defeated current enemy.");
+                    return false;
+                }
+
+                return TryCompleteVictory(
+                    session,
+                    deathEvent,
+                    events,
+                    session.currentEnemy.combatantId,
+                    out queueCompleted,
+                    out error);
             }
 
             if (!string.Equals(session.combatMode, CombatEnemyQueueBuilder.Queue1V1Mode, StringComparison.Ordinal))
@@ -1800,40 +1812,14 @@ namespace GuildIdle.Combat
             var nextPosition = session.queuePosition + 1;
             if (nextPosition >= queue.Length)
             {
-                RemovePendingActorAttacks(session.scheduler);
-                RemovePendingConsumableChecks(session.scheduler);
                 session.queuePosition = queue.Length;
-                session.currentEnemy = null;
-                session.simulationStopped = true;
-                var candidateId = $"{session.sessionId}:victory";
-                var candidateEventKey =
-                    $"{deathEvent.eventKey}:terminal:victory";
-                session.terminalCandidate = new CombatTerminalCandidateSaveData
-                {
-                    candidateId = candidateId,
-                    kind = CombatTerminalCandidateKinds.Victory,
-                    eventKey = candidateEventKey,
-                    createdAtSeconds = deathEvent.timestampSeconds
-                };
-                session.combatTimeSeconds = deathEvent.timestampSeconds;
-                if (!TryReserveSequence(session.scheduler, out var sequence))
-                {
-                    error = new CombatAdvanceError(
-                        CombatAdvanceErrorCode.ProcessingFailed,
-                        "Combat scheduler sequence is exhausted during victory candidate creation.");
-                    return false;
-                }
-                events.Add(new CombatTerminalCandidateCreatedEvent(
-                    candidateEventKey,
-                    deathEvent.timestampSeconds,
-                    sequence,
+                return TryCompleteVictory(
+                    session,
+                    deathEvent,
+                    events,
                     currentEntry.combatantId,
-                    null,
-                    candidateId,
-                    CombatTerminalCandidateKinds.Victory,
-                    0));
-                queueCompleted = true;
-                return true;
+                    out queueCompleted,
+                    out error);
             }
 
             var entry = queue[nextPosition];
@@ -1926,6 +1912,51 @@ namespace GuildIdle.Combat
                 return false;
             }
 
+            return true;
+        }
+
+        private static bool TryCompleteVictory(
+            CombatSessionSaveData session,
+            CombatScheduledEventSaveData deathEvent,
+            List<CombatEvent> events,
+            string defeatedCombatantId,
+            out bool queueCompleted,
+            out CombatAdvanceError error)
+        {
+            queueCompleted = false;
+            error = null;
+            RemovePendingActorAttacks(session.scheduler);
+            RemovePendingConsumableChecks(session.scheduler);
+            session.currentEnemy = null;
+            session.simulationStopped = true;
+            var candidateId = $"{session.sessionId}:victory";
+            var candidateEventKey =
+                $"{deathEvent.eventKey}:terminal:victory";
+            session.terminalCandidate = new CombatTerminalCandidateSaveData
+            {
+                candidateId = candidateId,
+                kind = CombatTerminalCandidateKinds.Victory,
+                eventKey = candidateEventKey,
+                createdAtSeconds = deathEvent.timestampSeconds
+            };
+            session.combatTimeSeconds = deathEvent.timestampSeconds;
+            if (!TryReserveSequence(session.scheduler, out var sequence))
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.ProcessingFailed,
+                    "Combat scheduler sequence is exhausted during victory candidate creation.");
+                return false;
+            }
+            events.Add(new CombatTerminalCandidateCreatedEvent(
+                candidateEventKey,
+                deathEvent.timestampSeconds,
+                sequence,
+                defeatedCombatantId,
+                null,
+                candidateId,
+                CombatTerminalCandidateKinds.Victory,
+                0));
+            queueCompleted = true;
             return true;
         }
 
