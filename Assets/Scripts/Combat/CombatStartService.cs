@@ -91,13 +91,15 @@ namespace GuildIdle.Combat
             string enemyGroupId,
             string combatMode,
             int fatigueCost,
-            bool isRepeatable = false)
+            bool isRepeatable = false,
+            string mainSkillId = null)
         {
             ActivityId = activityId;
             EnemyGroupId = enemyGroupId;
             CombatMode = combatMode;
             FatigueCost = fatigueCost;
             IsRepeatable = isRepeatable;
+            MainSkillId = mainSkillId;
         }
 
         public string ActivityId { get; }
@@ -105,6 +107,7 @@ namespace GuildIdle.Combat
         public string CombatMode { get; }
         public int FatigueCost { get; }
         public bool IsRepeatable { get; }
+        public string MainSkillId { get; }
     }
 
     public interface ICombatStartActivityDescriptorProvider
@@ -152,7 +155,8 @@ namespace GuildIdle.Combat
                 details.enemyGroupId,
                 details.combatMode,
                 activity.fatigueCost,
-                activity.isRepeatable);
+                activity.isRepeatable,
+                activity.mainSkillId);
             return true;
         }
     }
@@ -239,6 +243,7 @@ namespace GuildIdle.Combat
         private readonly ICombatEnemyQueueProvider _enemyQueue;
         private readonly ICombatRngFactory _rngFactory;
         private readonly ICombatStartIdentityProvider _identity;
+        private readonly ICombatCompletionRewardProvider _completionRewards;
         private readonly Action<CombatStartedEvent> _eventSink;
 
         public CombatStartService(
@@ -248,7 +253,8 @@ namespace GuildIdle.Combat
             ICombatEnemyQueueProvider enemyQueue,
             ICombatRngFactory rngFactory = null,
             ICombatStartIdentityProvider identity = null,
-            Action<CombatStartedEvent> eventSink = null)
+            Action<CombatStartedEvent> eventSink = null,
+            ICombatCompletionRewardProvider completionRewards = null)
         {
             _state = state ?? throw new ArgumentNullException(nameof(state));
             _activities = activities ?? throw new ArgumentNullException(nameof(activities));
@@ -257,6 +263,7 @@ namespace GuildIdle.Combat
             _rngFactory = rngFactory ?? new CombatRngFactory();
             _identity = identity ?? new CombatStartIdentityProvider();
             _eventSink = eventSink;
+            _completionRewards = completionRewards;
         }
 
         public CombatStartResult Start(CombatStartCommand command)
@@ -842,6 +849,7 @@ namespace GuildIdle.Combat
                 scheduler = new CombatSchedulerStateSaveData(),
                 rng = CombatRngStateFactory.CreateSplitMix64(
                     _identity.CreateRngSeed()),
+                enemyExpTargetId = activity.MainSkillId,
                 loadoutKind = loadoutKind,
                 broughtConsumable = loadoutKind == CombatLoadoutKind.Consumable
                     ? new CombatConsumableStateSaveData
@@ -864,6 +872,43 @@ namespace GuildIdle.Combat
                     queueError?.Message ?? "Failed to build the combat enemy queue.",
                     out failure);
             }
+
+            builtSession.completionRewards =
+                Array.Empty<CombatRewardEntrySaveData>();
+            if (_completionRewards != null &&
+                command.Kind == CombatStartKind.Direct)
+            {
+                if (!_rngFactory.TryRestore(
+                        builtSession.rng,
+                        out var rewardRng,
+                        out var rewardRngError))
+                {
+                    return FailPreflight(
+                        CombatStartCode.TransactionFailure,
+                        rewardRngError?.Message ??
+                        "Failed to restore combat RNG for completion rewards.",
+                        out failure);
+                }
+                if (!_completionRewards.TryCreateSnapshot(
+                        command.SourceActivityId,
+                        _state.IsActivityCompleted(command.SourceActivityId),
+                        rewardRng,
+                        out var completionRewards,
+                        out var rewardError))
+                {
+                    return FailPreflight(
+                        CombatStartCode.TransactionFailure,
+                        rewardError ??
+                        "Failed to snapshot combat completion rewards.",
+                        out failure);
+                }
+
+                builtSession.completionRewards =
+                    completionRewards ??
+                    Array.Empty<CombatRewardEntrySaveData>();
+                builtSession.rng = rewardRng.CaptureState();
+            }
+            builtSession.completionRewardsSnapshotCreated = true;
 
             var execution = new CombatExecutionSaveData
             {

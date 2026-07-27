@@ -114,6 +114,7 @@ namespace GuildIdle.Editor.Player
             resultPending.execution.status = CombatExecutionStatus.ResultPending;
             resultPending.execution.outcome = "Defeat";
             resultPending.execution.outcomeFinalized = true;
+            resultPending.execution.resultSourceSequence = 1;
             resultPending.execution.resultCreated = true;
             resultPending.execution.pendingResultId = "result:Combat:combat-a";
             Assert.That(state.UpdateCombatAggregate(resultPending), Is.True);
@@ -357,11 +358,12 @@ namespace GuildIdle.Editor.Player
                     aggregate.session.terminalCandidate.createdAtSeconds = 2d;
                     break;
                 case "unsupported-kind":
-                    aggregate.session.terminalCandidate.kind = "Victory";
+                    aggregate.session.terminalCandidate.kind = "Unsupported";
                     break;
                 case "conflicting-outcome":
                     aggregate.execution.outcome = "Victory";
                     aggregate.execution.outcomeFinalized = true;
+                    aggregate.execution.resultSourceSequence = 1;
                     break;
                 default:
                     Assert.Fail($"Unknown terminal scenario '{scenario}'.");
@@ -401,6 +403,7 @@ namespace GuildIdle.Editor.Player
             pending.execution.status = CombatExecutionStatus.ResultPending;
             pending.execution.outcome = "Defeat";
             pending.execution.outcomeFinalized = true;
+            pending.execution.resultSourceSequence = 1;
             pending.execution.resultCreated = true;
             pending.execution.pendingResultId = "result:Combat:combat-a";
             Assert.That(state.UpdateCombatAggregate(pending), Is.True);
@@ -484,6 +487,9 @@ namespace GuildIdle.Editor.Player
                 aggregate.session.scheduler.scheduledEvents[index] = FutureEvent(index, $"future-{index:D2}");
             aggregate.session.loot = Rewards(CollectionLimit, "loot");
             aggregate.session.completionRewards = Rewards(CollectionLimit, "completion");
+            aggregate.session.outcomeRewards =
+                Rewards(CollectionLimit, "outcome");
+            aggregate.session.defeatLoss = Loss(CollectionLimit);
 
             Assert.That(state.AddCombatAggregate(aggregate), Is.True);
             var bytes = Encoding.UTF8.GetByteCount(JsonUtility.ToJson(state.ToSaveData()));
@@ -793,6 +799,26 @@ namespace GuildIdle.Editor.Player
             for (var index = 0; index < count; index++)
                 result[index] = Reward($"{prefix}-{index:D2}", index, "Resource", $"resource-{index:D2}", index + 1, "combat_loot");
             return result;
+        }
+
+        private static CombatDefeatLossSaveData Loss(int count)
+        {
+            var entries = new CombatDefeatLossEntrySaveData[count];
+            for (var index = 0; index < count; index++)
+                entries[index] = new CombatDefeatLossEntrySaveData
+                {
+                    origin = PendingResultOrigin.CombatLoot,
+                    rewardType = "Resource",
+                    targetId = $"resource-{index:D2}",
+                    quantityBefore = index + 2,
+                    quantityLost = 1,
+                    quantityKept = index + 1
+                };
+            return new CombatDefeatLossSaveData
+            {
+                lossPercent = 25,
+                entries = entries
+            };
         }
 
         private static CombatRewardEntrySaveData Reward(string entryId, int sortOrder, string rewardType, string targetId, long quantity, string origin)

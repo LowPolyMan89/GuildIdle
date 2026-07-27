@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GuildIdle.Activities;
+using GuildIdle.Combat;
 using GuildIdle.Core;
 using GuildIdle.Crafting;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
@@ -12,6 +13,7 @@ namespace GuildIdle.Player
         public const string ActivityReward = "activity_reward";
         public const string CombatLoot = "combat_loot";
         public const string ActivityLootInCombat = "activity_loot_in_combat";
+        public const string EnemyCombatExp = "enemy_combat_exp";
         public const string BroughtConsumable = "brought_consumable";
         public const string CraftOutput = "craft_output";
         public const string QuestReward = "quest_reward";
@@ -272,6 +274,146 @@ namespace GuildIdle.Player
         public bool Resolve(PendingResultSaveData result) => _state.ResolvePersistentResultSource(result);
     }
 
+    internal sealed class CombatPendingResultSourceHandler :
+        IPendingResultSourceHandler
+    {
+        private readonly PlayerState _state;
+
+        public CombatPendingResultSourceHandler(PlayerState state)
+        {
+            _state = state ?? throw new ArgumentNullException(nameof(state));
+        }
+
+        public string SourceType => PendingResultSourceType.Combat;
+
+        public bool AcceptsOrigin(string origin) =>
+            string.Equals(origin, PendingResultOrigin.CombatLoot, StringComparison.Ordinal) ||
+            string.Equals(origin, PendingResultOrigin.ActivityLootInCombat, StringComparison.Ordinal) ||
+            string.Equals(origin, PendingResultOrigin.EnemyCombatExp, StringComparison.Ordinal) ||
+            string.Equals(origin, PendingResultOrigin.ActivityReward, StringComparison.Ordinal) ||
+            string.Equals(origin, PendingResultOrigin.BroughtConsumable, StringComparison.Ordinal);
+
+        public bool TryBind(
+            PendingResultSaveData result,
+            bool makeClaimable,
+            PendingResultBindMode mode)
+        {
+            if (!makeClaimable || mode == PendingResultBindMode.Append)
+                return false;
+            var aggregate = result == null
+                ? null
+                : _state.GetCombatAggregate(result.sourceExecutionId);
+            var execution = aggregate?.execution;
+            if (!Matches(result, aggregate) ||
+                _state.IsPendingResultSourceQuarantined(
+                    result.sourceType,
+                    result.sourceExecutionId))
+                return false;
+
+            if (mode == PendingResultBindMode.Create)
+            {
+                if (execution.status != CombatExecutionStatus.Running ||
+                    !execution.outcomeFinalized ||
+                    execution.resultCreated ||
+                    execution.pendingResultResolved ||
+                    string.IsNullOrWhiteSpace(
+                        aggregate.session.terminalCandidate?.candidateId))
+                    return false;
+                execution.pendingResultId = result.resultId;
+                execution.resultCreated = true;
+                execution.status = CombatExecutionStatus.ResultPending;
+            }
+            else if (execution.status != CombatExecutionStatus.ResultPending ||
+                     !execution.resultCreated ||
+                     execution.pendingResultResolved ||
+                     !string.Equals(
+                         execution.pendingResultId,
+                         result.resultId,
+                         StringComparison.Ordinal))
+                return false;
+
+            if (!_state.TryBindPersistentResultSource(
+                    result,
+                    mode != PendingResultBindMode.Create))
+                return false;
+            return _state.UpdateCombatAggregate(aggregate);
+        }
+
+        public bool CanClaim(PendingResultSaveData result)
+        {
+            var aggregate = result == null
+                ? null
+                : _state.GetCombatAggregate(result.sourceExecutionId);
+            var execution = aggregate?.execution;
+            return Matches(result, aggregate) &&
+                   execution.status == CombatExecutionStatus.ResultPending &&
+                   execution.resultCreated &&
+                   !execution.pendingResultResolved &&
+                   string.Equals(
+                       execution.pendingResultId,
+                       result.resultId,
+                       StringComparison.Ordinal) &&
+                   _state.CanClaimPersistentResultSource(result);
+        }
+
+        public bool Resolve(PendingResultSaveData result)
+        {
+            var aggregate = result == null
+                ? null
+                : _state.GetCombatAggregate(result.sourceExecutionId);
+            var execution = aggregate?.execution;
+            if (!CanClaim(result) ||
+                !_state.ResolvePersistentResultSource(result))
+                return false;
+
+            execution.pendingResultResolved = true;
+            execution.status = CombatExecutionStatus.Completed;
+            execution.completedAtUnixSeconds =
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var direct = string.Equals(
+                execution.occupationOwnerId,
+                execution.executionId,
+                StringComparison.Ordinal);
+            if (direct &&
+                string.Equals(
+                    execution.outcome,
+                    CombatTerminalCandidateKinds.Victory,
+                    StringComparison.Ordinal))
+            {
+                if (!_state.IsActivityCompleted(execution.sourceActivityId) &&
+                    !_state.CompleteActivity(execution.sourceActivityId))
+                    return false;
+                execution.completionPublished = true;
+            }
+
+            return _state.UpdateCombatAggregate(aggregate);
+        }
+
+        private static bool Matches(
+            PendingResultSaveData result,
+            CombatRuntimeAggregate aggregate)
+        {
+            var execution = aggregate?.execution;
+            return result != null && execution != null &&
+                   string.Equals(
+                       result.sourceType,
+                       PendingResultSourceType.Combat,
+                       StringComparison.Ordinal) &&
+                   string.Equals(
+                       result.sourceExecutionId,
+                       execution.executionId,
+                       StringComparison.Ordinal) &&
+                   string.Equals(
+                       result.sourceId,
+                       execution.sourceActivityId,
+                       StringComparison.Ordinal) &&
+                   string.Equals(
+                       result.ownerHeroId,
+                       execution.heroId,
+                       StringComparison.Ordinal);
+        }
+    }
+
     internal sealed class CraftPendingResultSourceHandler : IPendingResultSourceHandler, IPendingResultSourceReconciler
     {
         private readonly PlayerState _state;
@@ -355,12 +497,7 @@ namespace GuildIdle.Player
             _sourceLifecycle = new PendingResultSourceRegistry();
             _sourceLifecycle.Register(new ActivityPendingResultSourceHandler(state));
             _sourceLifecycle.Register(new QuestPendingResultSourceHandler(state));
-            _sourceLifecycle.Register(new PersistentPendingResultSourceHandler(
-                PendingResultSourceType.Combat,
-                state,
-                PendingResultOrigin.CombatLoot,
-                PendingResultOrigin.ActivityLootInCombat,
-                PendingResultOrigin.BroughtConsumable));
+            _sourceLifecycle.Register(new CombatPendingResultSourceHandler(state));
             _sourceLifecycle.Register(new CraftPendingResultSourceHandler(state));
         }
 
@@ -405,6 +542,11 @@ namespace GuildIdle.Player
                 }
                 _results.Add(normalized.resultId, normalized);
                 var makeClaimable = string.Equals(normalized.sourceType, PendingResultSourceType.Quest, StringComparison.Ordinal);
+                if (string.Equals(
+                        normalized.sourceType,
+                        PendingResultSourceType.Combat,
+                        StringComparison.Ordinal))
+                    makeClaimable = true;
                 if (string.Equals(normalized.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal))
                     makeClaimable = _state.GetActivityExecution(normalized.sourceExecutionId)?.status == ActivityRuntimeStatus.ResultPending;
                 if (!_sourceLifecycle.TryBind(normalized, makeClaimable, PendingResultBindMode.Restore))

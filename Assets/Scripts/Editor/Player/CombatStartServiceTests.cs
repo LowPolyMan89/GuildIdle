@@ -40,6 +40,25 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
+        public void DirectStartSnapshotsCompletionRewardsOnce()
+        {
+            var fixture = new Fixture(new CompletionRewardProvider());
+
+            var result = fixture.Service.Start(fixture.Direct());
+
+            Assert.That(result.Success, Is.True, result.Message);
+            Assert.That(
+                result.Aggregate.session.completionRewardsSnapshotCreated,
+                Is.True);
+            Assert.That(result.Aggregate.session.completionRewards,
+                Has.Length.EqualTo(1));
+            Assert.That(result.Aggregate.session.completionRewards[0].targetId,
+                Is.EqualTo("skill_combat"));
+            Assert.That(result.Aggregate.session.completionRewards[0].origin,
+                Is.EqualTo(PendingResultOrigin.ActivityReward));
+        }
+
+        [Test]
         public void ConsumableStartExtractsOnlySelectedStackAndKeepsSourceIdOnPartial()
         {
             var fixture = new Fixture();
@@ -916,14 +935,16 @@ namespace GuildIdle.Editor.Player
             public int StartedEvents;
             public CombatStartService Service { get; }
 
-            public Fixture()
+            public Fixture(
+                ICombatCompletionRewardProvider completionRewards = null)
             {
-                Service = CreateService(State, Identity);
+                Service = CreateService(State, Identity, completionRewards);
             }
 
             public CombatStartService CreateService(
                 FakeState state,
-                IdentityProvider identity)
+                IdentityProvider identity,
+                ICombatCompletionRewardProvider completionRewards = null)
             {
                 return new CombatStartService(
                     state,
@@ -931,7 +952,8 @@ namespace GuildIdle.Editor.Player
                     new ConsumableProvider(),
                     Queue,
                     identity: identity,
-                    eventSink: _ => StartedEvents++);
+                    eventSink: _ => StartedEvents++,
+                    completionRewards: completionRewards);
             }
 
             public CombatStartCommand Direct(
@@ -977,6 +999,32 @@ namespace GuildIdle.Editor.Player
                 Assert.That(State.Aggregates.Count, Is.EqualTo(0));
                 Assert.That(State.SaveCalls, Is.EqualTo(0));
                 Assert.That(StartedEvents, Is.EqualTo(0));
+            }
+        }
+
+        private sealed class CompletionRewardProvider :
+            ICombatCompletionRewardProvider
+        {
+            public bool TryCreateSnapshot(
+                string activityId,
+                bool activityAlreadyCompleted,
+                ICombatRng rng,
+                out CombatRewardEntrySaveData[] rewards,
+                out string error)
+            {
+                rewards = new[]
+                {
+                    new CombatRewardEntrySaveData
+                    {
+                        entryId = "completion",
+                        rewardType = RewardType.SkillExp,
+                        targetId = "skill_combat",
+                        quantity = 40,
+                        origin = PendingResultOrigin.ActivityReward
+                    }
+                };
+                error = null;
+                return true;
             }
         }
 

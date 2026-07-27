@@ -86,7 +86,66 @@ namespace GuildIdle.Player
                 new ConfigCombatStartActivityDescriptorProvider(RuntimeConfigs.Activities),
                 RuntimeConfigs.CombatConsumables,
                 new ConfigCombatEnemyQueueProvider(RuntimeConfigs.Enemies),
-                eventSink: HandleCombatStartedEvent);
+                eventSink: HandleCombatStartedEvent,
+                completionRewards:
+                    new ConfigCombatCompletionRewardProvider(
+                        RuntimeConfigs.Activities));
+        }
+
+        public static CombatOutcomeService CreateCombatOutcomeService()
+        {
+            var state = Player.State;
+            if (state == null)
+                throw new InvalidOperationException(
+                    "Player state is not loaded yet. Call Player.Load() or wait for config load.");
+            return new CombatOutcomeService(state);
+        }
+
+        public static CombatOutcomeService CreateCombatOutcomeService(
+            PlayerState state)
+        {
+            return new CombatOutcomeService(
+                state ?? throw new ArgumentNullException(nameof(state)));
+        }
+
+        public static CombatRuntimeService CreateCombatRuntimeService(
+            ICombatDescriptorProvider descriptors)
+        {
+            var state = Player.State;
+            if (state == null)
+                throw new InvalidOperationException(
+                    "Player state is not loaded yet. Call Player.Load() or wait for config load.");
+            return CreateCombatRuntimeService(state, descriptors);
+        }
+
+        public static CombatRuntimeService CreateCombatRuntimeService(
+            PlayerState state,
+            ICombatDescriptorProvider descriptors)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+            if (descriptors == null)
+                throw new ArgumentNullException(nameof(descriptors));
+            return new CombatRuntimeService(
+                state,
+                descriptors,
+                enemyQueue:
+                    new ConfigCombatEnemyQueueProvider(RuntimeConfigs.Enemies),
+                abilities:
+                    new ConfigCombatAbilityDescriptorProvider(
+                        RuntimeConfigs.Enemies),
+                statuses:
+                    new ConfigCombatStatusDescriptorProvider(
+                        RuntimeConfigs.Enemies),
+                deathPrevention:
+                    new ConfigCombatDeathPreventionDescriptorProvider(
+                        RuntimeConfigs.Heroes),
+                consumables: RuntimeConfigs.CombatConsumables,
+                enemyRewards:
+                    new ConfigCombatEnemyRewardProvider(
+                        RuntimeConfigs.Enemies,
+                        RuntimeConfigs.Items),
+                committer: new CombatOutcomeService(state));
         }
 
         public static IPendingResultService CreatePendingResultService()

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using GuildIdle.Player;
 
 namespace GuildIdle.Combat
 {
@@ -65,7 +66,9 @@ namespace GuildIdle.Combat
         ConsumableDescriptorNotFound = 29,
         InvalidConsumableDescriptor = 30,
         ConsumableConditionFailed = 31,
-        ConsumableProcessingFailed = 32
+        ConsumableProcessingFailed = 32,
+        EnemyRewardFailed = 33,
+        OutcomeCommitFailed = 34
     }
 
     public readonly struct CombatAttackCadence
@@ -170,6 +173,13 @@ namespace GuildIdle.Combat
         bool TryRestore(
             CombatRngStateSaveData state,
             out ICombatRng rng,
+            out CombatAdvanceError error);
+    }
+
+    public interface ICombatAggregateCommitter
+    {
+        bool TryCommit(
+            CombatRuntimeAggregate aggregate,
             out CombatAdvanceError error);
     }
 
@@ -505,6 +515,8 @@ namespace GuildIdle.Combat
         private readonly CombatDeathPreventionResolver _deathPrevention;
         private readonly ICombatConsumableDescriptorProvider _consumables;
         private readonly CombatConsumableConditionRegistry _consumableConditions;
+        private readonly ICombatEnemyRewardProvider _enemyRewards;
+        private readonly ICombatAggregateCommitter _committer;
 
         public CombatRuntimeService(
             ICombatRuntimeStore store,
@@ -518,7 +530,9 @@ namespace GuildIdle.Combat
             CombatDeathPreventionRegistry deathPreventionRegistry = null,
             ICombatConsumableDescriptorProvider consumables = null,
             CombatConsumableConditionRegistry consumableConditions = null,
-            CombatEffectExecutorRegistry effects = null)
+            CombatEffectExecutorRegistry effects = null,
+            ICombatEnemyRewardProvider enemyRewards = null,
+            ICombatAggregateCommitter committer = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _descriptors = descriptors ?? throw new ArgumentNullException(nameof(descriptors));
@@ -540,6 +554,8 @@ namespace GuildIdle.Combat
             _consumables = consumables ?? EmptyCombatConsumableDescriptorProvider.Instance;
             _consumableConditions =
                 consumableConditions ?? new CombatConsumableConditionRegistry();
+            _enemyRewards = enemyRewards;
+            _committer = committer;
         }
 
         public CombatAdvanceResult AdvanceTo(string executionId, double targetCombatTimeSeconds)
@@ -984,7 +1000,16 @@ namespace GuildIdle.Combat
 
                 aggregate.session.combatTimeSeconds = resolvedCombatTime;
                 aggregate.session.rng = rng.CaptureState();
-                if (!_store.UpdateCombatAggregate(aggregate))
+                if (_committer != null)
+                {
+                    if (!_committer.TryCommit(aggregate, out var commitError))
+                        return CombatAdvanceResult.Failed(
+                            commitError ?? new CombatAdvanceError(
+                                CombatAdvanceErrorCode.OutcomeCommitFailed,
+                                "Combat aggregate commit failed."),
+                            currentTime);
+                }
+                else if (!_store.UpdateCombatAggregate(aggregate))
                 {
                     return CombatAdvanceResult.Failed(
                         CombatAdvanceErrorCode.StoreUpdateFailed,
@@ -1718,11 +1743,10 @@ namespace GuildIdle.Combat
             var queue = session.enemyQueue ?? Array.Empty<CombatEnemyQueueEntrySaveData>();
             if (queue.Length == 0)
             {
-                RemovePendingActorAttacks(session.scheduler);
-                RemovePendingConsumableChecks(session.scheduler);
-                session.simulationStopped = true;
-                queueCompleted = true;
-                return true;
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.InvalidEnemyQueue,
+                    "Running combat cannot resolve an empty enemy queue.");
+                return false;
             }
 
             if (!string.Equals(session.combatMode, CombatEnemyQueueBuilder.Queue1V1Mode, StringComparison.Ordinal))
@@ -1762,6 +1786,13 @@ namespace GuildIdle.Combat
                 return false;
             }
 
+            if (!TryApplyEnemyReward(
+                    session,
+                    currentEntry,
+                    rng,
+                    out error))
+                return false;
+
             _statusRuntime?.RemoveScheduledEventsForCombatant(
                 session.scheduler,
                 session.currentEnemy.combatantId);
@@ -1774,6 +1805,33 @@ namespace GuildIdle.Combat
                 session.queuePosition = queue.Length;
                 session.currentEnemy = null;
                 session.simulationStopped = true;
+                var candidateId = $"{session.sessionId}:victory";
+                var candidateEventKey =
+                    $"{deathEvent.eventKey}:terminal:victory";
+                session.terminalCandidate = new CombatTerminalCandidateSaveData
+                {
+                    candidateId = candidateId,
+                    kind = CombatTerminalCandidateKinds.Victory,
+                    eventKey = candidateEventKey,
+                    createdAtSeconds = deathEvent.timestampSeconds
+                };
+                session.combatTimeSeconds = deathEvent.timestampSeconds;
+                if (!TryReserveSequence(session.scheduler, out var sequence))
+                {
+                    error = new CombatAdvanceError(
+                        CombatAdvanceErrorCode.ProcessingFailed,
+                        "Combat scheduler sequence is exhausted during victory candidate creation.");
+                    return false;
+                }
+                events.Add(new CombatTerminalCandidateCreatedEvent(
+                    candidateEventKey,
+                    deathEvent.timestampSeconds,
+                    sequence,
+                    currentEntry.combatantId,
+                    null,
+                    candidateId,
+                    CombatTerminalCandidateKinds.Victory,
+                    0));
                 queueCompleted = true;
                 return true;
             }
@@ -1868,6 +1926,98 @@ namespace GuildIdle.Combat
                 return false;
             }
 
+            return true;
+        }
+
+        private bool TryApplyEnemyReward(
+            CombatSessionSaveData session,
+            CombatEnemyQueueEntrySaveData queueEntry,
+            ICombatRng rng,
+            out CombatAdvanceError error)
+        {
+            error = null;
+            if (_enemyRewards == null)
+                return true;
+            var operationKey =
+                $"{session.sessionId}:enemy-reward:{queueEntry.queueIndex}:{queueEntry.combatantId}";
+            if (string.Equals(
+                    session.lastEnemyRewardOperation?.operationKey,
+                    operationKey,
+                    StringComparison.Ordinal))
+                return true;
+            if (!_enemyRewards.TryResolve(
+                    queueEntry.enemyId,
+                    rng,
+                    out var reward,
+                    out var providerError) ||
+                reward == null || reward.EnemyExp < 0)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.EnemyRewardFailed,
+                    providerError ?? "Enemy reward provider failed.");
+                return false;
+            }
+
+            var existing = session.loot ??
+                           Array.Empty<CombatRewardEntrySaveData>();
+            var added = reward.Loot ??
+                        Array.Empty<CombatRewardEntrySaveData>();
+            if (existing.Length + added.Length >
+                CombatRuntimeSaveDataUtility.PersistentCollectionLimit)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.EnemyRewardFailed,
+                    "Combat loot exceeds its bounded retention limit.");
+                return false;
+            }
+            if (reward.EnemyExp > long.MaxValue - session.accumulatedEnemyExp)
+            {
+                error = new CombatAdvanceError(
+                    CombatAdvanceErrorCode.EnemyRewardFailed,
+                    "Accumulated enemy EXP exceeds Int64.");
+                return false;
+            }
+
+            var combined =
+                new CombatRewardEntrySaveData[existing.Length + added.Length];
+            Array.Copy(existing, combined, existing.Length);
+            for (var index = 0; index < added.Length; index++)
+            {
+                var value = added[index];
+                if (value == null || string.IsNullOrWhiteSpace(value.rewardType) ||
+                    string.IsNullOrWhiteSpace(value.targetId) ||
+                    value.quantity <= 0 || value.quality < 0)
+                {
+                    error = new CombatAdvanceError(
+                        CombatAdvanceErrorCode.EnemyRewardFailed,
+                        "Enemy reward provider returned an invalid loot entry.");
+                    return false;
+                }
+                combined[existing.Length + index] =
+                    new CombatRewardEntrySaveData
+                    {
+                        entryId = $"{operationKey}:loot:{index}",
+                        sortOrder = existing.Length + index,
+                        rewardType = value.rewardType,
+                        targetId = value.targetId,
+                        quantity = value.quantity,
+                        origin = PendingResultOrigin.CombatLoot,
+                        quality = value.quality,
+                        instanceId = value.instanceId
+                    };
+            }
+
+            session.loot = combined;
+            session.accumulatedEnemyExp += reward.EnemyExp;
+            session.lastEnemyRewardOperation =
+                new CombatEnemyRewardOperationSaveData
+                {
+                    operationKey = operationKey,
+                    combatantId = queueEntry.combatantId,
+                    enemyId = queueEntry.enemyId,
+                    queueIndex = queueEntry.queueIndex,
+                    enemyExp = reward.EnemyExp
+                };
             return true;
         }
 

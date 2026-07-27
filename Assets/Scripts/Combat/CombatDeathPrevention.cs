@@ -26,6 +26,8 @@ namespace GuildIdle.Combat
 
     public static class CombatTerminalCandidateKinds
     {
+        public const string Victory = "Victory";
+        public const string Retreat = "Retreat";
         public const string Defeat = "Defeat";
     }
 

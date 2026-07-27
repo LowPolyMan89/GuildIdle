@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using GuildIdle.Combat;
 using GuildIdle.Configs;
+using GuildIdle.Player;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -476,6 +477,88 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(session.hero.independentModifiers.Single().value, Is.EqualTo(2f));
             Assert.That(session.combatTimeSeconds, Is.EqualTo(1d));
             Assert.That(session.rng.drawCount, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void EnemyDeathAddsLootAndExpOnceBeforeQueueTransition()
+        {
+            var source = QueueAggregate("enemy-a", 1, "enemy-b");
+            source.session.rng = ScriptedRngFactory.State(
+                0, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var enemyQueue = new ConfigCombatEnemyQueueProvider(
+                EnemyConfigs(
+                    new[] { Enemy("enemy-a", 1), Enemy("enemy-b", 20) },
+                    Array.Empty<EnemyGroupConfigDto>()));
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(
+                        CombatActorSide.Hero,
+                        CombatAttackCadence.HeroInterval(1d),
+                        damageMin: 1,
+                        damageMax: 1),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(0.1d))),
+                new ScriptedRngFactory(),
+                enemyQueue,
+                enemyRewards: new EnemyRewardProvider(5, 2));
+
+            var first = service.AdvanceTo("execution", 1d);
+            var replay = service.AdvanceTo("execution", 1d);
+
+            Assert.That(first.Success, Is.True, first.Error?.Message);
+            Assert.That(replay.Success, Is.True, replay.Error?.Message);
+            Assert.That(store.Value.session.queuePosition, Is.EqualTo(1));
+            Assert.That(store.Value.session.accumulatedEnemyExp, Is.EqualTo(5));
+            Assert.That(store.Value.session.loot, Has.Length.EqualTo(1));
+            Assert.That(store.Value.session.loot[0].quantity, Is.EqualTo(2));
+            Assert.That(
+                store.Value.session.lastEnemyRewardOperation.enemyId,
+                Is.EqualTo("enemy-a"));
+        }
+
+        [Test]
+        public void EnemyRewardFailureRollsBackDeathRngAndQueueTransition()
+        {
+            var source = QueueAggregate("enemy-a", 1, "enemy-b");
+            source.session.rng = ScriptedRngFactory.State(
+                0, 0, ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(
+                        CombatActorSide.Hero,
+                        CombatAttackCadence.HeroInterval(1d),
+                        damageMin: 1,
+                        damageMax: 1),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(0.1d))),
+                new ScriptedRngFactory(),
+                new ConfigCombatEnemyQueueProvider(
+                    EnemyConfigs(
+                        new[]
+                        {
+                            Enemy("enemy-a", 1),
+                            Enemy("enemy-b", 20)
+                        },
+                        Array.Empty<EnemyGroupConfigDto>())),
+                enemyRewards: new EnemyRewardProvider(
+                    0,
+                    0,
+                    fail: true));
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code,
+                Is.EqualTo(CombatAdvanceErrorCode.EnemyRewardFailed));
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
         }
 
         [Test]
@@ -3234,6 +3317,54 @@ namespace GuildIdle.EditorTests.Player
                 descriptor = side == CombatActorSide.Hero ? _hero : _enemy;
                 error = null;
                 return descriptor != null;
+            }
+        }
+
+        private sealed class EnemyRewardProvider :
+            ICombatEnemyRewardProvider
+        {
+            private readonly long _exp;
+            private readonly long _quantity;
+            private readonly bool _fail;
+
+            public EnemyRewardProvider(
+                long exp,
+                long quantity,
+                bool fail = false)
+            {
+                _exp = exp;
+                _quantity = quantity;
+                _fail = fail;
+            }
+
+            public bool TryResolve(
+                string enemyId,
+                ICombatRng rng,
+                out CombatEnemyRewardDescriptor reward,
+                out string error)
+            {
+                if (_fail)
+                {
+                    reward = null;
+                    error = "Simulated enemy reward failure.";
+                    return false;
+                }
+                reward = new CombatEnemyRewardDescriptor(
+                    _exp,
+                    _quantity <= 0
+                        ? Array.Empty<CombatRewardEntrySaveData>()
+                        : new[]
+                        {
+                            new CombatRewardEntrySaveData
+                            {
+                                rewardType = "Currency",
+                                targetId = "gold_id",
+                                quantity = _quantity,
+                                origin = PendingResultOrigin.CombatLoot
+                            }
+                        });
+                error = null;
+                return true;
             }
         }
 

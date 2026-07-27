@@ -52,6 +52,7 @@ namespace GuildIdle.Combat
         public bool pendingResultResolved;
         public bool completionPublished;
         public string pendingResultId;
+        public long resultSourceSequence;
         public long startedAtUnixSeconds;
         public long completedAtUnixSeconds;
     }
@@ -72,7 +73,12 @@ namespace GuildIdle.Combat
         public CombatRngStateSaveData rng = new CombatRngStateSaveData();
         public CombatRewardEntrySaveData[] loot = Array.Empty<CombatRewardEntrySaveData>();
         public long accumulatedEnemyExp;
+        public string enemyExpTargetId;
         public CombatRewardEntrySaveData[] completionRewards = Array.Empty<CombatRewardEntrySaveData>();
+        public bool completionRewardsSnapshotCreated;
+        public CombatEnemyRewardOperationSaveData lastEnemyRewardOperation;
+        public CombatRewardEntrySaveData[] outcomeRewards = Array.Empty<CombatRewardEntrySaveData>();
+        public CombatDefeatLossSaveData defeatLoss;
         public CombatLoadoutKind loadoutKind;
         public CombatConsumableStateSaveData broughtConsumable;
         public CombatDeathPreventionOperationSaveData lastDeathPreventionOperation;
@@ -229,6 +235,37 @@ namespace GuildIdle.Combat
         public bool successful;
     }
 
+    [Serializable]
+    public sealed class CombatEnemyRewardOperationSaveData
+    {
+        public string operationKey;
+        public string combatantId;
+        public string enemyId;
+        public int queueIndex;
+        public long enemyExp;
+    }
+
+    [Serializable]
+    public sealed class CombatDefeatLossSaveData
+    {
+        public int lossPercent;
+        public CombatDefeatLossEntrySaveData[] entries =
+            Array.Empty<CombatDefeatLossEntrySaveData>();
+    }
+
+    [Serializable]
+    public sealed class CombatDefeatLossEntrySaveData
+    {
+        public string origin;
+        public string rewardType;
+        public string targetId;
+        public int quality;
+        public string instanceId;
+        public long quantityBefore;
+        public long quantityLost;
+        public long quantityKept;
+    }
+
     public interface ICombatRuntimeStore
     {
         CombatRuntimeAggregate[] GetCombatAggregates();
@@ -269,16 +306,26 @@ namespace GuildIdle.Combat
                 return Fail("Combat execution/session links do not form one aggregate.", out error);
             if (!string.Equals(execution.heroId, session.hero.definitionId, StringComparison.Ordinal))
                 return Fail("Combat execution hero does not match the session hero snapshot.", out error);
+            if (session.simulationStopped &&
+                session.queuePosition == session.enemyQueue.Length &&
+                session.terminalCandidate == null &&
+                !execution.outcomeFinalized)
+                return Fail(
+                    "Stopped completed combat queue requires a terminal candidate or finalized outcome.",
+                    out error);
+            if (execution.outcomeFinalized && session.terminalCandidate == null)
+                return Fail(
+                    "Finalized combat outcome requires its saved terminal candidate.",
+                    out error);
             if (session.terminalCandidate != null &&
-                string.Equals(
-                    session.terminalCandidate.kind,
-                    CombatTerminalCandidateKinds.Defeat,
-                    StringComparison.Ordinal) &&
                 !string.IsNullOrWhiteSpace(execution.outcome) &&
-                !string.Equals(execution.outcome, CombatTerminalCandidateKinds.Defeat, StringComparison.Ordinal))
+                !string.Equals(
+                    execution.outcome,
+                    session.terminalCandidate.kind,
+                    StringComparison.Ordinal))
             {
                 return Fail(
-                    "Combat execution outcome conflicts with the saved defeat terminal candidate.",
+                    "Combat execution outcome conflicts with the saved terminal candidate.",
                     out error);
             }
 
@@ -317,6 +364,7 @@ namespace GuildIdle.Combat
                 pendingResultResolved = source.pendingResultResolved,
                 completionPublished = source.completionPublished,
                 pendingResultId = source.pendingResultId,
+                resultSourceSequence = source.resultSourceSequence,
                 startedAtUnixSeconds = source.startedAtUnixSeconds,
                 completedAtUnixSeconds = source.completedAtUnixSeconds
             };
@@ -352,7 +400,14 @@ namespace GuildIdle.Combat
                 },
                 loot = CloneRewards(source.loot),
                 accumulatedEnemyExp = source.accumulatedEnemyExp,
+                enemyExpTargetId = source.enemyExpTargetId,
                 completionRewards = CloneRewards(source.completionRewards),
+                completionRewardsSnapshotCreated =
+                    source.completionRewardsSnapshotCreated,
+                lastEnemyRewardOperation =
+                    CloneEnemyRewardOperation(source.lastEnemyRewardOperation),
+                outcomeRewards = CloneRewards(source.outcomeRewards),
+                defeatLoss = CloneDefeatLoss(source.defeatLoss),
                 loadoutKind = source.loadoutKind,
                 broughtConsumable = CloneConsumable(source.broughtConsumable),
                 lastDeathPreventionOperation =
@@ -382,6 +437,10 @@ namespace GuildIdle.Combat
                    string.Equals(left.session.executionId, right.session.executionId, StringComparison.Ordinal) &&
                    string.Equals(left.session.enemyGroupId, right.session.enemyGroupId, StringComparison.Ordinal) &&
                    string.Equals(left.session.combatMode, right.session.combatMode, StringComparison.Ordinal) &&
+                   string.Equals(
+                       left.session.enemyExpTargetId,
+                       right.session.enemyExpTargetId,
+                       StringComparison.Ordinal) &&
                    left.session.loadoutKind == right.session.loadoutKind &&
                    SameConsumableIdentity(
                        left.session.broughtConsumable,
@@ -402,6 +461,7 @@ namespace GuildIdle.Combat
             if (string.IsNullOrWhiteSpace(execution.executionId) || string.IsNullOrWhiteSpace(execution.sessionId) ||
                 string.IsNullOrWhiteSpace(execution.sourceActivityId) || string.IsNullOrWhiteSpace(execution.sourceExecutionId) ||
                 string.IsNullOrWhiteSpace(execution.occupationOwnerId) || string.IsNullOrWhiteSpace(execution.heroId) ||
+                execution.resultSourceSequence < 0 ||
                 execution.startedAtUnixSeconds < 0 || execution.completedAtUnixSeconds < 0)
                 return Fail("Combat execution has an invalid identity/source snapshot.", out error);
             if (execution.status != CombatExecutionStatus.Running && execution.status != CombatExecutionStatus.ResultPending &&
@@ -422,6 +482,8 @@ namespace GuildIdle.Combat
                 return Fail("ResultPending combat execution requires an unresolved PendingResult.", out error);
             if (execution.status == CombatExecutionStatus.Completed && execution.resultCreated && !execution.pendingResultResolved)
                 return Fail("Completed combat execution cannot retain an unresolved PendingResult.", out error);
+            if (execution.outcomeFinalized && execution.resultSourceSequence <= 0)
+                return Fail("Finalized combat execution requires a result source sequence.", out error);
             return true;
         }
 
@@ -437,11 +499,23 @@ namespace GuildIdle.Combat
                 return false;
             if (!ValidateRng(session.rng, out error))
                 return false;
-            if (!WithinLimit(session.enemyQueue) || !WithinLimit(session.loot) || !WithinLimit(session.completionRewards))
+            if (!WithinLimit(session.enemyQueue) || !WithinLimit(session.loot) ||
+                !WithinLimit(session.completionRewards) ||
+                !WithinLimit(session.outcomeRewards) ||
+                (session.defeatLoss != null &&
+                 !WithinLimit(session.defeatLoss.entries)))
                 return Fail("Combat session exceeds the persistent collection limit.", out error);
             if (!ValidateQueue(session.enemyQueue, out error) || !ValidateCombatant(session.hero, out error) ||
                 (session.currentEnemy != null && !ValidateCombatant(session.currentEnemy, out error)) ||
-                !ValidateRewards(session.loot, out error) || !ValidateRewards(session.completionRewards, out error))
+                !ValidateRewards(session.loot, out error) ||
+                !ValidateRewards(session.completionRewards, out error) ||
+                !ValidateRewards(session.outcomeRewards, out error) ||
+                !ValidateEnemyRewardOperation(
+                    session.lastEnemyRewardOperation,
+                    session.enemyQueue,
+                    session.queuePosition,
+                    out error) ||
+                !ValidateDefeatLoss(session.defeatLoss, out error))
                 return false;
             if (session.queuePosition < 0 || session.queuePosition > session.enemyQueue.Length)
                 return Fail("Combat queue position is outside the saved queue.", out error);
@@ -465,20 +539,28 @@ namespace GuildIdle.Combat
                     out error) ||
                 !ValidateTerminalCandidate(session.terminalCandidate, out error))
                 return false;
-            if (session.terminalCandidate != null &&
-                string.Equals(
-                    session.terminalCandidate.kind,
-                    CombatTerminalCandidateKinds.Defeat,
-                    StringComparison.Ordinal))
+            if (session.terminalCandidate != null)
             {
                 if (!session.simulationStopped)
-                    return Fail("Defeat terminal candidate requires a stopped simulation.", out error);
-                if (session.hero.currentHp != 0)
-                    return Fail("Defeat terminal candidate requires a defeated hero.", out error);
+                    return Fail("Terminal candidate requires a stopped simulation.", out error);
                 if (session.scheduler.scheduledEvents.Length != 0)
-                    return Fail("Defeat terminal candidate cannot retain scheduled events.", out error);
+                    return Fail("Terminal candidate cannot retain scheduled events.", out error);
                 if (session.combatTimeSeconds != session.terminalCandidate.createdAtSeconds)
-                    return Fail("Defeat terminal candidate timestamp must match combat time.", out error);
+                    return Fail("Terminal candidate timestamp must match combat time.", out error);
+                if (string.Equals(
+                        session.terminalCandidate.kind,
+                        CombatTerminalCandidateKinds.Defeat,
+                        StringComparison.Ordinal) &&
+                    session.hero.currentHp != 0)
+                    return Fail("Defeat terminal candidate requires a defeated hero.", out error);
+                if (string.Equals(
+                        session.terminalCandidate.kind,
+                        CombatTerminalCandidateKinds.Victory,
+                        StringComparison.Ordinal) &&
+                    (session.queuePosition != session.enemyQueue.Length ||
+                     session.currentEnemy != null ||
+                     session.hero.currentHp <= 0))
+                    return Fail("Victory terminal candidate requires a completed enemy queue and living hero.", out error);
             }
             return true;
         }
@@ -655,6 +737,53 @@ namespace GuildIdle.Combat
             return true;
         }
 
+        private static bool ValidateEnemyRewardOperation(
+            CombatEnemyRewardOperationSaveData value,
+            CombatEnemyQueueEntrySaveData[] queue,
+            int queuePosition,
+            out string error)
+        {
+            error = null;
+            if (value == null)
+                return true;
+            if (string.IsNullOrWhiteSpace(value.operationKey) ||
+                string.IsNullOrWhiteSpace(value.combatantId) ||
+                string.IsNullOrWhiteSpace(value.enemyId) ||
+                value.queueIndex < 0 || value.queueIndex >= queue.Length ||
+                value.queueIndex >= queuePosition ||
+                value.enemyExp < 0)
+                return Fail("Enemy reward operation state is invalid.", out error);
+            var entry = queue[value.queueIndex];
+            return entry != null &&
+                   string.Equals(entry.combatantId, value.combatantId, StringComparison.Ordinal) &&
+                   string.Equals(entry.enemyId, value.enemyId, StringComparison.Ordinal) ||
+                   Fail("Enemy reward operation does not match the saved queue.", out error);
+        }
+
+        private static bool ValidateDefeatLoss(
+            CombatDefeatLossSaveData value,
+            out string error)
+        {
+            error = null;
+            if (value == null)
+                return true;
+            if (value.lossPercent < 25 || value.lossPercent > 50 ||
+                value.entries == null)
+                return Fail("Defeat loss state is invalid.", out error);
+            foreach (var entry in value.entries)
+                if (entry == null ||
+                    string.IsNullOrWhiteSpace(entry.origin) ||
+                    string.IsNullOrWhiteSpace(entry.rewardType) ||
+                    string.IsNullOrWhiteSpace(entry.targetId) ||
+                    entry.quality < 0 ||
+                    entry.quantityBefore <= 0 ||
+                    entry.quantityLost < 0 ||
+                    entry.quantityKept < 0 ||
+                    entry.quantityLost + entry.quantityKept != entry.quantityBefore)
+                    return Fail("Defeat loss breakdown entry is invalid.", out error);
+            return true;
+        }
+
         private static bool ValidateLoadout(CombatSessionSaveData session, out string error)
         {
             error = null;
@@ -739,7 +868,9 @@ namespace GuildIdle.Combat
             if (string.IsNullOrWhiteSpace(value.candidateId) || string.IsNullOrWhiteSpace(value.kind) ||
                 string.IsNullOrWhiteSpace(value.eventKey) || InvalidTime(value.createdAtSeconds))
                 return Fail("Combat terminal candidate is invalid.", out error);
-            if (!string.Equals(value.kind, CombatTerminalCandidateKinds.Defeat, StringComparison.Ordinal))
+            if (!string.Equals(value.kind, CombatTerminalCandidateKinds.Defeat, StringComparison.Ordinal) &&
+                !string.Equals(value.kind, CombatTerminalCandidateKinds.Victory, StringComparison.Ordinal) &&
+                !string.Equals(value.kind, CombatTerminalCandidateKinds.Retreat, StringComparison.Ordinal))
                 return Fail($"Combat terminal candidate kind '{value.kind}' is unsupported.", out error);
             return true;
         }
@@ -779,6 +910,7 @@ namespace GuildIdle.Combat
             changed |= CanonicalizeCombatant(session.currentEnemy);
             changed |= Sort(session.loot, CompareReward);
             changed |= Sort(session.completionRewards, CompareReward);
+            changed |= Sort(session.outcomeRewards, CompareReward);
             return changed;
         }
 
@@ -800,7 +932,9 @@ namespace GuildIdle.Combat
 
         private static bool HasNullCollections(CombatSessionSaveData session)
         {
-            return session.enemyQueue == null || session.loot == null || session.completionRewards == null ||
+            return session.enemyQueue == null || session.loot == null ||
+                   session.completionRewards == null || session.outcomeRewards == null ||
+                   (session.defeatLoss != null && session.defeatLoss.entries == null) ||
                    HasNullCollections(session.hero) || HasNullCollections(session.currentEnemy) || session.scheduler == null ||
                    session.scheduler.scheduledEvents == null || session.rng == null;
         }
@@ -1013,6 +1147,48 @@ namespace GuildIdle.Combat
                 effectId = source.effectId,
                 chanceRoll = source.chanceRoll,
                 successful = source.successful
+            };
+        }
+
+        private static CombatEnemyRewardOperationSaveData CloneEnemyRewardOperation(
+            CombatEnemyRewardOperationSaveData source)
+        {
+            return source == null ? null : new CombatEnemyRewardOperationSaveData
+            {
+                operationKey = source.operationKey,
+                combatantId = source.combatantId,
+                enemyId = source.enemyId,
+                queueIndex = source.queueIndex,
+                enemyExp = source.enemyExp
+            };
+        }
+
+        private static CombatDefeatLossSaveData CloneDefeatLoss(
+            CombatDefeatLossSaveData source)
+        {
+            if (source == null)
+                return null;
+            var entries = source.entries ?? Array.Empty<CombatDefeatLossEntrySaveData>();
+            var copies = new CombatDefeatLossEntrySaveData[entries.Length];
+            for (var index = 0; index < copies.Length; index++)
+            {
+                var value = entries[index];
+                copies[index] = value == null ? null : new CombatDefeatLossEntrySaveData
+                {
+                    origin = value.origin,
+                    rewardType = value.rewardType,
+                    targetId = value.targetId,
+                    quality = value.quality,
+                    instanceId = value.instanceId,
+                    quantityBefore = value.quantityBefore,
+                    quantityLost = value.quantityLost,
+                    quantityKept = value.quantityKept
+                };
+            }
+            return new CombatDefeatLossSaveData
+            {
+                lossPercent = source.lossPercent,
+                entries = copies
             };
         }
 
