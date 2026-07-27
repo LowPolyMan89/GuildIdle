@@ -1533,7 +1533,8 @@ namespace GuildIdle.Player
                 (previous.outcomeFinalized && !next.outcomeFinalized) ||
                 (previous.resultCreated && !next.resultCreated) ||
                 (previous.pendingResultResolved && !next.pendingResultResolved) ||
-                (previous.completionPublished && !next.completionPublished))
+                (previous.completionPublished && !next.completionPublished) ||
+                (previous.failurePublished && !next.failurePublished))
                 return false;
             return !previous.outcomeFinalized || string.Equals(previous.outcome, next.outcome, StringComparison.Ordinal);
         }

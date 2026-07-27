@@ -1386,6 +1386,13 @@ namespace GuildIdle.Editor.Activities
                 ActivityCompletedCount++;
                 return new ActivityRuntimeProgressionResult { success = true, code = "Applied" };
             }
+
+            public ActivityRuntimeProgressionResult ProcessActivityFailed(string activityId) =>
+                new ActivityRuntimeProgressionResult
+                {
+                    success = true,
+                    code = "Applied"
+                };
         }
 
         private sealed class FixedRandom : IActivityRandom

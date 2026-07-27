@@ -23,19 +23,37 @@ namespace GuildIdle.Player
             if (state == null)
                 throw new System.InvalidOperationException("Player state is not loaded yet. Call Player.Load() or wait for config load.");
 
+            var progression = CreateActivityProgressionProcessor(state);
             return new ActivityRuntimeService(
                 state,
                 new PlayerStateActivityAdapter(state),
                 eventSink: HandleActivityRuntimeEvent,
-                progressionProcessor: CreateActivityProgressionProcessor(state));
+                progressionProcessor: progression,
+                linkedCombatCoordinatorFactory:
+                    (gateway, processor) =>
+                        new LinkedCombatRuntimeCoordinator(
+                            gateway,
+                            CreateCombatStartService(state),
+                            state,
+                            processor));
         }
 
         public static ActivityRuntimeService CreateRuntimeService(PlayerState state)
         {
+            if (state == null)
+                throw new System.ArgumentNullException(nameof(state));
+            var progression = CreateActivityProgressionProcessor(state);
             return new ActivityRuntimeService(
-                state ?? throw new System.ArgumentNullException(nameof(state)),
+                state,
                 new PlayerStateActivityAdapter(state),
-                progressionProcessor: CreateActivityProgressionProcessor(state));
+                progressionProcessor: progression,
+                linkedCombatCoordinatorFactory:
+                    (gateway, processor) =>
+                        new LinkedCombatRuntimeCoordinator(
+                            gateway,
+                            CreateCombatStartService(state),
+                            state,
+                            processor));
         }
 
         public static IStorageService CreateStorageService()
@@ -201,6 +219,10 @@ namespace GuildIdle.Player
 
             public ActivityRuntimeProgressionResult ProcessActivityCompleted(string activityId) =>
                 ToResult(_progression.ApplyActivityCompletedWithinOuterTransaction(activityId));
+
+            public ActivityRuntimeProgressionResult ProcessActivityFailed(string activityId) =>
+                ToResult(_progression.ApplyWithinOuterTransaction(
+                    new ActivityFailed(activityId)));
 
             private static ActivityRuntimeProgressionResult ToResult(ProgressionRuntimeUpdate update)
             {

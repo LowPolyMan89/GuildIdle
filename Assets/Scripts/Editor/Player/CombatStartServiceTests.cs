@@ -459,6 +459,13 @@ namespace GuildIdle.Editor.Player
             Assert.That(result.Aggregate.execution.occupationOwnerId, Is.EqualTo("activity-root"));
             Assert.That(result.Aggregate.session.enemyExpTargetId,
                 Is.EqualTo("skill_combat"));
+            Assert.That(result.Aggregate.session.loot, Has.Length.EqualTo(1));
+            Assert.That(result.Aggregate.session.loot[0].targetId,
+                Is.EqualTo("resource-rabbit-meat"));
+            Assert.That(result.Aggregate.session.loot[0].quantity,
+                Is.EqualTo(2));
+            Assert.That(result.Aggregate.session.loot[0].origin,
+                Is.EqualTo(PendingResultOrigin.ActivityLootInCombat));
             Assert.That(fixture.State.BusyOwner, Is.EqualTo("activity-root"));
             Assert.That(fixture.State.Fatigue, Is.EqualTo(beforeFatigue));
             Assert.That(fixture.State.GetActiveHeroCount(), Is.EqualTo(beforeActive));
@@ -547,6 +554,31 @@ namespace GuildIdle.Editor.Player
                 bindFixture.State.Activity.linkedCombat.combatExecutionId,
                 Is.Null.Or.Empty);
             Assert.That(bindFixture.State.BusyOwner, Is.EqualTo("activity-root"));
+        }
+
+        [Test]
+        public void LinkedLootAndStartRollbackTogetherWhenSaveFails()
+        {
+            var fixture = new Fixture();
+            fixture.State.ConfigureLinkedSource();
+            fixture.State.FailSave = true;
+
+            var result = fixture.Service.Start(fixture.Linked());
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Code, Is.EqualTo(CombatStartCode.SaveFailure));
+            Assert.That(fixture.State.Aggregates, Is.Empty);
+            Assert.That(fixture.State.Receipts, Is.Empty);
+            Assert.That(fixture.StartedEvents, Is.Zero);
+            Assert.That(
+                fixture.State.Activity.linkedCombat.combatExecutionId,
+                Is.Null.Or.Empty);
+            Assert.That(
+                fixture.State.Activity.linkedCombat.loot,
+                Has.Length.EqualTo(1));
+            Assert.That(
+                fixture.State.Activity.linkedCombat.loot[0].origin,
+                Is.EqualTo(PendingResultOrigin.ActivityLootInCombat));
         }
 
         [Test]
@@ -1280,7 +1312,19 @@ namespace GuildIdle.Editor.Player
                         enemyGroupId = "enemy-group",
                         combatMode = CombatEnemyQueueBuilder.Queue1V1Mode,
                         enemyExpTargetId = "skill_combat",
-                        suppressFatigueCost = true
+                        suppressFatigueCost = true,
+                        loot = new[]
+                        {
+                            new ActivityStagedRewardSaveData
+                            {
+                                rewardType = RewardType.Resource,
+                                targetId = "resource-rabbit-meat",
+                                quantity = 2,
+                                origin =
+                                    PendingResultOrigin
+                                        .ActivityLootInCombat
+                            }
+                        }
                     }
                 };
             }

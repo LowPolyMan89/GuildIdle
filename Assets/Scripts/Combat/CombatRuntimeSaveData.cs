@@ -51,6 +51,7 @@ namespace GuildIdle.Combat
         public bool resultCreated;
         public bool pendingResultResolved;
         public bool completionPublished;
+        public bool failurePublished;
         public string pendingResultId;
         public long resultSourceSequence;
         public long startedAtUnixSeconds;
@@ -374,6 +375,7 @@ namespace GuildIdle.Combat
                 resultCreated = source.resultCreated,
                 pendingResultResolved = source.pendingResultResolved,
                 completionPublished = source.completionPublished,
+                failurePublished = source.failurePublished,
                 pendingResultId = source.pendingResultId,
                 resultSourceSequence = source.resultSourceSequence,
                 startedAtUnixSeconds = source.startedAtUnixSeconds,
@@ -495,6 +497,34 @@ namespace GuildIdle.Combat
                 return Fail("Completed combat execution cannot retain an unresolved PendingResult.", out error);
             if (execution.outcomeFinalized && execution.resultSourceSequence <= 0)
                 return Fail("Finalized combat execution requires a result source sequence.", out error);
+            if (execution.completionPublished &&
+                execution.failurePublished)
+                return Fail("Combat execution cannot publish both completion and failure.", out error);
+            if ((execution.completionPublished ||
+                 execution.failurePublished) &&
+                (execution.status != CombatExecutionStatus.Completed ||
+                 !execution.pendingResultResolved ||
+                 !string.Equals(
+                     execution.sourceExecutionId,
+                     execution.executionId,
+                     StringComparison.Ordinal) ||
+                 !string.Equals(
+                     execution.occupationOwnerId,
+                     execution.executionId,
+                     StringComparison.Ordinal)))
+                return Fail("Combat progression publication requires one resolved direct execution.", out error);
+            if (execution.completionPublished &&
+                !string.Equals(
+                    execution.outcome,
+                    CombatTerminalCandidateKinds.Victory,
+                    StringComparison.Ordinal))
+                return Fail("Combat completion publication requires Victory.", out error);
+            if (execution.failurePublished &&
+                !string.Equals(
+                    execution.outcome,
+                    CombatTerminalCandidateKinds.Defeat,
+                    StringComparison.Ordinal))
+                return Fail("Combat failure publication requires Defeat.", out error);
             return true;
         }
 

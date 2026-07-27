@@ -890,6 +890,19 @@ namespace GuildIdle.Combat
                     out failure);
             }
 
+            if (command.Kind == CombatStartKind.Linked &&
+                !TryBuildLinkedActivityLoot(
+                    command,
+                    builtSession.sessionId,
+                    out builtSession.loot,
+                    out var linkedLootError))
+            {
+                return FailPreflight(
+                    CombatStartCode.TransactionFailure,
+                    linkedLootError,
+                    out failure);
+            }
+
             builtSession.completionRewards =
                 Array.Empty<CombatRewardEntrySaveData>();
             if (_completionRewards != null &&
@@ -960,6 +973,89 @@ namespace GuildIdle.Combat
             }
 
             return true;
+        }
+
+        private bool TryBuildLinkedActivityLoot(
+            CombatStartCommand command,
+            string sessionId,
+            out CombatRewardEntrySaveData[] loot,
+            out string error)
+        {
+            loot = Array.Empty<CombatRewardEntrySaveData>();
+            error = null;
+            var source = _state.GetActivityExecution(
+                command.SourceExecutionId);
+            var linked = source?.linkedCombat;
+            if (linked == null ||
+                !string.Equals(
+                    linked.requestId,
+                    command.SourceRequestId,
+                    StringComparison.Ordinal))
+            {
+                error =
+                    "Linked activity loot source no longer matches the start request.";
+                return false;
+            }
+
+            var staged = linked.loot ??
+                         Array.Empty<ActivityStagedRewardSaveData>();
+            if (staged.Length >
+                CombatRuntimeSaveDataUtility.PersistentCollectionLimit)
+            {
+                error =
+                    "Linked activity loot exceeds its bounded persistent collection limit.";
+                return false;
+            }
+
+            loot = new CombatRewardEntrySaveData[staged.Length];
+            for (var index = 0; index < staged.Length; index++)
+            {
+                var entry = staged[index];
+                if (entry == null ||
+                    entry.quantity <= 0 ||
+                    string.IsNullOrWhiteSpace(entry.targetId) ||
+                    !IsItemLootRewardType(entry.rewardType) ||
+                    !string.Equals(
+                        entry.origin,
+                        PendingResultOrigin.ActivityLootInCombat,
+                        StringComparison.Ordinal))
+                {
+                    loot = Array.Empty<CombatRewardEntrySaveData>();
+                    error =
+                        "Linked combat accepts only positive item/resource cycle loot with activity_loot_in_combat origin.";
+                    return false;
+                }
+
+                loot[index] = new CombatRewardEntrySaveData
+                {
+                    entryId = $"{sessionId}:activity-loot:{index}",
+                    sortOrder = index,
+                    rewardType = entry.rewardType,
+                    targetId = entry.targetId,
+                    quantity = entry.quantity,
+                    origin = entry.origin,
+                    quality = entry.quality,
+                    instanceId = entry.instanceId
+                };
+            }
+
+            return true;
+        }
+
+        private static bool IsItemLootRewardType(string rewardType)
+        {
+            if (!ActivityTypeParser.TryParseRewardType(
+                    rewardType,
+                    out var parsed))
+            {
+                return false;
+            }
+
+            return parsed == RewardTypeEnum.Resource ||
+                   parsed == RewardTypeEnum.Equipment ||
+                   parsed == RewardTypeEnum.Consumable ||
+                   parsed == RewardTypeEnum.Recipe ||
+                   parsed == RewardTypeEnum.Item;
         }
 
         private bool TryCreateIdentifiers(
@@ -1258,6 +1354,248 @@ namespace GuildIdle.Combat
         {
             public string executionId;
             public string sessionId;
+        }
+    }
+
+    public sealed class LinkedCombatRuntimeCoordinator :
+        ILinkedCombatRuntimeCoordinator
+    {
+        private const string StartOperationPrefix =
+            "linked-combat-start:";
+
+        private readonly ILinkedCombatStartGateway _gateway;
+        private readonly CombatStartService _combatStart;
+        private readonly PlayerState _state;
+        private readonly IActivityRuntimeProgressionProcessor _progression;
+        private bool _reconciling;
+        private bool _disposed;
+
+        public LinkedCombatRuntimeCoordinator(
+            ILinkedCombatStartGateway gateway,
+            CombatStartService combatStart,
+            PlayerState state,
+            IActivityRuntimeProgressionProcessor progression)
+        {
+            _gateway = gateway ??
+                       throw new ArgumentNullException(nameof(gateway));
+            _combatStart = combatStart ??
+                           throw new ArgumentNullException(
+                               nameof(combatStart));
+            _state = state ??
+                     throw new ArgumentNullException(nameof(state));
+            _progression = progression;
+            _state.PendingResults.Resolved +=
+                HandlePendingResultResolved;
+        }
+
+        public void Reconcile()
+        {
+            if (_disposed || _reconciling)
+                return;
+
+            _reconciling = true;
+            try
+            {
+                ReconcileLinkedFlows();
+                ReconcileDirectProgression();
+            }
+            finally
+            {
+                _reconciling = false;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _state.PendingResults.Resolved -=
+                HandlePendingResultResolved;
+            _disposed = true;
+        }
+
+        private void ReconcileLinkedFlows()
+        {
+            foreach (var request in
+                     _gateway.GetPendingLinkedCombatStarts() ??
+                     Array.Empty<LinkedCombatStartRequestSaveData>())
+            {
+                if (request == null ||
+                    request.resolved ||
+                    string.IsNullOrWhiteSpace(request.requestId) ||
+                    string.IsNullOrWhiteSpace(
+                        request.rootExecutionId))
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(
+                        request.combatExecutionId))
+                {
+                    var source = _state.GetActivityExecution(
+                        request.rootExecutionId);
+                    if (source?.linkedCombat == null ||
+                        !string.Equals(
+                            source.linkedCombat.requestId,
+                            request.requestId,
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    _combatStart.Start(new CombatStartCommand
+                    {
+                        OperationId =
+                            StartOperationPrefix + request.requestId,
+                        Kind = CombatStartKind.Linked,
+                        SourceActivityId = source.activityId,
+                        SourceExecutionId =
+                            request.rootExecutionId,
+                        SourceRequestId = request.requestId,
+                        OccupationOwnerId =
+                            request.occupationOwnerId,
+                        HeroId = request.heroId,
+                        EnemyGroupId = request.enemyGroupId,
+                        CombatMode = request.combatMode,
+                        EnemyExpTargetId =
+                            request.enemyExpTargetId,
+                        StackId = null,
+                        RequestedQuantity = 0,
+                        ExpectedStorageRevision =
+                            _state.Storage.GetSnapshot().Revision
+                    });
+                }
+
+                var currentSource = _state.GetActivityExecution(
+                    request.rootExecutionId);
+                var current = currentSource?.linkedCombat;
+                if (current == null ||
+                    string.IsNullOrWhiteSpace(
+                        current.combatExecutionId))
+                {
+                    continue;
+                }
+
+                var combat = _state.GetCombatAggregate(
+                    current.combatExecutionId);
+                if (combat?.execution == null ||
+                    combat.execution.status !=
+                    CombatExecutionStatus.Completed ||
+                    !combat.execution.pendingResultResolved)
+                {
+                    continue;
+                }
+
+                _gateway.ResolveLinkedCombatExecution(
+                    current.requestId,
+                    current.combatExecutionId);
+            }
+        }
+
+        private void ReconcileDirectProgression()
+        {
+            if (_progression == null)
+                return;
+
+            foreach (var aggregate in
+                     _state.GetCombatAggregates() ??
+                     Array.Empty<CombatRuntimeAggregate>())
+            {
+                var execution = aggregate?.execution;
+                if (!IsResolvedDirect(execution))
+                    continue;
+
+                if (string.Equals(
+                        execution.outcome,
+                        CombatTerminalCandidateKinds.Victory,
+                        StringComparison.Ordinal) &&
+                    !execution.completionPublished)
+                {
+                    TryPublishDirectProgression(
+                        execution.executionId,
+                        true);
+                }
+                else if (string.Equals(
+                             execution.outcome,
+                             CombatTerminalCandidateKinds.Defeat,
+                             StringComparison.Ordinal) &&
+                         !execution.failurePublished)
+                {
+                    TryPublishDirectProgression(
+                        execution.executionId,
+                        false);
+                }
+            }
+        }
+
+        private void TryPublishDirectProgression(
+            string executionId,
+            bool completed)
+        {
+            var checkpoint = _state.ToSaveData();
+            var aggregate =
+                _state.GetCombatAggregate(executionId);
+            if (!IsResolvedDirect(aggregate?.execution))
+                return;
+
+            var progression = completed
+                ? _progression.ProcessActivityCompleted(
+                    aggregate.execution.sourceActivityId)
+                : _progression.ProcessActivityFailed(
+                    aggregate.execution.sourceActivityId);
+            if (progression == null || !progression.success)
+            {
+                _state.RestoreTransactional(checkpoint);
+                return;
+            }
+
+            aggregate = _state.GetCombatAggregate(executionId);
+            if (!IsResolvedDirect(aggregate?.execution))
+            {
+                _state.RestoreTransactional(checkpoint);
+                return;
+            }
+
+            if (completed)
+                aggregate.execution.completionPublished = true;
+            else
+                aggregate.execution.failurePublished = true;
+            if (!_state.UpdateCombatAggregate(aggregate) ||
+                !_state.Save())
+            {
+                _state.RestoreTransactional(checkpoint);
+            }
+        }
+
+        private static bool IsResolvedDirect(
+            CombatExecutionSaveData execution)
+        {
+            return execution != null &&
+                   execution.status ==
+                   CombatExecutionStatus.Completed &&
+                   execution.pendingResultResolved &&
+                   string.Equals(
+                       execution.sourceExecutionId,
+                       execution.executionId,
+                       StringComparison.Ordinal) &&
+                   string.Equals(
+                       execution.occupationOwnerId,
+                       execution.executionId,
+                       StringComparison.Ordinal);
+        }
+
+        private void HandlePendingResultResolved(
+            PendingResultResolvedEvent resolved)
+        {
+            if (resolved != null &&
+                string.Equals(
+                    resolved.SourceType,
+                    PendingResultSourceType.Combat,
+                    StringComparison.Ordinal))
+            {
+                Reconcile();
+            }
         }
     }
 }

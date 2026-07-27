@@ -33,6 +33,7 @@ namespace GuildIdle.Activities
         private readonly FormulaRuntime _formulas;
         private readonly Action<ActivityRuntimeEvent> _eventSink;
         private readonly IActivityRuntimeProgressionProcessor _progressionProcessor;
+        private readonly ILinkedCombatRuntimeCoordinator _linkedCombatCoordinator;
         private readonly Dictionary<string, Func<HeroSkillEffectConfigDto, ActivityStagedRewardSaveData[], bool>> _workEffectHandlers;
         private bool _disposed;
 
@@ -42,7 +43,11 @@ namespace GuildIdle.Activities
             IActivityRandom random = null,
             FormulaRuntime formulas = null,
             Action<ActivityRuntimeEvent> eventSink = null,
-            IActivityRuntimeProgressionProcessor progressionProcessor = null)
+            IActivityRuntimeProgressionProcessor progressionProcessor = null,
+            Func<
+                ILinkedCombatStartGateway,
+                IActivityRuntimeProgressionProcessor,
+                ILinkedCombatRuntimeCoordinator> linkedCombatCoordinatorFactory = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _activityState = activityState ?? throw new ArgumentNullException(nameof(activityState));
@@ -57,6 +62,11 @@ namespace GuildIdle.Activities
             _activityState.PendingResults.Resolved += HandlePendingResultResolved;
             ReconcilePendingBuildingEvents();
             ReconcileLinkedCombatCompletions();
+            _linkedCombatCoordinator =
+                linkedCombatCoordinatorFactory?.Invoke(
+                    this,
+                    _progressionProcessor);
+            _linkedCombatCoordinator?.Reconcile();
         }
 
         public void Dispose()
@@ -65,6 +75,7 @@ namespace GuildIdle.Activities
                 return;
 
             _activityState.PendingResults.Resolved -= HandlePendingResultResolved;
+            _linkedCombatCoordinator?.Dispose();
             _disposed = true;
         }
 
@@ -1901,6 +1912,8 @@ namespace GuildIdle.Activities
             result.events = events.ToArray();
             result.saved = result.success && changed && Save();
             result.snapshot = GetSnapshot();
+            if (result.success && (!changed || result.saved))
+                _linkedCombatCoordinator?.Reconcile();
             return result;
         }
 

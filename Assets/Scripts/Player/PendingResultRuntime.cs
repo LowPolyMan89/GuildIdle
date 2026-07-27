@@ -396,7 +396,6 @@ namespace GuildIdle.Player
                 if (!_state.IsActivityCompleted(execution.sourceActivityId) &&
                     !_state.CompleteActivity(execution.sourceActivityId))
                     return false;
-                execution.completionPublished = true;
             }
 
             return _state.UpdateCombatAggregate(aggregate);

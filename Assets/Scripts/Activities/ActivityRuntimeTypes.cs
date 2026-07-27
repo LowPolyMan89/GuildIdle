@@ -85,6 +85,11 @@ namespace GuildIdle.Activities
         LinkedCombatGatewayResult ResolveLinkedCombatExecution(string requestId, string combatExecutionId);
     }
 
+    public interface ILinkedCombatRuntimeCoordinator : IDisposable
+    {
+        void Reconcile();
+    }
+
     public sealed class FormulaEvaluationContext
     {
         private readonly Dictionary<string, float> _stats = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
@@ -256,6 +261,7 @@ namespace GuildIdle.Activities
     {
         ActivityRuntimeProgressionResult ProcessBuildingLevelChanged(string buildingId, int level);
         ActivityRuntimeProgressionResult ProcessActivityCompleted(string activityId);
+        ActivityRuntimeProgressionResult ProcessActivityFailed(string activityId);
     }
 
     public sealed class ActivityStartResult

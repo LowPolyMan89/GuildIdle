@@ -213,7 +213,8 @@ namespace GuildIdle.Progression
             if (step.objectiveType == "ResourceCount" && progressionEvent.Kind == ProgressionEventKind.ResourceQuantityChanged ||
                 step.objectiveType == "ItemCount" && progressionEvent.Kind == ProgressionEventKind.ItemQuantityChanged ||
                 step.objectiveType == "BuildingLevel" && progressionEvent.Kind == ProgressionEventKind.BuildingLevelChanged ||
-                step.objectiveType == "ActivityCompleted" && progressionEvent.Kind == ProgressionEventKind.ActivityCompleted)
+                step.objectiveType == "ActivityCompleted" && progressionEvent.Kind == ProgressionEventKind.ActivityCompleted ||
+                step.objectiveType == "ActivityFailed" && progressionEvent.Kind == ProgressionEventKind.ActivityFailed)
             { value = target.CurrentValue; return true; }
             return false;
         }
@@ -340,7 +341,7 @@ namespace GuildIdle.Progression
             if (step.targetValue < 0) { error = "Quest step target_value must be non-negative."; return false; }
             switch (step.objectiveType)
             {
-                case "ResourceCount": case "ItemCount": case "BuildingLevel": case "ActivityCompleted": case "QuestCompleted": return true;
+                case "ResourceCount": case "ItemCount": case "BuildingLevel": case "ActivityCompleted": case "ActivityFailed": case "QuestCompleted": return true;
                 default: error = $"Unsupported objective_type '{step.objectiveType}'."; return false;
             }
         }
