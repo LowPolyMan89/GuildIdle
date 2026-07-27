@@ -123,6 +123,21 @@ namespace GuildIdle.Editor.Player
                 Reward("completion-exp", "SkillExp", "skill_combat", 40,
                     PendingResultOrigin.ActivityReward)
             };
+            aggregate.session.scheduler.nextSequence = 1;
+            aggregate.session.scheduler.lastResolvedEventKey =
+                "resolved-before-retreat";
+            aggregate.session.scheduler.scheduledEvents = new[]
+            {
+                new CombatScheduledEventSaveData
+                {
+                    eventKey = "future-before-retreat",
+                    eventType = "future_event",
+                    timestampSeconds = 2d,
+                    phasePriority = 0,
+                    actorSide = CombatActorSide.System,
+                    sequence = 0
+                }
+            };
             Assert.That(_state.AddCombatAggregate(aggregate), Is.True);
             var service = new CombatOutcomeService(_state);
 
@@ -154,6 +169,18 @@ namespace GuildIdle.Editor.Player
                 Does.Not.Contain(PendingResultOrigin.ActivityReward));
             Assert.That(_state.GetCombatAggregate("combat-a").execution.outcome,
                 Is.EqualTo(CombatTerminalCandidateKinds.Retreat));
+            Assert.That(
+                _state.GetCombatAggregate("combat-a")
+                    .session.scheduler.scheduledEvents,
+                Is.Empty);
+            Assert.That(
+                _state.GetCombatAggregate("combat-a")
+                    .session.scheduler.nextSequence,
+                Is.EqualTo(1));
+            Assert.That(
+                _state.GetCombatAggregate("combat-a")
+                    .session.scheduler.lastResolvedEventKey,
+                Is.EqualTo("resolved-before-retreat"));
         }
 
         [Test]
@@ -248,6 +275,124 @@ namespace GuildIdle.Editor.Player
                 "combat_clear_hall_forest"), Is.False);
         }
 
+        [TestCase(CombatTerminalCandidateKinds.Victory, true)]
+        [TestCase(CombatTerminalCandidateKinds.Retreat, false)]
+        [TestCase(CombatTerminalCandidateKinds.Defeat, false)]
+        public void LinkedOutcomePreservesEnemyExpOutsideDefeatLoss(
+            string outcome,
+            bool victory)
+        {
+            var aggregate = Aggregate(outcome, victory);
+            aggregate.execution.sourceExecutionId = "activity-root";
+            aggregate.execution.sourceRequestId = "linked-request";
+            aggregate.execution.occupationOwnerId = "activity-root";
+            aggregate.session.enemyExpTargetId = "skill_combat";
+            aggregate.session.accumulatedEnemyExp = 9;
+            aggregate.session.loot = new[]
+            {
+                Reward(
+                    "linked-loot",
+                    RewardType.Currency,
+                    "gold_id",
+                    8,
+                    PendingResultOrigin.ActivityLootInCombat)
+            };
+            AddLinkedAggregate(aggregate);
+
+            var result = new CombatOutcomeService(_state)
+                .FinalizeTerminal("combat-a");
+
+            Assert.That(result.Success, Is.True, result.Message);
+            var pending = _state.PendingResults.GetAll().Single();
+            Assert.That(
+                pending.entries.Single(value =>
+                    value.origin == PendingResultOrigin.EnemyCombatExp)
+                    .quantity,
+                Is.EqualTo(9));
+            if (outcome == CombatTerminalCandidateKinds.Defeat)
+            {
+                Assert.That(
+                    _state.GetCombatAggregate("combat-a")
+                        .session.defeatLoss.entries.Any(value =>
+                            value.origin ==
+                            PendingResultOrigin.EnemyCombatExp),
+                    Is.False);
+            }
+        }
+
+        [Test]
+        public void LinkedEnemyExpTargetRoundtripsBeforeOutcome()
+        {
+            var aggregate = RunningAggregate();
+            aggregate.execution.sourceExecutionId = "activity-root";
+            aggregate.execution.sourceRequestId = "linked-request";
+            aggregate.execution.occupationOwnerId = "activity-root";
+            aggregate.session.enemyExpTargetId = "skill_combat";
+            aggregate.session.accumulatedEnemyExp = 5;
+            AddLinkedAggregate(aggregate);
+            Assert.That(SaveService.Save(_state, _storage), Is.True);
+
+            var restored = SaveService.Load(_factory, _storage);
+            var session =
+                restored.GetCombatAggregate("combat-a").session;
+
+            Assert.That(session.enemyExpTargetId,
+                Is.EqualTo("skill_combat"));
+            Assert.That(session.accumulatedEnemyExp, Is.EqualTo(5));
+        }
+
+        [Test]
+        public void LastEnemyVictoryNormalizesFormsOneResultAndStaysCleanAfterLoad()
+        {
+            var aggregate = RunningAggregate();
+            aggregate.session.currentEnemy.currentHp = 1;
+            aggregate.session.currentEnemy.maxHp = 1;
+            aggregate.session.loot = new[]
+            {
+                Reward(
+                    "pre-terminal-loot",
+                    RewardType.Resource,
+                    "resource_pine_wood",
+                    1,
+                    PendingResultOrigin.CombatLoot)
+            };
+            aggregate.session.scheduler.nextSequence = 1;
+            aggregate.session.scheduler.scheduledEvents = new[]
+            {
+                new CombatScheduledEventSaveData
+                {
+                    eventKey = "future-after-victory",
+                    eventType = "future_event",
+                    timestampSeconds = 2d,
+                    phasePriority = 0,
+                    actorSide = CombatActorSide.System,
+                    sequence = 0
+                }
+            };
+            Assert.That(_state.AddCombatAggregate(aggregate), Is.True);
+            var runtime = new CombatRuntimeService(
+                _state,
+                new OutcomeDescriptorProvider(),
+                committer: new CombatOutcomeService(_state));
+
+            var advanced = runtime.AdvanceTo("combat-a", 1d);
+
+            Assert.That(advanced.Success, Is.True,
+                advanced.Error?.Message);
+            Assert.That(_state.PendingResults.GetAll(),
+                Has.Length.EqualTo(1));
+            var stored = _state.GetCombatAggregate("combat-a");
+            Assert.That(stored.session.scheduler.scheduledEvents,
+                Is.Empty);
+            var restored = SaveService.Load(_factory, _storage);
+            Assert.That(
+                restored.GetCombatAggregate("combat-a")
+                    .session.scheduler.scheduledEvents,
+                Is.Empty);
+            Assert.That(restored.PendingResults.GetAll(),
+                Has.Length.EqualTo(1));
+        }
+
         [Test]
         public void MissingCompletionSnapshotReturnsTypedCorruptedState()
         {
@@ -270,7 +415,21 @@ namespace GuildIdle.Editor.Player
         [Test]
         public void FailedPendingFormationRollsBackTerminalCandidateAndOutcome()
         {
-            Assert.That(_state.AddCombatAggregate(RunningAggregate()), Is.True);
+            var running = RunningAggregate();
+            running.session.scheduler.nextSequence = 1;
+            running.session.scheduler.scheduledEvents = new[]
+            {
+                new CombatScheduledEventSaveData
+                {
+                    eventKey = "future-before-failed-outcome",
+                    eventType = "future_event",
+                    timestampSeconds = 2d,
+                    phasePriority = 0,
+                    actorSide = CombatActorSide.System,
+                    sequence = 0
+                }
+            };
+            Assert.That(_state.AddCombatAggregate(running), Is.True);
             var detached = _state.GetCombatAggregate("combat-a");
             detached.session.queuePosition = detached.session.enemyQueue.Length;
             detached.session.currentEnemy = null;
@@ -305,7 +464,42 @@ namespace GuildIdle.Editor.Player
             Assert.That(restored.session.terminalCandidate, Is.Null);
             Assert.That(restored.session.simulationStopped, Is.False);
             Assert.That(restored.session.rng.state, Is.EqualTo(beforeRng));
+            Assert.That(
+                restored.session.scheduler.scheduledEvents
+                    .Single().eventKey,
+                Is.EqualTo("future-before-failed-outcome"));
             Assert.That(_state.PendingResults.GetAll(), Is.Empty);
+        }
+
+        private void AddLinkedAggregate(
+            CombatRuntimeAggregate aggregate)
+        {
+            Assert.That(
+                _state.AddActivityExecution(
+                    new ActivityExecutionSaveData
+                    {
+                        executionId = "activity-root",
+                        activityId = "combat_clear_hall_forest",
+                        runtimeKind = "Work",
+                        heroId = "ren",
+                        status = ActivityRuntimeStatus.Running,
+                        linkedCombat =
+                            new LinkedCombatStartRequestSaveData
+                            {
+                                requestId = "linked-request",
+                                rootExecutionId = "activity-root",
+                                occupationOwnerId = "activity-root",
+                                heroId = "ren",
+                                combatExecutionId =
+                                    aggregate.execution.executionId,
+                                enemyGroupId =
+                                    aggregate.session.enemyGroupId,
+                                enemyExpTargetId =
+                                    aggregate.session.enemyExpTargetId
+                            }
+                    }),
+                Is.True);
+            Assert.That(_state.AddCombatAggregate(aggregate), Is.True);
         }
 
         private static CombatRuntimeAggregate RunningAggregate()
@@ -445,6 +639,33 @@ namespace GuildIdle.Editor.Player
                 _values[key] = value;
             public void DeleteKey(string key) => _values.Remove(key);
             public void Save() { }
+        }
+
+        private sealed class OutcomeDescriptorProvider :
+            ICombatDescriptorProvider
+        {
+            public bool TryGetDescriptor(
+                CombatActorSide side,
+                string definitionId,
+                out CombatActorDescriptor descriptor,
+                out string error)
+            {
+                descriptor = new CombatActorDescriptor(
+                    side,
+                    side == CombatActorSide.Hero
+                        ? CombatAttackCadence.HeroInterval(1d)
+                        : CombatAttackCadence.EnemyRate(0.1d),
+                    side == CombatActorSide.Hero ? 1 : 0,
+                    side == CombatActorSide.Hero ? 1 : 0,
+                    "physical",
+                    0d,
+                    1.5d,
+                    0d,
+                    0d,
+                    0d);
+                error = null;
+                return true;
+            }
         }
     }
 }

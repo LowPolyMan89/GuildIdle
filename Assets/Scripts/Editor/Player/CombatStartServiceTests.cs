@@ -457,12 +457,73 @@ namespace GuildIdle.Editor.Player
             Assert.That(result.Success, Is.True);
             Assert.That(result.Aggregate.execution.sourceExecutionId, Is.EqualTo("activity-root"));
             Assert.That(result.Aggregate.execution.occupationOwnerId, Is.EqualTo("activity-root"));
+            Assert.That(result.Aggregate.session.enemyExpTargetId,
+                Is.EqualTo("skill_combat"));
             Assert.That(fixture.State.BusyOwner, Is.EqualTo("activity-root"));
             Assert.That(fixture.State.Fatigue, Is.EqualTo(beforeFatigue));
             Assert.That(fixture.State.GetActiveHeroCount(), Is.EqualTo(beforeActive));
             Assert.That(
                 fixture.State.Activity.linkedCombat.combatExecutionId,
                 Is.EqualTo(result.ExecutionId));
+        }
+
+        [Test]
+        public void LinkedEnemyExpTargetIsStableAcrossReplayAndConflicts()
+        {
+            var fixture = new Fixture();
+            fixture.State.ConfigureLinkedSource();
+            var command = fixture.Linked();
+
+            var first = fixture.Service.Start(command);
+            var replay = fixture.Service.Start(command);
+            var conflict = fixture.Linked();
+            conflict.EnemyExpTargetId = "other_skill";
+            var conflicting = fixture.Service.Start(conflict);
+
+            Assert.That(first.Success, Is.True, first.Message);
+            Assert.That(replay.Success, Is.True, replay.Message);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(replay.Aggregate.session.enemyExpTargetId,
+                Is.EqualTo("skill_combat"));
+            Assert.That(conflicting.Success, Is.False);
+            Assert.That(conflicting.Code,
+                Is.EqualTo(CombatStartCode.OperationConflict));
+            Assert.That(fixture.State.Aggregates, Has.Count.EqualTo(1));
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase("unknown_skill")]
+        public void LinkedEnemyExpTargetMustBeConfiguredBeforeAggregateCreation(
+            string skillId)
+        {
+            var fixture = new Fixture();
+            fixture.State.ConfigureLinkedSource();
+            fixture.State.Activity.linkedCombat.enemyExpTargetId = skillId;
+            var command = fixture.Linked();
+            command.EnemyExpTargetId = skillId;
+
+            var result = fixture.Service.Start(command);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Code,
+                Is.EqualTo(CombatStartCode.InvalidEnemyExpTarget));
+            Assert.That(fixture.State.Aggregates, Is.Empty);
+            Assert.That(fixture.State.Receipts, Is.Empty);
+        }
+
+        [Test]
+        public void DirectEnemyExpTargetIgnoresCallerAndUsesActivitySnapshot()
+        {
+            var fixture = new Fixture();
+            var command = fixture.Direct();
+            command.EnemyExpTargetId = "unknown_skill";
+
+            var result = fixture.Service.Start(command);
+
+            Assert.That(result.Success, Is.True, result.Message);
+            Assert.That(result.Aggregate.session.enemyExpTargetId,
+                Is.EqualTo("skill_combat"));
         }
 
         [Test]
@@ -716,7 +777,15 @@ namespace GuildIdle.Editor.Player
                             id = "combat-activity",
                             type = "CombatTask",
                             fatigueCost = 5,
+                            mainSkillId = "skill_combat",
                             isRepeatable = false
+                        }
+                    },
+                    skills = new[]
+                    {
+                        new SkillConfigDto
+                        {
+                            skillId = "skill_combat"
                         }
                     },
                     requirements = requirements ??
@@ -969,6 +1038,7 @@ namespace GuildIdle.Editor.Player
                     HeroId = "ren",
                     EnemyGroupId = "enemy-group",
                     CombatMode = CombatEnemyQueueBuilder.Queue1V1Mode,
+                    EnemyExpTargetId = "skill_combat",
                     RequestedQuantity = 0,
                     ExpectedStorageRevision = State.StorageRevision
                 };
@@ -987,6 +1057,7 @@ namespace GuildIdle.Editor.Player
                     HeroId = "ren",
                     EnemyGroupId = "enemy-group",
                     CombatMode = CombatEnemyQueueBuilder.Queue1V1Mode,
+                    EnemyExpTargetId = "skill_combat",
                     RequestedQuantity = 0,
                     ExpectedStorageRevision = State.StorageRevision
                 };
@@ -1051,7 +1122,8 @@ namespace GuildIdle.Editor.Player
                     activityId,
                     "enemy-group",
                     CombatEnemyQueueBuilder.Queue1V1Mode,
-                    5);
+                    5,
+                    mainSkillId: "skill_combat");
                 return true;
             }
         }
@@ -1207,6 +1279,7 @@ namespace GuildIdle.Editor.Player
                         heroId = "ren",
                         enemyGroupId = "enemy-group",
                         combatMode = CombatEnemyQueueBuilder.Queue1V1Mode,
+                        enemyExpTargetId = "skill_combat",
                         suppressFatigueCost = true
                     }
                 };
@@ -1258,6 +1331,11 @@ namespace GuildIdle.Editor.Player
 
             public bool HasHero(string heroId) => heroId == "ren";
             public bool HasHeroState(string heroId) => heroId == "ren";
+            public bool IsKnownSkill(string skillId) =>
+                string.Equals(
+                    skillId,
+                    "skill_combat",
+                    StringComparison.Ordinal);
             public int GetHeroFatigue(string heroId) => Fatigue;
 
             public bool SpendHeroFatigue(string heroId, int amount)

@@ -783,6 +783,7 @@ namespace GuildIdle.Activities
                     dangerEncounterId = encounter.dangerEncounterId,
                     enemyGroupId = encounter.enemyGroupId,
                     combatMode = encounter.combatMode,
+                    enemyExpTargetId = info.activity.mainSkillId,
                     defeatLossRule = encounter.defeatLossRule,
                     suppressFatigueCost = true,
                     loot = combatLoot.ToArray()
@@ -1744,6 +1745,7 @@ namespace GuildIdle.Activities
                 dangerEncounterId = source.dangerEncounterId,
                 enemyGroupId = source.enemyGroupId,
                 combatMode = source.combatMode,
+                enemyExpTargetId = source.enemyExpTargetId,
                 defeatLossRule = source.defeatLossRule,
                 suppressFatigueCost = source.suppressFatigueCost,
                 combatExecutionId = source.combatExecutionId,

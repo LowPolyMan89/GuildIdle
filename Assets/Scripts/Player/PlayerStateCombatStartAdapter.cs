@@ -55,6 +55,21 @@ namespace GuildIdle.Player
 
         public bool HasHero(string heroId) => _state.HasHero(heroId);
         public bool HasHeroState(string heroId) => _state.HasHeroState(heroId);
+        public bool IsKnownSkill(string skillId)
+        {
+            foreach (var skill in _state.ConfigProvider.Skills ??
+                                  Array.Empty<SkillConfigDto>())
+            {
+                if (skill != null &&
+                    string.Equals(
+                        skill.skillId,
+                        skillId,
+                        StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
         public int GetHeroFatigue(string heroId) => _state.GetHeroFatigue(heroId);
         public bool SpendHeroFatigue(string heroId, int amount) =>
             _state.SpendHeroFatigue(heroId, amount);

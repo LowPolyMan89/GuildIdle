@@ -1752,11 +1752,18 @@ namespace GuildIdle.Combat
                     return false;
                 }
 
+                var defeatedCombatantId =
+                    session.currentEnemy.combatantId;
+                if (!TryApplyLegacyEnemyReward(
+                        session,
+                        rng,
+                        out error))
+                    return false;
                 return TryCompleteVictory(
                     session,
                     deathEvent,
                     events,
-                    session.currentEnemy.combatantId,
+                    defeatedCombatantId,
                     out queueCompleted,
                     out error);
             }
@@ -1925,8 +1932,6 @@ namespace GuildIdle.Combat
         {
             queueCompleted = false;
             error = null;
-            RemovePendingActorAttacks(session.scheduler);
-            RemovePendingConsumableChecks(session.scheduler);
             session.currentEnemy = null;
             session.simulationStopped = true;
             var candidateId = $"{session.sessionId}:victory";
@@ -1947,6 +1952,7 @@ namespace GuildIdle.Combat
                     "Combat scheduler sequence is exhausted during victory candidate creation.");
                 return false;
             }
+            CombatTerminalTransition.ClearScheduledEvents(session);
             events.Add(new CombatTerminalCandidateCreatedEvent(
                 candidateEventKey,
                 deathEvent.timestampSeconds,
@@ -1966,18 +1972,58 @@ namespace GuildIdle.Combat
             ICombatRng rng,
             out CombatAdvanceError error)
         {
+            var operationKey =
+                $"{session.sessionId}:enemy-reward:{queueEntry.queueIndex}:{queueEntry.combatantId}";
+            return TryApplyEnemyReward(
+                session,
+                operationKey,
+                queueEntry.combatantId,
+                queueEntry.enemyId,
+                queueEntry.queueIndex,
+                false,
+                rng,
+                out error);
+        }
+
+        private bool TryApplyLegacyEnemyReward(
+            CombatSessionSaveData session,
+            ICombatRng rng,
+            out CombatAdvanceError error)
+        {
+            var enemy = session.currentEnemy;
+            var operationKey =
+                $"{session.sessionId}:enemy-reward:legacy:{enemy.combatantId}";
+            return TryApplyEnemyReward(
+                session,
+                operationKey,
+                enemy.combatantId,
+                enemy.definitionId,
+                -1,
+                true,
+                rng,
+                out error);
+        }
+
+        private bool TryApplyEnemyReward(
+            CombatSessionSaveData session,
+            string operationKey,
+            string combatantId,
+            string enemyId,
+            int queueIndex,
+            bool legacyEmptyQueue,
+            ICombatRng rng,
+            out CombatAdvanceError error)
+        {
             error = null;
             if (_enemyRewards == null)
                 return true;
-            var operationKey =
-                $"{session.sessionId}:enemy-reward:{queueEntry.queueIndex}:{queueEntry.combatantId}";
             if (string.Equals(
                     session.lastEnemyRewardOperation?.operationKey,
                     operationKey,
                     StringComparison.Ordinal))
                 return true;
             if (!_enemyRewards.TryResolve(
-                    queueEntry.enemyId,
+                    enemyId,
                     rng,
                     out var reward,
                     out var providerError) ||
@@ -2044,10 +2090,11 @@ namespace GuildIdle.Combat
                 new CombatEnemyRewardOperationSaveData
                 {
                     operationKey = operationKey,
-                    combatantId = queueEntry.combatantId,
-                    enemyId = queueEntry.enemyId,
-                    queueIndex = queueEntry.queueIndex,
-                    enemyExp = reward.EnemyExp
+                    combatantId = combatantId,
+                    enemyId = enemyId,
+                    queueIndex = queueIndex,
+                    enemyExp = reward.EnemyExp,
+                    legacyEmptyQueue = legacyEmptyQueue
                 };
             return true;
         }
@@ -2344,7 +2391,7 @@ namespace GuildIdle.Combat
                 mutation.SetFinalHp(0);
                 session.simulationStopped = true;
                 session.combatTimeSeconds = mutation.TimestampSeconds;
-                session.scheduler.scheduledEvents = Array.Empty<CombatScheduledEventSaveData>();
+                CombatTerminalTransition.ClearScheduledEvents(session);
                 return true;
             }
 
@@ -2405,7 +2452,6 @@ namespace GuildIdle.Combat
             };
             session.simulationStopped = true;
             session.combatTimeSeconds = mutation.TimestampSeconds;
-            session.scheduler.scheduledEvents = Array.Empty<CombatScheduledEventSaveData>();
             if (!TryReserveSequence(session.scheduler, out var sequence))
             {
                 error = new CombatAdvanceError(
@@ -2413,6 +2459,7 @@ namespace GuildIdle.Combat
                     "Combat scheduler sequence is exhausted during terminal candidate creation.");
                 return false;
             }
+            CombatTerminalTransition.ClearScheduledEvents(session);
 
             events.Add(new CombatTerminalCandidateCreatedEvent(
                 candidateEventKey,

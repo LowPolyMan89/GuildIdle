@@ -2524,6 +2524,30 @@ namespace GuildIdle.Player
                 Debug.LogError($"[PlayerState] ResultPending execution '{execution.executionId}' has no pending result id.");
                 return false;
             }
+            if (execution.linkedCombat != null)
+            {
+                if (string.IsNullOrWhiteSpace(
+                        execution.linkedCombat.enemyExpTargetId) &&
+                    _configs.TryGetActivity(
+                        execution.activityId,
+                        out var activity) &&
+                    activity != null &&
+                    !string.IsNullOrWhiteSpace(activity.mainSkillId))
+                {
+                    execution.linkedCombat.enemyExpTargetId =
+                        activity.mainSkillId;
+                    WasNormalized = true;
+                }
+                if (!string.IsNullOrWhiteSpace(
+                        execution.linkedCombat.enemyExpTargetId) &&
+                    !ValidateSkillId(
+                        execution.linkedCombat.enemyExpTargetId))
+                {
+                    Debug.LogError(
+                        $"[PlayerState] Linked combat handoff on '{execution.executionId}' has an invalid Enemy EXP target.");
+                    return false;
+                }
+            }
 
             return true;
         }
@@ -2598,6 +2622,7 @@ namespace GuildIdle.Player
                 dangerEncounterId = source.dangerEncounterId,
                 enemyGroupId = source.enemyGroupId,
                 combatMode = source.combatMode,
+                enemyExpTargetId = source.enemyExpTargetId,
                 defeatLossRule = source.defeatLossRule,
                 suppressFatigueCost = source.suppressFatigueCost,
                 combatExecutionId = source.combatExecutionId,

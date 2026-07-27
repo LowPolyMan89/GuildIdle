@@ -563,6 +563,173 @@ namespace GuildIdle.EditorTests.Player
             Assert.That(store.Json, Is.EqualTo(before));
         }
 
+        [TestCase(
+            "status_tick",
+            (int)CombatScheduledEventPhase.StatusTick)]
+        [TestCase(
+            "status_expiration",
+            (int)CombatScheduledEventPhase.StatusExpiration)]
+        [TestCase(
+            "modifier_expiration",
+            (int)CombatScheduledEventPhase.ModifierExpiration)]
+        public void VictoryClearsEveryPendingSchedulerEvent(
+            string eventType,
+            int phasePriority)
+        {
+            var source = Aggregate(1);
+            source.session.scheduler.nextSequence = 1;
+            source.session.scheduler.scheduledEvents = new[]
+            {
+                new CombatScheduledEventSaveData
+                {
+                    eventKey = $"pending:{eventType}",
+                    eventType = eventType,
+                    timestampSeconds = 2d,
+                    phasePriority = phasePriority,
+                    actorSide = CombatActorSide.Hero,
+                    sequence = 0,
+                    subjectCombatantId = source.session.hero.combatantId,
+                    effectInstanceId = "pending-effect"
+                }
+            };
+            source.session.rng = ScriptedRngFactory.State(
+                0,
+                0,
+                ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(
+                        CombatActorSide.Hero,
+                        CombatAttackCadence.HeroInterval(1d),
+                        damageMin: 1,
+                        damageMax: 1),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(0.1d))),
+                new ScriptedRngFactory());
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.True, result.Error?.Message);
+            Assert.That(store.Value.session.scheduler.scheduledEvents,
+                Is.Empty);
+            Assert.That(store.Value.session.scheduler.nextSequence,
+                Is.GreaterThan(1));
+            Assert.That(
+                result.Events.OfType<CombatTerminalCandidateCreatedEvent>()
+                    .Count(),
+                Is.EqualTo(1));
+        }
+
+        [Test]
+        public void LegacyEmptyQueueRewardsDefeatedEnemyExactlyOnceAcrossReload()
+        {
+            var source = Aggregate(1);
+            source.session.rng = ScriptedRngFactory.State(
+                0,
+                0,
+                ulong.MaxValue,
+                17);
+            var store = new MemoryStore(source);
+            var rewards = new EnemyRewardProvider(
+                5,
+                2,
+                drawRng: true);
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(
+                        CombatActorSide.Hero,
+                        CombatAttackCadence.HeroInterval(1d),
+                        damageMin: 1,
+                        damageMax: 1),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(0.1d))),
+                new ScriptedRngFactory(),
+                enemyRewards: rewards);
+
+            var first = service.AdvanceTo("execution", 1d);
+            var afterFirst = store.Value;
+            var savedDrawCount = afterFirst.session.rng.drawCount;
+            var reloadedStore = new MemoryStore(afterFirst);
+            var reloaded = new CombatRuntimeService(
+                reloadedStore,
+                new DescriptorProvider(
+                    Descriptor(
+                        CombatActorSide.Hero,
+                        CombatAttackCadence.HeroInterval(1d),
+                        damageMin: 1,
+                        damageMax: 1),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(0.1d))),
+                new ScriptedRngFactory(),
+                enemyRewards: rewards)
+                .AdvanceTo("execution", 1d);
+
+            Assert.That(first.Success, Is.True, first.Error?.Message);
+            Assert.That(afterFirst.session.accumulatedEnemyExp,
+                Is.EqualTo(5));
+            Assert.That(afterFirst.session.loot.Single().quantity,
+                Is.EqualTo(2));
+            Assert.That(
+                afterFirst.session.lastEnemyRewardOperation.legacyEmptyQueue,
+                Is.True);
+            Assert.That(
+                afterFirst.session.lastEnemyRewardOperation.queueIndex,
+                Is.EqualTo(-1));
+            Assert.That(rewards.ResolveCalls, Is.EqualTo(1));
+            Assert.That(reloaded.Success, Is.False);
+            Assert.That(reloaded.Error.Code,
+                Is.EqualTo(CombatAdvanceErrorCode.SimulationStopped));
+            Assert.That(reloadedStore.Value.session.accumulatedEnemyExp,
+                Is.EqualTo(5));
+            Assert.That(reloadedStore.Value.session.loot.Single().quantity,
+                Is.EqualTo(2));
+            Assert.That(reloadedStore.Value.session.rng.drawCount,
+                Is.EqualTo(savedDrawCount));
+            Assert.That(rewards.ResolveCalls, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void LegacyEnemyRewardFailureRollsBackRngLootExpAndVictory()
+        {
+            var source = Aggregate(1);
+            source.session.rng = ScriptedRngFactory.State(
+                0,
+                0,
+                ulong.MaxValue);
+            var store = new MemoryStore(source);
+            var before = store.Json;
+            var service = new CombatRuntimeService(
+                store,
+                new DescriptorProvider(
+                    Descriptor(
+                        CombatActorSide.Hero,
+                        CombatAttackCadence.HeroInterval(1d),
+                        damageMin: 1,
+                        damageMax: 1),
+                    Descriptor(
+                        CombatActorSide.Enemy,
+                        CombatAttackCadence.EnemyRate(0.1d))),
+                new ScriptedRngFactory(),
+                enemyRewards: new EnemyRewardProvider(
+                    0,
+                    0,
+                    fail: true));
+
+            var result = service.AdvanceTo("execution", 1d);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error.Code,
+                Is.EqualTo(CombatAdvanceErrorCode.EnemyRewardFailed));
+            Assert.That(store.UpdateCount, Is.Zero);
+            Assert.That(store.Json, Is.EqualTo(before));
+        }
+
         [Test]
         public void MismatchedCurrentEnemyAndQueuePositionReturnsInvalidEnemyQueueWithoutUpdate()
         {
@@ -3328,16 +3495,21 @@ namespace GuildIdle.EditorTests.Player
             private readonly long _exp;
             private readonly long _quantity;
             private readonly bool _fail;
+            private readonly bool _drawRng;
 
             public EnemyRewardProvider(
                 long exp,
                 long quantity,
-                bool fail = false)
+                bool fail = false,
+                bool drawRng = false)
             {
                 _exp = exp;
                 _quantity = quantity;
                 _fail = fail;
+                _drawRng = drawRng;
             }
+
+            public int ResolveCalls { get; private set; }
 
             public bool TryResolve(
                 string enemyId,
@@ -3345,12 +3517,15 @@ namespace GuildIdle.EditorTests.Player
                 out CombatEnemyRewardDescriptor reward,
                 out string error)
             {
+                ResolveCalls++;
                 if (_fail)
                 {
                     reward = null;
                     error = "Simulated enemy reward failure.";
                     return false;
                 }
+                if (_drawRng)
+                    rng.NextUInt64();
                 reward = new CombatEnemyRewardDescriptor(
                     _exp,
                     _quantity <= 0

@@ -69,6 +69,7 @@ namespace GuildIdle.Core
         public string dangerEncounterId;
         public string enemyGroupId;
         public string combatMode;
+        public string enemyExpTargetId;
         public string defeatLossRule;
         public bool suppressFatigueCost;
         public string combatExecutionId;

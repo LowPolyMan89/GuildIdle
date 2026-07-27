@@ -42,7 +42,8 @@ namespace GuildIdle.Combat
         ActivityRequirementsNotMet = 24,
         ActivityCompleted = 25,
         ActivityAlreadyRunning = 26,
-        CorruptedReplayState = 27
+        CorruptedReplayState = 27,
+        InvalidEnemyExpTarget = 28
     }
 
     public sealed class CombatStartCommand
@@ -56,6 +57,7 @@ namespace GuildIdle.Combat
         public string HeroId { get; set; }
         public string EnemyGroupId { get; set; }
         public string CombatMode { get; set; }
+        public string EnemyExpTargetId { get; set; }
         public string StackId { get; set; }
         public int RequestedQuantity { get; set; }
         public long ExpectedStorageRevision { get; set; }
@@ -193,6 +195,7 @@ namespace GuildIdle.Combat
         void RecordOperationReceipt(OperationReceiptSaveData receipt);
         bool HasHero(string heroId);
         bool HasHeroState(string heroId);
+        bool IsKnownSkill(string skillId);
         int GetHeroFatigue(string heroId);
         bool SpendHeroFatigue(string heroId, int amount);
         bool IsHeroBusy(string heroId);
@@ -512,7 +515,17 @@ namespace GuildIdle.Combat
                     command.SourceActivityId,
                     command.EnemyGroupId,
                     command.CombatMode,
-                    0);
+                    0,
+                    mainSkillId: command.EnemyExpTargetId);
+            }
+
+            if (string.IsNullOrWhiteSpace(activity.MainSkillId) ||
+                !_state.IsKnownSkill(activity.MainSkillId))
+            {
+                return FailPreflight(
+                    CombatStartCode.InvalidEnemyExpTarget,
+                    $"Enemy EXP target skill '{activity.MainSkillId ?? "<null>"}' is not configured.",
+                    out failure);
             }
 
             var sourceMatch = FindSourceAggregate(command.SourceRequestId);
@@ -788,6 +801,10 @@ namespace GuildIdle.Combat
                     command.EnemyGroupId,
                     StringComparison.Ordinal) ||
                 !string.Equals(linked.combatMode, command.CombatMode, StringComparison.Ordinal) ||
+                !string.Equals(
+                    linked.enemyExpTargetId,
+                    command.EnemyExpTargetId,
+                    StringComparison.Ordinal) ||
                 !linked.suppressFatigueCost ||
                 !string.Equals(
                     _state.GetHeroOccupationOwnerId(command.HeroId),
@@ -1096,6 +1113,10 @@ namespace GuildIdle.Combat
                      !string.Equals(
                          execution.occupationOwnerId,
                          command.OccupationOwnerId,
+                         StringComparison.Ordinal) ||
+                     !string.Equals(
+                         session.enemyExpTargetId,
+                         command.EnemyExpTargetId,
                          StringComparison.Ordinal))
             {
                 return false;
@@ -1129,10 +1150,16 @@ namespace GuildIdle.Combat
                 $"|hero:{Part(command?.HeroId)}" +
                 $"|group:{Part(command?.EnemyGroupId)}" +
                 $"|mode:{Part(command?.CombatMode)}" +
+                $"|enemy-exp:{Part(LinkedEnemyExpTarget(command))}" +
                 $"|stack:{Part(command?.StackId)}" +
                 $"|quantity:{command?.RequestedQuantity ?? 0}" +
                 $"|storage:{command?.ExpectedStorageRevision ?? 0}";
         }
+
+        private static string LinkedEnemyExpTarget(CombatStartCommand command) =>
+            command?.Kind == CombatStartKind.Linked
+                ? command.EnemyExpTargetId
+                : null;
 
         private static string Part(string value)
         {

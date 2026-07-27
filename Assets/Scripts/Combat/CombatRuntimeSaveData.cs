@@ -243,6 +243,7 @@ namespace GuildIdle.Combat
         public string enemyId;
         public int queueIndex;
         public long enemyExp;
+        public bool legacyEmptyQueue;
     }
 
     [Serializable]
@@ -273,6 +274,16 @@ namespace GuildIdle.Combat
         bool AddCombatAggregate(CombatRuntimeAggregate aggregate);
         bool UpdateCombatAggregate(CombatRuntimeAggregate aggregate);
         bool RemoveCombatAggregate(string executionId);
+    }
+
+    internal static class CombatTerminalTransition
+    {
+        public static void ClearScheduledEvents(CombatSessionSaveData session)
+        {
+            if (session?.scheduler != null)
+                session.scheduler.scheduledEvents =
+                    Array.Empty<CombatScheduledEventSaveData>();
+        }
     }
 
     internal static class CombatRuntimeSaveDataUtility
@@ -749,14 +760,34 @@ namespace GuildIdle.Combat
             if (string.IsNullOrWhiteSpace(value.operationKey) ||
                 string.IsNullOrWhiteSpace(value.combatantId) ||
                 string.IsNullOrWhiteSpace(value.enemyId) ||
-                value.queueIndex < 0 || value.queueIndex >= queue.Length ||
-                value.queueIndex >= queuePosition ||
                 value.enemyExp < 0)
+                return Fail("Enemy reward operation state is invalid.", out error);
+            if (value.legacyEmptyQueue)
+            {
+                if (queue.Length != 0 ||
+                    queuePosition != 0 ||
+                    value.queueIndex != -1)
+                {
+                    return Fail(
+                        "Legacy enemy reward operation requires an empty queue.",
+                        out error);
+                }
+
+                return true;
+            }
+            if (value.queueIndex < 0 || value.queueIndex >= queue.Length ||
+                value.queueIndex >= queuePosition)
                 return Fail("Enemy reward operation state is invalid.", out error);
             var entry = queue[value.queueIndex];
             return entry != null &&
-                   string.Equals(entry.combatantId, value.combatantId, StringComparison.Ordinal) &&
-                   string.Equals(entry.enemyId, value.enemyId, StringComparison.Ordinal) ||
+                   string.Equals(
+                       entry.combatantId,
+                       value.combatantId,
+                       StringComparison.Ordinal) &&
+                   string.Equals(
+                       entry.enemyId,
+                       value.enemyId,
+                       StringComparison.Ordinal) ||
                    Fail("Enemy reward operation does not match the saved queue.", out error);
         }
 
@@ -897,6 +928,13 @@ namespace GuildIdle.Combat
         private static bool Canonicalize(CombatSessionSaveData session)
         {
             var changed = false;
+            if (session.currentEnemy != null &&
+                session.queuePosition == session.enemyQueue.Length &&
+                IsEmptyCombatant(session.currentEnemy))
+            {
+                session.currentEnemy = null;
+                changed = true;
+            }
             if (session.loadoutKind == CombatLoadoutKind.None)
             {
                 session.loadoutKind = session.broughtConsumable == null
@@ -912,6 +950,23 @@ namespace GuildIdle.Combat
             changed |= Sort(session.completionRewards, CompareReward);
             changed |= Sort(session.outcomeRewards, CompareReward);
             return changed;
+        }
+
+        private static bool IsEmptyCombatant(
+            CombatantStateSaveData combatant)
+        {
+            return string.IsNullOrWhiteSpace(combatant.combatantId) &&
+                   string.IsNullOrWhiteSpace(combatant.definitionId) &&
+                   combatant.currentHp == 0 &&
+                   combatant.maxHp == 0 &&
+                   combatant.nextAttackAtSeconds == 0d &&
+                   string.IsNullOrWhiteSpace(combatant.lastAttackEventKey) &&
+                   (combatant.abilityCooldowns == null ||
+                    combatant.abilityCooldowns.Length == 0) &&
+                   (combatant.statuses == null ||
+                    combatant.statuses.Length == 0) &&
+                   (combatant.independentModifiers == null ||
+                    combatant.independentModifiers.Length == 0);
         }
 
         private static bool CanonicalizeCombatant(CombatantStateSaveData combatant)
@@ -1158,7 +1213,8 @@ namespace GuildIdle.Combat
                     string.IsNullOrWhiteSpace(source.combatantId) &&
                     string.IsNullOrWhiteSpace(source.enemyId) &&
                     source.queueIndex == 0 &&
-                    source.enemyExp == 0)
+                    source.enemyExp == 0 &&
+                    !source.legacyEmptyQueue)
                 ? null
                 : new CombatEnemyRewardOperationSaveData
             {
@@ -1166,7 +1222,8 @@ namespace GuildIdle.Combat
                 combatantId = source.combatantId,
                 enemyId = source.enemyId,
                 queueIndex = source.queueIndex,
-                enemyExp = source.enemyExp
+                enemyExp = source.enemyExp,
+                legacyEmptyQueue = source.legacyEmptyQueue
             };
         }
 

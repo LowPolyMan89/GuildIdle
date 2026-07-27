@@ -370,6 +370,76 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
+        public void LegacyEmptyQueueRewardOperationRoundtripsWithoutWeakeningModernValidation()
+        {
+            var aggregate = Aggregate(
+                "combat-legacy-reward",
+                "session-legacy-reward",
+                "ren",
+                "group-legacy",
+                "enemy-legacy");
+            aggregate.session.enemyQueue =
+                Array.Empty<CombatEnemyQueueEntrySaveData>();
+            aggregate.session.queuePosition = 0;
+            aggregate.session.currentEnemy = null;
+            aggregate.session.combatTimeSeconds = 3d;
+            aggregate.session.simulationStopped = true;
+            aggregate.session.terminalCandidate =
+                new CombatTerminalCandidateSaveData
+                {
+                    candidateId = "session-legacy-reward:victory",
+                    kind = CombatTerminalCandidateKinds.Victory,
+                    eventKey = "legacy-terminal",
+                    createdAtSeconds = 3d
+                };
+            aggregate.session.lastEnemyRewardOperation =
+                new CombatEnemyRewardOperationSaveData
+                {
+                    operationKey =
+                        "session-legacy-reward:enemy-reward:legacy:enemy-combatant",
+                    combatantId = "enemy-combatant",
+                    enemyId = "enemy-legacy",
+                    queueIndex = -1,
+                    enemyExp = 5,
+                    legacyEmptyQueue = true
+                };
+            var state = _factory.CreateDefault();
+
+            Assert.That(state.AddCombatAggregate(aggregate), Is.True);
+            var storage = new MemorySaveStorage();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            var restored = SaveService.Load(_factory, storage);
+            var operation = restored
+                .GetCombatAggregate("combat-legacy-reward")
+                .session.lastEnemyRewardOperation;
+            Assert.That(operation.legacyEmptyQueue, Is.True);
+            Assert.That(operation.queueIndex, Is.EqualTo(-1));
+            Assert.That(operation.enemyId, Is.EqualTo("enemy-legacy"));
+
+            var modern = Aggregate(
+                "combat-modern-invalid",
+                "session-modern-invalid",
+                "ren",
+                "group-modern",
+                "enemy-modern");
+            modern.session.lastEnemyRewardOperation =
+                new CombatEnemyRewardOperationSaveData
+                {
+                    operationKey =
+                        "session-modern-invalid:enemy-reward:legacy:enemy-combatant",
+                    combatantId = modern.session.currentEnemy.combatantId,
+                    enemyId = modern.session.currentEnemy.definitionId,
+                    queueIndex = -1,
+                    enemyExp = 5,
+                    legacyEmptyQueue = true
+                };
+            var rejected = _factory.CreateDefault();
+            using (new SuppressedLogHandler())
+                Assert.That(rejected.AddCombatAggregate(modern), Is.False);
+            Assert.That(rejected.GetCombatAggregates(), Is.Empty);
+        }
+
+        [Test]
         public void TerminalStateDoesNotReleaseHeroUntilExecutionAndPendingResultAreResolved()
         {
             var state = _factory.CreateDefault();

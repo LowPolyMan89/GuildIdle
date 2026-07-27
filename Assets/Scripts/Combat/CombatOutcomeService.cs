@@ -85,8 +85,7 @@ namespace GuildIdle.Combat
             var checkpoint = _state.ToSaveData();
             var aggregate = CombatRuntimeSaveDataUtility.CloneAggregate(stored);
             aggregate.session.simulationStopped = true;
-            aggregate.session.scheduler.scheduledEvents =
-                Array.Empty<CombatScheduledEventSaveData>();
+            CombatTerminalTransition.ClearScheduledEvents(aggregate.session);
             aggregate.session.terminalCandidate =
                 new CombatTerminalCandidateSaveData
                 {

@@ -499,6 +499,8 @@ namespace GuildIdle.Editor.Activities
             Assert.That(execution.completedCycles, Is.EqualTo(2));
             Assert.That(handoff.rootExecutionId, Is.EqualTo(started.executionId));
             Assert.That(handoff.occupationOwnerId, Is.EqualTo(started.executionId));
+            Assert.That(handoff.enemyExpTargetId,
+                Is.EqualTo("skill_hunting"));
             Assert.That(handoff.suppressFatigueCost, Is.True);
             Assert.That(handoff.loot, Has.Length.EqualTo(1));
             Assert.That(handoff.loot[0].origin, Is.EqualTo(PendingResultOrigin.ActivityLootInCombat));
