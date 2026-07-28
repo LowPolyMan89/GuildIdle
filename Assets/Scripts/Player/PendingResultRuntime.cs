@@ -495,7 +495,16 @@ namespace GuildIdle.Player
         public void Reconcile() => _state.ReconcileCraftExecutions();
     }
 
-    public sealed class PendingResultService : IPendingResultService
+    public interface ITransactionalPendingResultService
+    {
+        PendingResultFormationResult CreateOrAppendInTransaction(
+            string operationId,
+            PendingResultDraft draft,
+            bool makeClaimable,
+            long expectedResultRevision = 0);
+    }
+
+    public sealed class PendingResultService : IPendingResultService, ITransactionalPendingResultService
     {
         private readonly PlayerState _state;
         private readonly StorageService _storage;
@@ -579,14 +588,30 @@ namespace GuildIdle.Player
             if (string.Equals(draft.SourceType, PendingResultSourceType.Combat, StringComparison.Ordinal))
                 return FormationFailure("CombatDedicatedApiRequired", "Combat results must be formed through CreateCombatResult.");
 
-            return CreateOrAppendInternal(operationId, draft, makeClaimable, expectedResultRevision);
+            return CreateOrAppendInternal(operationId, draft, makeClaimable, expectedResultRevision, true);
+        }
+
+        public PendingResultFormationResult CreateOrAppendInTransaction(
+            string operationId,
+            PendingResultDraft draft,
+            bool makeClaimable,
+            long expectedResultRevision = 0)
+        {
+            if (draft == null || string.IsNullOrWhiteSpace(draft.SourceType) || string.IsNullOrWhiteSpace(draft.SourceId) ||
+                string.IsNullOrWhiteSpace(draft.SourceExecutionId) || string.IsNullOrWhiteSpace(operationId) || !_sourceLifecycle.HasHandler(draft.SourceType))
+                return FormationFailure("InvalidFormation", "Registered source type, source id, execution id and operation id are required.");
+            if (string.Equals(draft.SourceType, PendingResultSourceType.Combat, StringComparison.Ordinal))
+                return FormationFailure("CombatDedicatedApiRequired", "Combat results must be formed through CreateCombatResult.");
+
+            return CreateOrAppendInternal(operationId, draft, makeClaimable, expectedResultRevision, false);
         }
 
         private PendingResultFormationResult CreateOrAppendInternal(
             string operationId,
             PendingResultDraft draft,
             bool makeClaimable,
-            long expectedResultRevision)
+            long expectedResultRevision,
+            bool saveImmediately = true)
         {
             if (draft == null || string.IsNullOrWhiteSpace(draft.SourceType) || string.IsNullOrWhiteSpace(draft.SourceId) ||
                 string.IsNullOrWhiteSpace(draft.SourceExecutionId) || string.IsNullOrWhiteSpace(operationId) || !_sourceLifecycle.HasHandler(draft.SourceType))
@@ -714,7 +739,7 @@ namespace GuildIdle.Player
                 resultRevision = result.revision,
                 resolved = resolvedImmediately
             });
-            if (!_state.Save())
+            if (saveImmediately && !_state.Save())
             {
                 _state.RestoreTransactional(before);
                 return FormationFailure("SaveFailed", "PendingResult formation could not be saved and was rolled back.");

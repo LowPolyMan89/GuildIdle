@@ -52,6 +52,83 @@ namespace GuildIdle.Activities
         public ActivityRequirementIssue[] issues = Array.Empty<ActivityRequirementIssue>();
     }
 
+    public enum WorkAdvanceStopReason
+    {
+        None = 0,
+        IntervalExhausted = 1,
+        PlanCompleted = 2,
+        InsufficientFatigue = 3,
+        DangerBoundaryReached = 4,
+        ProcessingLimitReached = 5,
+        InvalidRequest = 6,
+        ExecutionNotFound = 7,
+        ExecutionNotRunning = 8,
+        NotWorkExecution = 9,
+        ValidationFailed = 10,
+        RuntimeError = 11
+    }
+
+    public sealed class WorkAdvanceRequest
+    {
+        public WorkAdvanceRequest(string executionId, long availableSeconds)
+            : this(executionId, availableSeconds, ActivityRuntimeService.DefaultWorkAdvanceOperationLimit)
+        {
+        }
+
+        public WorkAdvanceRequest(string executionId, long availableSeconds, int operationLimit)
+        {
+            ExecutionId = executionId;
+            AvailableSeconds = availableSeconds;
+            OperationLimit = operationLimit;
+        }
+
+        public string ExecutionId { get; }
+        public long AvailableSeconds { get; }
+        public int OperationLimit { get; }
+    }
+
+    public sealed class WorkAdvanceResult
+    {
+        internal WorkAdvanceResult(
+            bool success,
+            WorkAdvanceStopReason stopReason,
+            string executionId,
+            int processedCycles,
+            long consumedSeconds,
+            long remainingSeconds,
+            ActivityRuntimeStatus executionStatus,
+            bool hasPartialCycle,
+            bool planCompleted,
+            IReadOnlyList<ActivityRequirementIssue> issues)
+        {
+            Success = success;
+            StopReason = stopReason;
+            ExecutionId = executionId;
+            ProcessedCycles = processedCycles;
+            ConsumedSeconds = consumedSeconds;
+            RemainingSeconds = remainingSeconds;
+            ExecutionStatus = executionStatus;
+            HasPartialCycle = hasPartialCycle;
+            PlanCompleted = planCompleted;
+            Issues = issues ?? Array.AsReadOnly(Array.Empty<ActivityRequirementIssue>());
+        }
+
+        public bool Success { get; }
+        public string Code => StopReason.ToString();
+        public WorkAdvanceStopReason StopReason { get; }
+        public string ExecutionId { get; }
+        public int ProcessedCycles { get; }
+        public long ConsumedSeconds { get; }
+        public long RemainingSeconds { get; }
+        public ActivityRuntimeStatus ExecutionStatus { get; }
+        public bool HasPartialCycle { get; }
+        public bool PlanCompleted { get; }
+        public bool FatigueStopped => StopReason == WorkAdvanceStopReason.InsufficientFatigue;
+        public bool DangerBoundaryReached => StopReason == WorkAdvanceStopReason.DangerBoundaryReached;
+        public bool ProcessingLimitReached => StopReason == WorkAdvanceStopReason.ProcessingLimitReached;
+        public IReadOnlyList<ActivityRequirementIssue> Issues { get; }
+    }
+
     public sealed class ActivityRuntimeEvent
     {
         public string eventType;

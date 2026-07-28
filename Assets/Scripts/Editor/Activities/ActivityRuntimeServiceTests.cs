@@ -472,6 +472,318 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void AdvanceWorkProcessesMultipleCyclesAndPartialWithoutSaving()
+        {
+            var storage = new MemorySaveStorage();
+            var state = NewState();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new FixedRandom(1));
+            var initialFatigue = state.GetHeroFatigue("ren");
+            var started = runtime.Start(WorkStart("test_multi_loot_work", "ren", 3));
+            var saveCallsBeforeAdvance = storage.SaveCalls;
+
+            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 25));
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.StopReason, Is.EqualTo(WorkAdvanceStopReason.IntervalExhausted));
+            Assert.That(result.ProcessedCycles, Is.EqualTo(2));
+            Assert.That(result.ConsumedSeconds, Is.EqualTo(25));
+            Assert.That(result.RemainingSeconds, Is.Zero);
+            Assert.That(result.HasPartialCycle, Is.True);
+            Assert.That(execution.completedCycles, Is.EqualTo(2));
+            Assert.That(execution.elapsedSeconds, Is.EqualTo(5f));
+            Assert.That(execution.currentCycleFatiguePaid, Is.True);
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(initialFatigue - 3));
+            Assert.That(state.PendingResults.GetAll()[0].entries, Has.Length.EqualTo(4));
+            Assert.That(storage.SaveCalls, Is.EqualTo(saveCallsBeforeAdvance));
+        }
+
+        [Test]
+        public void AdvanceWorkMatchesOnlineWorkProgressionForSameInterval()
+        {
+            var onlineState = NewState();
+            var offlineState = NewState();
+            var online = new ActivityRuntimeService(onlineState, new PlayerStateActivityAdapter(onlineState), new FixedRandom(1));
+            var offline = new ActivityRuntimeService(offlineState, new PlayerStateActivityAdapter(offlineState), new FixedRandom(1));
+            var onlineStart = online.Start(WorkStart("work_pine_wood", "ren", 3));
+            var offlineStart = offline.Start(WorkStart("work_pine_wood", "ren", 3));
+
+            Assert.That(online.Tick(25f).success, Is.True);
+            var advanced = offline.AdvanceWork(new WorkAdvanceRequest(offlineStart.executionId, 25));
+            var onlineExecution = onlineState.GetActivityExecution(onlineStart.executionId);
+            var offlineExecution = offlineState.GetActivityExecution(offlineStart.executionId);
+
+            Assert.That(advanced.Success, Is.True);
+            Assert.That(offlineExecution.completedCycles, Is.EqualTo(onlineExecution.completedCycles));
+            Assert.That(offlineExecution.elapsedSeconds, Is.EqualTo(onlineExecution.elapsedSeconds));
+            Assert.That(offlineExecution.currentCycleFatiguePaid, Is.EqualTo(onlineExecution.currentCycleFatiguePaid));
+            Assert.That(offlineState.GetHeroFatigue("ren"), Is.EqualTo(onlineState.GetHeroFatigue("ren")));
+            Assert.That(offlineState.GetHeroEffectCounter("ren", "test_reliable_hands_effect"),
+                Is.EqualTo(onlineState.GetHeroEffectCounter("ren", "test_reliable_hands_effect")));
+            Assert.That(offlineState.PendingResults.GetAll()[0].entries[0].quantity,
+                Is.EqualTo(onlineState.PendingResults.GetAll()[0].entries[0].quantity));
+        }
+
+        [Test]
+        public void AdvanceWorkDoesNotProcessStandardConstructionOrResultPendingExecutions()
+        {
+            var standardState = NewState();
+            var standardRuntime = new ActivityRuntimeService(standardState, new PlayerStateActivityAdapter(standardState));
+            var standard = standardRuntime.Start("one_shot_new", "ren");
+            var standardResult = standardRuntime.AdvanceWork(new WorkAdvanceRequest(standard.executionId, 100));
+
+            Assert.That(standardResult.Success, Is.False);
+            Assert.That(standardResult.StopReason, Is.EqualTo(WorkAdvanceStopReason.NotWorkExecution));
+            Assert.That(standardState.GetActivityExecution(standard.executionId).elapsedSeconds, Is.Zero);
+
+            var buildState = NewState();
+            buildState.UnlockBuilding("building_hall");
+            buildState.SetBuildingLevel("building_hall", 0);
+            var buildRuntime = new ActivityRuntimeService(
+                buildState,
+                new PlayerStateActivityAdapter(buildState),
+                progressionProcessor: new RecordingProgressionProcessor());
+            var build = buildRuntime.Start(new ActivityStartRequest { activityId = "test_build_empty", heroId = "ren" });
+            var buildResult = buildRuntime.AdvanceWork(new WorkAdvanceRequest(build.executionId, 100));
+
+            Assert.That(buildResult.Success, Is.False);
+            Assert.That(buildResult.StopReason, Is.EqualTo(WorkAdvanceStopReason.NotWorkExecution));
+            Assert.That(buildState.GetActivityExecution(build.executionId).accumulatedBuildPoints, Is.Zero);
+
+            var pendingState = NewState();
+            var pendingRuntime = new ActivityRuntimeService(pendingState, new PlayerStateActivityAdapter(pendingState));
+            var pending = pendingRuntime.Start(WorkStart("work_pine_wood", "ren", 1));
+            Assert.That(pendingRuntime.AdvanceWork(new WorkAdvanceRequest(pending.executionId, 10)).Success, Is.True);
+            var pendingResult = pendingRuntime.AdvanceWork(new WorkAdvanceRequest(pending.executionId, 10));
+
+            Assert.That(pendingResult.Success, Is.False);
+            Assert.That(pendingResult.StopReason, Is.EqualTo(WorkAdvanceStopReason.ExecutionNotRunning));
+            Assert.That(pendingState.GetActivityExecution(pending.executionId).completedCycles, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void AdvanceWorkStopsCleanlyWhenNextCycleFatigueCannotBePaid()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(WorkStart("work_pine_wood", "ren", 3));
+            Assert.That(state.SpendHeroFatigue("ren", state.GetHeroFatigue("ren")), Is.True);
+
+            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 30));
+            var execution = state.GetActivityExecution(started.executionId);
+            var repeated = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 20));
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.StopReason, Is.EqualTo(WorkAdvanceStopReason.InsufficientFatigue));
+            Assert.That(result.ProcessedCycles, Is.EqualTo(1));
+            Assert.That(result.ConsumedSeconds, Is.EqualTo(10));
+            Assert.That(result.RemainingSeconds, Is.EqualTo(20));
+            Assert.That(execution.completedCycles, Is.EqualTo(1));
+            Assert.That(execution.cyclePhase, Is.EqualTo("Running"));
+            Assert.That(execution.currentCycleFatiguePaid, Is.False);
+            Assert.That(execution.stagedRewards, Is.Empty);
+            Assert.That(state.PendingResults.GetAll()[0].entries, Has.Length.EqualTo(2));
+            Assert.That(repeated.Success, Is.True);
+            Assert.That(repeated.StopReason, Is.EqualTo(WorkAdvanceStopReason.InsufficientFatigue));
+            Assert.That(repeated.ProcessedCycles, Is.Zero);
+            Assert.That(repeated.ConsumedSeconds, Is.Zero);
+        }
+
+        [Test]
+        public void AdvanceWorkPartialCycleSurvivesSaveLoadWithoutRepayingFatigue()
+        {
+            var state = NewState();
+            var initialFatigue = state.GetHeroFatigue("ren");
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(WorkStart("work_pine_wood", "ren", 2));
+
+            var partial = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 3));
+            var storage = new MemorySaveStorage();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var completed = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 7));
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(partial.HasPartialCycle, Is.True);
+            Assert.That(completed.Success, Is.True);
+            Assert.That(completed.ProcessedCycles, Is.EqualTo(1));
+            Assert.That(execution.completedCycles, Is.EqualTo(1));
+            Assert.That(execution.elapsedSeconds, Is.Zero);
+            Assert.That(execution.currentCycleFatiguePaid, Is.True);
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(initialFatigue - 4));
+        }
+
+        [Test]
+        public void AdvanceWorkDangerBoundaryIsStableAndDoesNotCreateCombat()
+        {
+            var state = NewState();
+            var random = new CountingDangerSequenceRandom(100, 1);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 3));
+
+            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 30));
+            var execution = state.GetActivityExecution(started.executionId);
+            var callsAtBoundary = random.RangeCalls;
+            var repeated = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.StopReason, Is.EqualTo(WorkAdvanceStopReason.DangerBoundaryReached));
+            Assert.That(result.ProcessedCycles, Is.EqualTo(2));
+            Assert.That(result.ConsumedSeconds, Is.EqualTo(20));
+            Assert.That(result.RemainingSeconds, Is.EqualTo(10));
+            Assert.That(execution.completedCycles, Is.EqualTo(2));
+            Assert.That(execution.cyclePhase, Is.EqualTo("ResultStaged"));
+            Assert.That(execution.dangerRollCompleted, Is.True);
+            Assert.That(execution.stagedRewards, Has.Length.EqualTo(2));
+            Assert.That(execution.linkedCombat, Is.Null);
+            Assert.That(runtime.GetPendingLinkedCombatStarts(), Is.Empty);
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+            Assert.That(state.PendingResults.GetAll()[0].entries, Has.Length.EqualTo(2));
+            Assert.That(repeated.StopReason, Is.EqualTo(WorkAdvanceStopReason.DangerBoundaryReached));
+            Assert.That(repeated.ProcessedCycles, Is.Zero);
+            Assert.That(random.RangeCalls, Is.EqualTo(callsAtBoundary));
+        }
+
+        [Test]
+        public void AdvanceWorkDangerBoundarySurvivesSaveLoadWithoutReroll()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(
+                state,
+                new PlayerStateActivityAdapter(state),
+                new CountingDangerSequenceRandom(1));
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 2));
+            Assert.That(runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10)).DangerBoundaryReached, Is.True);
+            var storage = new MemorySaveStorage();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            var replayRandom = new CountingRandom();
+            runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), replayRandom);
+
+            var replay = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.DangerBoundaryReached, Is.True);
+            Assert.That(replay.ProcessedCycles, Is.Zero);
+            Assert.That(replayRandom.RangeCalls, Is.Zero);
+            Assert.That(replayRandom.PercentCalls, Is.Zero);
+            Assert.That(state.GetActivityExecution(started.executionId).completedCycles, Is.EqualTo(1));
+            Assert.That(runtime.GetPendingLinkedCombatStarts(), Is.Empty);
+        }
+
+        [Test]
+        public void AdvanceWorkProcessingLimitPreservesRemainingIntervalAndCanResume()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(WorkStart("work_pine_wood", "ren", 3));
+
+            var limited = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 30, 1));
+            var resumed = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, limited.RemainingSeconds, 10));
+
+            Assert.That(limited.Success, Is.True);
+            Assert.That(limited.StopReason, Is.EqualTo(WorkAdvanceStopReason.ProcessingLimitReached));
+            Assert.That(limited.ProcessedCycles, Is.EqualTo(1));
+            Assert.That(limited.ConsumedSeconds, Is.EqualTo(10));
+            Assert.That(limited.RemainingSeconds, Is.EqualTo(20));
+            Assert.That(resumed.Success, Is.True);
+            Assert.That(resumed.StopReason, Is.EqualTo(WorkAdvanceStopReason.PlanCompleted));
+            Assert.That(resumed.ProcessedCycles, Is.EqualTo(2));
+            Assert.That(state.GetActivityExecution(started.executionId).completedCycles, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void AdvanceWorkCanBeRolledBackByOuterCheckpoint()
+        {
+            var state = NewState();
+            var activityState = new PlayerStateActivityAdapter(state);
+            var runtime = new ActivityRuntimeService(state, activityState, new FixedRandom(1));
+            var started = runtime.Start(WorkStart("work_pine_wood", "ren", 3));
+            var checkpoint = activityState.CaptureCheckpoint();
+            var fatigueBefore = state.GetHeroFatigue("ren");
+
+            Assert.That(runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 20)).Success, Is.True);
+            activityState.RestoreCheckpoint(checkpoint);
+            var restored = state.GetActivityExecution(started.executionId);
+
+            Assert.That(restored.completedCycles, Is.Zero);
+            Assert.That(restored.elapsedSeconds, Is.Zero);
+            Assert.That(restored.currentCycleFatiguePaid, Is.True);
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(fatigueBefore));
+            Assert.That(state.GetHeroEffectCounter("ren", "test_reliable_hands_effect"), Is.Zero);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+        }
+
+        [Test]
+        public void AdvanceWorkIgnoresFullStorageAndKeepsRewardsInActivityBag()
+        {
+            var state = NewState();
+            var fill = state.Storage.Add(
+                "fill-storage",
+                state.Storage.GetSnapshot().Revision,
+                "resource_pine_wood",
+                2000);
+            Assert.That(fill.Success, Is.True);
+            Assert.That(state.Storage.GetSnapshot().FreeSlots, Is.Zero);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(WorkStart("work_pine_wood", "ren", 1));
+
+            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+            var bag = state.PendingResults.GetAll()[0];
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.PlanCompleted, Is.True);
+            Assert.That(state.GetItem("resource_pine_wood"), Is.EqualTo(2000));
+            Assert.That(bag.entries, Has.Length.EqualTo(2));
+            Assert.That(bag.entries[0].rewardType, Is.EqualTo("Resource"));
+            Assert.That(bag.entries[0].quantity, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void AdvanceWorkEmptyRewardPlanCompletesWithoutManualClaim()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(WorkStart("empty_repeat", "ren", 1));
+
+            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.StopReason, Is.EqualTo(WorkAdvanceStopReason.PlanCompleted));
+            Assert.That(result.PlanCompleted, Is.True);
+            Assert.That(result.ExecutionStatus, Is.EqualTo(ActivityRuntimeStatus.Completed));
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+        }
+
+        [Test]
+        public void AdvanceWorkValidationFailureLeavesCycleStateUnchanged()
+        {
+            var state = NewState();
+            var random = new CountingRandom();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
+            var started = runtime.Start(WorkStart("bad_reward_range_work", "ren", 1));
+            var checkpoint = state.GetActivityExecution(started.executionId);
+
+            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.StopReason, Is.EqualTo(WorkAdvanceStopReason.ValidationFailed));
+            Assert.That(execution.completedCycles, Is.EqualTo(checkpoint.completedCycles));
+            Assert.That(execution.elapsedSeconds, Is.EqualTo(checkpoint.elapsedSeconds));
+            Assert.That(execution.cyclePhase, Is.EqualTo(checkpoint.cyclePhase));
+            Assert.That(execution.stagedRewards, Is.Empty);
+            Assert.That(random.RangeCalls, Is.Zero);
+            Assert.That(random.PercentCalls, Is.Zero);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+        }
+
+        [Test]
         public void DangerHandoffMovesOnlyCycleLootAndKeepsRootOccupation()
         {
             var state = NewState();
@@ -1431,6 +1743,28 @@ namespace GuildIdle.Editor.Activities
                 return min;
             }
             public float Percent() => 0f;
+        }
+
+        private sealed class CountingDangerSequenceRandom : IActivityRandom
+        {
+            private readonly Queue<int> _dangerRolls;
+            public CountingDangerSequenceRandom(params int[] dangerRolls) { _dangerRolls = new Queue<int>(dangerRolls); }
+            public int RangeCalls { get; private set; }
+            public int PercentCalls { get; private set; }
+
+            public int RangeInclusive(int min, int max)
+            {
+                RangeCalls++;
+                if (min == 1 && max == 100 && _dangerRolls.Count > 0)
+                    return Mathf.Clamp(_dangerRolls.Dequeue(), min, max);
+                return min;
+            }
+
+            public float Percent()
+            {
+                PercentCalls++;
+                return 0f;
+            }
         }
     }
 }
