@@ -481,9 +481,10 @@ namespace GuildIdle.Editor.Activities
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new FixedRandom(1));
             var initialFatigue = state.GetHeroFatigue("ren");
             var started = runtime.Start(WorkStart("test_multi_loot_work", "ren", 3));
+            var processor = NewWorkAdvanceProcessor(state, new FixedRandom(1));
             var saveCallsBeforeAdvance = storage.SaveCalls;
 
-            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 25));
+            var result = processor.Advance(new WorkAdvanceRequest(started.executionId, 25));
             var execution = state.GetActivityExecution(started.executionId);
 
             Assert.That(result.Success, Is.True);
@@ -509,9 +510,10 @@ namespace GuildIdle.Editor.Activities
             var offline = new ActivityRuntimeService(offlineState, new PlayerStateActivityAdapter(offlineState), new FixedRandom(1));
             var onlineStart = online.Start(WorkStart("work_pine_wood", "ren", 3));
             var offlineStart = offline.Start(WorkStart("work_pine_wood", "ren", 3));
+            var offlineProcessor = NewWorkAdvanceProcessor(offlineState, new FixedRandom(1));
 
             Assert.That(online.Tick(25f).success, Is.True);
-            var advanced = offline.AdvanceWork(new WorkAdvanceRequest(offlineStart.executionId, 25));
+            var advanced = offlineProcessor.Advance(new WorkAdvanceRequest(offlineStart.executionId, 25));
             var onlineExecution = onlineState.GetActivityExecution(onlineStart.executionId);
             var offlineExecution = offlineState.GetActivityExecution(offlineStart.executionId);
 
@@ -532,7 +534,7 @@ namespace GuildIdle.Editor.Activities
             var standardState = NewState();
             var standardRuntime = new ActivityRuntimeService(standardState, new PlayerStateActivityAdapter(standardState));
             var standard = standardRuntime.Start("one_shot_new", "ren");
-            var standardResult = standardRuntime.AdvanceWork(new WorkAdvanceRequest(standard.executionId, 100));
+            var standardResult = NewWorkAdvanceProcessor(standardState).Advance(new WorkAdvanceRequest(standard.executionId, 100));
 
             Assert.That(standardResult.Success, Is.False);
             Assert.That(standardResult.StopReason, Is.EqualTo(WorkAdvanceStopReason.NotWorkExecution));
@@ -546,7 +548,7 @@ namespace GuildIdle.Editor.Activities
                 new PlayerStateActivityAdapter(buildState),
                 progressionProcessor: new RecordingProgressionProcessor());
             var build = buildRuntime.Start(new ActivityStartRequest { activityId = "test_build_empty", heroId = "ren" });
-            var buildResult = buildRuntime.AdvanceWork(new WorkAdvanceRequest(build.executionId, 100));
+            var buildResult = NewWorkAdvanceProcessor(buildState).Advance(new WorkAdvanceRequest(build.executionId, 100));
 
             Assert.That(buildResult.Success, Is.False);
             Assert.That(buildResult.StopReason, Is.EqualTo(WorkAdvanceStopReason.NotWorkExecution));
@@ -555,8 +557,9 @@ namespace GuildIdle.Editor.Activities
             var pendingState = NewState();
             var pendingRuntime = new ActivityRuntimeService(pendingState, new PlayerStateActivityAdapter(pendingState));
             var pending = pendingRuntime.Start(WorkStart("work_pine_wood", "ren", 1));
-            Assert.That(pendingRuntime.AdvanceWork(new WorkAdvanceRequest(pending.executionId, 10)).Success, Is.True);
-            var pendingResult = pendingRuntime.AdvanceWork(new WorkAdvanceRequest(pending.executionId, 10));
+            var pendingProcessor = NewWorkAdvanceProcessor(pendingState);
+            Assert.That(pendingProcessor.Advance(new WorkAdvanceRequest(pending.executionId, 10)).Success, Is.True);
+            var pendingResult = pendingProcessor.Advance(new WorkAdvanceRequest(pending.executionId, 10));
 
             Assert.That(pendingResult.Success, Is.False);
             Assert.That(pendingResult.StopReason, Is.EqualTo(WorkAdvanceStopReason.ExecutionNotRunning));
@@ -569,11 +572,13 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
             var started = runtime.Start(WorkStart("work_pine_wood", "ren", 3));
+            var processor = NewWorkAdvanceProcessor(state);
             Assert.That(state.SpendHeroFatigue("ren", state.GetHeroFatigue("ren")), Is.True);
 
-            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 30));
+            var result = processor.Advance(new WorkAdvanceRequest(started.executionId, 30));
             var execution = state.GetActivityExecution(started.executionId);
-            var repeated = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 20));
+            var repeated = processor.Advance(new WorkAdvanceRequest(started.executionId, 20));
+            var bag = state.PendingResults.GetAll()[0];
 
             Assert.That(result.Success, Is.True);
             Assert.That(result.StopReason, Is.EqualTo(WorkAdvanceStopReason.InsufficientFatigue));
@@ -581,14 +586,23 @@ namespace GuildIdle.Editor.Activities
             Assert.That(result.ConsumedSeconds, Is.EqualTo(10));
             Assert.That(result.RemainingSeconds, Is.EqualTo(20));
             Assert.That(execution.completedCycles, Is.EqualTo(1));
-            Assert.That(execution.cyclePhase, Is.EqualTo("Running"));
+            Assert.That(execution.status, Is.EqualTo(ActivityRuntimeStatus.ResultPending));
+            Assert.That(execution.endReason, Is.EqualTo("InsufficientFatigue"));
             Assert.That(execution.currentCycleFatiguePaid, Is.False);
             Assert.That(execution.stagedRewards, Is.Empty);
-            Assert.That(state.PendingResults.GetAll()[0].entries, Has.Length.EqualTo(2));
-            Assert.That(repeated.Success, Is.True);
-            Assert.That(repeated.StopReason, Is.EqualTo(WorkAdvanceStopReason.InsufficientFatigue));
+            Assert.That(bag.entries, Has.Length.EqualTo(2));
+            Assert.That(repeated.Success, Is.False);
+            Assert.That(repeated.StopReason, Is.EqualTo(WorkAdvanceStopReason.ExecutionNotRunning));
             Assert.That(repeated.ProcessedCycles, Is.Zero);
             Assert.That(repeated.ConsumedSeconds, Is.Zero);
+            Assert.That(state.PendingResults.GetAll()[0].entries, Has.Length.EqualTo(2));
+            Assert.That(state.PendingResults.ClaimAll(
+                "claim-fatigue-stop",
+                bag.resultId,
+                bag.revision,
+                state.Storage.GetSnapshot().Revision).Success, Is.True);
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
         }
 
         [Test]
@@ -598,13 +612,15 @@ namespace GuildIdle.Editor.Activities
             var initialFatigue = state.GetHeroFatigue("ren");
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
             var started = runtime.Start(WorkStart("work_pine_wood", "ren", 2));
+            var processor = NewWorkAdvanceProcessor(state);
 
-            var partial = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 3));
+            var partial = processor.Advance(new WorkAdvanceRequest(started.executionId, 3));
             var storage = new MemorySaveStorage();
             Assert.That(SaveService.Save(state, storage), Is.True);
             state = SaveService.Load(_factory, storage);
             runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
-            var completed = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 7));
+            processor = NewWorkAdvanceProcessor(state);
+            var completed = processor.Advance(new WorkAdvanceRequest(started.executionId, 7));
             var execution = state.GetActivityExecution(started.executionId);
 
             Assert.That(partial.HasPartialCycle, Is.True);
@@ -623,11 +639,12 @@ namespace GuildIdle.Editor.Activities
             var random = new CountingDangerSequenceRandom(100, 1);
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
             var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 3));
+            var processor = NewWorkAdvanceProcessor(state, random);
 
-            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 30));
+            var result = processor.Advance(new WorkAdvanceRequest(started.executionId, 30));
             var execution = state.GetActivityExecution(started.executionId);
             var callsAtBoundary = random.RangeCalls;
-            var repeated = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+            var repeated = processor.Advance(new WorkAdvanceRequest(started.executionId, 10));
 
             Assert.That(result.Success, Is.True);
             Assert.That(result.StopReason, Is.EqualTo(WorkAdvanceStopReason.DangerBoundaryReached));
@@ -656,14 +673,16 @@ namespace GuildIdle.Editor.Activities
                 new PlayerStateActivityAdapter(state),
                 new CountingDangerSequenceRandom(1));
             var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 2));
-            Assert.That(runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10)).DangerBoundaryReached, Is.True);
+            var processor = NewWorkAdvanceProcessor(state, new CountingDangerSequenceRandom(1));
+            Assert.That(processor.Advance(new WorkAdvanceRequest(started.executionId, 10)).DangerBoundaryReached, Is.True);
             var storage = new MemorySaveStorage();
             Assert.That(SaveService.Save(state, storage), Is.True);
             state = SaveService.Load(_factory, storage);
             var replayRandom = new CountingRandom();
             runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), replayRandom);
+            processor = NewWorkAdvanceProcessor(state, replayRandom);
 
-            var replay = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+            var replay = processor.Advance(new WorkAdvanceRequest(started.executionId, 10));
 
             Assert.That(replay.Success, Is.True);
             Assert.That(replay.DangerBoundaryReached, Is.True);
@@ -680,9 +699,10 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
             var started = runtime.Start(WorkStart("work_pine_wood", "ren", 3));
+            var processor = NewWorkAdvanceProcessor(state);
 
-            var limited = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 30, 1));
-            var resumed = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, limited.RemainingSeconds, 10));
+            var limited = processor.Advance(new WorkAdvanceRequest(started.executionId, 30, 1));
+            var resumed = processor.Advance(new WorkAdvanceRequest(started.executionId, limited.RemainingSeconds, 10));
 
             Assert.That(limited.Success, Is.True);
             Assert.That(limited.StopReason, Is.EqualTo(WorkAdvanceStopReason.ProcessingLimitReached));
@@ -702,11 +722,14 @@ namespace GuildIdle.Editor.Activities
             var activityState = new PlayerStateActivityAdapter(state);
             var runtime = new ActivityRuntimeService(state, activityState, new FixedRandom(1));
             var started = runtime.Start(WorkStart("work_pine_wood", "ren", 3));
+            var processor = NewWorkAdvanceProcessor(state, new FixedRandom(1));
             var checkpoint = activityState.CaptureCheckpoint();
+            var randomCheckpoint = processor.CaptureRandomState();
             var fatigueBefore = state.GetHeroFatigue("ren");
 
-            Assert.That(runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 20)).Success, Is.True);
+            Assert.That(processor.Advance(new WorkAdvanceRequest(started.executionId, 20)).Success, Is.True);
             activityState.RestoreCheckpoint(checkpoint);
+            processor.RestoreRandomState(randomCheckpoint);
             var restored = state.GetActivityExecution(started.executionId);
 
             Assert.That(restored.completedCycles, Is.Zero);
@@ -730,8 +753,9 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.Storage.GetSnapshot().FreeSlots, Is.Zero);
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
             var started = runtime.Start(WorkStart("work_pine_wood", "ren", 1));
+            var processor = NewWorkAdvanceProcessor(state);
 
-            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+            var result = processor.Advance(new WorkAdvanceRequest(started.executionId, 10));
             var bag = state.PendingResults.GetAll()[0];
 
             Assert.That(result.Success, Is.True);
@@ -748,8 +772,9 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
             var started = runtime.Start(WorkStart("empty_repeat", "ren", 1));
+            var processor = NewWorkAdvanceProcessor(state);
 
-            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+            var result = processor.Advance(new WorkAdvanceRequest(started.executionId, 10));
 
             Assert.That(result.Success, Is.True);
             Assert.That(result.StopReason, Is.EqualTo(WorkAdvanceStopReason.PlanCompleted));
@@ -758,6 +783,7 @@ namespace GuildIdle.Editor.Activities
             Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
             Assert.That(state.PendingResults.GetAll(), Is.Empty);
             Assert.That(state.IsHeroBusy("ren"), Is.False);
+            Assert.That(result.DeferredResolvedEvents, Has.Count.EqualTo(1));
         }
 
         [Test]
@@ -767,9 +793,10 @@ namespace GuildIdle.Editor.Activities
             var random = new CountingRandom();
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
             var started = runtime.Start(WorkStart("bad_reward_range_work", "ren", 1));
+            var processor = NewWorkAdvanceProcessor(state, random);
             var checkpoint = state.GetActivityExecution(started.executionId);
 
-            var result = runtime.AdvanceWork(new WorkAdvanceRequest(started.executionId, 10));
+            var result = processor.Advance(new WorkAdvanceRequest(started.executionId, 10));
             var execution = state.GetActivityExecution(started.executionId);
 
             Assert.That(result.Success, Is.False);
@@ -781,6 +808,172 @@ namespace GuildIdle.Editor.Activities
             Assert.That(random.RangeCalls, Is.Zero);
             Assert.That(random.PercentCalls, Is.Zero);
             Assert.That(state.PendingResults.GetAll(), Is.Empty);
+        }
+
+        [Test]
+        public void WorkAdvanceProcessorCreationDoesNotReconcileOrSave()
+        {
+            var storage = new MemorySaveStorage();
+            var state = NewState();
+            state.UnlockBuilding("building_hall");
+            state.SetBuildingLevel("building_hall", 0);
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            var progression = new RecordingProgressionProcessor { FailBuildingLevelChanged = true };
+            var runtime = new ActivityRuntimeService(
+                state,
+                new PlayerStateActivityAdapter(state),
+                progressionProcessor: progression);
+            var started = runtime.Start(new ActivityStartRequest { activityId = "test_build_empty", heroId = "ren" });
+            Assert.That(runtime.Tick(1f).success, Is.False);
+            runtime.Dispose();
+            var before = JsonUtility.ToJson(state.ToSaveData());
+            var saveCalls = storage.SaveCalls;
+
+            using var processor = NewWorkAdvanceProcessor(state);
+
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+            Assert.That(storage.SaveCalls, Is.EqualTo(saveCalls));
+            Assert.That(state.GetActivityExecution(started.executionId).buildingEventPending, Is.True);
+            Assert.That(progression.BuildingLevelChangedCount, Is.Zero);
+        }
+
+        [Test]
+        public void TransactionalEmptyResultDefersResolvedUntilCommitAndPublishesOnce()
+        {
+            var state = NewState();
+            var activityState = new PlayerStateActivityAdapter(state);
+            var runtime = new ActivityRuntimeService(state, activityState);
+            var started = runtime.Start(WorkStart("empty_repeat", "ren", 1));
+            var random = new SystemActivityRandom(77);
+            var processor = NewWorkAdvanceProcessor(state, random);
+            var checkpoint = activityState.CaptureCheckpoint();
+            var randomCheckpoint = processor.CaptureRandomState();
+            var resolvedEvents = 0;
+            state.PendingResults.Resolved += _ => resolvedEvents++;
+
+            var rolledBack = processor.Advance(new WorkAdvanceRequest(started.executionId, 10));
+
+            Assert.That(rolledBack.Success, Is.True);
+            Assert.That(rolledBack.DeferredResolvedEvents, Has.Count.EqualTo(1));
+            Assert.That(resolvedEvents, Is.Zero);
+            activityState.RestoreCheckpoint(checkpoint);
+            processor.RestoreRandomState(randomCheckpoint);
+
+            var committed = processor.Advance(new WorkAdvanceRequest(started.executionId, 10));
+            var storage = new MemorySaveStorage();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+
+            Assert.That(committed.DeferredResolvedEvents, Has.Count.EqualTo(1));
+            Assert.That(resolvedEvents, Is.Zero);
+            processor.PublishDeferredResolvedEvents(committed);
+            processor.PublishDeferredResolvedEvents(committed);
+            Assert.That(resolvedEvents, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void AdvanceWorkStateAndRandomRollbackRetryProduceIdenticalOutcome()
+        {
+            var state = NewState();
+            var activityState = new PlayerStateActivityAdapter(state);
+            var runtime = new ActivityRuntimeService(state, activityState);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 3));
+            var random = new SystemActivityRandom(91234);
+            var processor = NewWorkAdvanceProcessor(state, random);
+            var checkpoint = activityState.CaptureCheckpoint();
+            var randomCheckpoint = processor.CaptureRandomState();
+
+            var first = processor.Advance(new WorkAdvanceRequest(started.executionId, 20));
+            var firstExecution = state.GetActivityExecution(started.executionId);
+            var firstBag = state.PendingResults.GetAll();
+            var firstCounter = state.GetHeroEffectCounter("ren", "test_reliable_hands_effect");
+            var firstRandomAfter = processor.CaptureRandomState();
+
+            activityState.RestoreCheckpoint(checkpoint);
+            processor.RestoreRandomState(randomCheckpoint);
+
+            var retry = processor.Advance(new WorkAdvanceRequest(started.executionId, 20));
+            var retryExecution = state.GetActivityExecution(started.executionId);
+            var retryBag = state.PendingResults.GetAll();
+
+            Assert.That(retry.StopReason, Is.EqualTo(first.StopReason));
+            Assert.That(retry.ProcessedCycles, Is.EqualTo(first.ProcessedCycles));
+            Assert.That(retry.RemainingSeconds, Is.EqualTo(first.RemainingSeconds));
+            Assert.That(retryExecution.completedCycles, Is.EqualTo(firstExecution.completedCycles));
+            Assert.That(retryExecution.dangerRollCompleted, Is.EqualTo(firstExecution.dangerRollCompleted));
+            Assert.That(retryExecution.dangerRiskPercent, Is.EqualTo(firstExecution.dangerRiskPercent));
+            Assert.That(retryExecution.dangerRoll, Is.EqualTo(firstExecution.dangerRoll));
+            Assert.That(state.GetHeroEffectCounter("ren", "test_reliable_hands_effect"), Is.EqualTo(firstCounter));
+            Assert.That(retryBag, Has.Length.EqualTo(firstBag.Length));
+            for (var resultIndex = 0; resultIndex < firstBag.Length; resultIndex++)
+            {
+                Assert.That(retryBag[resultIndex].entries, Has.Length.EqualTo(firstBag[resultIndex].entries.Length));
+                for (var entryIndex = 0; entryIndex < firstBag[resultIndex].entries.Length; entryIndex++)
+                    Assert.That(retryBag[resultIndex].entries[entryIndex].quantity,
+                        Is.EqualTo(firstBag[resultIndex].entries[entryIndex].quantity));
+            }
+            Assert.That(processor.CaptureRandomState().Value, Is.EqualTo(firstRandomAfter.Value));
+        }
+
+        [Test]
+        public void AdvanceWorkOuterRollbackRestoresRandomAfterLaterPendingResultFailure()
+        {
+            var state = NewState();
+            var activityState = new PlayerStateActivityAdapter(state);
+            var runtime = new ActivityRuntimeService(state, activityState);
+            var started = runtime.Start(WorkStart("random_reward_work", "ren", 1));
+            var random = new SystemActivityRandom(4567);
+            var processor = NewWorkAdvanceProcessor(state, random);
+            var checkpoint = activityState.CaptureCheckpoint();
+            var randomBefore = processor.CaptureRandomState();
+            activityState.RecordOperationReceipt(new OperationReceiptSaveData
+            {
+                aggregateId = $"result:{PendingResultSourceType.Activity}:{started.executionId}",
+                operationId = $"activity:{started.executionId}:cycle:1",
+                fingerprint = "conflicting-test-payload",
+                success = true,
+                code = "Formed"
+            });
+
+            var failed = processor.Advance(new WorkAdvanceRequest(started.executionId, 10));
+            var randomAfterFailedAttempt = processor.CaptureRandomState();
+
+            Assert.That(failed.Success, Is.False);
+            Assert.That(failed.StopReason, Is.EqualTo(WorkAdvanceStopReason.RuntimeError));
+            Assert.That(randomAfterFailedAttempt.Value, Is.Not.EqualTo(randomBefore.Value));
+            activityState.RestoreCheckpoint(checkpoint);
+            processor.RestoreRandomState(randomBefore);
+            Assert.That(processor.CaptureRandomState().Value, Is.EqualTo(randomBefore.Value));
+
+            var retry = processor.Advance(new WorkAdvanceRequest(started.executionId, 10));
+
+            Assert.That(retry.Success, Is.True);
+            Assert.That(retry.StopReason, Is.EqualTo(WorkAdvanceStopReason.PlanCompleted));
+            Assert.That(processor.CaptureRandomState().Value, Is.EqualTo(randomAfterFailedAttempt.Value));
+            Assert.That(state.PendingResults.GetAll(), Has.Length.EqualTo(1));
+        }
+
+        [Test]
+        public void AdvanceWorkFatigueStopWithEmptyResultResolvesAndFreesHero()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(WorkStart("empty_repeat", "ren", 3));
+            var processor = NewWorkAdvanceProcessor(state);
+            Assert.That(state.SpendHeroFatigue("ren", state.GetHeroFatigue("ren")), Is.True);
+
+            var result = processor.Advance(new WorkAdvanceRequest(started.executionId, 30));
+
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.StopReason, Is.EqualTo(WorkAdvanceStopReason.InsufficientFatigue));
+            Assert.That(result.ProcessedCycles, Is.EqualTo(1));
+            Assert.That(result.ConsumedSeconds, Is.EqualTo(10));
+            Assert.That(result.RemainingSeconds, Is.EqualTo(20));
+            Assert.That(result.ExecutionStatus, Is.EqualTo(ActivityRuntimeStatus.Completed));
+            Assert.That(result.DeferredResolvedEvents, Has.Count.EqualTo(1));
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
         }
 
         [Test]
@@ -1340,6 +1533,16 @@ namespace GuildIdle.Editor.Activities
             return state;
         }
 
+        private static WorkAdvanceProcessor NewWorkAdvanceProcessor(
+            PlayerState state,
+            ITransactionalActivityRandom random = null)
+        {
+            return new WorkAdvanceProcessor(
+                state,
+                new PlayerStateActivityAdapter(state),
+                random ?? new SystemActivityRandom(12345));
+        }
+
         private static bool HasIssue(ActivityRequirementIssue[] issues, string issueType)
         {
             foreach (var issue in issues)
@@ -1427,6 +1630,7 @@ namespace GuildIdle.Editor.Activities
                     activities = new[]
                     {
                         new ActivityConfigDto { id = "work_pine_wood", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 2, mainSkillId = "skill_gathering", isRepeatable = true },
+                        new ActivityConfigDto { id = "random_reward_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "test_multi_loot_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_effect_target_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_danger_work", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
@@ -1453,6 +1657,7 @@ namespace GuildIdle.Editor.Activities
                     {
                         Reward("work_pine_wood", "Resource", "resource_pine_wood", 1, "OnCycle"),
                         Reward("work_pine_wood", "SkillExp", "skill_gathering", 1, "OnCycle"),
+                        Reward("random_reward_work", "Resource", "resource_pine_wood", 1, 5, 100, "OnCycle"),
                         Reward("test_multi_loot_work", "Consumable", "test_work_consumable", 1, "OnCycle"),
                         Reward("test_multi_loot_work", "Resource", "resource_pine_wood", 1, "OnCycle"),
                         Reward("bad_effect_target_work", "Consumable", "test_work_consumable", 1, "OnCycle"),
@@ -1707,15 +1912,17 @@ namespace GuildIdle.Editor.Activities
                 };
         }
 
-        private sealed class FixedRandom : IActivityRandom
+        private sealed class FixedRandom : ITransactionalActivityRandom
         {
             private readonly int _value;
             public FixedRandom(int value) { _value = value; }
             public int RangeInclusive(int min, int max) => Mathf.Clamp(_value, min, max);
             public float Percent() => 0f;
+            public ActivityRandomState CaptureState() => default;
+            public void RestoreState(ActivityRandomState state) { }
         }
 
-        private sealed class CountingRandom : IActivityRandom
+        private sealed class CountingRandom : ITransactionalActivityRandom
         {
             public int RangeCalls { get; private set; }
             public int PercentCalls { get; private set; }
@@ -1729,6 +1936,15 @@ namespace GuildIdle.Editor.Activities
             {
                 PercentCalls++;
                 return 0f;
+            }
+
+            public ActivityRandomState CaptureState() =>
+                new ActivityRandomState(((ulong)(uint)RangeCalls << 32) | (uint)PercentCalls);
+
+            public void RestoreState(ActivityRandomState state)
+            {
+                RangeCalls = (int)(state.Value >> 32);
+                PercentCalls = (int)(state.Value & uint.MaxValue);
             }
         }
 
@@ -1745,18 +1961,19 @@ namespace GuildIdle.Editor.Activities
             public float Percent() => 0f;
         }
 
-        private sealed class CountingDangerSequenceRandom : IActivityRandom
+        private sealed class CountingDangerSequenceRandom : ITransactionalActivityRandom
         {
-            private readonly Queue<int> _dangerRolls;
-            public CountingDangerSequenceRandom(params int[] dangerRolls) { _dangerRolls = new Queue<int>(dangerRolls); }
+            private readonly int[] _dangerRolls;
+            private int _dangerRollIndex;
+            public CountingDangerSequenceRandom(params int[] dangerRolls) { _dangerRolls = dangerRolls ?? System.Array.Empty<int>(); }
             public int RangeCalls { get; private set; }
             public int PercentCalls { get; private set; }
 
             public int RangeInclusive(int min, int max)
             {
                 RangeCalls++;
-                if (min == 1 && max == 100 && _dangerRolls.Count > 0)
-                    return Mathf.Clamp(_dangerRolls.Dequeue(), min, max);
+                if (min == 1 && max == 100 && _dangerRollIndex < _dangerRolls.Length)
+                    return Mathf.Clamp(_dangerRolls[_dangerRollIndex++], min, max);
                 return min;
             }
 
@@ -1764,6 +1981,19 @@ namespace GuildIdle.Editor.Activities
             {
                 PercentCalls++;
                 return 0f;
+            }
+
+            public ActivityRandomState CaptureState() =>
+                new ActivityRandomState(
+                    ((ulong)(uint)_dangerRollIndex << 42) |
+                    ((ulong)(uint)RangeCalls << 21) |
+                    (uint)PercentCalls);
+
+            public void RestoreState(ActivityRandomState state)
+            {
+                _dangerRollIndex = (int)(state.Value >> 42);
+                RangeCalls = (int)((state.Value >> 21) & 0x1FFFFFUL);
+                PercentCalls = (int)(state.Value & 0x1FFFFFUL);
             }
         }
     }

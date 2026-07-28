@@ -22,6 +22,7 @@ namespace GuildIdle.Activities
         private const string EndReasonPlanCompleted = "PlanCompleted";
         private const string EndReasonManualStop = "ManualStop";
         private const string EndReasonDangerTriggered = "DangerTriggered";
+        private const string EndReasonInsufficientFatigue = "InsufficientFatigue";
         private const string CompletionPhaseBuildingEventPending = "BuildingEventPending";
         private const string CompletionPhaseCompletionReady = "CompletionReady";
         private const string WorkEffectTrigger = "OnWorkCycleComplete";
@@ -35,6 +36,7 @@ namespace GuildIdle.Activities
         private readonly Action<ActivityRuntimeEvent> _eventSink;
         private readonly IActivityRuntimeProgressionProcessor _progressionProcessor;
         private readonly ILinkedCombatRuntimeCoordinator _linkedCombatCoordinator;
+        private readonly bool _runtimeLifecycleEnabled;
         private readonly Dictionary<string, Func<HeroSkillEffectConfigDto, ActivityStagedRewardSaveData[], bool>> _workEffectHandlers;
         private bool _disposed;
 
@@ -75,6 +77,30 @@ namespace GuildIdle.Activities
                 ILinkedCombatStartGateway,
                 IActivityRuntimeProgressionProcessor,
                 ILinkedCombatRuntimeCoordinator> linkedCombatCoordinatorFactory = null)
+            : this(
+                store,
+                activityState,
+                random,
+                formulas,
+                eventSink,
+                progressionProcessor,
+                linkedCombatCoordinatorFactory,
+                true)
+        {
+        }
+
+        private ActivityRuntimeService(
+            IActivityRuntimeStore store,
+            IActivityPlayerState activityState,
+            IActivityRandom random,
+            FormulaRuntime formulas,
+            Action<ActivityRuntimeEvent> eventSink,
+            IActivityRuntimeProgressionProcessor progressionProcessor,
+            Func<
+                ILinkedCombatStartGateway,
+                IActivityRuntimeProgressionProcessor,
+                ILinkedCombatRuntimeCoordinator> linkedCombatCoordinatorFactory,
+            bool enableRuntimeLifecycle)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _activityState = activityState ?? throw new ArgumentNullException(nameof(activityState));
@@ -86,14 +112,35 @@ namespace GuildIdle.Activities
             {
                 [AddExtraBaseResourceEffect] = ApplyExtraBaseResource
             };
-            _activityState.PendingResults.Resolved += HandlePendingResultResolved;
-            ReconcilePendingBuildingEvents();
-            ReconcileLinkedCombatCompletions();
-            _linkedCombatCoordinator =
-                linkedCombatCoordinatorFactory?.Invoke(
-                    this,
-                    _progressionProcessor);
-            _linkedCombatCoordinator?.Reconcile();
+            _runtimeLifecycleEnabled = enableRuntimeLifecycle;
+            if (_runtimeLifecycleEnabled)
+            {
+                _activityState.PendingResults.Resolved += HandlePendingResultResolved;
+                ReconcilePendingBuildingEvents();
+                ReconcileLinkedCombatCompletions();
+                _linkedCombatCoordinator =
+                    linkedCombatCoordinatorFactory?.Invoke(
+                        this,
+                        _progressionProcessor);
+                _linkedCombatCoordinator?.Reconcile();
+            }
+        }
+
+        internal static ActivityRuntimeService CreateWorkAdvanceCore(
+            IActivityRuntimeStore store,
+            IActivityPlayerState activityState,
+            ITransactionalActivityRandom random,
+            FormulaRuntime formulas)
+        {
+            return new ActivityRuntimeService(
+                store,
+                activityState,
+                random ?? throw new ArgumentNullException(nameof(random)),
+                formulas,
+                null,
+                null,
+                null,
+                false);
         }
 
         public void Dispose()
@@ -101,7 +148,8 @@ namespace GuildIdle.Activities
             if (_disposed)
                 return;
 
-            _activityState.PendingResults.Resolved -= HandlePendingResultResolved;
+            if (_runtimeLifecycleEnabled)
+                _activityState.PendingResults.Resolved -= HandlePendingResultResolved;
             _linkedCombatCoordinator?.Dispose();
             _disposed = true;
         }
@@ -185,10 +233,11 @@ namespace GuildIdle.Activities
             };
         }
 
-        public WorkAdvanceResult AdvanceWork(WorkAdvanceRequest request)
+        internal WorkAdvanceResult AdvanceWorkCore(WorkAdvanceRequest request)
         {
             var issues = new List<ActivityRequirementIssue>();
             var rewards = new List<ActivityRewardResult>();
+            var deferredResolvedEvents = new List<PendingResultDeferredResolvedEvent>();
             var executionId = request?.ExecutionId;
             var availableSeconds = request == null ? 0L : Math.Max(0L, request.AvailableSeconds);
             var remainingSeconds = availableSeconds;
@@ -215,7 +264,8 @@ namespace GuildIdle.Activities
                     availableSeconds,
                     remainingSeconds,
                     null,
-                    issues);
+                    issues,
+                    deferredResolvedEvents);
             }
 
             var execution = GetExecution(request.ExecutionId);
@@ -230,7 +280,8 @@ namespace GuildIdle.Activities
                     availableSeconds,
                     remainingSeconds,
                     null,
-                    issues);
+                    issues,
+                    deferredResolvedEvents);
             }
             if (execution.status != CoreActivityRuntimeStatus.Running)
             {
@@ -243,7 +294,8 @@ namespace GuildIdle.Activities
                     availableSeconds,
                     remainingSeconds,
                     execution,
-                    issues);
+                    issues,
+                    deferredResolvedEvents);
             }
             if (!string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal))
             {
@@ -256,7 +308,8 @@ namespace GuildIdle.Activities
                     availableSeconds,
                     remainingSeconds,
                     execution,
-                    issues);
+                    issues,
+                    deferredResolvedEvents);
             }
             if (!TryGetRuntimeInfo(execution.activityId, issues, out var info))
             {
@@ -268,7 +321,8 @@ namespace GuildIdle.Activities
                     availableSeconds,
                     remainingSeconds,
                     execution,
-                    issues);
+                    issues,
+                    deferredResolvedEvents);
             }
             if (!IsWork(info))
             {
@@ -281,7 +335,8 @@ namespace GuildIdle.Activities
                     availableSeconds,
                     remainingSeconds,
                     execution,
-                    issues);
+                    issues,
+                    deferredResolvedEvents);
             }
             if (!ValidateWorkAdvanceExecution(execution, info, issues))
             {
@@ -293,7 +348,8 @@ namespace GuildIdle.Activities
                     availableSeconds,
                     remainingSeconds,
                     execution,
-                    issues);
+                    issues,
+                    deferredResolvedEvents);
             }
 
             var changed = false;
@@ -304,7 +360,8 @@ namespace GuildIdle.Activities
                     info,
                     issues,
                     ref changed,
-                    WorkCycleOptions.Offline);
+                    WorkCycleOptions.Offline,
+                    deferredResolvedEvents);
                 if (stagedOutcome == WorkCycleOutcome.DangerBoundaryReached)
                 {
                     return FinishWorkAdvance(
@@ -315,7 +372,8 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
                 if (stagedOutcome == WorkCycleOutcome.InsufficientFatigue)
                 {
@@ -327,7 +385,8 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
                 if (stagedOutcome != WorkCycleOutcome.Completed)
                 {
@@ -341,7 +400,8 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
                 if (execution.status != CoreActivityRuntimeStatus.Running)
                 {
@@ -353,21 +413,31 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
             }
 
-            if (!EnsureCurrentWorkCycleFatigue(execution, info, issues, out var fatigueStopped))
+            var fatigueOutcome = EnsureCurrentWorkCycleFatigue(
+                execution,
+                info,
+                issues,
+                ref changed,
+                deferredResolvedEvents);
+            if (fatigueOutcome != WorkCycleOutcome.Completed)
             {
                 return FinishWorkAdvance(
-                    !HasBlockingIssues(issues),
-                    fatigueStopped ? WorkAdvanceStopReason.InsufficientFatigue : WorkAdvanceStopReason.RuntimeError,
+                    fatigueOutcome == WorkCycleOutcome.InsufficientFatigue && !HasBlockingIssues(issues),
+                    fatigueOutcome == WorkCycleOutcome.InsufficientFatigue
+                        ? WorkAdvanceStopReason.InsufficientFatigue
+                        : WorkAdvanceStopReason.RuntimeError,
                     request.ExecutionId,
                     processedCycles,
                     availableSeconds,
                     remainingSeconds,
                     execution,
-                    issues);
+                    issues,
+                    deferredResolvedEvents);
             }
 
             while (execution.status == CoreActivityRuntimeStatus.Running &&
@@ -383,7 +453,8 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
 
                 var secondsForCycle = Math.Max(0L, (long)Math.Ceiling(info.durationSeconds - execution.elapsedSeconds));
@@ -402,7 +473,8 @@ namespace GuildIdle.Activities
                             availableSeconds,
                             remainingSeconds,
                             execution,
-                            issues);
+                            issues,
+                            deferredResolvedEvents);
                     }
                     CopyExecutionState(partial, execution);
                     remainingSeconds = 0L;
@@ -414,7 +486,8 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
 
                 var cycleExecution = CloneExecution(execution);
@@ -425,7 +498,8 @@ namespace GuildIdle.Activities
                     issues,
                     rewards,
                     ref changed,
-                    WorkCycleOptions.Offline);
+                    WorkCycleOptions.Offline,
+                    deferredResolvedEvents);
                 if (cycleOutcome == WorkCycleOutcome.ValidationFailed || cycleOutcome == WorkCycleOutcome.RuntimeError)
                 {
                     return FinishWorkAdvance(
@@ -438,7 +512,8 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
 
                 remainingSeconds -= secondsForCycle;
@@ -455,7 +530,8 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
                 if (cycleOutcome == WorkCycleOutcome.InsufficientFatigue)
                 {
@@ -467,7 +543,8 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
                 if (execution.status != CoreActivityRuntimeStatus.Running ||
                     execution.completedCycles >= execution.plannedCycles)
@@ -480,7 +557,8 @@ namespace GuildIdle.Activities
                         availableSeconds,
                         remainingSeconds,
                         execution,
-                        issues);
+                        issues,
+                        deferredResolvedEvents);
                 }
             }
 
@@ -494,7 +572,8 @@ namespace GuildIdle.Activities
                 availableSeconds,
                 remainingSeconds,
                 execution,
-                issues);
+                issues,
+                deferredResolvedEvents);
         }
 
         public ActivityTickResult Tick(float deltaTime)
@@ -1041,21 +1120,24 @@ namespace GuildIdle.Activities
             List<ActivityRequirementIssue> issues,
             List<ActivityRewardResult> rewards,
             ref bool changed,
-            WorkCycleOptions options)
+            WorkCycleOptions options,
+            List<PendingResultDeferredResolvedEvent> deferredResolvedEvents = null)
         {
             if (string.Equals(execution.cyclePhase, CyclePhaseResultStaged, StringComparison.Ordinal))
-                return FinalizeStagedWorkCycle(execution, info, issues, ref changed, options);
+                return FinalizeStagedWorkCycle(execution, info, issues, ref changed, options, deferredResolvedEvents);
 
             if (!ValidateWorkCyclePreparation(execution, info, issues))
                 return WorkCycleOutcome.ValidationFailed;
 
             var checkpoint = _activityState.CaptureCheckpoint();
+            var transactionalRandom = _random as ITransactionalActivityRandom;
+            var randomCheckpoint = transactionalRandom?.CaptureState();
             var draft = CloneExecution(execution);
             var reward = ActivityRewardResolver.PreparePendingRewards(ToContext(draft), GrantMoment.OnCycle, _activityState, _random);
             rewards.Add(reward);
             if (!reward.success)
             {
-                _activityState.RestoreCheckpoint(checkpoint);
+                RestoreWorkCycleCheckpoint(checkpoint, transactionalRandom, randomCheckpoint);
                 issues.AddRange(reward.issues);
                 return WorkCycleOutcome.RuntimeError;
             }
@@ -1068,20 +1150,20 @@ namespace GuildIdle.Activities
             draft.currentCycleFatiguePaid = false;
             if (!ApplyWorkHeroEffects(draft, info, staged, issues))
             {
-                _activityState.RestoreCheckpoint(checkpoint);
+                RestoreWorkCycleCheckpoint(checkpoint, transactionalRandom, randomCheckpoint);
                 return WorkCycleOutcome.RuntimeError;
             }
 
             var danger = EvaluateDanger(draft, info, issues);
             if (danger == DangerOutcome.Failed)
             {
-                _activityState.RestoreCheckpoint(checkpoint);
+                RestoreWorkCycleCheckpoint(checkpoint, transactionalRandom, randomCheckpoint);
                 return WorkCycleOutcome.ValidationFailed;
             }
 
             if (!UpdateExecution(draft) || (options.SaveStagedBoundary && !Save()))
             {
-                _activityState.RestoreCheckpoint(checkpoint);
+                RestoreWorkCycleCheckpoint(checkpoint, transactionalRandom, randomCheckpoint);
                 AddIssue(
                     issues,
                     draft.activityId,
@@ -1103,10 +1185,20 @@ namespace GuildIdle.Activities
                 return WorkCycleOutcome.DangerBoundaryReached;
             }
 
-            var outcome = FinalizeStagedWorkCycle(draft, info, issues, ref changed, options);
+            var outcome = FinalizeStagedWorkCycle(draft, info, issues, ref changed, options, deferredResolvedEvents);
             var stored = GetExecution(draft.executionId);
             CopyExecutionState(stored ?? draft, execution);
             return outcome;
+        }
+
+        private void RestoreWorkCycleCheckpoint(
+            SaveData checkpoint,
+            ITransactionalActivityRandom transactionalRandom,
+            ActivityRandomState? randomCheckpoint)
+        {
+            _activityState.RestoreCheckpoint(checkpoint);
+            if (transactionalRandom != null && randomCheckpoint.HasValue)
+                transactionalRandom.RestoreState(randomCheckpoint.Value);
         }
 
         private WorkCycleOutcome FinalizeStagedWorkCycle(
@@ -1114,7 +1206,8 @@ namespace GuildIdle.Activities
             ActivityRuntimeInfo info,
             List<ActivityRequirementIssue> issues,
             ref bool changed,
-            WorkCycleOptions options)
+            WorkCycleOptions options,
+            List<PendingResultDeferredResolvedEvent> deferredResolvedEvents = null)
         {
             var checkpoint = _activityState.CaptureCheckpoint();
             var staged = execution.stagedRewards ?? Array.Empty<ActivityStagedRewardSaveData>();
@@ -1200,13 +1293,18 @@ namespace GuildIdle.Activities
                         return WorkCycleOutcome.RuntimeError;
                     }
                     fatigueStopped = true;
+                    execution.endReason = EndReasonInsufficientFatigue;
                 }
-                execution.currentCycleFatiguePaid = !fatigueStopped;
-                execution.cyclePhase = CyclePhaseRunning;
-                execution.dangerRollCompleted = false;
-                execution.dangerRiskPercent = 0f;
-                execution.dangerRoll = 0;
+                else
+                {
+                    execution.currentCycleFatiguePaid = true;
+                    execution.cyclePhase = CyclePhaseRunning;
+                    execution.dangerRollCompleted = false;
+                    execution.dangerRiskPercent = 0f;
+                    execution.dangerRoll = 0;
+                }
             }
+            var makeClaimable = planCompleted || fatigueStopped;
             execution.stagedRewards = Array.Empty<ActivityStagedRewardSaveData>();
             if (!UpdateExecution(execution))
             {
@@ -1215,7 +1313,7 @@ namespace GuildIdle.Activities
                 return WorkCycleOutcome.RuntimeError;
             }
 
-            if (staged.Length == 0 && !planCompleted)
+            if (staged.Length == 0 && !makeClaimable)
             {
                 if (options.SaveStagedBoundary && !Save())
                 {
@@ -1234,7 +1332,7 @@ namespace GuildIdle.Activities
                 formation = _activityState.PendingResults.CreateOrAppend(
                     pendingOperationId,
                     pendingDraft,
-                    planCompleted,
+                    makeClaimable,
                     GetPendingResultRevision(execution));
             }
             else if (_activityState.PendingResults is ITransactionalPendingResultService transactionalPendingResults)
@@ -1242,7 +1340,7 @@ namespace GuildIdle.Activities
                 formation = transactionalPendingResults.CreateOrAppendInTransaction(
                     pendingOperationId,
                     pendingDraft,
-                    planCompleted,
+                    makeClaimable,
                     GetPendingResultRevision(execution));
             }
             else
@@ -1258,7 +1356,9 @@ namespace GuildIdle.Activities
                 return WorkCycleOutcome.RuntimeError;
             }
             execution.pendingResultId = formation.Result?.resultId ?? execution.pendingResultId;
-            if (planCompleted)
+            if (formation.DeferredResolvedEvent != null)
+                deferredResolvedEvents?.Add(formation.DeferredResolvedEvent);
+            if (makeClaimable)
                 execution.status = CoreActivityRuntimeStatus.ResultPending;
             changed = true;
             return fatigueStopped ? WorkCycleOutcome.InsufficientFatigue : WorkCycleOutcome.Completed;
@@ -1549,21 +1649,55 @@ namespace GuildIdle.Activities
             return valid;
         }
 
-        private bool EnsureCurrentWorkCycleFatigue(
+        private WorkCycleOutcome EnsureCurrentWorkCycleFatigue(
             ActivityExecutionSaveData execution,
             ActivityRuntimeInfo info,
             List<ActivityRequirementIssue> issues,
-            out bool fatigueStopped)
+            ref bool changed,
+            List<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
         {
-            fatigueStopped = false;
             if (execution.currentCycleFatiguePaid || execution.completedCycles >= execution.plannedCycles)
-                return true;
+                return WorkCycleOutcome.Completed;
 
             var checkpoint = _activityState.CaptureCheckpoint();
             if (!_activityState.SpendHeroFatigue(execution.heroId, info.activity.fatigueCost))
             {
-                fatigueStopped = true;
-                return false;
+                var stopped = CloneExecution(execution);
+                stopped.endReason = EndReasonInsufficientFatigue;
+                stopped.currentCycleFatiguePaid = false;
+                stopped.stagedRewards = Array.Empty<ActivityStagedRewardSaveData>();
+                if (!UpdateExecution(stopped))
+                {
+                    _activityState.RestoreCheckpoint(checkpoint);
+                    AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1, 0, true, false, "Failed to finish work after fatigue was exhausted.");
+                    return WorkCycleOutcome.RuntimeError;
+                }
+                if (!(_activityState.PendingResults is ITransactionalPendingResultService transactionalPendingResults))
+                {
+                    _activityState.RestoreCheckpoint(checkpoint);
+                    AddIssue(issues, execution.activityId, "PendingResultTransaction", execution.executionId, 1, 0, true, false, "PendingResult service does not support outer transactions.");
+                    return WorkCycleOutcome.RuntimeError;
+                }
+
+                var formation = transactionalPendingResults.CreateOrAppendInTransaction(
+                    $"activity:{execution.executionId}:fatigue-stop:{execution.completedCycles}",
+                    BuildPendingDraft(stopped, Array.Empty<ActivityStagedRewardSaveData>()),
+                    true,
+                    GetPendingResultRevision(stopped));
+                if (!formation.Success)
+                {
+                    _activityState.RestoreCheckpoint(checkpoint);
+                    AddIssue(issues, execution.activityId, "PendingResult", execution.executionId, 1, 0, true, false, formation.Message ?? "Failed to finish work after fatigue was exhausted.");
+                    return WorkCycleOutcome.RuntimeError;
+                }
+
+                stopped.pendingResultId = formation.Result?.resultId ?? stopped.pendingResultId;
+                stopped.status = CoreActivityRuntimeStatus.ResultPending;
+                if (formation.DeferredResolvedEvent != null)
+                    deferredResolvedEvents?.Add(formation.DeferredResolvedEvent);
+                CopyExecutionState(stopped, execution);
+                changed = true;
+                return WorkCycleOutcome.InsufficientFatigue;
             }
 
             var draft = CloneExecution(execution);
@@ -1572,10 +1706,11 @@ namespace GuildIdle.Activities
             {
                 _activityState.RestoreCheckpoint(checkpoint);
                 AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1, 0, true, false, "Failed to persist work-cycle fatigue payment.");
-                return false;
+                return WorkCycleOutcome.RuntimeError;
             }
             CopyExecutionState(draft, execution);
-            return true;
+            changed = true;
+            return WorkCycleOutcome.Completed;
         }
 
         private bool ValidateWorkCycleRewardDescriptors(ActivityExecutionSaveData execution, List<ActivityRequirementIssue> issues)
@@ -2368,14 +2503,17 @@ namespace GuildIdle.Activities
             long availableSeconds,
             long remainingSeconds,
             ActivityExecutionSaveData execution,
-            List<ActivityRequirementIssue> issues)
+            List<ActivityRequirementIssue> issues,
+            List<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
         {
             var storedExecution = string.IsNullOrWhiteSpace(executionId) ? null : GetExecution(executionId);
             var finalExecution = storedExecution ?? execution;
             var planCompleted = finalExecution != null && finalExecution.plannedCycles > 0 &&
                                 finalExecution.completedCycles >= finalExecution.plannedCycles;
             var executionStatus = storedExecution?.status ??
-                                  (planCompleted ? CoreActivityRuntimeStatus.Completed : finalExecution?.status ?? CoreActivityRuntimeStatus.None);
+                                  (planCompleted || stopReason == WorkAdvanceStopReason.InsufficientFatigue
+                                      ? CoreActivityRuntimeStatus.Completed
+                                      : finalExecution?.status ?? CoreActivityRuntimeStatus.None);
             var partialCycle = finalExecution != null &&
                                executionStatus == CoreActivityRuntimeStatus.Running &&
                                finalExecution.elapsedSeconds > 0f &&
@@ -2391,7 +2529,9 @@ namespace GuildIdle.Activities
                 executionStatus,
                 partialCycle,
                 planCompleted,
-                Array.AsReadOnly(issues?.ToArray() ?? Array.Empty<ActivityRequirementIssue>()));
+                Array.AsReadOnly(issues?.ToArray() ?? Array.Empty<ActivityRequirementIssue>()),
+                Array.AsReadOnly(deferredResolvedEvents?.ToArray() ??
+                                 Array.Empty<PendingResultDeferredResolvedEvent>()));
         }
 
         private ActivityTickResult FinishTick(ActivityTickResult result, List<ActivityRequirementIssue> issues, List<ActivityRewardResult> rewards, List<ActivityRuntimeEvent> events, bool changed)
@@ -2452,5 +2592,45 @@ namespace GuildIdle.Activities
             Triggered,
             Failed
         }
+    }
+
+    public sealed class WorkAdvanceProcessor : IDisposable
+    {
+        private readonly ITransactionalActivityRandom _random;
+        private readonly ITransactionalPendingResultService _pendingResults;
+        private readonly ActivityRuntimeService _core;
+
+        public WorkAdvanceProcessor(
+            IActivityRuntimeStore store,
+            IActivityPlayerState activityState,
+            ITransactionalActivityRandom random,
+            FormulaRuntime formulas = null)
+        {
+            if (activityState == null)
+                throw new ArgumentNullException(nameof(activityState));
+
+            _random = random ?? throw new ArgumentNullException(nameof(random));
+            _pendingResults = activityState.PendingResults as ITransactionalPendingResultService ??
+                              throw new ArgumentException(
+                                  "PendingResult service must support outer transactions.",
+                                  nameof(activityState));
+            _core = ActivityRuntimeService.CreateWorkAdvanceCore(store, activityState, random, formulas);
+        }
+
+        public WorkAdvanceResult Advance(WorkAdvanceRequest request) => _core.AdvanceWorkCore(request);
+
+        public ActivityRandomState CaptureRandomState() => _random.CaptureState();
+
+        public void RestoreRandomState(ActivityRandomState state) => _random.RestoreState(state);
+
+        public void PublishDeferredResolvedEvents(WorkAdvanceResult result)
+        {
+            if (result == null)
+                throw new ArgumentNullException(nameof(result));
+            foreach (var deferredEvent in result.DeferredResolvedEvents)
+                _pendingResults.PublishDeferred(deferredEvent);
+        }
+
+        public void Dispose() => _core.Dispose();
     }
 }

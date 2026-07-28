@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
 using GuildIdle.Core;
+using GuildIdle.Player;
 
 namespace GuildIdle.Activities
 {
@@ -99,7 +100,8 @@ namespace GuildIdle.Activities
             ActivityRuntimeStatus executionStatus,
             bool hasPartialCycle,
             bool planCompleted,
-            IReadOnlyList<ActivityRequirementIssue> issues)
+            IReadOnlyList<ActivityRequirementIssue> issues,
+            IReadOnlyList<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
         {
             Success = success;
             StopReason = stopReason;
@@ -111,6 +113,8 @@ namespace GuildIdle.Activities
             HasPartialCycle = hasPartialCycle;
             PlanCompleted = planCompleted;
             Issues = issues ?? Array.AsReadOnly(Array.Empty<ActivityRequirementIssue>());
+            DeferredResolvedEvents = deferredResolvedEvents ??
+                                     Array.AsReadOnly(Array.Empty<PendingResultDeferredResolvedEvent>());
         }
 
         public bool Success { get; }
@@ -127,6 +131,7 @@ namespace GuildIdle.Activities
         public bool DangerBoundaryReached => StopReason == WorkAdvanceStopReason.DangerBoundaryReached;
         public bool ProcessingLimitReached => StopReason == WorkAdvanceStopReason.ProcessingLimitReached;
         public IReadOnlyList<ActivityRequirementIssue> Issues { get; }
+        public IReadOnlyList<PendingResultDeferredResolvedEvent> DeferredResolvedEvents { get; }
     }
 
     public sealed class ActivityRuntimeEvent

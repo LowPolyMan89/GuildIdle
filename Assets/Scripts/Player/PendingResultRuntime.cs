@@ -49,6 +49,7 @@ namespace GuildIdle.Player
         public string Message { get; set; }
         public PendingResultSaveData Result { get; set; }
         public bool ResolvedImmediately { get; set; }
+        public PendingResultDeferredResolvedEvent DeferredResolvedEvent { get; set; }
     }
 
     public sealed class PendingResultMutationResult
@@ -72,6 +73,26 @@ namespace GuildIdle.Player
         public string OwnerHeroId { get; set; }
         public bool ResolvedImmediately { get; set; }
         public bool SourceCompleted { get; set; }
+    }
+
+    public sealed class PendingResultDeferredResolvedEvent
+    {
+        private bool _published;
+
+        internal PendingResultDeferredResolvedEvent(PendingResultResolvedEvent resolvedEvent)
+        {
+            ResolvedEvent = resolvedEvent ?? throw new ArgumentNullException(nameof(resolvedEvent));
+        }
+
+        public PendingResultResolvedEvent ResolvedEvent { get; }
+
+        internal bool TryMarkPublished()
+        {
+            if (_published)
+                return false;
+            _published = true;
+            return true;
+        }
     }
 
     public interface IPendingResultService
@@ -502,6 +523,7 @@ namespace GuildIdle.Player
             PendingResultDraft draft,
             bool makeClaimable,
             long expectedResultRevision = 0);
+        void PublishDeferred(PendingResultDeferredResolvedEvent deferredEvent);
     }
 
     public sealed class PendingResultService : IPendingResultService, ITransactionalPendingResultService
@@ -604,6 +626,12 @@ namespace GuildIdle.Player
                 return FormationFailure("CombatDedicatedApiRequired", "Combat results must be formed through CreateCombatResult.");
 
             return CreateOrAppendInternal(operationId, draft, makeClaimable, expectedResultRevision, false);
+        }
+
+        public void PublishDeferred(PendingResultDeferredResolvedEvent deferredEvent)
+        {
+            if (deferredEvent != null && deferredEvent.TryMarkPublished())
+                Resolved?.Invoke(deferredEvent.ResolvedEvent);
         }
 
         private PendingResultFormationResult CreateOrAppendInternal(
@@ -744,9 +772,23 @@ namespace GuildIdle.Player
                 _state.RestoreTransactional(before);
                 return FormationFailure("SaveFailed", "PendingResult formation could not be saved and was rolled back.");
             }
+            PendingResultDeferredResolvedEvent deferredResolvedEvent = null;
             if (resolvedImmediately)
-                Resolved?.Invoke(ToResolvedEvent(result, true));
-            return new PendingResultFormationResult { Success = true, Code = resolvedImmediately ? "Resolved" : "Formed", Result = resolvedImmediately ? null : CloneResult(result), ResolvedImmediately = resolvedImmediately };
+            {
+                var resolvedEvent = ToResolvedEvent(result, true);
+                if (saveImmediately)
+                    Resolved?.Invoke(resolvedEvent);
+                else
+                    deferredResolvedEvent = new PendingResultDeferredResolvedEvent(resolvedEvent);
+            }
+            return new PendingResultFormationResult
+            {
+                Success = true,
+                Code = resolvedImmediately ? "Resolved" : "Formed",
+                Result = resolvedImmediately ? null : CloneResult(result),
+                ResolvedImmediately = resolvedImmediately,
+                DeferredResolvedEvent = deferredResolvedEvent
+            };
         }
 
         public PendingResultFormationResult CreateCombatResult(string operationId, PendingResultDraft calculatedResult, string broughtStackId, StorageActionContext combatContext, long expectedStorageRevision)
