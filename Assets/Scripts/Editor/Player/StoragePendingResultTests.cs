@@ -744,7 +744,7 @@ namespace GuildIdle.Player.Editor
         }
 
         [Test]
-        public void SaveV9RoundtripRestoresPendingResultSourceAndReceipt()
+        public void SaveV10RoundtripRestoresPendingResultSourceAndReceipt()
         {
             var execution = new ActivityExecutionSaveData
             {
@@ -787,7 +787,7 @@ namespace GuildIdle.Player.Editor
                 }
             }, true);
 
-            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV9));
+            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV10));
             Assert.That(restored.GetActivityExecution(execution.executionId).status, Is.EqualTo(ActivityRuntimeStatus.ResultPending));
             Assert.That(restored.PendingResults.Get(formed.Result.resultId).entries[0].quantity, Is.EqualTo(4));
             Assert.That(restored.PendingResults.Get(formed.Result.resultId).entries[1].instanceId, Is.EqualTo(equipmentInstanceId));

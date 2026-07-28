@@ -26,6 +26,7 @@ namespace GuildIdle.Player
         private readonly HashSet<string> _unlockedHeroes = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _acquiredHeroes = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, HeroRuntimeState> _heroes = new Dictionary<string, HeroRuntimeState>(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _fatigueRemainderSeconds = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedBuildings = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _buildingLevels = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly HashSet<string> _unlockedLocations = new HashSet<string>(StringComparer.Ordinal);
@@ -41,15 +42,19 @@ namespace GuildIdle.Player
         private long _lastCombatResultSequence;
         private Func<bool> _saveHandler;
         private string _currentStageId;
+        private bool _timeBaselineInitialized;
+        private long _lastProcessedUtcSeconds;
 
         public PlayerState(
             SaveData saveData,
             HeroStatsService heroStats,
             IPlayerBootstrapConfigProvider configs,
-            IEnumerable<Func<PlayerState, IPendingResultSourceHandler>> pendingResultSourceHandlerFactories = null)
+            IEnumerable<Func<PlayerState, IPendingResultSourceHandler>> pendingResultSourceHandlerFactories = null,
+            ITimeProvider timeProvider = null)
         {
             _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
             _configs = configs ?? throw new ArgumentNullException(nameof(configs));
+            TimeProgress = new TimeProgressService(this, timeProvider ?? SystemUtcTimeProvider.Instance);
             var storage = new StorageService(this, _configs);
             Storage = storage;
             PendingResults = new PendingResultService(this, storage);
@@ -66,6 +71,7 @@ namespace GuildIdle.Player
         public string CurrentStageId => _currentStageId;
         public IStorageService Storage { get; }
         public IPendingResultService PendingResults { get; }
+        public TimeProgressService TimeProgress { get; }
         internal long StorageRevision { get; set; }
         internal Dictionary<string, ItemStackSaveData> MutableItemStacks => _itemStacks;
         internal Dictionary<string, ItemInstanceSaveData> MutableItemInstances => _itemInstances;
@@ -86,6 +92,7 @@ namespace GuildIdle.Player
                 unlockedHeroes = BuildSortedArray(_unlockedHeroes),
                 acquiredHeroes = BuildSortedArray(_acquiredHeroes),
                 heroes = BuildHeroEntries(),
+                timeProgress = BuildTimeProgressSaveData(),
                 questInstances = GetQuestInstances(),
                 unlockedBuildings = BuildSortedArray(_unlockedBuildings),
                 buildingLevels = BuildBuildingLevelEntries(),
@@ -192,6 +199,8 @@ namespace GuildIdle.Player
             _unlockedHeroes.Add(heroId);
             var added = _acquiredHeroes.Add(heroId);
             EnsureHeroState(heroId);
+            if (!_fatigueRemainderSeconds.ContainsKey(heroId))
+                _fatigueRemainderSeconds[heroId] = 0;
             return added;
         }
 
@@ -890,6 +899,7 @@ namespace GuildIdle.Player
             LoadHeroes(saveData.unlockedHeroes, _unlockedHeroes);
             LoadHeroes(saveData.acquiredHeroes, _acquiredHeroes);
             LoadHeroStates(saveData.heroes);
+            LoadTimeProgress(saveData.timeProgress);
             LoadQuestInstances(saveData.questInstances);
             LoadBuildings(saveData.unlockedBuildings);
             LoadBuildingLevels(saveData.buildingLevels);
@@ -897,6 +907,8 @@ namespace GuildIdle.Player
             LoadActivities(saveData.completedActivities, _completedActivities);
             LoadActivities(saveData.availableActivities, _availableActivities);
             EnsureHeroStatesForAcquiredHeroes();
+            EnsureFatigueRemaindersForHeroes();
+            TimeProgress.EnsureInitializedBaseline();
             LoadEquipmentSlots(saveData.equipmentSlots);
             NormalizeOrphanEquippedInstances();
             LoadActivityRuntime(saveData.activityRuntime);
@@ -918,6 +930,7 @@ namespace GuildIdle.Player
             _unlockedHeroes.Clear();
             _acquiredHeroes.Clear();
             _heroes.Clear();
+            _fatigueRemainderSeconds.Clear();
             _unlockedBuildings.Clear();
             _buildingLevels.Clear();
             _unlockedLocations.Clear();
@@ -929,6 +942,8 @@ namespace GuildIdle.Player
             _questInstances.Clear();
             _resultSources.Clear();
             _operationReceipts.Clear();
+            _timeBaselineInitialized = false;
+            _lastProcessedUtcSeconds = 0L;
             PendingResults.Load(Array.Empty<PendingResultSaveData>());
             WasNormalized = false;
             Load(saveData);
@@ -1097,6 +1112,57 @@ namespace GuildIdle.Player
                 LoadHeroSkills(hero, entry.skills);
                 LoadHeroEffectCounters(hero, entry.effectCounters);
                 _heroes[hero.HeroId] = hero;
+            }
+        }
+
+        private void LoadTimeProgress(TimeProgressSaveData source)
+        {
+            if (source == null)
+            {
+                WasNormalized = true;
+                return;
+            }
+
+            if (source.baselineInitialized && source.lastProcessedUtcSeconds >= 0L)
+            {
+                _timeBaselineInitialized = true;
+                _lastProcessedUtcSeconds = source.lastProcessedUtcSeconds;
+            }
+            else
+            {
+                if (source.baselineInitialized || source.lastProcessedUtcSeconds != 0L)
+                    WasNormalized = true;
+                _timeBaselineInitialized = false;
+                _lastProcessedUtcSeconds = 0L;
+            }
+
+            foreach (var entry in source.fatigueRemainders ?? Array.Empty<HeroFatigueRemainderSaveData>())
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.heroId) ||
+                    !_heroes.ContainsKey(entry.heroId) || _fatigueRemainderSeconds.ContainsKey(entry.heroId))
+                {
+                    WasNormalized = true;
+                    continue;
+                }
+
+                var remainder = Math.Max(
+                    0,
+                    Math.Min(TimeProgressService.FatigueRecoveryIntervalSeconds - 1, entry.fatigueRemainderSeconds));
+                if (remainder != entry.fatigueRemainderSeconds)
+                    WasNormalized = true;
+                if (_heroes[entry.heroId].Fatigue >= _heroes[entry.heroId].MaxFatigue && remainder != 0)
+                {
+                    remainder = 0;
+                    WasNormalized = true;
+                }
+
+                _fatigueRemainderSeconds[entry.heroId] = remainder;
+            }
+
+            if (!_timeBaselineInitialized && _fatigueRemainderSeconds.Count > 0)
+            {
+                _fatigueRemainderSeconds.Clear();
+                WasNormalized = true;
             }
         }
 
@@ -1655,6 +1721,42 @@ namespace GuildIdle.Player
 
         internal void RestoreTransactional(SaveData saveData) => Restore(saveData, WasNormalized);
         internal void MarkNormalized() => WasNormalized = true;
+        internal bool IsTimeBaselineInitialized => _timeBaselineInitialized;
+        internal long LastProcessedUtcSeconds => _lastProcessedUtcSeconds;
+
+        internal string[] GetOrderedHeroIds()
+        {
+            var keys = SortedKeys(_heroes);
+            return keys.ToArray();
+        }
+
+        internal int GetHeroFatigueRemainderSeconds(string heroId)
+        {
+            return _fatigueRemainderSeconds.TryGetValue(heroId, out var remainder) ? remainder : 0;
+        }
+
+        internal void SetHeroFatigueRemainderSeconds(string heroId, int remainderSeconds)
+        {
+            if (!_heroes.ContainsKey(heroId))
+                return;
+
+            _fatigueRemainderSeconds[heroId] = Math.Max(
+                0,
+                Math.Min(TimeProgressService.FatigueRecoveryIntervalSeconds - 1, remainderSeconds));
+        }
+
+        internal void InitializeTimeBaseline(long utcSeconds)
+        {
+            _timeBaselineInitialized = true;
+            _lastProcessedUtcSeconds = Math.Max(0L, utcSeconds);
+            foreach (var heroId in GetOrderedHeroIds())
+                _fatigueRemainderSeconds[heroId] = 0;
+        }
+
+        internal void SetLastProcessedUtcSeconds(long utcSeconds)
+        {
+            _lastProcessedUtcSeconds = Math.Max(_lastProcessedUtcSeconds, utcSeconds);
+        }
 
         internal void QuarantinePendingResultSource(PendingResultSaveData result)
         {
@@ -1995,6 +2097,18 @@ namespace GuildIdle.Player
                 EnsureHeroState(heroId);
         }
 
+        private void EnsureFatigueRemaindersForHeroes()
+        {
+            foreach (var heroId in GetOrderedHeroIds())
+            {
+                if (_fatigueRemainderSeconds.ContainsKey(heroId))
+                    continue;
+
+                _fatigueRemainderSeconds[heroId] = 0;
+                WasNormalized = true;
+            }
+        }
+
         private HeroRuntimeState EnsureHeroState(string heroId)
         {
             if (_heroes.TryGetValue(heroId, out var hero))
@@ -2060,6 +2174,28 @@ namespace GuildIdle.Player
                 entries[i] = _heroes[keys[i]].ToSaveData();
 
             return entries;
+        }
+
+        private TimeProgressSaveData BuildTimeProgressSaveData()
+        {
+            var heroIds = GetOrderedHeroIds();
+            var remainders = new HeroFatigueRemainderSaveData[heroIds.Length];
+            for (var index = 0; index < heroIds.Length; index++)
+            {
+                var heroId = heroIds[index];
+                remainders[index] = new HeroFatigueRemainderSaveData
+                {
+                    heroId = heroId,
+                    fatigueRemainderSeconds = GetHeroFatigueRemainderSeconds(heroId)
+                };
+            }
+
+            return new TimeProgressSaveData
+            {
+                baselineInitialized = _timeBaselineInitialized,
+                lastProcessedUtcSeconds = _lastProcessedUtcSeconds,
+                fatigueRemainders = remainders
+            };
         }
 
         private BuildingLevelSaveEntry[] BuildBuildingLevelEntries()

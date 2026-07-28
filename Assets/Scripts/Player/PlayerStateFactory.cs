@@ -18,12 +18,14 @@ namespace GuildIdle.Player
         private readonly HeroStatsService _heroStats;
         private readonly PlayerBootstrapDefinition _bootstrap;
         private readonly Func<PlayerState, IPendingResultSourceHandler>[] _pendingResultSourceHandlerFactories;
+        private readonly ITimeProvider _timeProvider;
 
         public PlayerStateFactory(
             IPlayerBootstrapConfigProvider configs,
             HeroStatsService heroStats,
             PlayerBootstrapDefinition bootstrap,
-            Func<PlayerState, IPendingResultSourceHandler>[] pendingResultSourceHandlerFactories = null)
+            Func<PlayerState, IPendingResultSourceHandler>[] pendingResultSourceHandlerFactories = null,
+            ITimeProvider timeProvider = null)
         {
             _configs = configs ?? throw new ArgumentNullException(nameof(configs));
             _heroStats = heroStats ?? throw new ArgumentNullException(nameof(heroStats));
@@ -31,6 +33,7 @@ namespace GuildIdle.Player
             _pendingResultSourceHandlerFactories = pendingResultSourceHandlerFactories == null
                 ? Array.Empty<Func<PlayerState, IPendingResultSourceHandler>>()
                 : (Func<PlayerState, IPendingResultSourceHandler>[])pendingResultSourceHandlerFactories.Clone();
+            _timeProvider = timeProvider ?? SystemUtcTimeProvider.Instance;
         }
 
         public PlayerState Create(SaveData saveData)
@@ -38,7 +41,7 @@ namespace GuildIdle.Player
             saveData ??= new SaveData();
             ValidateSaveVersion(saveData.saveVersion);
             ValidateLoadedStage(saveData.currentStageId);
-            return new PlayerState(saveData, _heroStats, _configs, _pendingResultSourceHandlerFactories);
+            return new PlayerState(saveData, _heroStats, _configs, _pendingResultSourceHandlerFactories, _timeProvider);
         }
 
         public PlayerState CreateDefault()
@@ -48,7 +51,8 @@ namespace GuildIdle.Player
                 new SaveData { currentStageId = _bootstrap.InitialStageId },
                 _heroStats,
                 _configs,
-                _pendingResultSourceHandlerFactories);
+                _pendingResultSourceHandlerFactories,
+                _timeProvider);
             ApplyStarterHeroes(state, _bootstrap.InitialStageId);
             ApplyDefaultBuildings(state);
             ApplyStarterEquipment(state, _bootstrap.InitialStageId);

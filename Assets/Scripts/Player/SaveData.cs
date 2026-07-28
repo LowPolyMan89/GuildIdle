@@ -8,7 +8,7 @@ namespace GuildIdle.Player
     [Serializable]
     public sealed class SaveData
     {
-        public const int CurrentSaveVersion = 9;
+        public const int CurrentSaveVersion = 10;
 
         public int saveVersion = CurrentSaveVersion;
         public string currentStageId;
@@ -20,6 +20,7 @@ namespace GuildIdle.Player
         public string[] unlockedHeroes = Array.Empty<string>();
         public string[] acquiredHeroes = Array.Empty<string>();
         public HeroSaveData[] heroes = Array.Empty<HeroSaveData>();
+        public TimeProgressSaveData timeProgress = new TimeProgressSaveData();
         public QuestInstanceSaveData[] questInstances = Array.Empty<QuestInstanceSaveData>();
         public string[] unlockedBuildings = Array.Empty<string>();
         public BuildingLevelSaveEntry[] buildingLevels = Array.Empty<BuildingLevelSaveEntry>();
@@ -102,6 +103,21 @@ namespace GuildIdle.Player
     {
         public string effectId;
         public long value;
+    }
+
+    [Serializable]
+    public sealed class TimeProgressSaveData
+    {
+        public bool baselineInitialized;
+        public long lastProcessedUtcSeconds;
+        public HeroFatigueRemainderSaveData[] fatigueRemainders = Array.Empty<HeroFatigueRemainderSaveData>();
+    }
+
+    [Serializable]
+    public sealed class HeroFatigueRemainderSaveData
+    {
+        public string heroId;
+        public int fatigueRemainderSeconds;
     }
 
     [Serializable]

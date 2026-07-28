@@ -18,7 +18,8 @@ namespace GuildIdle.Editor.Configs
 
         public static PlayerStateFactory CreatePlayerStateFactory(
             ConfigDatabase database,
-            Func<PlayerState, IPendingResultSourceHandler>[] pendingResultSourceHandlerFactories = null)
+            Func<PlayerState, IPendingResultSourceHandler>[] pendingResultSourceHandlerFactories = null,
+            ITimeProvider timeProvider = null)
         {
             var heroStats = CreateHeroStats(database);
             var bootstrapConfigs = new RepositoryPlayerBootstrapConfigAdapter(
@@ -28,7 +29,12 @@ namespace GuildIdle.Editor.Configs
                 database.Buildings,
                 database.Quests,
                 database.Storage);
-            return new PlayerStateFactory(bootstrapConfigs, heroStats, BootstrapDefinition, pendingResultSourceHandlerFactories);
+            return new PlayerStateFactory(
+                bootstrapConfigs,
+                heroStats,
+                BootstrapDefinition,
+                pendingResultSourceHandlerFactories,
+                timeProvider);
         }
     }
 }

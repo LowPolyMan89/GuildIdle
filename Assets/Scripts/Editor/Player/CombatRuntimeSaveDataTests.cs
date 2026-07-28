@@ -117,7 +117,7 @@ namespace GuildIdle.Editor.Player
             var after = JsonUtility.ToJson(restored.ToSaveData());
             var aggregate = restored.GetCombatAggregate("combat-a");
 
-            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV9));
+            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV10));
             Assert.That(after, Is.EqualTo(before));
             Assert.That(aggregate.execution.sessionId, Is.EqualTo("session-a"));
             Assert.That(aggregate.execution.pendingResultId, Is.Null.Or.Empty);
@@ -140,7 +140,7 @@ namespace GuildIdle.Editor.Player
             Assert.That(SaveService.Save(restored, storage), Is.True);
             var restoredAgain = SaveService.Load(_factory, storage, out var repeatedOrigin);
             var repeated = JsonUtility.ToJson(restoredAgain.ToSaveData());
-            Assert.That(repeatedOrigin, Is.EqualTo(SaveLoadOrigin.ExistingV9));
+            Assert.That(repeatedOrigin, Is.EqualTo(SaveLoadOrigin.ExistingV10));
             Assert.That(repeated, Is.EqualTo(after));
             Assert.That(restoredAgain.GetCombatAggregate("combat-a").session.rng.state,
                 Is.EqualTo("opaque-state-v3:0123456789abcdef"));
@@ -178,7 +178,7 @@ namespace GuildIdle.Editor.Player
             var restored = SaveService.Load(_factory, storage, out var origin);
             var normalizedJson = storage.GetString(SaveService.SaveKey, string.Empty);
 
-            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV9));
+            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV10));
             Assert.That(
                 restored.GetCombatAggregate("combat-legacy-loadout").session.broughtConsumable.sourceStackId,
                 Is.EqualTo("legacy-stack"));

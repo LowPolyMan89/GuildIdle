@@ -671,7 +671,7 @@ namespace GuildIdle.Editor.Player
                 identity: new IdentityProvider());
             var replay = replayService.Start(command);
 
-            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV9));
+            Assert.That(origin, Is.EqualTo(SaveLoadOrigin.ExistingV10));
             Assert.That(replay.Success, Is.True);
             Assert.That(replay.Replayed, Is.True);
             Assert.That(replay.ExecutionId, Is.EqualTo(result.ExecutionId));
