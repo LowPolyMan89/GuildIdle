@@ -13,6 +13,7 @@ namespace GuildIdle.Activities
     {
         public const int MaxCyclesPerTick = 100;
         public const int DefaultWorkAdvanceOperationLimit = 256;
+        public const int DefaultConstructionAdvanceOperationLimit = 4096;
 
         private const string RuntimeKindActivity = "Activity";
         private const string RuntimeKindWork = "Work";
@@ -64,6 +65,31 @@ namespace GuildIdle.Activities
 
             public static WorkCycleOptions Online => new WorkCycleOptions(true, false, false);
             public static WorkCycleOptions Offline => new WorkCycleOptions(false, true, true);
+        }
+
+        private readonly struct BuildCompletionOptions
+        {
+            public BuildCompletionOptions(bool saveInternally, bool publishEvents, bool useOuterTransaction)
+            {
+                SaveInternally = saveInternally;
+                PublishEvents = publishEvents;
+                UseOuterTransaction = useOuterTransaction;
+            }
+
+            public bool SaveInternally { get; }
+            public bool PublishEvents { get; }
+            public bool UseOuterTransaction { get; }
+
+            public static BuildCompletionOptions Online => new BuildCompletionOptions(true, true, false);
+            public static BuildCompletionOptions OuterTransaction => new BuildCompletionOptions(false, false, true);
+        }
+
+        private enum BuildProgressOutcome
+        {
+            IntervalExhausted = 0,
+            Completed = 1,
+            ProcessingLimitReached = 2,
+            FormulaFailed = 3
         }
 
         public ActivityRuntimeService(
@@ -139,6 +165,23 @@ namespace GuildIdle.Activities
                 formulas,
                 null,
                 null,
+                null,
+                false);
+        }
+
+        internal static ActivityRuntimeService CreateConstructionAdvanceCore(
+            IActivityRuntimeStore store,
+            IActivityPlayerState activityState,
+            FormulaRuntime formulas,
+            IActivityRuntimeProgressionProcessor progressionProcessor)
+        {
+            return new ActivityRuntimeService(
+                store,
+                activityState,
+                new SystemActivityRandom(1),
+                formulas,
+                null,
+                progressionProcessor,
                 null,
                 false);
         }
@@ -574,6 +617,139 @@ namespace GuildIdle.Activities
                 execution,
                 issues,
                 deferredResolvedEvents);
+        }
+
+        internal ConstructionAdvanceResult AdvanceConstructionCore(ConstructionAdvanceRequest request)
+        {
+            var issues = new List<ActivityRequirementIssue>();
+            var deferredEvents = new List<ActivityRuntimeEvent>();
+            var deferredResolvedEvents = new List<PendingResultDeferredResolvedEvent>();
+            var executionId = request?.ExecutionId;
+            var availableSeconds = request == null ? 0L : Math.Max(0L, request.AvailableSeconds);
+
+            if (request == null || string.IsNullOrWhiteSpace(request.ExecutionId) ||
+                request.AvailableSeconds < 0L || request.OperationLimit <= 0)
+            {
+                AddIssue(issues, string.Empty, "ConstructionAdvanceRequest", executionId, 0,
+                    request?.AvailableSeconds ?? 0L, true, false,
+                    "Construction advance requires executionId, non-negative availableSeconds, and a positive operationLimit.");
+                return FinishConstructionAdvance(false, ConstructionAdvanceStopReason.InvalidRequest,
+                    executionId, availableSeconds, availableSeconds, 0f, null, issues,
+                    deferredEvents, deferredResolvedEvents);
+            }
+
+            var execution = GetExecution(request.ExecutionId);
+            if (execution == null)
+            {
+                AddIssue(issues, string.Empty, "ActivityExecution", request.ExecutionId, 1, 0, false, false,
+                    $"Activity execution '{request.ExecutionId}' was not found.");
+                return FinishConstructionAdvance(false, ConstructionAdvanceStopReason.ExecutionNotFound,
+                    request.ExecutionId, availableSeconds, availableSeconds, 0f, null, issues,
+                    deferredEvents, deferredResolvedEvents);
+            }
+            if (execution.status != CoreActivityRuntimeStatus.Running)
+            {
+                AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1,
+                    (long)execution.status, false, false,
+                    $"Activity execution '{execution.executionId}' is not running.");
+                return FinishConstructionAdvance(false, ConstructionAdvanceStopReason.ExecutionNotRunning,
+                    request.ExecutionId, availableSeconds, availableSeconds, 0f, execution, issues,
+                    deferredEvents, deferredResolvedEvents);
+            }
+            if (!string.Equals(execution.runtimeKind, RuntimeKindBuild, StringComparison.Ordinal))
+            {
+                AddIssue(issues, execution.activityId, "NotConstructionExecution", execution.executionId, 1, 0,
+                    false, false, $"Activity execution '{execution.executionId}' is not a construction execution.");
+                return FinishConstructionAdvance(false, ConstructionAdvanceStopReason.NotConstructionExecution,
+                    request.ExecutionId, availableSeconds, availableSeconds, 0f, execution, issues,
+                    deferredEvents, deferredResolvedEvents);
+            }
+            if (!RuntimeConfigs.Buildings.TryGetBuildAction(execution.activityId, out var action))
+            {
+                AddIssue(issues, execution.activityId, "BuildAction", execution.activityId, 1, 0, true, false,
+                    "Saved build action is no longer configured.");
+                return FinishConstructionAdvance(false, ConstructionAdvanceStopReason.ValidationFailed,
+                    request.ExecutionId, availableSeconds, availableSeconds, 0f, execution, issues,
+                    deferredEvents, deferredResolvedEvents);
+            }
+            if (!ValidateConstructionAdvanceExecution(execution, action, issues))
+            {
+                return FinishConstructionAdvance(false, ConstructionAdvanceStopReason.ValidationFailed,
+                    request.ExecutionId, availableSeconds, availableSeconds, 0f, execution, issues,
+                    deferredEvents, deferredResolvedEvents);
+            }
+
+            var checkpoint = _activityState.CaptureCheckpoint();
+            var draft = CloneExecution(execution);
+            var startingPoints = draft.accumulatedBuildPoints;
+            var initialWholeSeconds = (long)Math.Floor(draft.elapsedSeconds);
+            var fractionalSeconds = draft.elapsedSeconds - initialWholeSeconds;
+            var availableOperations = initialWholeSeconds > long.MaxValue - availableSeconds
+                ? long.MaxValue
+                : initialWholeSeconds + availableSeconds;
+            var progressOutcome = ApplyBuildOperations(
+                draft,
+                action,
+                availableOperations,
+                request.OperationLimit,
+                out var processedSeconds,
+                out var formulaFailure);
+
+            if (progressOutcome == BuildProgressOutcome.FormulaFailed)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, execution.activityId, formulaFailure.code, action.buildFormulaId, 1, 0, true,
+                    false, formulaFailure.message);
+                return FinishConstructionAdvance(false, ConstructionAdvanceStopReason.RuntimeError,
+                    request.ExecutionId, availableSeconds, availableSeconds, 0f, execution, issues,
+                    deferredEvents, deferredResolvedEvents);
+            }
+
+            var processedExistingSeconds = Math.Min(initialWholeSeconds, processedSeconds);
+            var processedAvailableSeconds = Math.Min(
+                availableSeconds,
+                Math.Max(0L, processedSeconds - processedExistingSeconds));
+            var remainingSeconds = progressOutcome == BuildProgressOutcome.IntervalExhausted
+                ? 0L
+                : availableSeconds - processedAvailableSeconds;
+            var unprocessedExistingSeconds = initialWholeSeconds - processedExistingSeconds;
+            draft.elapsedSeconds = (float)(unprocessedExistingSeconds + fractionalSeconds);
+
+            if (progressOutcome == BuildProgressOutcome.Completed)
+            {
+                var changed = false;
+                CompleteBuildCore(draft, action, issues, deferredEvents, ref changed,
+                    BuildCompletionOptions.OuterTransaction, deferredResolvedEvents);
+                if (HasBlockingIssues(issues))
+                {
+                    _activityState.RestoreCheckpoint(checkpoint);
+                    return FinishConstructionAdvance(false, ConstructionAdvanceStopReason.RuntimeError,
+                        request.ExecutionId, availableSeconds, availableSeconds, 0f, execution, issues,
+                        deferredEvents, deferredResolvedEvents);
+                }
+                return FinishConstructionAdvance(true, ConstructionAdvanceStopReason.ConstructionCompleted,
+                    request.ExecutionId, availableSeconds, remainingSeconds,
+                    Math.Max(0f, action.buildPointsRequired - startingPoints), draft, issues,
+                    deferredEvents, deferredResolvedEvents);
+            }
+
+            if (!UpdateExecution(draft))
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1, 0, true,
+                    false, "Failed to persist construction progress in the outer transaction.");
+                return FinishConstructionAdvance(false, ConstructionAdvanceStopReason.RuntimeError,
+                    request.ExecutionId, availableSeconds, availableSeconds, 0f, execution, issues,
+                    deferredEvents, deferredResolvedEvents);
+            }
+
+            return FinishConstructionAdvance(true,
+                progressOutcome == BuildProgressOutcome.ProcessingLimitReached
+                    ? ConstructionAdvanceStopReason.ProcessingLimitReached
+                    : ConstructionAdvanceStopReason.IntervalExhausted,
+                request.ExecutionId, availableSeconds, remainingSeconds,
+                Math.Max(0f, draft.accumulatedBuildPoints - startingPoints), draft, issues,
+                deferredEvents, deferredResolvedEvents);
         }
 
         public ActivityTickResult Tick(float deltaTime)
@@ -1379,32 +1555,35 @@ namespace GuildIdle.Activities
                 AddIssue(issues, execution.activityId, "BuildAction", execution.activityId, 1, 0, true, false, "Saved build action is no longer configured.");
                 return;
             }
-            execution.elapsedSeconds += deltaTime;
-            var seconds = 0;
-            while (execution.elapsedSeconds >= 1f && execution.accumulatedBuildPoints < action.buildPointsRequired && seconds < MaxCyclesPerTick)
+            var draft = CloneExecution(execution);
+            draft.elapsedSeconds += deltaTime;
+            var availableOperations = (long)Math.Floor(draft.elapsedSeconds);
+            var progressOutcome = ApplyBuildOperations(
+                draft,
+                action,
+                availableOperations,
+                MaxCyclesPerTick,
+                out var seconds,
+                out var formulaFailure);
+            if (progressOutcome == BuildProgressOutcome.FormulaFailed)
             {
-                var formula = EvaluateBuildFormula(action, execution.heroId);
-                if (!formula.success)
-                {
-                    AddIssue(issues, execution.activityId, formula.code, action.buildFormulaId, 1, 0, true, false, formula.message);
-                    break;
-                }
-                execution.elapsedSeconds -= 1f;
-                execution.accumulatedBuildPoints += formula.value;
-                seconds++;
-                changed = true;
+                AddIssue(issues, execution.activityId, formulaFailure.code, action.buildFormulaId, 1, 0, true,
+                    false, formulaFailure.message);
+                return;
             }
-            if (execution.elapsedSeconds >= 1f && seconds >= MaxCyclesPerTick)
+            draft.elapsedSeconds -= seconds;
+            changed = deltaTime > 0f || seconds > 0;
+            if (progressOutcome == BuildProgressOutcome.ProcessingLimitReached)
             {
                 tickResult.cycleLimitReached = true;
                 AddIssue(issues, execution.activityId, "TickCycleLimitReached", execution.executionId, MaxCyclesPerTick, seconds, false, false, "Construction tick processing limit reached.");
             }
-            if (execution.accumulatedBuildPoints >= action.buildPointsRequired)
+            if (progressOutcome == BuildProgressOutcome.Completed)
             {
-                CompleteBuild(execution, action, issues, events, ref changed);
+                CompleteBuild(draft, action, issues, events, ref changed);
                 return;
             }
-            changed |= UpdateExecution(execution);
+            changed |= UpdateExecution(draft);
         }
 
         private void CompleteBuild(
@@ -1414,11 +1593,24 @@ namespace GuildIdle.Activities
             List<ActivityRuntimeEvent> events,
             ref bool changed)
         {
-            if (TryResumeBuildCompletionLifecycle(execution, issues, events, ref changed))
+            CompleteBuildCore(execution, action, issues, events, ref changed,
+                BuildCompletionOptions.Online, null);
+        }
+
+        private void CompleteBuildCore(
+            ActivityExecutionSaveData execution,
+            BuildActionConfigDto action,
+            List<ActivityRequirementIssue> issues,
+            List<ActivityRuntimeEvent> events,
+            ref bool changed,
+            BuildCompletionOptions options,
+            List<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
+        {
+            if (TryResumeBuildCompletionLifecycle(execution, issues, events, ref changed, options))
                 return;
 
             var checkpoint = _activityState.CaptureCheckpoint();
-            execution.accumulatedBuildPoints = Math.Max(execution.accumulatedBuildPoints, action.buildPointsRequired);
+            execution.accumulatedBuildPoints = action.buildPointsRequired;
             if (!execution.buildingLevelApplied)
             {
                 if (!_activityState.SetBuildingLevel(action.targetBuildingId, action.targetLevel))
@@ -1441,15 +1633,15 @@ namespace GuildIdle.Activities
             {
                 execution.heroId = null;
                 execution.status = CoreActivityRuntimeStatus.Paused;
-                if (!UpdateExecution(execution) || !Save())
+                if (!UpdateExecution(execution) || (options.SaveInternally && !Save()))
                 {
                     _activityState.RestoreCheckpoint(checkpoint);
                     AddIssue(issues, execution.activityId, "BuildCompletion", execution.executionId, 1, 0, true, false, "Failed to persist construction event outbox.");
                     return;
                 }
                 changed = true;
-                TryProcessPendingBuildingEvent(execution.executionId, issues, events, ref changed);
-                TryFinalizeCompletionReady(execution.executionId, issues, events, ref changed);
+                TryProcessPendingBuildingEvent(execution.executionId, issues, events, ref changed, options);
+                TryFinalizeCompletionReady(execution.executionId, issues, events, ref changed, options);
                 return;
             }
             execution.stagedRewards = Array.Empty<ActivityStagedRewardSaveData>();
@@ -1459,18 +1651,41 @@ namespace GuildIdle.Activities
                 AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1, 0, true, false, "Failed to persist construction completion.");
                 return;
             }
-            var formation = _activityState.PendingResults.CreateOrAppend(
-                $"activity:{execution.executionId}:completion",
-                BuildPendingDraft(execution, staged),
-                true,
-                GetPendingResultRevision(execution));
+            var pendingResults = _activityState.PendingResults;
+            PendingResultFormationResult formation;
+            if (options.UseOuterTransaction)
+            {
+                var transactional = pendingResults as ITransactionalPendingResultService;
+                if (transactional == null)
+                {
+                    _activityState.RestoreCheckpoint(checkpoint);
+                    AddIssue(issues, execution.activityId, "PendingResultTransaction", execution.executionId, 1,
+                        0, true, false, "Construction advance requires transaction-aware PendingResult support.");
+                    return;
+                }
+                formation = transactional.CreateOrAppendInTransaction(
+                    $"activity:{execution.executionId}:completion",
+                    BuildPendingDraft(execution, staged),
+                    true,
+                    GetPendingResultRevision(execution));
+            }
+            else
+            {
+                formation = pendingResults.CreateOrAppend(
+                    $"activity:{execution.executionId}:completion",
+                    BuildPendingDraft(execution, staged),
+                    true,
+                    GetPendingResultRevision(execution));
+            }
             if (!formation.Success)
             {
                 _activityState.RestoreCheckpoint(checkpoint);
                 AddIssue(issues, execution.activityId, "PendingResult", execution.executionId, 1, 0, true, false, formation.Message ?? "Failed to form construction result.");
                 return;
             }
-            TryProcessPendingBuildingEvent(execution.executionId, issues, events, ref changed);
+            if (formation.DeferredResolvedEvent != null)
+                deferredResolvedEvents?.Add(formation.DeferredResolvedEvent);
+            TryProcessPendingBuildingEvent(execution.executionId, issues, events, ref changed, options);
             changed = true;
         }
 
@@ -1599,6 +1814,97 @@ namespace GuildIdle.Activities
             if (!RuntimeConfigs.Formulas.TryGetFormula(action.buildFormulaId, out var formula))
                 return new FormulaEvaluationResult { success = false, code = "BuildFormulaMissing", message = $"Build formula '{action.buildFormulaId}' is missing." };
             return _formulas.Evaluate(formula, BuildFormulaContext(heroId, action.skillId, 0f, false, formula));
+        }
+
+        private BuildProgressOutcome ApplyBuildOperations(
+            ActivityExecutionSaveData execution,
+            BuildActionConfigDto action,
+            long availableOperations,
+            int operationLimit,
+            out long processedOperations,
+            out FormulaEvaluationResult formulaFailure)
+        {
+            processedOperations = 0L;
+            formulaFailure = null;
+            if (execution.accumulatedBuildPoints >= action.buildPointsRequired)
+            {
+                execution.accumulatedBuildPoints = action.buildPointsRequired;
+                return BuildProgressOutcome.Completed;
+            }
+
+            while (processedOperations < availableOperations && processedOperations < operationLimit)
+            {
+                var formula = EvaluateBuildFormula(action, execution.heroId);
+                if (!formula.success)
+                {
+                    formulaFailure = formula;
+                    return BuildProgressOutcome.FormulaFailed;
+                }
+                execution.accumulatedBuildPoints = Math.Min(
+                    action.buildPointsRequired,
+                    execution.accumulatedBuildPoints + formula.value);
+                processedOperations++;
+                if (execution.accumulatedBuildPoints >= action.buildPointsRequired)
+                    return BuildProgressOutcome.Completed;
+            }
+
+            return processedOperations < availableOperations
+                ? BuildProgressOutcome.ProcessingLimitReached
+                : BuildProgressOutcome.IntervalExhausted;
+        }
+
+        private bool ValidateConstructionAdvanceExecution(
+            ActivityExecutionSaveData execution,
+            BuildActionConfigDto action,
+            List<ActivityRequirementIssue> issues)
+        {
+            var valid = true;
+            if (action == null || action.buildPointsRequired <= 0f)
+            {
+                AddIssue(issues, execution?.activityId, "BuildPointsRequired", execution?.activityId, 1, 0,
+                    true, false, "Construction advance requires positive buildPointsRequired.");
+                valid = false;
+            }
+            if (execution == null || string.IsNullOrWhiteSpace(execution.heroId) ||
+                !_activityState.HasHero(execution.heroId) ||
+                !string.Equals(_activityState.GetHeroCurrentActivityExecutionId(execution.heroId),
+                    execution.executionId, StringComparison.Ordinal))
+            {
+                AddIssue(issues, execution?.activityId, "ConstructionHero", execution?.heroId, 1, 0, true,
+                    false, "Running construction advance requires its assigned hero to own the execution.");
+                valid = false;
+            }
+            if (execution != null && !execution.materialsPaid)
+            {
+                AddIssue(issues, execution.activityId, "ConstructionMaterialsPayment", execution.executionId, 1,
+                    0, true, false, "Running construction must have its one-time materials payment recorded.");
+                valid = false;
+            }
+            if (execution != null &&
+                (float.IsNaN(execution.elapsedSeconds) || float.IsInfinity(execution.elapsedSeconds) ||
+                 execution.elapsedSeconds < 0f || execution.elapsedSeconds > long.MaxValue))
+            {
+                AddIssue(issues, execution.activityId, "ConstructionElapsedSeconds", execution.executionId, 0,
+                    0, true, false, "Construction advance requires finite non-negative elapsedSeconds.");
+                valid = false;
+            }
+            if (execution != null &&
+                (float.IsNaN(execution.accumulatedBuildPoints) ||
+                 float.IsInfinity(execution.accumulatedBuildPoints) || execution.accumulatedBuildPoints < 0f))
+            {
+                AddIssue(issues, execution.activityId, "ConstructionBuildPoints", execution.executionId, 0, 0,
+                    true, false, "Construction advance requires finite non-negative accumulatedBuildPoints.");
+                valid = false;
+            }
+            if (execution != null &&
+                (execution.buildingLevelApplied || execution.buildingEventPending ||
+                 execution.buildingEventPublished || !string.IsNullOrWhiteSpace(execution.completionPhase)))
+            {
+                AddIssue(issues, execution.activityId, "ConstructionCompletionState", execution.executionId, 0,
+                    0, true, false, "Running construction has an inconsistent completion state.");
+                valid = false;
+            }
+            return valid;
         }
 
         private bool ValidateWorkCyclePreparation(ActivityExecutionSaveData execution, ActivityRuntimeInfo info, List<ActivityRequirementIssue> issues)
@@ -2095,15 +2401,26 @@ namespace GuildIdle.Activities
             List<ActivityRuntimeEvent> events,
             ref bool changed)
         {
+            return TryResumeBuildCompletionLifecycle(
+                execution, issues, events, ref changed, BuildCompletionOptions.Online);
+        }
+
+        private bool TryResumeBuildCompletionLifecycle(
+            ActivityExecutionSaveData execution,
+            List<ActivityRequirementIssue> issues,
+            List<ActivityRuntimeEvent> events,
+            ref bool changed,
+            BuildCompletionOptions options)
+        {
             if (execution == null || !string.Equals(execution.runtimeKind, RuntimeKindBuild, StringComparison.Ordinal))
                 return false;
             var handled = false;
             if (string.Equals(execution.completionPhase, CompletionPhaseBuildingEventPending, StringComparison.Ordinal) ||
                 (execution.buildingLevelApplied && execution.buildingEventPending && !execution.buildingEventPublished))
-                handled |= TryProcessPendingBuildingEvent(execution.executionId, issues, events, ref changed);
+                handled |= TryProcessPendingBuildingEvent(execution.executionId, issues, events, ref changed, options);
             var current = GetExecution(execution.executionId);
             if (current != null && string.Equals(current.completionPhase, CompletionPhaseCompletionReady, StringComparison.Ordinal))
-                handled |= TryFinalizeCompletionReady(current.executionId, issues, events, ref changed);
+                handled |= TryFinalizeCompletionReady(current.executionId, issues, events, ref changed, options);
             return handled;
         }
 
@@ -2112,6 +2429,17 @@ namespace GuildIdle.Activities
             List<ActivityRequirementIssue> issues,
             List<ActivityRuntimeEvent> events,
             ref bool changed)
+        {
+            return TryProcessPendingBuildingEvent(
+                executionId, issues, events, ref changed, BuildCompletionOptions.Online);
+        }
+
+        private bool TryProcessPendingBuildingEvent(
+            string executionId,
+            List<ActivityRequirementIssue> issues,
+            List<ActivityRuntimeEvent> events,
+            ref bool changed,
+            BuildCompletionOptions options)
         {
             var current = GetExecution(executionId);
             if (current == null || !current.buildingEventPending || current.buildingEventPublished ||
@@ -2141,7 +2469,7 @@ namespace GuildIdle.Activities
             current.buildingEventPending = false;
             current.buildingEventPublished = true;
             current.completionPhase = emptyCompletion ? CompletionPhaseCompletionReady : null;
-            if (!UpdateExecution(current) || !Save())
+            if (!UpdateExecution(current) || (options.SaveInternally && !Save()))
             {
                 _activityState.RestoreCheckpoint(checkpoint);
                 AddIssue(issues, current.activityId, "BuildingEventAck", current.executionId, 1, 0, true, false, "Failed to persist BuildingLevelChanged acknowledgment.");
@@ -2150,7 +2478,8 @@ namespace GuildIdle.Activities
             changed = true;
             var runtimeEvent = new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.BuildingLevelChanged, targetId = action.targetBuildingId, value = action.targetLevel, progressionAlreadyProcessed = true };
             events?.Add(runtimeEvent);
-            NotifyEventSink(runtimeEvent);
+            if (options.PublishEvents)
+                NotifyEventSink(runtimeEvent);
             return true;
         }
 
@@ -2159,6 +2488,17 @@ namespace GuildIdle.Activities
             List<ActivityRequirementIssue> issues,
             List<ActivityRuntimeEvent> events,
             ref bool changed)
+        {
+            return TryFinalizeCompletionReady(
+                executionId, issues, events, ref changed, BuildCompletionOptions.Online);
+        }
+
+        private bool TryFinalizeCompletionReady(
+            string executionId,
+            List<ActivityRequirementIssue> issues,
+            List<ActivityRuntimeEvent> events,
+            ref bool changed,
+            BuildCompletionOptions options)
         {
             var current = GetExecution(executionId);
             if (current == null || !string.Equals(current.completionPhase, CompletionPhaseCompletionReady, StringComparison.Ordinal))
@@ -2190,7 +2530,7 @@ namespace GuildIdle.Activities
                 return false;
             }
             var completedActivityId = current.activityId;
-            if (!RemoveExecution(current.executionId) || !Save())
+            if (!RemoveExecution(current.executionId) || (options.SaveInternally && !Save()))
             {
                 _activityState.RestoreCheckpoint(checkpoint);
                 AddIssue(issues, completedActivityId, "BuildCompletion", current.executionId, 1, 0, true, false, "Failed to finalize construction completion.");
@@ -2199,7 +2539,8 @@ namespace GuildIdle.Activities
             changed = true;
             var runtimeEvent = new ActivityRuntimeEvent { eventType = ActivityRuntimeEventType.ActivityCompleted, targetId = completedActivityId, value = 1, progressionAlreadyProcessed = true };
             events?.Add(runtimeEvent);
-            NotifyEventSink(runtimeEvent);
+            if (options.PublishEvents)
+                NotifyEventSink(runtimeEvent);
             return true;
         }
 
@@ -2534,6 +2875,42 @@ namespace GuildIdle.Activities
                                  Array.Empty<PendingResultDeferredResolvedEvent>()));
         }
 
+        private ConstructionAdvanceResult FinishConstructionAdvance(
+            bool success,
+            ConstructionAdvanceStopReason stopReason,
+            string executionId,
+            long availableSeconds,
+            long remainingSeconds,
+            float addedBuildPoints,
+            ActivityExecutionSaveData execution,
+            List<ActivityRequirementIssue> issues,
+            List<ActivityRuntimeEvent> deferredEvents,
+            List<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
+        {
+            var storedExecution = string.IsNullOrWhiteSpace(executionId) ? null : GetExecution(executionId);
+            var completed = stopReason == ConstructionAdvanceStopReason.ConstructionCompleted;
+            var executionStatus = storedExecution?.status ??
+                                  (completed
+                                      ? CoreActivityRuntimeStatus.Completed
+                                      : execution?.status ?? CoreActivityRuntimeStatus.None);
+            var completionPhase = storedExecution?.completionPhase ?? (completed ? null : execution?.completionPhase);
+            return new ConstructionAdvanceResult(
+                success && !HasBlockingIssues(issues),
+                stopReason,
+                executionId,
+                Math.Max(0L, availableSeconds),
+                Math.Max(0L, availableSeconds - remainingSeconds),
+                Math.Max(0L, remainingSeconds),
+                Math.Max(0f, addedBuildPoints),
+                executionStatus,
+                completionPhase,
+                completed,
+                Array.AsReadOnly(issues?.ToArray() ?? Array.Empty<ActivityRequirementIssue>()),
+                Array.AsReadOnly(deferredEvents?.ToArray() ?? Array.Empty<ActivityRuntimeEvent>()),
+                Array.AsReadOnly(deferredResolvedEvents?.ToArray() ??
+                                 Array.Empty<PendingResultDeferredResolvedEvent>()));
+        }
+
         private ActivityTickResult FinishTick(ActivityTickResult result, List<ActivityRequirementIssue> issues, List<ActivityRewardResult> rewards, List<ActivityRuntimeEvent> events, bool changed)
         {
             result.success = !HasBlockingIssues(issues);
@@ -2629,6 +3006,65 @@ namespace GuildIdle.Activities
                 throw new ArgumentNullException(nameof(result));
             foreach (var deferredEvent in result.DeferredResolvedEvents)
                 _pendingResults.PublishDeferred(deferredEvent);
+        }
+
+        public void Dispose() => _core.Dispose();
+    }
+
+    public sealed class ConstructionAdvanceProcessor : IDisposable
+    {
+        private readonly ITransactionalPendingResultService _pendingResults;
+        private readonly Action<ActivityRuntimeEvent> _eventSink;
+        private readonly ActivityRuntimeService _core;
+
+        public ConstructionAdvanceProcessor(
+            IActivityRuntimeStore store,
+            IActivityPlayerState activityState,
+            IActivityRuntimeProgressionProcessor progressionProcessor,
+            FormulaRuntime formulas = null,
+            Action<ActivityRuntimeEvent> eventSink = null)
+        {
+            if (activityState == null)
+                throw new ArgumentNullException(nameof(activityState));
+
+            _pendingResults = activityState.PendingResults as ITransactionalPendingResultService ??
+                              throw new ArgumentException(
+                                  "PendingResult service must support outer transactions.",
+                                  nameof(activityState));
+            _eventSink = eventSink;
+            _core = ActivityRuntimeService.CreateConstructionAdvanceCore(
+                store,
+                activityState,
+                formulas,
+                progressionProcessor);
+        }
+
+        public ConstructionAdvanceResult Advance(ConstructionAdvanceRequest request) =>
+            _core.AdvanceConstructionCore(request);
+
+        public void PublishDeferredEvents(ConstructionAdvanceResult result)
+        {
+            if (result == null)
+                throw new ArgumentNullException(nameof(result));
+            if (!result.TryMarkDeferredEventsPublished())
+                return;
+
+            foreach (var deferredEvent in result.DeferredResolvedEvents)
+                _pendingResults.PublishDeferred(deferredEvent);
+            if (_eventSink == null)
+                return;
+            foreach (var runtimeEvent in result.DeferredEvents)
+            {
+                try
+                {
+                    _eventSink(runtimeEvent);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError(
+                        $"[ConstructionAdvance] Deferred event sink failed for '{runtimeEvent?.eventType}:{runtimeEvent?.targetId}': {exception.Message}");
+                }
+            }
         }
 
         public void Dispose() => _core.Dispose();

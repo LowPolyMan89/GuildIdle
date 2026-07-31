@@ -1335,6 +1335,309 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void ConstructionAdvanceKeepsFractionalProgressAndDoesNotSaveOrRepayCosts()
+        {
+            var storage = new MemorySaveStorage();
+            var state = NewState();
+            state.UnlockBuilding("building_campfire");
+            state.SetBuildingLevel("building_campfire", 0);
+            Assert.That(state.Storage.Add("offline-build-wood", state.Storage.GetSnapshot().Revision,
+                "resource_pine_wood", 2).Success, Is.True);
+            Assert.That(state.Storage.Add("offline-build-stone", state.Storage.GetSnapshot().Revision,
+                "resource_stone", 2).Success, Is.True);
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            var runtime = new ActivityRuntimeService(
+                state,
+                new PlayerStateActivityAdapter(state),
+                progressionProcessor: new RecordingProgressionProcessor());
+            var fatigueBeforeStart = state.GetHeroFatigue("ren");
+            var started = runtime.Start(new ActivityStartRequest
+                { activityId = "test_build_campfire", heroId = "ren" });
+            Assert.That(runtime.Tick(0.5f).success, Is.True);
+            var saveCallsBeforeAdvance = storage.SaveCalls;
+            var fatigueAfterStart = state.GetHeroFatigue("ren");
+
+            using var processor = NewConstructionAdvanceProcessor(state);
+            var advanced = processor.Advance(new ConstructionAdvanceRequest(started.executionId, 1));
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(advanced.Success, Is.True);
+            Assert.That(advanced.StopReason, Is.EqualTo(ConstructionAdvanceStopReason.IntervalExhausted));
+            Assert.That(advanced.ConsumedSeconds, Is.EqualTo(1));
+            Assert.That(advanced.RemainingSeconds, Is.Zero);
+            Assert.That(advanced.AddedBuildPoints, Is.EqualTo(1f));
+            Assert.That(execution.accumulatedBuildPoints, Is.EqualTo(1f));
+            Assert.That(execution.elapsedSeconds, Is.EqualTo(0.5f));
+            Assert.That(storage.SaveCalls, Is.EqualTo(saveCallsBeforeAdvance));
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(fatigueAfterStart));
+            Assert.That(fatigueAfterStart, Is.EqualTo(fatigueBeforeStart - 3));
+            Assert.That(state.GetItem("resource_pine_wood"), Is.Zero);
+            Assert.That(state.GetItem("resource_stone"), Is.Zero);
+        }
+
+        [Test]
+        public void ConstructionAdvanceMatchesSequentialOnlineFormulaAndRounding()
+        {
+            var onlineState = NewState();
+            onlineState.UnlockBuilding("building_campfire");
+            onlineState.SetBuildingLevel("building_campfire", 0);
+            Assert.That(onlineState.Storage.Add("online-parity-wood",
+                onlineState.Storage.GetSnapshot().Revision, "resource_pine_wood", 2).Success, Is.True);
+            Assert.That(onlineState.Storage.Add("online-parity-stone",
+                onlineState.Storage.GetSnapshot().Revision, "resource_stone", 2).Success, Is.True);
+            var onlineRuntime = new ActivityRuntimeService(onlineState, new PlayerStateActivityAdapter(onlineState));
+            var onlineStart = onlineRuntime.Start(new ActivityStartRequest
+                { activityId = "test_build_campfire", heroId = "ren" });
+
+            var offlineState = NewState();
+            offlineState.UnlockBuilding("building_campfire");
+            offlineState.SetBuildingLevel("building_campfire", 0);
+            Assert.That(offlineState.Storage.Add("offline-parity-wood",
+                offlineState.Storage.GetSnapshot().Revision, "resource_pine_wood", 2).Success, Is.True);
+            Assert.That(offlineState.Storage.Add("offline-parity-stone",
+                offlineState.Storage.GetSnapshot().Revision, "resource_stone", 2).Success, Is.True);
+            var offlineRuntime = new ActivityRuntimeService(offlineState,
+                new PlayerStateActivityAdapter(offlineState));
+            var offlineStart = offlineRuntime.Start(new ActivityStartRequest
+                { activityId = "test_build_campfire", heroId = "ren" });
+            using var processor = NewConstructionAdvanceProcessor(offlineState);
+
+            Assert.That(onlineRuntime.Tick(0.25f).success, Is.True);
+            Assert.That(onlineRuntime.Tick(0.75f).success, Is.True);
+            var advanced = processor.Advance(new ConstructionAdvanceRequest(offlineStart.executionId, 1));
+            var onlineExecution = onlineState.GetActivityExecution(onlineStart.executionId);
+            var offlineExecution = offlineState.GetActivityExecution(offlineStart.executionId);
+
+            Assert.That(advanced.Success, Is.True);
+            Assert.That(offlineExecution.accumulatedBuildPoints,
+                Is.EqualTo(onlineExecution.accumulatedBuildPoints));
+            Assert.That(offlineExecution.elapsedSeconds, Is.EqualTo(onlineExecution.elapsedSeconds));
+            Assert.That(offlineExecution.status, Is.EqualTo(onlineExecution.status));
+        }
+
+        [Test]
+        public void ConstructionAdvanceCompletesIntoPendingResultAndDefersEventUntilOuterCommit()
+        {
+            var storage = new MemorySaveStorage();
+            var state = NewState();
+            state.UnlockBuilding("building_campfire");
+            state.SetBuildingLevel("building_campfire", 0);
+            Assert.That(state.Storage.Add("complete-build-wood", state.Storage.GetSnapshot().Revision,
+                "resource_pine_wood", 2).Success, Is.True);
+            Assert.That(state.Storage.Add("complete-build-stone", state.Storage.GetSnapshot().Revision,
+                "resource_stone", 2).Success, Is.True);
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(new ActivityStartRequest
+                { activityId = "test_build_campfire", heroId = "ren" });
+            var saveCallsBeforeAdvance = storage.SaveCalls;
+            var delivered = new List<ActivityRuntimeEvent>();
+            var progression = new RecordingProgressionProcessor();
+            using var processor = NewConstructionAdvanceProcessor(state, progression, delivered.Add);
+
+            var advanced = processor.Advance(new ConstructionAdvanceRequest(started.executionId, 10));
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(advanced.Success, Is.True);
+            Assert.That(advanced.StopReason, Is.EqualTo(ConstructionAdvanceStopReason.ConstructionCompleted));
+            Assert.That(advanced.Completed, Is.True);
+            Assert.That(advanced.ConsumedSeconds, Is.EqualTo(2));
+            Assert.That(advanced.RemainingSeconds, Is.EqualTo(8));
+            Assert.That(advanced.AddedBuildPoints, Is.EqualTo(2f));
+            Assert.That(advanced.ExecutionStatus, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.ResultPending));
+            Assert.That(execution.accumulatedBuildPoints, Is.EqualTo(2f));
+            Assert.That(execution.status, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.ResultPending));
+            Assert.That(execution.buildingLevelApplied, Is.True);
+            Assert.That(execution.buildingEventPublished, Is.True);
+            Assert.That(state.GetBuildingLevel("building_campfire"), Is.EqualTo(1));
+            Assert.That(state.PendingResults.GetAll(), Has.Length.EqualTo(1));
+            Assert.That(progression.BuildingLevelChangedCount, Is.EqualTo(1));
+            Assert.That(advanced.DeferredEvents, Has.Count.EqualTo(1));
+            Assert.That(delivered, Is.Empty);
+            Assert.That(storage.SaveCalls, Is.EqualTo(saveCallsBeforeAdvance));
+
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            processor.PublishDeferredEvents(advanced);
+            processor.PublishDeferredEvents(advanced);
+            Assert.That(delivered, Has.Count.EqualTo(1));
+            Assert.That(delivered[0].eventType, Is.EqualTo(ActivityRuntimeEventType.BuildingLevelChanged));
+        }
+
+        [Test]
+        public void ConstructionAdvanceEmptyCompletionUsesImmediatePathAndReturnsRemainingInterval()
+        {
+            var state = NewState();
+            state.UnlockBuilding("building_hall");
+            state.SetBuildingLevel("building_hall", 0);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(new ActivityStartRequest
+                { activityId = "test_build_empty", heroId = "ren" });
+            var delivered = new List<ActivityRuntimeEvent>();
+            using var processor = NewConstructionAdvanceProcessor(
+                state,
+                new RecordingProgressionProcessor(),
+                delivered.Add);
+
+            var advanced = processor.Advance(new ConstructionAdvanceRequest(started.executionId, 5));
+
+            Assert.That(advanced.Success, Is.True);
+            Assert.That(advanced.Completed, Is.True);
+            Assert.That(advanced.ConsumedSeconds, Is.EqualTo(1));
+            Assert.That(advanced.RemainingSeconds, Is.EqualTo(4));
+            Assert.That(advanced.ExecutionStatus, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.Completed));
+            Assert.That(advanced.DeferredEvents, Has.Count.EqualTo(2));
+            Assert.That(delivered, Is.Empty);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
+            Assert.That(state.IsActivityCompleted("test_build_empty"), Is.True);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+        }
+
+        [Test]
+        public void ConstructionAdvanceSafetyLimitIsResumableWithoutLosingInterval()
+        {
+            var state = NewState();
+            state.UnlockBuilding("building_campfire");
+            state.SetBuildingLevel("building_campfire", 0);
+            Assert.That(state.Storage.Add("limit-build-wood", state.Storage.GetSnapshot().Revision,
+                "resource_pine_wood", 2).Success, Is.True);
+            Assert.That(state.Storage.Add("limit-build-stone", state.Storage.GetSnapshot().Revision,
+                "resource_stone", 2).Success, Is.True);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(new ActivityStartRequest
+                { activityId = "test_build_campfire", heroId = "ren" });
+            using var processor = NewConstructionAdvanceProcessor(state);
+
+            var limited = processor.Advance(new ConstructionAdvanceRequest(started.executionId, 1000, 1));
+            var resumed = processor.Advance(
+                new ConstructionAdvanceRequest(started.executionId, limited.RemainingSeconds, 10));
+
+            Assert.That(limited.Success, Is.True);
+            Assert.That(limited.StopReason, Is.EqualTo(ConstructionAdvanceStopReason.ProcessingLimitReached));
+            Assert.That(limited.ConsumedSeconds, Is.EqualTo(1));
+            Assert.That(limited.RemainingSeconds, Is.EqualTo(999));
+            Assert.That(resumed.Success, Is.True);
+            Assert.That(resumed.StopReason, Is.EqualTo(ConstructionAdvanceStopReason.ConstructionCompleted));
+            Assert.That(resumed.ConsumedSeconds, Is.EqualTo(1));
+            Assert.That(resumed.RemainingSeconds, Is.EqualTo(998));
+        }
+
+        [Test]
+        public void ConstructionAdvanceStopsWithoutMutatingPausedPendingOrOtherExecutionTypes()
+        {
+            var pausedState = NewState();
+            pausedState.UnlockBuilding("building_hall");
+            pausedState.SetBuildingLevel("building_hall", 0);
+            var pausedRuntime = new ActivityRuntimeService(pausedState,
+                new PlayerStateActivityAdapter(pausedState));
+            var pausedStart = pausedRuntime.Start(new ActivityStartRequest
+                { activityId = "test_build_empty", heroId = "ren" });
+            Assert.That(pausedRuntime.PauseConstruction(pausedStart.executionId).success, Is.True);
+            using var pausedProcessor = NewConstructionAdvanceProcessor(pausedState);
+            var paused = pausedProcessor.Advance(new ConstructionAdvanceRequest(pausedStart.executionId, 10));
+
+            var pendingState = NewState();
+            pendingState.UnlockBuilding("building_campfire");
+            pendingState.SetBuildingLevel("building_campfire", 0);
+            Assert.That(pendingState.Storage.Add("pending-stop-wood",
+                pendingState.Storage.GetSnapshot().Revision, "resource_pine_wood", 2).Success, Is.True);
+            Assert.That(pendingState.Storage.Add("pending-stop-stone",
+                pendingState.Storage.GetSnapshot().Revision, "resource_stone", 2).Success, Is.True);
+            var pendingRuntime = new ActivityRuntimeService(pendingState,
+                new PlayerStateActivityAdapter(pendingState));
+            var pendingStart = pendingRuntime.Start(new ActivityStartRequest
+                { activityId = "test_build_campfire", heroId = "ren" });
+            using var pendingProcessor = NewConstructionAdvanceProcessor(pendingState);
+            Assert.That(pendingProcessor.Advance(
+                new ConstructionAdvanceRequest(pendingStart.executionId, 2)).Success, Is.True);
+            var pendingBefore = pendingState.GetActivityExecution(pendingStart.executionId);
+            var pending = pendingProcessor.Advance(new ConstructionAdvanceRequest(pendingStart.executionId, 10));
+
+            var workState = NewState();
+            var workRuntime = new ActivityRuntimeService(workState, new PlayerStateActivityAdapter(workState));
+            var workStart = workRuntime.Start(WorkStart("work_pine_wood", "ren", 1));
+            using var workProcessor = NewConstructionAdvanceProcessor(workState);
+            var work = workProcessor.Advance(new ConstructionAdvanceRequest(workStart.executionId, 10));
+
+            Assert.That(paused.StopReason, Is.EqualTo(ConstructionAdvanceStopReason.ExecutionNotRunning));
+            Assert.That(pausedState.GetActivityExecution(pausedStart.executionId).accumulatedBuildPoints, Is.Zero);
+            Assert.That(pending.StopReason, Is.EqualTo(ConstructionAdvanceStopReason.ExecutionNotRunning));
+            Assert.That(pendingState.GetActivityExecution(pendingStart.executionId).accumulatedBuildPoints,
+                Is.EqualTo(pendingBefore.accumulatedBuildPoints));
+            Assert.That(pendingState.PendingResults.GetAll(), Has.Length.EqualTo(1));
+            Assert.That(work.StopReason, Is.EqualTo(ConstructionAdvanceStopReason.NotConstructionExecution));
+            Assert.That(workState.GetActivityExecution(workStart.executionId).elapsedSeconds, Is.Zero);
+        }
+
+        [Test]
+        public void ConstructionAdvanceOuterRollbackRestoresProgressCompletionAndOutbox()
+        {
+            var state = NewState();
+            state.UnlockBuilding("building_hall");
+            state.SetBuildingLevel("building_hall", 0);
+            var adapter = new PlayerStateActivityAdapter(state);
+            var runtime = new ActivityRuntimeService(state, adapter);
+            var started = runtime.Start(new ActivityStartRequest
+                { activityId = "test_build_empty", heroId = "ren" });
+            var checkpoint = adapter.CaptureCheckpoint();
+            using var processor = NewConstructionAdvanceProcessor(state);
+
+            var advanced = processor.Advance(new ConstructionAdvanceRequest(started.executionId, 1));
+            adapter.RestoreCheckpoint(checkpoint);
+            var restored = state.GetActivityExecution(started.executionId);
+
+            Assert.That(advanced.Success, Is.True);
+            Assert.That(restored, Is.Not.Null);
+            Assert.That(restored.status, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.Running));
+            Assert.That(restored.accumulatedBuildPoints, Is.Zero);
+            Assert.That(restored.buildingLevelApplied, Is.False);
+            Assert.That(restored.buildingEventPending, Is.False);
+            Assert.That(state.GetBuildingLevel("building_hall"), Is.Zero);
+            Assert.That(state.IsActivityCompleted("test_build_empty"), Is.False);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
+        }
+
+        [Test]
+        public void ConstructionAdvanceFormulaFailureLeavesNoPartialMutation()
+        {
+            var state = NewState();
+            state.UnlockBuilding("building_campfire");
+            state.SetBuildingLevel("building_campfire", 0);
+            Assert.That(state.Storage.Add("formula-build-wood", state.Storage.GetSnapshot().Revision,
+                "resource_pine_wood", 2).Success, Is.True);
+            Assert.That(state.Storage.Add("formula-build-stone", state.Storage.GetSnapshot().Revision,
+                "resource_stone", 2).Success, Is.True);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(new ActivityStartRequest
+                { activityId = "test_build_campfire", heroId = "ren" });
+            Assert.That(RuntimeConfigs.Formulas.TryGetFormula("test_build_points", out var formula), Is.True);
+            using var processor = NewConstructionAdvanceProcessor(state);
+
+            formula.enabled = false;
+            ConstructionAdvanceResult advanced;
+            try
+            {
+                advanced = processor.Advance(new ConstructionAdvanceRequest(started.executionId, 2));
+            }
+            finally
+            {
+                formula.enabled = true;
+            }
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(advanced.Success, Is.False);
+            Assert.That(advanced.StopReason, Is.EqualTo(ConstructionAdvanceStopReason.RuntimeError));
+            Assert.That(HasIssue(advanced.Issues, "FormulaDisabled"), Is.True);
+            Assert.That(execution.accumulatedBuildPoints, Is.Zero);
+            Assert.That(execution.elapsedSeconds, Is.Zero);
+            Assert.That(state.GetBuildingLevel("building_campfire"), Is.Zero);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+        }
+
+        [Test]
         public void FormulaRuntimeSupportsContextSkillTypesAndDangerInclusiveBoundaries()
         {
             var runtime = new FormulaRuntime();
@@ -1543,7 +1846,19 @@ namespace GuildIdle.Editor.Activities
                 random ?? new SystemActivityRandom(12345));
         }
 
-        private static bool HasIssue(ActivityRequirementIssue[] issues, string issueType)
+        private static ConstructionAdvanceProcessor NewConstructionAdvanceProcessor(
+            PlayerState state,
+            IActivityRuntimeProgressionProcessor progression = null,
+            System.Action<ActivityRuntimeEvent> eventSink = null)
+        {
+            return new ConstructionAdvanceProcessor(
+                state,
+                new PlayerStateActivityAdapter(state),
+                progression ?? new RecordingProgressionProcessor(),
+                eventSink: eventSink);
+        }
+
+        private static bool HasIssue(IReadOnlyList<ActivityRequirementIssue> issues, string issueType)
         {
             foreach (var issue in issues)
             {

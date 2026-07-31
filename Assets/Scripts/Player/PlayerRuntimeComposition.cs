@@ -56,6 +56,29 @@ namespace GuildIdle.Player
                             processor));
         }
 
+        public static ConstructionAdvanceProcessor CreateConstructionAdvanceProcessor()
+        {
+            var state = Player.State;
+            if (state == null)
+                throw new InvalidOperationException(
+                    "Player state is not loaded yet. Call Player.Load() or wait for config load.");
+            return new ConstructionAdvanceProcessor(
+                state,
+                new PlayerStateActivityAdapter(state),
+                CreateActivityProgressionProcessor(state),
+                eventSink: HandleActivityRuntimeEvent);
+        }
+
+        public static ConstructionAdvanceProcessor CreateConstructionAdvanceProcessor(PlayerState state)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+            return new ConstructionAdvanceProcessor(
+                state,
+                new PlayerStateActivityAdapter(state),
+                CreateActivityProgressionProcessor(state));
+        }
+
         public static IStorageService CreateStorageService()
         {
             var state = Player.State;

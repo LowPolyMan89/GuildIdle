@@ -134,6 +134,99 @@ namespace GuildIdle.Activities
         public IReadOnlyList<PendingResultDeferredResolvedEvent> DeferredResolvedEvents { get; }
     }
 
+    public enum ConstructionAdvanceStopReason
+    {
+        None = 0,
+        IntervalExhausted = 1,
+        ConstructionCompleted = 2,
+        ExecutionNotFound = 3,
+        ExecutionNotRunning = 4,
+        NotConstructionExecution = 5,
+        ValidationFailed = 6,
+        ProcessingLimitReached = 7,
+        RuntimeError = 8,
+        InvalidRequest = 9
+    }
+
+    public sealed class ConstructionAdvanceRequest
+    {
+        public ConstructionAdvanceRequest(string executionId, long availableSeconds)
+            : this(executionId, availableSeconds, ActivityRuntimeService.DefaultConstructionAdvanceOperationLimit)
+        {
+        }
+
+        public ConstructionAdvanceRequest(string executionId, long availableSeconds, int operationLimit)
+        {
+            ExecutionId = executionId;
+            AvailableSeconds = availableSeconds;
+            OperationLimit = operationLimit;
+        }
+
+        public string ExecutionId { get; }
+        public long AvailableSeconds { get; }
+        public int OperationLimit { get; }
+    }
+
+    public sealed class ConstructionAdvanceResult
+    {
+        private bool _deferredEventsPublished;
+
+        internal ConstructionAdvanceResult(
+            bool success,
+            ConstructionAdvanceStopReason stopReason,
+            string executionId,
+            long availableSeconds,
+            long consumedSeconds,
+            long remainingSeconds,
+            float addedBuildPoints,
+            ActivityRuntimeStatus executionStatus,
+            string completionPhase,
+            bool completed,
+            IReadOnlyList<ActivityRequirementIssue> issues,
+            IReadOnlyList<ActivityRuntimeEvent> deferredEvents,
+            IReadOnlyList<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
+        {
+            Success = success;
+            StopReason = stopReason;
+            ExecutionId = executionId;
+            AvailableSeconds = availableSeconds;
+            ConsumedSeconds = consumedSeconds;
+            RemainingSeconds = remainingSeconds;
+            AddedBuildPoints = addedBuildPoints;
+            ExecutionStatus = executionStatus;
+            CompletionPhase = completionPhase;
+            Completed = completed;
+            Issues = issues ?? Array.AsReadOnly(Array.Empty<ActivityRequirementIssue>());
+            DeferredEvents = deferredEvents ?? Array.AsReadOnly(Array.Empty<ActivityRuntimeEvent>());
+            DeferredResolvedEvents = deferredResolvedEvents ??
+                                     Array.AsReadOnly(Array.Empty<PendingResultDeferredResolvedEvent>());
+        }
+
+        public bool Success { get; }
+        public string Code => StopReason.ToString();
+        public ConstructionAdvanceStopReason StopReason { get; }
+        public string ExecutionId { get; }
+        public long AvailableSeconds { get; }
+        public long ConsumedSeconds { get; }
+        public long RemainingSeconds { get; }
+        public float AddedBuildPoints { get; }
+        public ActivityRuntimeStatus ExecutionStatus { get; }
+        public string CompletionPhase { get; }
+        public bool Completed { get; }
+        public bool ProcessingLimitReached => StopReason == ConstructionAdvanceStopReason.ProcessingLimitReached;
+        public IReadOnlyList<ActivityRequirementIssue> Issues { get; }
+        public IReadOnlyList<ActivityRuntimeEvent> DeferredEvents { get; }
+        public IReadOnlyList<PendingResultDeferredResolvedEvent> DeferredResolvedEvents { get; }
+
+        internal bool TryMarkDeferredEventsPublished()
+        {
+            if (_deferredEventsPublished)
+                return false;
+            _deferredEventsPublished = true;
+            return true;
+        }
+    }
+
     public sealed class ActivityRuntimeEvent
     {
         public string eventType;
