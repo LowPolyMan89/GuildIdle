@@ -1601,6 +1601,43 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void FailedEmptyConstructionCompletionDoesNotExposeOrPublishDeferredEvents()
+        {
+            var state = NewState();
+            state.UnlockBuilding("building_hall");
+            state.SetBuildingLevel("building_hall", 0);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(new ActivityStartRequest
+                { activityId = "test_build_empty", heroId = "ren" });
+            var progression = new RecordingProgressionProcessor { FailActivityCompleted = true };
+            var delivered = new List<ActivityRuntimeEvent>();
+            using var processor = NewConstructionAdvanceProcessor(state, progression, delivered.Add);
+
+            var advanced = processor.Advance(new ConstructionAdvanceRequest(started.executionId, 1));
+            processor.PublishDeferredEvents(advanced);
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(advanced.Success, Is.False);
+            Assert.That(advanced.StopReason, Is.EqualTo(ConstructionAdvanceStopReason.RuntimeError));
+            Assert.That(HasIssue(advanced.Issues, "TestActivityFailed"), Is.True);
+            Assert.That(advanced.DeferredEvents, Is.Empty);
+            Assert.That(advanced.DeferredResolvedEvents, Is.Empty);
+            Assert.That(delivered, Is.Empty);
+            Assert.That(progression.BuildingLevelChangedCount, Is.EqualTo(1));
+            Assert.That(progression.ActivityCompletedCount, Is.Zero);
+            Assert.That(execution, Is.Not.Null);
+            Assert.That(execution.status, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.Running));
+            Assert.That(execution.accumulatedBuildPoints, Is.Zero);
+            Assert.That(execution.buildingLevelApplied, Is.False);
+            Assert.That(execution.buildingEventPending, Is.False);
+            Assert.That(execution.buildingEventPublished, Is.False);
+            Assert.That(state.GetBuildingLevel("building_hall"), Is.Zero);
+            Assert.That(state.IsActivityCompleted("test_build_empty"), Is.False);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
+        }
+
+        [Test]
         public void ConstructionAdvanceFormulaFailureLeavesNoPartialMutation()
         {
             var state = NewState();

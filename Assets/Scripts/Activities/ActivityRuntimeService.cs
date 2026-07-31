@@ -2889,13 +2889,14 @@ namespace GuildIdle.Activities
         {
             var storedExecution = string.IsNullOrWhiteSpace(executionId) ? null : GetExecution(executionId);
             var completed = stopReason == ConstructionAdvanceStopReason.ConstructionCompleted;
+            var finalSuccess = success && !HasBlockingIssues(issues);
             var executionStatus = storedExecution?.status ??
                                   (completed
                                       ? CoreActivityRuntimeStatus.Completed
                                       : execution?.status ?? CoreActivityRuntimeStatus.None);
             var completionPhase = storedExecution?.completionPhase ?? (completed ? null : execution?.completionPhase);
             return new ConstructionAdvanceResult(
-                success && !HasBlockingIssues(issues),
+                finalSuccess,
                 stopReason,
                 executionId,
                 Math.Max(0L, availableSeconds),
@@ -2906,9 +2907,13 @@ namespace GuildIdle.Activities
                 completionPhase,
                 completed,
                 Array.AsReadOnly(issues?.ToArray() ?? Array.Empty<ActivityRequirementIssue>()),
-                Array.AsReadOnly(deferredEvents?.ToArray() ?? Array.Empty<ActivityRuntimeEvent>()),
-                Array.AsReadOnly(deferredResolvedEvents?.ToArray() ??
-                                 Array.Empty<PendingResultDeferredResolvedEvent>()));
+                finalSuccess
+                    ? Array.AsReadOnly(deferredEvents?.ToArray() ?? Array.Empty<ActivityRuntimeEvent>())
+                    : Array.AsReadOnly(Array.Empty<ActivityRuntimeEvent>()),
+                finalSuccess
+                    ? Array.AsReadOnly(deferredResolvedEvents?.ToArray() ??
+                                       Array.Empty<PendingResultDeferredResolvedEvent>())
+                    : Array.AsReadOnly(Array.Empty<PendingResultDeferredResolvedEvent>()));
         }
 
         private ActivityTickResult FinishTick(ActivityTickResult result, List<ActivityRequirementIssue> issues, List<ActivityRewardResult> rewards, List<ActivityRuntimeEvent> events, bool changed)
@@ -3046,6 +3051,8 @@ namespace GuildIdle.Activities
         {
             if (result == null)
                 throw new ArgumentNullException(nameof(result));
+            if (!result.Success)
+                return;
             if (!result.TryMarkDeferredEventsPublished())
                 return;
 
