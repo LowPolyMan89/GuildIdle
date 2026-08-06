@@ -34,7 +34,7 @@ namespace GuildIdle.Crafting
         bool AddCraftExecution(CraftExecutionSaveData execution);
         bool UpdateCraftExecution(CraftExecutionSaveData execution);
         PendingResultSaveData GetPendingResult(string resultId);
-        PendingResultFormationResult CreatePendingResult(string operationId, PendingResultDraft draft);
+        ITransactionalPendingResultService TransactionalPendingResults { get; }
         bool Save();
     }
 
@@ -43,6 +43,8 @@ namespace GuildIdle.Crafting
         private const string StartReceiptAggregateId = "craft-start";
         private readonly CraftsConfigRepository _configs;
         private readonly ICraftPlayerState _state;
+        private readonly ITransactionalPendingResultService _transactionalPendingResults;
+        private readonly CraftAdvanceCore _advanceCore;
         private readonly Action<CraftStartedEvent> _eventSink;
         private readonly Action<CraftResultPendingEvent> _resultPendingEventSink;
 
@@ -54,6 +56,11 @@ namespace GuildIdle.Crafting
         {
             _configs = configs ?? throw new ArgumentNullException(nameof(configs));
             _state = state ?? throw new ArgumentNullException(nameof(state));
+            _transactionalPendingResults = state.TransactionalPendingResults ??
+                                           throw new ArgumentException(
+                                               "PendingResult service must support outer transactions.",
+                                               nameof(state));
+            _advanceCore = new CraftAdvanceCore(state, _transactionalPendingResults);
             _eventSink = eventSink;
             _resultPendingEventSink = resultPendingEventSink;
         }
@@ -206,7 +213,7 @@ namespace GuildIdle.Crafting
             var execution = _state.GetCraftExecution(executionId);
             if (execution == null)
                 return AdvanceFailure(CraftAdvanceCode.ExecutionNotFound, $"CraftExecution '{executionId}' was not found.", executionId);
-            if (!TryValidateAdvanceExecution(execution, out var validationError))
+            if (!TryValidateAdvanceExecution(_state, execution, out var validationError))
                 return AdvanceFailure(CraftAdvanceCode.InvalidExecution, validationError, executionId, execution);
 
             var fingerprint = BuildAdvanceFingerprint(executionId, deltaSeconds, operationSequence);
@@ -216,7 +223,7 @@ namespace GuildIdle.Crafting
                 if (savedReceipt.operationSequence != operationSequence ||
                     !MatchesAdvanceFingerprint(savedReceipt, executionId, deltaSeconds, fingerprint))
                     return AdvanceFailure(CraftAdvanceCode.OperationReplayConflict, "operationKey was already used with another craft advance payload.", executionId, execution);
-                if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(execution))
+                if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(_state, execution))
                     return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "ResultPending CraftExecution has no valid linked Craft Result.", executionId, execution);
                 return AdvanceReplay(execution, savedReceipt);
             }
@@ -227,14 +234,14 @@ namespace GuildIdle.Crafting
                 if (!string.Equals(savedReceipt.operationKey, operationKey, StringComparison.Ordinal) ||
                     !MatchesAdvanceFingerprint(savedReceipt, executionId, deltaSeconds, fingerprint))
                     return AdvanceFailure(CraftAdvanceCode.OperationReplayConflict, "operationSequence was already used with another craft advance payload.", executionId, execution);
-                if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(execution))
+                if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(_state, execution))
                     return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "ResultPending CraftExecution has no valid linked Craft Result.", executionId, execution);
                 return AdvanceReplay(execution, savedReceipt);
             }
 
             if (operationSequence <= execution.lastAdvanceSequence)
             {
-                if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(execution))
+                if (execution.status == CraftExecutionStatus.ResultPending && !HasValidPendingResult(_state, execution))
                     return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "ResultPending CraftExecution has no valid linked Craft Result.", executionId, execution);
                 return AdvanceEvictedReplay(execution, operationSequence);
             }
@@ -243,94 +250,67 @@ namespace GuildIdle.Crafting
 
             if (execution.status == CraftExecutionStatus.ResultPending)
             {
-                if (!HasValidPendingResult(execution))
+                if (!HasValidPendingResult(_state, execution))
                     return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "ResultPending CraftExecution has no valid linked Craft Result.", executionId, execution);
                 return AdvanceSuccess(execution, CraftAdvanceCode.ResultPending, false);
-            }
-
-            var expectedResultId = BuildCraftResultId(execution.executionId);
-            if (_state.GetPendingResult(expectedResultId) != null)
-                return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "Running CraftExecution already has a Craft Result.", executionId, execution);
-            if (_state.TryGetOperationReceipt(expectedResultId, operationKey, out _))
-                return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "Running CraftExecution has an orphaned Craft Result operation receipt.", executionId, execution);
-
-            var remainingBeforeAdvance = Math.Max(0d, execution.durationSeconds - execution.progressSeconds);
-            var willComplete = deltaSeconds >= remainingBeforeAdvance;
-            PreparedRewardBatch preparedRewards = null;
-            if (willComplete)
-            {
-                try
-                {
-                    preparedRewards = PrepareCompletionRewards(execution);
-                }
-                catch (Exception exception)
-                {
-                    return AdvanceFailure(CraftAdvanceCode.TransactionFailure, $"Craft completion preflight failed: {exception.Message}", executionId, execution);
-                }
-                if (!preparedRewards.success)
-                    return AdvanceFailure(CraftAdvanceCode.RewardValidationFailure, FirstRewardIssue(preparedRewards), executionId, execution);
             }
 
             var checkpoint = _state.CaptureCheckpoint();
             var committed = false;
             try
             {
-                var next = CloneExecution(execution);
-                var completes = willComplete;
-                next.progressSeconds = completes
-                    ? next.durationSeconds
-                    : (float)(next.progressSeconds + deltaSeconds);
+                var coreResult = _advanceCore.Advance(
+                    new CraftAdvanceRequest(executionId, deltaSeconds, operationKey));
+                if (!coreResult.Success)
+                {
+                    _state.RestoreCheckpoint(checkpoint);
+                    return AdvanceFailure(
+                        MapCoreFailureCode(coreResult.StopReason),
+                        FirstCoreIssue(coreResult),
+                        executionId,
+                        execution);
+                }
+
+                var next = CloneExecution(_state.GetCraftExecution(executionId));
+                if (next == null)
+                {
+                    _state.RestoreCheckpoint(checkpoint);
+                    return AdvanceFailure(
+                        CraftAdvanceCode.TransactionFailure,
+                        "Craft advance core did not leave an execution to record the online operation.",
+                        executionId,
+                        execution);
+                }
+                var completes = coreResult.Completed;
                 next.lastAdvanceSequence = operationSequence;
                 if (completes)
                     next.completionAdvanceSequence = operationSequence;
                 AddAdvanceReceipt(next, operationSequence, operationKey, fingerprint, deltaSeconds, completes ? CraftAdvanceCode.ResultPending : CraftAdvanceCode.Applied,
-                    completes ? expectedResultId : null);
+                    completes ? next.pendingResultId : null);
 
                 if (!_state.UpdateCraftExecution(next))
                 {
                     _state.RestoreCheckpoint(checkpoint);
-                    return AdvanceFailure(CraftAdvanceCode.TransactionFailure, "Failed to update CraftExecution progress.", executionId, execution);
+                    return AdvanceFailure(CraftAdvanceCode.TransactionFailure, "Failed to record the online craft advance operation.", executionId, execution);
                 }
 
-                if (!completes)
-                {
-                    if (!_state.Save())
-                    {
-                        _state.RestoreCheckpoint(checkpoint);
-                        return AdvanceFailure(CraftAdvanceCode.SaveFailure, "Failed to save CraftExecution progress.", executionId, execution);
-                    }
-                    committed = true;
-                    return AdvanceSuccess(_state.GetCraftExecution(executionId) ?? next, CraftAdvanceCode.Applied, false);
-                }
-
-                var formation = _state.CreatePendingResult(operationKey, new PendingResultDraft
-                {
-                    SourceType = PendingResultSourceType.Craft,
-                    SourceId = next.craftId,
-                    SourceExecutionId = next.executionId,
-                    OwnerHeroId = next.heroId,
-                    OperationContext = "craft-completion",
-                    Entries = PendingResultEntryFactory.FromActivityRewards(preparedRewards.rewards, PendingResultOrigin.CraftOutput)
-                });
-                if (formation == null || !formation.Success)
+                if (!_state.Save())
                 {
                     _state.RestoreCheckpoint(checkpoint);
-                    var code = string.Equals(formation?.Code, "SaveFailed", StringComparison.Ordinal)
-                        ? CraftAdvanceCode.SaveFailure
-                        : CraftAdvanceCode.PendingResultFailure;
-                    return AdvanceFailure(code, formation?.Message ?? "Craft Result creation failed.", executionId, execution);
+                    return AdvanceFailure(CraftAdvanceCode.SaveFailure, "Failed to save CraftExecution progress.", executionId, execution);
                 }
-
                 committed = true;
                 var stored = _state.GetCraftExecution(executionId);
-                if (stored == null || stored.status != CraftExecutionStatus.ResultPending ||
-                    !string.Equals(stored.pendingResultId, formation.Result?.resultId, StringComparison.Ordinal))
+                if (stored == null)
                 {
-                    Debug.LogError($"[CraftRuntime] Committed Craft Result '{formation.Result?.resultId}' is not linked to execution '{executionId}'.");
-                    return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "Committed Craft Result is not linked to its execution.", executionId, stored);
+                    Debug.LogError($"[CraftRuntime] Committed CraftExecution '{executionId}' is unavailable.");
+                    return AdvanceFailure(CraftAdvanceCode.DataIntegrityFailure, "Committed CraftExecution is unavailable.", executionId);
                 }
-                PublishResultPending(stored);
-                return AdvanceSuccess(stored, CraftAdvanceCode.ResultPending, false);
+                PublishDeferred(coreResult);
+                return AdvanceSuccess(
+                    stored,
+                    completes ? CraftAdvanceCode.ResultPending : CraftAdvanceCode.Applied,
+                    false);
             }
             catch (Exception exception)
             {
@@ -707,7 +687,7 @@ namespace GuildIdle.Crafting
                 string.Empty);
         }
 
-        private static PreparedRewardBatch PrepareCompletionRewards(CraftExecutionSaveData execution)
+        internal static PreparedRewardBatch PrepareCompletionRewards(CraftExecutionSaveData execution)
         {
             var definitions = new List<RewardDefinition>
             {
@@ -738,14 +718,17 @@ namespace GuildIdle.Crafting
             return RewardBatchPipeline.Prepare(definitions, GrantMoment.OnComplete, execution.heroId, null, false);
         }
 
-        private static string FirstRewardIssue(PreparedRewardBatch prepared)
+        internal static string FirstRewardIssue(PreparedRewardBatch prepared)
         {
             foreach (var issue in prepared?.issues ?? Array.Empty<ActivityRequirementIssue>())
                 if (issue != null && issue.isError) return issue.message ?? "Craft reward validation failed.";
             return "Craft reward validation failed.";
         }
 
-        private bool TryValidateAdvanceExecution(CraftExecutionSaveData execution, out string error)
+        internal static bool TryValidateAdvanceExecution(
+            ICraftPlayerState state,
+            CraftExecutionSaveData execution,
+            out string error)
         {
             error = null;
             if (execution == null || string.IsNullOrWhiteSpace(execution.executionId) ||
@@ -759,8 +742,8 @@ namespace GuildIdle.Crafting
                 error = "CraftExecution immutable snapshot is invalid.";
                 return false;
             }
-            if (!_state.HasHero(execution.heroId) || !_state.HasHeroState(execution.heroId) ||
-                !string.Equals(_state.GetHeroOccupationOwnerId(execution.heroId), execution.executionId, StringComparison.Ordinal))
+            if (state == null || !state.HasHero(execution.heroId) || !state.HasHeroState(execution.heroId) ||
+                !string.Equals(state.GetHeroOccupationOwnerId(execution.heroId), execution.executionId, StringComparison.Ordinal))
             {
                 error = "CraftExecution does not own its acquired hero.";
                 return false;
@@ -795,7 +778,8 @@ namespace GuildIdle.Crafting
             if (execution.lastAdvanceSequence < 0 || execution.completionAdvanceSequence < 0 ||
                 (execution.status == CraftExecutionStatus.Running && execution.completionAdvanceSequence != 0) ||
                 (execution.status == CraftExecutionStatus.ResultPending &&
-                 (execution.completionAdvanceSequence <= 0 || execution.completionAdvanceSequence != execution.lastAdvanceSequence)))
+                 execution.completionAdvanceSequence > 0 &&
+                 execution.completionAdvanceSequence != execution.lastAdvanceSequence))
             {
                 error = "CraftExecution advance sequence state is invalid.";
                 return false;
@@ -829,9 +813,9 @@ namespace GuildIdle.Crafting
             return true;
         }
 
-        private bool HasValidPendingResult(CraftExecutionSaveData execution)
+        internal static bool HasValidPendingResult(ICraftPlayerState state, CraftExecutionSaveData execution)
         {
-            return CraftPendingResultValidator.Validate(execution, _state.GetPendingResult(execution?.pendingResultId));
+            return CraftPendingResultValidator.Validate(execution, state?.GetPendingResult(execution?.pendingResultId));
         }
 
         private static CraftAdvanceReceiptSaveData FindAdvanceReceipt(CraftExecutionSaveData execution, string operationKey)
@@ -890,7 +874,7 @@ namespace GuildIdle.Crafting
             return string.Equals(receipt?.fingerprint, legacyFingerprint, StringComparison.Ordinal);
         }
 
-        private static string BuildCraftResultId(string executionId) =>
+        internal static string BuildCraftResultId(string executionId) =>
             $"result:{PendingResultSourceType.Craft}:{executionId}";
 
         private static CraftAdvanceResult AdvanceSuccess(CraftExecutionSaveData execution, string code, bool replayed)
@@ -1022,24 +1006,50 @@ namespace GuildIdle.Crafting
             }
         }
 
-        private void PublishResultPending(CraftExecutionSaveData execution)
+        private void PublishDeferred(CraftAdvanceCoreResult result)
         {
-            if (_resultPendingEventSink == null || execution == null)
+            if (result == null || !result.Success || !result.TryMarkDeferredEventsPublished())
                 return;
-            try
+
+            foreach (var deferredEvent in result.DeferredResolvedEvents)
+                _transactionalPendingResults.PublishDeferred(deferredEvent);
+            foreach (var runtimeEvent in result.DeferredEvents)
             {
-                _resultPendingEventSink(new CraftResultPendingEvent
+                try
                 {
-                    ExecutionId = execution.executionId,
-                    CraftId = execution.craftId,
-                    HeroId = execution.heroId,
-                    PendingResultId = execution.pendingResultId
-                });
+                    _resultPendingEventSink?.Invoke(runtimeEvent);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception);
+                }
             }
-            catch (Exception exception)
+        }
+
+        private static string MapCoreFailureCode(CraftAdvanceStopReason stopReason)
+        {
+            switch (stopReason)
             {
-                Debug.LogException(exception);
+                case CraftAdvanceStopReason.ExecutionNotFound:
+                    return CraftAdvanceCode.ExecutionNotFound;
+                case CraftAdvanceStopReason.InvalidExecution:
+                case CraftAdvanceStopReason.ExecutionNotRunning:
+                case CraftAdvanceStopReason.InvalidRequest:
+                    return CraftAdvanceCode.InvalidExecution;
+                case CraftAdvanceStopReason.RewardValidationFailed:
+                    return CraftAdvanceCode.RewardValidationFailure;
+                case CraftAdvanceStopReason.PendingResultFailed:
+                    return CraftAdvanceCode.PendingResultFailure;
+                default:
+                    return CraftAdvanceCode.TransactionFailure;
             }
+        }
+
+        private static string FirstCoreIssue(CraftAdvanceCoreResult result)
+        {
+            foreach (var issue in result?.Issues ?? Array.Empty<CraftAdvanceIssue>())
+                if (issue != null && !string.IsNullOrWhiteSpace(issue.Message)) return issue.Message;
+            return "Craft advance core failed.";
         }
 
         private void PublishStorageCommit()
@@ -1071,7 +1081,7 @@ namespace GuildIdle.Crafting
                    string.Equals(_state.GetHeroOccupationOwnerId(execution.heroId), execution.executionId, StringComparison.Ordinal);
         }
 
-        private static CraftExecutionSaveData CloneExecution(CraftExecutionSaveData source)
+        internal static CraftExecutionSaveData CloneExecution(CraftExecutionSaveData source)
         {
             if (source == null)
                 return null;
@@ -1150,6 +1160,397 @@ namespace GuildIdle.Crafting
         {
             public int Quantity;
             public string Kind;
+        }
+    }
+
+    internal sealed class CraftAdvanceCore
+    {
+        private readonly ICraftPlayerState _state;
+        private readonly ITransactionalPendingResultService _pendingResults;
+
+        internal CraftAdvanceCore(
+            ICraftPlayerState state,
+            ITransactionalPendingResultService pendingResults)
+        {
+            _state = state ?? throw new ArgumentNullException(nameof(state));
+            _pendingResults = pendingResults ?? throw new ArgumentNullException(nameof(pendingResults));
+        }
+
+        internal CraftAdvanceCoreResult Advance(CraftAdvanceRequest request)
+        {
+            var executionId = request?.ExecutionId;
+            var availableSeconds = request?.AvailableSeconds ?? 0d;
+            if (request == null || string.IsNullOrWhiteSpace(executionId) ||
+                double.IsNaN(availableSeconds) || double.IsInfinity(availableSeconds) ||
+                availableSeconds < 0d)
+            {
+                return Failure(
+                    CraftAdvanceStopReason.InvalidRequest,
+                    executionId,
+                    0d,
+                    "InvalidRequest",
+                    "Craft advance requires executionId and finite non-negative availableSeconds.");
+            }
+            if (availableSeconds == 0d)
+                availableSeconds = 0d;
+
+            var execution = _state.GetCraftExecution(executionId);
+            if (execution == null)
+            {
+                return Failure(
+                    CraftAdvanceStopReason.ExecutionNotFound,
+                    executionId,
+                    availableSeconds,
+                    "ExecutionNotFound",
+                    $"CraftExecution '{executionId}' was not found.");
+            }
+
+            var progressBefore = (double)execution.progressSeconds;
+            if (execution.status != CraftExecutionStatus.Running &&
+                execution.status != CraftExecutionStatus.ResultPending)
+            {
+                return Failure(
+                    CraftAdvanceStopReason.ExecutionNotRunning,
+                    executionId,
+                    availableSeconds,
+                    progressBefore,
+                    execution.status,
+                    "ExecutionNotRunning",
+                    $"CraftExecution '{executionId}' is not running.");
+            }
+            if (!CraftRuntimeService.TryValidateAdvanceExecution(_state, execution, out var validationError))
+            {
+                return Failure(
+                    CraftAdvanceStopReason.InvalidExecution,
+                    executionId,
+                    availableSeconds,
+                    progressBefore,
+                    execution.status,
+                    "InvalidExecution",
+                    validationError);
+            }
+
+            if (execution.status == CraftExecutionStatus.ResultPending)
+            {
+                if (!CraftRuntimeService.HasValidPendingResult(_state, execution))
+                {
+                    return Failure(
+                        CraftAdvanceStopReason.InvalidExecution,
+                        executionId,
+                        availableSeconds,
+                        progressBefore,
+                        execution.status,
+                        "InvalidExecution",
+                        "ResultPending CraftExecution has no valid linked Craft Result.");
+                }
+
+                return Success(
+                    CraftAdvanceStopReason.AlreadyResultPending,
+                    execution,
+                    availableSeconds,
+                    0d,
+                    availableSeconds,
+                    progressBefore,
+                    Array.Empty<CraftResultPendingEvent>(),
+                    Array.Empty<PendingResultDeferredResolvedEvent>());
+            }
+
+            var expectedResultId = CraftRuntimeService.BuildCraftResultId(executionId);
+            var completionOperationId = BuildCompletionOperationId(executionId);
+            if (_state.GetPendingResult(expectedResultId) != null ||
+                _state.TryGetOperationReceipt(expectedResultId, completionOperationId, out _))
+            {
+                return Failure(
+                    CraftAdvanceStopReason.InvalidExecution,
+                    executionId,
+                    availableSeconds,
+                    progressBefore,
+                    execution.status,
+                    "InvalidExecution",
+                    "Running CraftExecution already has Craft Result formation state.");
+            }
+
+            var remainingToCompletion = Math.Max(0d, execution.durationSeconds - progressBefore);
+            if (availableSeconds < remainingToCompletion)
+            {
+                try
+                {
+                    var next = CraftRuntimeService.CloneExecution(execution);
+                    next.progressSeconds = (float)(progressBefore + availableSeconds);
+                    if (!_state.UpdateCraftExecution(next))
+                    {
+                        return Failure(
+                            CraftAdvanceStopReason.RuntimeError,
+                            executionId,
+                            availableSeconds,
+                            progressBefore,
+                            execution.status,
+                            "ExecutionUpdateFailed",
+                            "Failed to update CraftExecution progress.");
+                    }
+
+                    return Success(
+                        CraftAdvanceStopReason.AppliedPartial,
+                        _state.GetCraftExecution(executionId) ?? next,
+                        availableSeconds,
+                        availableSeconds,
+                        0d,
+                        progressBefore,
+                        Array.Empty<CraftResultPendingEvent>(),
+                        Array.Empty<PendingResultDeferredResolvedEvent>());
+                }
+                catch (Exception exception)
+                {
+                    return Failure(
+                        CraftAdvanceStopReason.RuntimeError,
+                        executionId,
+                        availableSeconds,
+                        progressBefore,
+                        execution.status,
+                        "RuntimeError",
+                        $"Craft partial advance failed: {exception.Message}");
+                }
+            }
+
+            PreparedRewardBatch preparedRewards;
+            try
+            {
+                preparedRewards = CraftRuntimeService.PrepareCompletionRewards(execution);
+            }
+            catch (Exception exception)
+            {
+                return Failure(
+                    CraftAdvanceStopReason.RuntimeError,
+                    executionId,
+                    availableSeconds,
+                    progressBefore,
+                    execution.status,
+                    "RuntimeError",
+                    $"Craft completion preflight failed: {exception.Message}");
+            }
+            if (preparedRewards == null || !preparedRewards.success)
+            {
+                return Failure(
+                    CraftAdvanceStopReason.RewardValidationFailed,
+                    executionId,
+                    availableSeconds,
+                    progressBefore,
+                    execution.status,
+                    "RewardValidationFailed",
+                    CraftRuntimeService.FirstRewardIssue(preparedRewards));
+            }
+
+            try
+            {
+                var next = CraftRuntimeService.CloneExecution(execution);
+                next.progressSeconds = next.durationSeconds;
+                if (!_state.UpdateCraftExecution(next))
+                {
+                    return Failure(
+                        CraftAdvanceStopReason.RuntimeError,
+                        executionId,
+                        availableSeconds,
+                        progressBefore,
+                        execution.status,
+                        "ExecutionUpdateFailed",
+                        "Failed to update CraftExecution completion progress.");
+                }
+
+                var formation = _pendingResults.CreateOrAppendInTransaction(
+                    completionOperationId,
+                    new PendingResultDraft
+                    {
+                        SourceType = PendingResultSourceType.Craft,
+                        SourceId = next.craftId,
+                        SourceExecutionId = next.executionId,
+                        OwnerHeroId = next.heroId,
+                        OperationContext = "craft-completion",
+                        Entries = PendingResultEntryFactory.FromActivityRewards(
+                            preparedRewards.rewards,
+                            PendingResultOrigin.CraftOutput)
+                    },
+                    true);
+                if (formation == null || !formation.Success)
+                {
+                    return Failure(
+                        CraftAdvanceStopReason.PendingResultFailed,
+                        executionId,
+                        availableSeconds,
+                        progressBefore,
+                        execution.status,
+                        formation?.Code ?? "PendingResultFailed",
+                        formation?.Message ?? "Craft Result creation failed.");
+                }
+
+                var stored = _state.GetCraftExecution(executionId);
+                if (stored == null || stored.status != CraftExecutionStatus.ResultPending ||
+                    !string.Equals(stored.pendingResultId, formation.Result?.resultId, StringComparison.Ordinal) ||
+                    !CraftRuntimeService.HasValidPendingResult(_state, stored))
+                {
+                    return Failure(
+                        CraftAdvanceStopReason.PendingResultFailed,
+                        executionId,
+                        availableSeconds,
+                        progressBefore,
+                        execution.status,
+                        "PendingResultFailed",
+                        "Craft Result was not linked to its CraftExecution.");
+                }
+
+                var deferredResolvedEvents = formation.DeferredResolvedEvent == null
+                    ? Array.Empty<PendingResultDeferredResolvedEvent>()
+                    : new[] { formation.DeferredResolvedEvent };
+                return Success(
+                    CraftAdvanceStopReason.CraftCompleted,
+                    stored,
+                    availableSeconds,
+                    remainingToCompletion,
+                    Math.Max(0d, availableSeconds - remainingToCompletion),
+                    progressBefore,
+                    new[]
+                    {
+                        new CraftResultPendingEvent
+                        {
+                            ExecutionId = stored.executionId,
+                            CraftId = stored.craftId,
+                            HeroId = stored.heroId,
+                            PendingResultId = stored.pendingResultId
+                        }
+                    },
+                    deferredResolvedEvents);
+            }
+            catch (Exception exception)
+            {
+                return Failure(
+                    CraftAdvanceStopReason.RuntimeError,
+                    executionId,
+                    availableSeconds,
+                    progressBefore,
+                    execution.status,
+                    "RuntimeError",
+                    $"Craft completion failed: {exception.Message}");
+            }
+        }
+
+        internal static string BuildCompletionOperationId(string executionId) =>
+            $"craft:{executionId}:completion";
+
+        private static CraftAdvanceCoreResult Success(
+            CraftAdvanceStopReason stopReason,
+            CraftExecutionSaveData execution,
+            double availableSeconds,
+            double consumedSeconds,
+            double remainingSeconds,
+            double progressBefore,
+            IReadOnlyList<CraftResultPendingEvent> deferredEvents,
+            IReadOnlyList<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
+        {
+            return new CraftAdvanceCoreResult(
+                true,
+                stopReason,
+                execution?.executionId,
+                availableSeconds,
+                consumedSeconds,
+                remainingSeconds,
+                progressBefore,
+                execution == null ? progressBefore : execution.progressSeconds,
+                execution?.status ?? CraftExecutionStatus.None,
+                execution?.status == CraftExecutionStatus.ResultPending,
+                execution?.pendingResultId,
+                Array.AsReadOnly(Array.Empty<CraftAdvanceIssue>()),
+                Array.AsReadOnly(new List<CraftResultPendingEvent>(deferredEvents ?? Array.Empty<CraftResultPendingEvent>()).ToArray()),
+                Array.AsReadOnly(new List<PendingResultDeferredResolvedEvent>(deferredResolvedEvents ?? Array.Empty<PendingResultDeferredResolvedEvent>()).ToArray()));
+        }
+
+        private static CraftAdvanceCoreResult Failure(
+            CraftAdvanceStopReason stopReason,
+            string executionId,
+            double availableSeconds,
+            string issueCode,
+            string message)
+        {
+            return Failure(
+                stopReason,
+                executionId,
+                availableSeconds,
+                0d,
+                CraftExecutionStatus.None,
+                issueCode,
+                message);
+        }
+
+        private static CraftAdvanceCoreResult Failure(
+            CraftAdvanceStopReason stopReason,
+            string executionId,
+            double availableSeconds,
+            double progress,
+            CraftExecutionStatus executionStatus,
+            string issueCode,
+            string message)
+        {
+            return new CraftAdvanceCoreResult(
+                false,
+                stopReason,
+                executionId,
+                availableSeconds,
+                0d,
+                availableSeconds,
+                progress,
+                progress,
+                executionStatus,
+                false,
+                string.Empty,
+                Array.AsReadOnly(new[] { new CraftAdvanceIssue(issueCode, message) }),
+                Array.AsReadOnly(Array.Empty<CraftResultPendingEvent>()),
+                Array.AsReadOnly(Array.Empty<PendingResultDeferredResolvedEvent>()));
+        }
+    }
+
+    public sealed class CraftAdvanceProcessor
+    {
+        private readonly ITransactionalPendingResultService _pendingResults;
+        private readonly Action<CraftResultPendingEvent> _eventSink;
+        private readonly CraftAdvanceCore _core;
+
+        public CraftAdvanceProcessor(
+            ICraftPlayerState state,
+            Action<CraftResultPendingEvent> eventSink = null)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+            _pendingResults = state.TransactionalPendingResults ??
+                              throw new ArgumentException(
+                                  "PendingResult service must support outer transactions.",
+                                  nameof(state));
+            _eventSink = eventSink;
+            _core = new CraftAdvanceCore(state, _pendingResults);
+        }
+
+        public CraftAdvanceCoreResult Advance(CraftAdvanceRequest request) => _core.Advance(request);
+
+        public void PublishDeferredEvents(CraftAdvanceCoreResult result)
+        {
+            if (result == null)
+                throw new ArgumentNullException(nameof(result));
+            if (!result.Success || !result.TryMarkDeferredEventsPublished())
+                return;
+
+            foreach (var deferredEvent in result.DeferredResolvedEvents)
+                _pendingResults.PublishDeferred(deferredEvent);
+            if (_eventSink == null)
+                return;
+            foreach (var runtimeEvent in result.DeferredEvents)
+            {
+                try
+                {
+                    _eventSink(runtimeEvent);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError(
+                        $"[CraftAdvance] Deferred event sink failed for '{runtimeEvent?.ExecutionId}': {exception.Message}");
+                }
+            }
         }
     }
 

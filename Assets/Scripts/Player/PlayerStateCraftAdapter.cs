@@ -64,8 +64,8 @@ namespace GuildIdle.Player
         public bool AddCraftExecution(CraftExecutionSaveData execution) => _state.AddCraftExecution(execution);
         public bool UpdateCraftExecution(CraftExecutionSaveData execution) => _state.UpdateCraftExecution(execution);
         public PendingResultSaveData GetPendingResult(string resultId) => _state.PendingResults.Get(resultId);
-        public PendingResultFormationResult CreatePendingResult(string operationId, PendingResultDraft draft) =>
-            _state.PendingResults.CreateOrAppend(operationId, draft, true);
+        public ITransactionalPendingResultService TransactionalPendingResults =>
+            _state.PendingResults as ITransactionalPendingResultService;
         public bool Save() => _state.Save();
     }
 }

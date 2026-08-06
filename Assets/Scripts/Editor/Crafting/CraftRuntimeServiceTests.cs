@@ -837,17 +837,159 @@ namespace GuildIdle.Editor.Crafting
         }
 
         [Test]
-        public void OnlineAndOfflineCallersShareTheSameAdvanceApi()
+        public void OnlineAndOfflineAdvanceShareGameplayMutationButOfflineDoesNotSaveOrRecordReceipt()
         {
-            var state = StartBasic(out var onlineRuntime, out var executionId);
-            Assert.That(onlineRuntime.Advance(executionId, 4d, "online-delta", 1).Success, Is.True);
+            var onlineState = StartBasic(out var onlineRuntime, out var executionId);
+            var snapshot = onlineState.ToSaveData();
+            var offlineState = _factory.Create(snapshot);
+            var offlineAdapter = new PlayerStateCraftAdapter(offlineState);
+            var offline = new CraftAdvanceProcessor(offlineAdapter);
+            var saves = _storage.SaveCalls;
 
-            var offlineRuntime = Runtime(state);
-            var completed = offlineRuntime.Advance(executionId, 6d, "offline-delta", 2);
+            var onlineResult = onlineRuntime.Advance(executionId, 4.25d, "online-delta", 1);
+            var offlineResult = offline.Advance(new CraftAdvanceRequest(executionId, 4.25d, "offline-pass"));
+
+            Assert.That(onlineResult.Success, Is.True);
+            Assert.That(offlineResult.Success, Is.True);
+            Assert.That(offlineResult.Code, Is.EqualTo(nameof(CraftAdvanceStopReason.AppliedPartial)));
+            Assert.That(offlineResult.AvailableSeconds, Is.EqualTo(4.25d));
+            Assert.That(offlineResult.ConsumedSeconds, Is.EqualTo(4.25d));
+            Assert.That(offlineResult.RemainingSeconds, Is.Zero);
+            Assert.That(offlineResult.ProgressBefore, Is.Zero);
+            Assert.That(offlineResult.ProgressAfter, Is.EqualTo(onlineResult.ProgressSeconds));
+            Assert.That(_storage.SaveCalls, Is.EqualTo(saves + 1), "Only the online wrapper may save.");
+            var offlineExecution = offlineState.GetCraftExecution(executionId);
+            Assert.That(offlineExecution.progressSeconds, Is.EqualTo(onlineState.GetCraftExecution(executionId).progressSeconds));
+            Assert.That(offlineExecution.lastAdvanceSequence, Is.Zero);
+            Assert.That(offlineExecution.advanceReceipts, Is.Empty);
+            Assert.That(offlineResult.DeferredEvents, Is.Empty);
+        }
+
+        [Test]
+        public void OfflineFractionalCompletionReturnsRemainderAndPublishesOnlyAfterOuterCommit()
+        {
+            var state = StartBasic(out var online, out var executionId);
+            Assert.That(online.Advance(executionId, 9.5d, "online-partial", 1).Success, Is.True);
+            var events = new List<CraftResultPendingEvent>();
+            var adapter = new PlayerStateCraftAdapter(state);
+            var processor = new CraftAdvanceProcessor(adapter, events.Add);
+            var saves = _storage.SaveCalls;
+            var receiptsBefore = state.GetCraftExecution(executionId).advanceReceipts.Length;
+
+            var completed = processor.Advance(new CraftAdvanceRequest(executionId, 1d, "offline-pass"));
 
             Assert.That(completed.Success, Is.True);
+            Assert.That(completed.StopReason, Is.EqualTo(CraftAdvanceStopReason.CraftCompleted));
+            Assert.That(completed.ProgressBefore, Is.EqualTo(9.5d));
+            Assert.That(completed.ProgressAfter, Is.EqualTo(10d));
+            Assert.That(completed.ConsumedSeconds, Is.EqualTo(0.5d));
+            Assert.That(completed.RemainingSeconds, Is.EqualTo(0.5d));
             Assert.That(completed.Completed, Is.True);
+            Assert.That(completed.DeferredEvents, Has.Count.EqualTo(1));
+            Assert.That(events, Is.Empty);
+            Assert.That(_storage.SaveCalls, Is.EqualTo(saves));
+
+            var execution = state.GetCraftExecution(executionId);
+            Assert.That(execution.advanceReceipts, Has.Length.EqualTo(receiptsBefore));
+            Assert.That(execution.lastAdvanceSequence, Is.EqualTo(1));
+            Assert.That(execution.completionAdvanceSequence, Is.Zero);
+            Assert.That(
+                HasOperationReceipt(
+                    state,
+                    completed.PendingResultId,
+                    $"craft:{executionId}:completion"),
+                Is.True);
+
+            Assert.That(state.Save(), Is.True);
+            processor.PublishDeferredEvents(completed);
+            processor.PublishDeferredEvents(completed);
+            Assert.That(events, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void OfflineCompletionRollsBackWithOuterCheckpointAndDoesNotPublish()
+        {
+            var state = StartBasic(out _, out var executionId);
+            var adapter = new PlayerStateCraftAdapter(state);
+            var events = new List<CraftResultPendingEvent>();
+            var processor = new CraftAdvanceProcessor(adapter, events.Add);
+            var checkpoint = adapter.CaptureCheckpoint();
+
+            var completed = processor.Advance(new CraftAdvanceRequest(executionId, 20d, "offline-rollback"));
+            Assert.That(completed.Success, Is.True);
             Assert.That(state.PendingResults.GetAll(), Has.Length.EqualTo(1));
+
+            adapter.RestoreCheckpoint(checkpoint);
+
+            AssertRunningWithoutResult(state, executionId, 0f);
+            Assert.That(
+                HasOperationReceipt(
+                    state,
+                    $"result:{PendingResultSourceType.Craft}:{executionId}",
+                    $"craft:{executionId}:completion"),
+                Is.False);
+            Assert.That(HasCraftSourceReference(state.ToSaveData(), executionId), Is.False);
+            Assert.That(events, Is.Empty);
+        }
+
+        [Test]
+        public void FailedOfflineAdvanceHasNoPublishableDeferredEvents()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 3);
+            Seed(state, "resource_herb", 1);
+            var started = Runtime(state).Start(Request("craft_invalid_reward", "offline-invalid-start"));
+            var events = new List<CraftResultPendingEvent>();
+            var processor = new CraftAdvanceProcessor(new PlayerStateCraftAdapter(state), events.Add);
+
+            var failed = processor.Advance(new CraftAdvanceRequest(started.ExecutionId, 10d));
+            processor.PublishDeferredEvents(failed);
+
+            Assert.That(failed.Success, Is.False);
+            Assert.That(failed.StopReason, Is.EqualTo(CraftAdvanceStopReason.RewardValidationFailed));
+            Assert.That(failed.DeferredEvents, Is.Empty);
+            Assert.That(failed.DeferredResolvedEvents, Is.Empty);
+            Assert.That(events, Is.Empty);
+            AssertRunningWithoutResult(state, started.ExecutionId, 0f);
+        }
+
+        [Test]
+        public void OfflineResultPendingIsNoOpAndRoundTripsWithoutOnlineCompletionSequence()
+        {
+            var state = StartBasic(out _, out var executionId);
+            var processor = new CraftAdvanceProcessor(new PlayerStateCraftAdapter(state));
+            var completed = processor.Advance(new CraftAdvanceRequest(executionId, 10d));
+            Assert.That(completed.Success, Is.True);
+            Assert.That(state.Save(), Is.True);
+
+            var loaded = SaveService.Load(_factory, _storage);
+            var loadedProcessor = new CraftAdvanceProcessor(new PlayerStateCraftAdapter(loaded));
+            var before = JsonUtility.ToJson(loaded.ToSaveData());
+            var noOp = loadedProcessor.Advance(new CraftAdvanceRequest(executionId, 7d));
+
+            Assert.That(noOp.Success, Is.True);
+            Assert.That(noOp.StopReason, Is.EqualTo(CraftAdvanceStopReason.AlreadyResultPending));
+            Assert.That(noOp.ConsumedSeconds, Is.Zero);
+            Assert.That(noOp.RemainingSeconds, Is.EqualTo(7d));
+            Assert.That(noOp.DeferredEvents, Is.Empty);
+            Assert.That(loaded.GetCraftExecution(executionId).completionAdvanceSequence, Is.Zero);
+            Assert.That(JsonUtility.ToJson(loaded.ToSaveData()), Is.EqualTo(before));
+        }
+
+        [Test]
+        public void RepeatedOfflinePartialAdvanceKeepsReceiptsBoundedAndSaveBelowLimit()
+        {
+            var state = StartBasic(out _, out var executionId);
+            var processor = new CraftAdvanceProcessor(new PlayerStateCraftAdapter(state));
+
+            for (var index = 0; index < 32; index++)
+                Assert.That(processor.Advance(new CraftAdvanceRequest(executionId, 0.125d)).Success, Is.True);
+
+            var execution = state.GetCraftExecution(executionId);
+            Assert.That(execution.progressSeconds, Is.EqualTo(4f));
+            Assert.That(execution.lastAdvanceSequence, Is.Zero);
+            Assert.That(execution.advanceReceipts, Is.Empty);
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()).Length, Is.LessThan(200 * 1024));
         }
 
         [Test]
@@ -1464,6 +1606,14 @@ namespace GuildIdle.Editor.Crafting
             return null;
         }
 
+        private static bool HasCraftSourceReference(SaveData saveData, string executionId)
+        {
+            foreach (var source in saveData?.resultSources ?? Array.Empty<PendingResultSourceReferenceSaveData>())
+                if (source != null && string.Equals(source.sourceType, PendingResultSourceType.Craft, StringComparison.Ordinal) &&
+                    string.Equals(source.sourceExecutionId, executionId, StringComparison.Ordinal)) return true;
+            return false;
+        }
+
         private static PendingResultEntrySaveData FindEntry(PendingResultSaveData result, string rewardType)
         {
             foreach (var entry in result?.entries ?? Array.Empty<PendingResultEntrySaveData>())
@@ -1825,7 +1975,7 @@ namespace GuildIdle.Editor.Crafting
             public bool Resolve(PendingResultSaveData result) => false;
         }
 
-        private sealed class FaultInjectingCraftState : ICraftPlayerState
+        private sealed class FaultInjectingCraftState : ICraftPlayerState, ITransactionalPendingResultService
         {
             private readonly ICraftPlayerState _inner;
             private int _consumeCalls;
@@ -1871,10 +2021,21 @@ namespace GuildIdle.Editor.Crafting
             public bool AddCraftExecution(CraftExecutionSaveData execution) => !FailAddExecution && _inner.AddCraftExecution(execution);
             public bool UpdateCraftExecution(CraftExecutionSaveData execution) => !FailUpdateExecution && _inner.UpdateCraftExecution(execution);
             public PendingResultSaveData GetPendingResult(string resultId) => _inner.GetPendingResult(resultId);
-            public PendingResultFormationResult CreatePendingResult(string operationId, PendingResultDraft draft) =>
+            public ITransactionalPendingResultService TransactionalPendingResults => this;
+            public PendingResultFormationResult CreateOrAppendInTransaction(
+                string operationId,
+                PendingResultDraft draft,
+                bool makeClaimable,
+                long expectedResultRevision = 0) =>
                 FailPendingResultCreation
                     ? new PendingResultFormationResult { Success = false, Code = "SimulatedFailure", Message = "simulated PendingResult failure" }
-                    : _inner.CreatePendingResult(operationId, draft);
+                    : _inner.TransactionalPendingResults.CreateOrAppendInTransaction(
+                        operationId,
+                        draft,
+                        makeClaimable,
+                        expectedResultRevision);
+            public void PublishDeferred(PendingResultDeferredResolvedEvent deferredEvent) =>
+                _inner.TransactionalPendingResults.PublishDeferred(deferredEvent);
             public bool Save() => _inner.Save();
         }
 

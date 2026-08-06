@@ -2422,9 +2422,10 @@ namespace GuildIdle.Player
             var completionPrepared = execution.status == CraftExecutionStatus.Running && execution.completionAdvanceSequence > 0;
             if (execution.lastAdvanceSequence < 0 || execution.completionAdvanceSequence < 0 ||
                 (completionPrepared &&
-                 (execution.completionAdvanceSequence != execution.lastAdvanceSequence || execution.progressSeconds < execution.durationSeconds)) ||
+                  (execution.completionAdvanceSequence != execution.lastAdvanceSequence || execution.progressSeconds < execution.durationSeconds)) ||
                 (execution.status == CraftExecutionStatus.ResultPending &&
-                 (execution.completionAdvanceSequence <= 0 || execution.completionAdvanceSequence != execution.lastAdvanceSequence)))
+                  execution.completionAdvanceSequence > 0 &&
+                  execution.completionAdvanceSequence != execution.lastAdvanceSequence))
             {
                 Debug.LogError($"[PlayerState] Craft execution '{execution.executionId}' has invalid advance sequence state.");
                 return false;

@@ -53,6 +53,109 @@ namespace GuildIdle.Crafting
         public const string SaveFailure = "SaveFailure";
     }
 
+    public enum CraftAdvanceStopReason
+    {
+        None = 0,
+        AppliedPartial = 1,
+        CraftCompleted = 2,
+        AlreadyResultPending = 3,
+        ExecutionNotFound = 4,
+        ExecutionNotRunning = 5,
+        InvalidRequest = 6,
+        InvalidExecution = 7,
+        RewardValidationFailed = 8,
+        PendingResultFailed = 9,
+        RuntimeError = 10
+    }
+
+    public sealed class CraftAdvanceRequest
+    {
+        public CraftAdvanceRequest(string executionId, double availableSeconds, string operationContext = null)
+        {
+            ExecutionId = executionId;
+            AvailableSeconds = availableSeconds;
+            OperationContext = operationContext ?? string.Empty;
+        }
+
+        public string ExecutionId { get; }
+        public double AvailableSeconds { get; }
+        public string OperationContext { get; }
+    }
+
+    public sealed class CraftAdvanceIssue
+    {
+        internal CraftAdvanceIssue(string code, string message)
+        {
+            Code = code ?? string.Empty;
+            Message = message ?? string.Empty;
+        }
+
+        public string Code { get; }
+        public string Message { get; }
+    }
+
+    public sealed class CraftAdvanceCoreResult
+    {
+        private bool _deferredEventsPublished;
+
+        internal CraftAdvanceCoreResult(
+            bool success,
+            CraftAdvanceStopReason stopReason,
+            string executionId,
+            double availableSeconds,
+            double consumedSeconds,
+            double remainingSeconds,
+            double progressBefore,
+            double progressAfter,
+            CraftExecutionStatus executionStatus,
+            bool completed,
+            string pendingResultId,
+            IReadOnlyList<CraftAdvanceIssue> issues,
+            IReadOnlyList<CraftResultPendingEvent> deferredEvents,
+            IReadOnlyList<GuildIdle.Player.PendingResultDeferredResolvedEvent> deferredResolvedEvents)
+        {
+            Success = success;
+            StopReason = stopReason;
+            ExecutionId = executionId ?? string.Empty;
+            AvailableSeconds = availableSeconds;
+            ConsumedSeconds = consumedSeconds;
+            RemainingSeconds = remainingSeconds;
+            ProgressBefore = progressBefore;
+            ProgressAfter = progressAfter;
+            ExecutionStatus = executionStatus;
+            Completed = completed;
+            PendingResultId = pendingResultId ?? string.Empty;
+            Issues = issues ?? Array.AsReadOnly(Array.Empty<CraftAdvanceIssue>());
+            DeferredEvents = deferredEvents ?? Array.AsReadOnly(Array.Empty<CraftResultPendingEvent>());
+            DeferredResolvedEvents = deferredResolvedEvents ??
+                                     Array.AsReadOnly(Array.Empty<GuildIdle.Player.PendingResultDeferredResolvedEvent>());
+        }
+
+        public bool Success { get; }
+        public string Code => StopReason.ToString();
+        public CraftAdvanceStopReason StopReason { get; }
+        public string ExecutionId { get; }
+        public double AvailableSeconds { get; }
+        public double ConsumedSeconds { get; }
+        public double RemainingSeconds { get; }
+        public double ProgressBefore { get; }
+        public double ProgressAfter { get; }
+        public CraftExecutionStatus ExecutionStatus { get; }
+        public bool Completed { get; }
+        public string PendingResultId { get; }
+        public IReadOnlyList<CraftAdvanceIssue> Issues { get; }
+        public IReadOnlyList<CraftResultPendingEvent> DeferredEvents { get; }
+        public IReadOnlyList<GuildIdle.Player.PendingResultDeferredResolvedEvent> DeferredResolvedEvents { get; }
+
+        internal bool TryMarkDeferredEventsPublished()
+        {
+            if (_deferredEventsPublished)
+                return false;
+            _deferredEventsPublished = true;
+            return true;
+        }
+    }
+
     public sealed class CraftStartRequest
     {
         public string CraftId { get; set; }
