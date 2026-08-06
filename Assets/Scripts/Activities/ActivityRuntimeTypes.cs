@@ -340,6 +340,14 @@ namespace GuildIdle.Activities
         LinkedCombatGatewayResult ResolveLinkedCombatExecution(string requestId, string combatExecutionId);
     }
 
+    public interface ILinkedCombatIntegrityReader
+    {
+        bool TryValidateStartedLink(
+            string sourceActivityId,
+            LinkedCombatStartRequestSaveData request,
+            out string error);
+    }
+
     public interface ILinkedCombatRuntimeCoordinator : IDisposable
     {
         void Reconcile();

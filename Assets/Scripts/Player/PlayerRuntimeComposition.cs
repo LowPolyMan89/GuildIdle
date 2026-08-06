@@ -29,6 +29,8 @@ namespace GuildIdle.Player
                 new PlayerStateActivityAdapter(state),
                 eventSink: HandleActivityRuntimeEvent,
                 progressionProcessor: progression,
+                linkedCombatIntegrityReader:
+                    new LinkedCombatIntegrityReader(state),
                 linkedCombatCoordinatorFactory:
                     (gateway, processor) =>
                         new LinkedCombatRuntimeCoordinator(
@@ -47,6 +49,8 @@ namespace GuildIdle.Player
                 state,
                 new PlayerStateActivityAdapter(state),
                 progressionProcessor: progression,
+                linkedCombatIntegrityReader:
+                    new LinkedCombatIntegrityReader(state),
                 linkedCombatCoordinatorFactory:
                     (gateway, processor) =>
                         new LinkedCombatRuntimeCoordinator(

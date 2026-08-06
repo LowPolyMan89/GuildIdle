@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using GuildIdle.Activities;
+using GuildIdle.Combat;
 using GuildIdle.Configs;
 using GuildIdle.Core;
 using GuildIdle.Editor.Configs;
@@ -798,44 +800,79 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
-        public void PrepareDangerEncounterReplayAcceptsStartedLinkAndRejectsCorruptLootWithoutRepair()
+        public void PrepareDangerEncounterReplayRejectsMissingStartedAggregateWithoutMutation()
         {
             var state = NewState();
-            var random = new CountingDangerSequenceRandom(1);
-            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
-            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 2));
-            Assert.That(
-                NewWorkAdvanceProcessor(state, random)
-                    .Advance(new WorkAdvanceRequest(started.executionId, 10))
-                    .DangerBoundaryReached,
-                Is.True);
+            var executionId = PrepareDangerEncounter(state);
+            var startedLink = state.GetActivityExecution(executionId);
+            startedLink.linkedCombat.combatExecutionId = "missing-combat";
+            Assert.That(state.UpdateActivityExecution(startedLink), Is.True);
+            var before = JsonUtility.ToJson(state.ToSaveData());
             using var processor = NewDangerEncounterPreparationProcessor(state);
-            Assert.That(
-                processor.Prepare(new DangerEncounterPreparationRequest(started.executionId)).Success,
-                Is.True);
-            var preparedState = JsonUtility.ToJson(state.ToSaveData());
 
-            var replay = processor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
+            var replay = processor.Prepare(new DangerEncounterPreparationRequest(executionId));
+
+            Assert.That(replay.Success, Is.False);
+            Assert.That(replay.Code, Is.EqualTo(DangerEncounterPreparationCode.DataIntegrityFailure));
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
+        }
+
+        [Test]
+        public void PrepareDangerEncounterReplayRejectsMismatchedStartedAggregateWithoutRepair()
+        {
+            var state = NewState();
+            var executionId = PrepareDangerEncounter(state);
+            Assert.That(AddStartedLinkedCombat(state, executionId), Is.True);
+            var corrupted = state.ToSaveData();
+            corrupted.combatRuntime.executions[0].sourceRequestId = "wrong-request";
+            state = _factory.Create(corrupted);
+            var before = JsonUtility.ToJson(state.ToSaveData());
+            using var processor = NewDangerEncounterPreparationProcessor(state);
+
+            var replay = processor.Prepare(new DangerEncounterPreparationRequest(executionId));
+
+            Assert.That(replay.Success, Is.False);
+            Assert.That(replay.Code, Is.EqualTo(DangerEncounterPreparationCode.DataIntegrityFailure));
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+            Assert.That(state.GetCombatAggregates(), Has.Length.EqualTo(1));
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
+        }
+
+        [Test]
+        public void PrepareDangerEncounterReplayAcceptsValidStartedAggregateWithoutDuplicates()
+        {
+            var state = NewState();
+            var executionId = PrepareDangerEncounter(state);
+            Assert.That(AddStartedLinkedCombat(state, executionId), Is.True);
+            var before = JsonUtility.ToJson(state.ToSaveData());
+            using var processor = NewDangerEncounterPreparationProcessor(state);
+
+            var replay = processor.Prepare(new DangerEncounterPreparationRequest(executionId));
 
             Assert.That(replay.Success, Is.True);
             Assert.That(replay.Code, Is.EqualTo(DangerEncounterPreparationCode.AlreadyPrepared));
             Assert.That(replay.RequestCreated, Is.False);
             Assert.That(replay.Replayed, Is.True);
-            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(preparedState));
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(before));
+            Assert.That(state.GetCombatAggregates(), Has.Length.EqualTo(1));
+            Assert.That(state.ToSaveData().combatRuntime.sessions, Has.Length.EqualTo(1));
+        }
 
-            var startedLink = state.GetActivityExecution(started.executionId);
-            startedLink.linkedCombat.combatExecutionId = "combat-child";
-            Assert.That(state.UpdateActivityExecution(startedLink), Is.True);
-            Assert.That(
-                processor.Prepare(new DangerEncounterPreparationRequest(started.executionId)).Code,
-                Is.EqualTo(DangerEncounterPreparationCode.AlreadyPrepared));
+        [Test]
+        public void PrepareDangerEncounterReplayRejectsCorruptLootWithoutRepair()
+        {
+            var state = NewState();
+            var executionId = PrepareDangerEncounter(state);
 
-            var corrupt = state.GetActivityExecution(started.executionId);
+            var corrupt = state.GetActivityExecution(executionId);
             corrupt.linkedCombat.loot[0].quantity++;
             Assert.That(state.UpdateActivityExecution(corrupt), Is.True);
             var corruptState = JsonUtility.ToJson(state.ToSaveData());
+            using var processor = NewDangerEncounterPreparationProcessor(state);
 
-            var rejected = processor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
+            var rejected = processor.Prepare(new DangerEncounterPreparationRequest(executionId));
 
             Assert.That(rejected.Success, Is.False);
             Assert.That(rejected.Code, Is.EqualTo(DangerEncounterPreparationCode.DataIntegrityFailure));
@@ -943,34 +980,27 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
-        public void PreparedDangerEncounterSurvivesSaveLoadAndReplaysWithoutDuplicates()
+        public void StartedDangerEncounterSurvivesSaveLoadAndReplaysWithoutDuplicates()
         {
             var storage = new MemorySaveStorage();
             var state = NewState();
-            var random = new CountingDangerSequenceRandom(1);
-            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
-            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 2));
-            Assert.That(
-                NewWorkAdvanceProcessor(state, random)
-                    .Advance(new WorkAdvanceRequest(started.executionId, 10))
-                    .DangerBoundaryReached,
-                Is.True);
-            using (var processor = NewDangerEncounterPreparationProcessor(state))
-                Assert.That(
-                    processor.Prepare(new DangerEncounterPreparationRequest(started.executionId)).Success,
-                    Is.True);
+            var executionId = PrepareDangerEncounter(state);
+            Assert.That(AddStartedLinkedCombat(state, executionId), Is.True);
             Assert.That(SaveService.Save(state, storage), Is.True);
 
             state = SaveService.Load(_factory, storage);
             using var restoredProcessor = NewDangerEncounterPreparationProcessor(state);
-            var replay = restoredProcessor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
+            var replay = restoredProcessor.Prepare(new DangerEncounterPreparationRequest(executionId));
 
             Assert.That(replay.Success, Is.True);
             Assert.That(replay.Code, Is.EqualTo(DangerEncounterPreparationCode.AlreadyPrepared));
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(replay.RequestCreated, Is.False);
             Assert.That(state.GetActivityExecutions(), Has.Length.EqualTo(1));
-            Assert.That(state.GetActivityExecution(started.executionId).linkedCombat, Is.Not.Null);
+            Assert.That(state.GetActivityExecution(executionId).linkedCombat.combatExecutionId, Is.Not.Empty);
             Assert.That(state.PendingResults.GetAll(), Has.Length.EqualTo(1));
-            Assert.That(state.GetCombatAggregates(), Is.Empty);
+            Assert.That(state.GetCombatAggregates(), Has.Length.EqualTo(1));
+            Assert.That(state.ToSaveData().combatRuntime.sessions, Has.Length.EqualTo(1));
         }
 
         [Test]
@@ -2153,6 +2183,97 @@ namespace GuildIdle.Editor.Activities
             return state;
         }
 
+        private string PrepareDangerEncounter(PlayerState state)
+        {
+            var random = new CountingDangerSequenceRandom(1);
+            var runtime = new ActivityRuntimeService(
+                state,
+                new PlayerStateActivityAdapter(state),
+                random);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 2));
+            Assert.That(
+                NewWorkAdvanceProcessor(state, random)
+                    .Advance(new WorkAdvanceRequest(started.executionId, 10))
+                    .DangerBoundaryReached,
+                Is.True);
+            using var processor = NewDangerEncounterPreparationProcessor(state);
+            Assert.That(
+                processor.Prepare(new DangerEncounterPreparationRequest(started.executionId)).Success,
+                Is.True);
+            return started.executionId;
+        }
+
+        private static bool AddStartedLinkedCombat(
+            PlayerState state,
+            string sourceExecutionId)
+        {
+            var source = state.GetActivityExecution(sourceExecutionId);
+            var request = source.linkedCombat;
+            var executionId = $"combat-{sourceExecutionId}";
+            var sessionId = $"session-{sourceExecutionId}";
+            var staged = request.loot ?? Array.Empty<ActivityStagedRewardSaveData>();
+            var transferredLoot = new CombatRewardEntrySaveData[staged.Length];
+            for (var index = 0; index < staged.Length; index++)
+            {
+                var entry = staged[index];
+                transferredLoot[index] = new CombatRewardEntrySaveData
+                {
+                    entryId = $"{sessionId}:activity-loot:{index}",
+                    sortOrder = index,
+                    rewardType = entry.rewardType,
+                    targetId = entry.targetId,
+                    quantity = entry.quantity,
+                    origin = entry.origin,
+                    quality = entry.quality,
+                    instanceId = entry.instanceId
+                };
+            }
+
+            var aggregate = new CombatRuntimeAggregate
+            {
+                execution = new CombatExecutionSaveData
+                {
+                    executionId = executionId,
+                    sessionId = sessionId,
+                    sourceActivityId = source.activityId,
+                    sourceExecutionId = request.rootExecutionId,
+                    sourceRequestId = request.requestId,
+                    occupationOwnerId = request.occupationOwnerId,
+                    heroId = request.heroId,
+                    startOperationId = $"linked-combat-start:{request.requestId}",
+                    startFingerprint = "linked-start-fixture",
+                    status = CombatExecutionStatus.Running,
+                    startedAtUnixSeconds = 100
+                },
+                session = new CombatSessionSaveData
+                {
+                    sessionId = sessionId,
+                    executionId = executionId,
+                    enemyGroupId = request.enemyGroupId,
+                    combatMode = request.combatMode,
+                    enemyQueue = Array.Empty<CombatEnemyQueueEntrySaveData>(),
+                    hero = new CombatantStateSaveData
+                    {
+                        combatantId = $"{sessionId}:hero",
+                        definitionId = request.heroId,
+                        currentHp = 100,
+                        maxHp = 100
+                    },
+                    scheduler = new CombatSchedulerStateSaveData(),
+                    rng = CombatRngStateFactory.CreateSplitMix64(1234UL),
+                    loot = transferredLoot,
+                    enemyExpTargetId = request.enemyExpTargetId,
+                    completionRewardsSnapshotCreated = true,
+                    loadoutKind = CombatLoadoutKind.Empty
+                }
+            };
+            if (!state.AddCombatAggregate(aggregate))
+                return false;
+
+            source.linkedCombat.combatExecutionId = executionId;
+            return state.UpdateActivityExecution(source);
+        }
+
         private static WorkAdvanceProcessor NewWorkAdvanceProcessor(
             PlayerState state,
             ITransactionalActivityRandom random = null)
@@ -2168,7 +2289,8 @@ namespace GuildIdle.Editor.Activities
         {
             return new DangerEncounterPreparationProcessor(
                 state,
-                new PlayerStateActivityAdapter(state));
+                new PlayerStateActivityAdapter(state),
+                new LinkedCombatIntegrityReader(state));
         }
 
         private static ConstructionAdvanceProcessor NewConstructionAdvanceProcessor(

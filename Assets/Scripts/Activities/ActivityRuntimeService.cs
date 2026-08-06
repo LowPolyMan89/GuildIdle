@@ -39,6 +39,7 @@ namespace GuildIdle.Activities
         private readonly Action<ActivityRuntimeEvent> _eventSink;
         private readonly IActivityRuntimeProgressionProcessor _progressionProcessor;
         private readonly ILinkedCombatRuntimeCoordinator _linkedCombatCoordinator;
+        private readonly ILinkedCombatIntegrityReader _linkedCombatIntegrityReader;
         private readonly bool _runtimeLifecycleEnabled;
         private readonly Dictionary<string, Func<HeroSkillEffectConfigDto, ActivityStagedRewardSaveData[], bool>> _workEffectHandlers;
         private bool _disposed;
@@ -117,7 +118,8 @@ namespace GuildIdle.Activities
             Func<
                 ILinkedCombatStartGateway,
                 IActivityRuntimeProgressionProcessor,
-                ILinkedCombatRuntimeCoordinator> linkedCombatCoordinatorFactory = null)
+                ILinkedCombatRuntimeCoordinator> linkedCombatCoordinatorFactory = null,
+            ILinkedCombatIntegrityReader linkedCombatIntegrityReader = null)
             : this(
                 store,
                 activityState,
@@ -126,6 +128,7 @@ namespace GuildIdle.Activities
                 eventSink,
                 progressionProcessor,
                 linkedCombatCoordinatorFactory,
+                linkedCombatIntegrityReader,
                 true)
         {
         }
@@ -141,6 +144,7 @@ namespace GuildIdle.Activities
                 ILinkedCombatStartGateway,
                 IActivityRuntimeProgressionProcessor,
                 ILinkedCombatRuntimeCoordinator> linkedCombatCoordinatorFactory,
+            ILinkedCombatIntegrityReader linkedCombatIntegrityReader,
             bool enableRuntimeLifecycle)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -149,6 +153,7 @@ namespace GuildIdle.Activities
             _formulas = formulas ?? new FormulaRuntime();
             _eventSink = eventSink;
             _progressionProcessor = progressionProcessor;
+            _linkedCombatIntegrityReader = linkedCombatIntegrityReader;
             _workEffectHandlers = new Dictionary<string, Func<HeroSkillEffectConfigDto, ActivityStagedRewardSaveData[], bool>>(StringComparer.OrdinalIgnoreCase)
             {
                 [AddExtraBaseResourceEffect] = ApplyExtraBaseResource
@@ -181,6 +186,7 @@ namespace GuildIdle.Activities
                 null,
                 null,
                 null,
+                null,
                 false);
         }
 
@@ -198,13 +204,15 @@ namespace GuildIdle.Activities
                 null,
                 progressionProcessor,
                 null,
+                null,
                 false);
         }
 
         internal static ActivityRuntimeService CreateDangerEncounterPreparationCore(
             IActivityRuntimeStore store,
             IActivityPlayerState activityState,
-            FormulaRuntime formulas)
+            FormulaRuntime formulas,
+            ILinkedCombatIntegrityReader linkedCombatIntegrityReader)
         {
             return new ActivityRuntimeService(
                 store,
@@ -214,6 +222,7 @@ namespace GuildIdle.Activities
                 null,
                 null,
                 null,
+                linkedCombatIntegrityReader,
                 false);
         }
 
@@ -2030,6 +2039,17 @@ namespace GuildIdle.Activities
                 return false;
             }
 
+            if (!string.IsNullOrWhiteSpace(request.combatExecutionId) &&
+                (_linkedCombatIntegrityReader == null ||
+                 !_linkedCombatIntegrityReader.TryValidateStartedLink(
+                     execution.activityId,
+                     request,
+                     out message)))
+            {
+                message ??= "Started linked combat cannot be verified against its combat aggregate.";
+                return false;
+            }
+
             var activityResults = FindActivityPendingResults(execution.executionId);
             if (execution.activityBagResolved)
             {
@@ -3663,6 +3683,7 @@ namespace GuildIdle.Activities
         public DangerEncounterPreparationProcessor(
             IActivityRuntimeStore store,
             IActivityPlayerState activityState,
+            ILinkedCombatIntegrityReader linkedCombatIntegrityReader,
             FormulaRuntime formulas = null)
         {
             if (activityState == null)
@@ -3675,7 +3696,9 @@ namespace GuildIdle.Activities
             _core = ActivityRuntimeService.CreateDangerEncounterPreparationCore(
                 store,
                 activityState,
-                formulas);
+                formulas,
+                linkedCombatIntegrityReader ??
+                throw new ArgumentNullException(nameof(linkedCombatIntegrityReader)));
         }
 
         public DangerEncounterPreparationResult Prepare(DangerEncounterPreparationRequest request) =>

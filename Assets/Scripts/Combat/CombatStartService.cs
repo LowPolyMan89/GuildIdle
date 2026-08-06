@@ -236,6 +236,199 @@ namespace GuildIdle.Combat
         bool Save();
     }
 
+    internal static class LinkedCombatStartPayload
+    {
+        public const string OperationPrefix = "linked-combat-start:";
+
+        public static bool TryBuildTransferredLoot(
+            LinkedCombatStartRequestSaveData request,
+            string sessionId,
+            out CombatRewardEntrySaveData[] loot,
+            out string error)
+        {
+            loot = Array.Empty<CombatRewardEntrySaveData>();
+            error = null;
+            if (request == null || string.IsNullOrWhiteSpace(sessionId))
+            {
+                error = "Linked activity loot source is missing its request or combat session.";
+                return false;
+            }
+
+            var staged = request.loot ?? Array.Empty<ActivityStagedRewardSaveData>();
+            if (staged.Length > CombatRuntimeSaveDataUtility.PersistentCollectionLimit)
+            {
+                error = "Linked activity loot exceeds its bounded persistent collection limit.";
+                return false;
+            }
+
+            loot = new CombatRewardEntrySaveData[staged.Length];
+            for (var index = 0; index < staged.Length; index++)
+            {
+                var entry = staged[index];
+                if (entry == null || entry.quantity <= 0 || string.IsNullOrWhiteSpace(entry.targetId) ||
+                    !IsItemLootRewardType(entry.rewardType) ||
+                    !string.Equals(
+                        entry.origin,
+                        PendingResultOrigin.ActivityLootInCombat,
+                        StringComparison.Ordinal))
+                {
+                    loot = Array.Empty<CombatRewardEntrySaveData>();
+                    error = "Linked combat accepts only positive item/resource cycle loot with activity_loot_in_combat origin.";
+                    return false;
+                }
+
+                loot[index] = new CombatRewardEntrySaveData
+                {
+                    entryId = $"{sessionId}:activity-loot:{index}",
+                    sortOrder = index,
+                    rewardType = entry.rewardType,
+                    targetId = entry.targetId,
+                    quantity = entry.quantity,
+                    origin = entry.origin,
+                    quality = entry.quality,
+                    instanceId = entry.instanceId
+                };
+            }
+
+            return true;
+        }
+
+        private static bool IsItemLootRewardType(string rewardType)
+        {
+            if (!ActivityTypeParser.TryParseRewardType(rewardType, out var parsed))
+                return false;
+
+            return parsed == RewardTypeEnum.Resource ||
+                   parsed == RewardTypeEnum.Equipment ||
+                   parsed == RewardTypeEnum.Consumable ||
+                   parsed == RewardTypeEnum.Recipe ||
+                   parsed == RewardTypeEnum.Item;
+        }
+    }
+
+    public sealed class LinkedCombatIntegrityReader : ILinkedCombatIntegrityReader
+    {
+        private readonly ICombatRuntimeStore _store;
+
+        public LinkedCombatIntegrityReader(ICombatRuntimeStore store)
+        {
+            _store = store ?? throw new ArgumentNullException(nameof(store));
+        }
+
+        public bool TryValidateStartedLink(
+            string sourceActivityId,
+            LinkedCombatStartRequestSaveData request,
+            out string error)
+        {
+            error = null;
+            if (request == null || string.IsNullOrWhiteSpace(request.combatExecutionId))
+                return Fail("Started linked combat is missing its execution id.", out error);
+
+            var stored = _store.GetCombatAggregate(request.combatExecutionId);
+            if (stored == null)
+                return Fail("Started linked combat aggregate does not exist.", out error);
+            if (!CombatRuntimeSaveDataUtility.TryNormalize(
+                    stored.execution,
+                    stored.session,
+                    out var aggregate,
+                    out _,
+                    out var aggregateError))
+            {
+                return Fail(
+                    aggregateError ?? "Started linked combat aggregate is invalid.",
+                    out error);
+            }
+
+            var execution = aggregate.execution;
+            var session = aggregate.session;
+            if (!string.Equals(execution.executionId, request.combatExecutionId, StringComparison.Ordinal) ||
+                !string.Equals(execution.sourceActivityId, sourceActivityId, StringComparison.Ordinal) ||
+                !string.Equals(execution.sourceExecutionId, request.rootExecutionId, StringComparison.Ordinal) ||
+                !string.Equals(execution.sourceRequestId, request.requestId, StringComparison.Ordinal) ||
+                !string.Equals(execution.occupationOwnerId, request.occupationOwnerId, StringComparison.Ordinal) ||
+                !string.Equals(execution.heroId, request.heroId, StringComparison.Ordinal) ||
+                !string.Equals(
+                    execution.startOperationId,
+                    LinkedCombatStartPayload.OperationPrefix + request.requestId,
+                    StringComparison.Ordinal) ||
+                !string.Equals(session.enemyGroupId, request.enemyGroupId, StringComparison.Ordinal) ||
+                !string.Equals(session.combatMode, request.combatMode, StringComparison.Ordinal) ||
+                !string.Equals(session.enemyExpTargetId, request.enemyExpTargetId, StringComparison.Ordinal))
+            {
+                return Fail("Started linked combat source links, hero, or combat context do not match its request.", out error);
+            }
+
+            if (!LinkedCombatStartPayload.TryBuildTransferredLoot(
+                    request,
+                    session.sessionId,
+                    out var expectedLoot,
+                    out var lootError) ||
+                !HasSameTransferredLoot(session.loot, expectedLoot))
+            {
+                return Fail(
+                    lootError ?? "Started linked combat transferred loot does not match its request.",
+                    out error);
+            }
+
+            var combatResolved = execution.status == CombatExecutionStatus.Completed &&
+                                 execution.pendingResultResolved;
+            if (request.resolved != combatResolved)
+                return Fail("Linked combat request resolution conflicts with the combat execution result state.", out error);
+
+            return true;
+        }
+
+        private static bool HasSameTransferredLoot(
+            CombatRewardEntrySaveData[] stored,
+            CombatRewardEntrySaveData[] expected)
+        {
+            stored ??= Array.Empty<CombatRewardEntrySaveData>();
+            expected ??= Array.Empty<CombatRewardEntrySaveData>();
+            var expectedIndex = 0;
+            foreach (var entry in stored)
+            {
+                if (entry == null || !string.Equals(
+                        entry.origin,
+                        PendingResultOrigin.ActivityLootInCombat,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (expectedIndex >= expected.Length ||
+                    !SameReward(entry, expected[expectedIndex]))
+                {
+                    return false;
+                }
+
+                expectedIndex++;
+            }
+
+            return expectedIndex == expected.Length;
+        }
+
+        private static bool SameReward(
+            CombatRewardEntrySaveData left,
+            CombatRewardEntrySaveData right)
+        {
+            return left != null && right != null &&
+                   string.Equals(left.entryId, right.entryId, StringComparison.Ordinal) &&
+                   left.sortOrder == right.sortOrder &&
+                   string.Equals(left.rewardType, right.rewardType, StringComparison.Ordinal) &&
+                   string.Equals(left.targetId, right.targetId, StringComparison.Ordinal) &&
+                   left.quantity == right.quantity &&
+                   string.Equals(left.origin, right.origin, StringComparison.Ordinal) &&
+                   left.quality == right.quality &&
+                   string.Equals(left.instanceId, right.instanceId, StringComparison.Ordinal);
+        }
+
+        private static bool Fail(string message, out string error)
+        {
+            error = message;
+            return false;
+        }
+    }
+
     public sealed class CombatStartService
     {
         private const string ReceiptAggregateId = "combat-start";
@@ -997,65 +1190,11 @@ namespace GuildIdle.Combat
                 return false;
             }
 
-            var staged = linked.loot ??
-                         Array.Empty<ActivityStagedRewardSaveData>();
-            if (staged.Length >
-                CombatRuntimeSaveDataUtility.PersistentCollectionLimit)
-            {
-                error =
-                    "Linked activity loot exceeds its bounded persistent collection limit.";
-                return false;
-            }
-
-            loot = new CombatRewardEntrySaveData[staged.Length];
-            for (var index = 0; index < staged.Length; index++)
-            {
-                var entry = staged[index];
-                if (entry == null ||
-                    entry.quantity <= 0 ||
-                    string.IsNullOrWhiteSpace(entry.targetId) ||
-                    !IsItemLootRewardType(entry.rewardType) ||
-                    !string.Equals(
-                        entry.origin,
-                        PendingResultOrigin.ActivityLootInCombat,
-                        StringComparison.Ordinal))
-                {
-                    loot = Array.Empty<CombatRewardEntrySaveData>();
-                    error =
-                        "Linked combat accepts only positive item/resource cycle loot with activity_loot_in_combat origin.";
-                    return false;
-                }
-
-                loot[index] = new CombatRewardEntrySaveData
-                {
-                    entryId = $"{sessionId}:activity-loot:{index}",
-                    sortOrder = index,
-                    rewardType = entry.rewardType,
-                    targetId = entry.targetId,
-                    quantity = entry.quantity,
-                    origin = entry.origin,
-                    quality = entry.quality,
-                    instanceId = entry.instanceId
-                };
-            }
-
-            return true;
-        }
-
-        private static bool IsItemLootRewardType(string rewardType)
-        {
-            if (!ActivityTypeParser.TryParseRewardType(
-                    rewardType,
-                    out var parsed))
-            {
-                return false;
-            }
-
-            return parsed == RewardTypeEnum.Resource ||
-                   parsed == RewardTypeEnum.Equipment ||
-                   parsed == RewardTypeEnum.Consumable ||
-                   parsed == RewardTypeEnum.Recipe ||
-                   parsed == RewardTypeEnum.Item;
+            return LinkedCombatStartPayload.TryBuildTransferredLoot(
+                linked,
+                sessionId,
+                out loot,
+                out error);
         }
 
         private bool TryCreateIdentifiers(
@@ -1360,9 +1499,6 @@ namespace GuildIdle.Combat
     public sealed class LinkedCombatRuntimeCoordinator :
         ILinkedCombatRuntimeCoordinator
     {
-        private const string StartOperationPrefix =
-            "linked-combat-start:";
-
         private readonly ILinkedCombatStartGateway _gateway;
         private readonly CombatStartService _combatStart;
         private readonly PlayerState _state;
@@ -1447,7 +1583,7 @@ namespace GuildIdle.Combat
                     _combatStart.Start(new CombatStartCommand
                     {
                         OperationId =
-                            StartOperationPrefix + request.requestId,
+                            LinkedCombatStartPayload.OperationPrefix + request.requestId,
                         Kind = CombatStartKind.Linked,
                         SourceActivityId = source.activityId,
                         SourceExecutionId =
