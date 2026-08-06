@@ -134,6 +134,86 @@ namespace GuildIdle.Activities
         public IReadOnlyList<PendingResultDeferredResolvedEvent> DeferredResolvedEvents { get; }
     }
 
+    public static class DangerEncounterPreparationCode
+    {
+        public const string PendingEncounterCreated = "PendingEncounterCreated";
+        public const string AlreadyPrepared = "AlreadyPrepared";
+        public const string ExecutionNotFound = "ExecutionNotFound";
+        public const string NotDangerBoundary = "NotDangerBoundary";
+        public const string ValidationFailed = "ValidationFailed";
+        public const string PendingResultFailed = "PendingResultFailed";
+        public const string DataIntegrityFailure = "DataIntegrityFailure";
+        public const string RuntimeError = "RuntimeError";
+    }
+
+    public sealed class DangerEncounterPreparationRequest
+    {
+        public DangerEncounterPreparationRequest(string executionId) => ExecutionId = executionId;
+
+        public string ExecutionId { get; }
+    }
+
+    public sealed class DangerEncounterPreparationResult
+    {
+        private bool _deferredEventsPublished;
+
+        internal DangerEncounterPreparationResult(
+            bool success,
+            string code,
+            string executionId,
+            string requestId,
+            string activityPendingResultId,
+            int combatEntryCount,
+            int nonCombatEntryCount,
+            ActivityRuntimeStatus executionStatus,
+            string cyclePhase,
+            bool activityBagResolved,
+            bool requestCreated,
+            bool replayed,
+            IReadOnlyList<ActivityRequirementIssue> issues,
+            IReadOnlyList<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
+        {
+            Success = success;
+            Code = code ?? string.Empty;
+            ExecutionId = executionId ?? string.Empty;
+            RequestId = requestId ?? string.Empty;
+            ActivityPendingResultId = activityPendingResultId ?? string.Empty;
+            CombatEntryCount = combatEntryCount;
+            NonCombatEntryCount = nonCombatEntryCount;
+            ExecutionStatus = executionStatus;
+            CyclePhase = cyclePhase ?? string.Empty;
+            ActivityBagResolved = activityBagResolved;
+            RequestCreated = requestCreated;
+            Replayed = replayed;
+            Issues = issues ?? Array.AsReadOnly(Array.Empty<ActivityRequirementIssue>());
+            DeferredResolvedEvents = deferredResolvedEvents ??
+                                     Array.AsReadOnly(Array.Empty<PendingResultDeferredResolvedEvent>());
+        }
+
+        public bool Success { get; }
+        public string Code { get; }
+        public string ExecutionId { get; }
+        public string RequestId { get; }
+        public string ActivityPendingResultId { get; }
+        public int CombatEntryCount { get; }
+        public int NonCombatEntryCount { get; }
+        public ActivityRuntimeStatus ExecutionStatus { get; }
+        public string CyclePhase { get; }
+        public bool ActivityBagResolved { get; }
+        public bool RequestCreated { get; }
+        public bool Replayed { get; }
+        public IReadOnlyList<ActivityRequirementIssue> Issues { get; }
+        public IReadOnlyList<PendingResultDeferredResolvedEvent> DeferredResolvedEvents { get; }
+
+        internal bool TryMarkDeferredEventsPublished()
+        {
+            if (_deferredEventsPublished)
+                return false;
+            _deferredEventsPublished = true;
+            return true;
+        }
+    }
+
     public enum ConstructionAdvanceStopReason
     {
         None = 0,

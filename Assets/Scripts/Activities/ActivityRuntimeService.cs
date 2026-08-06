@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
 using GuildIdle.Configs;
 using GuildIdle.Core;
 using GuildIdle.Player;
@@ -48,6 +50,19 @@ namespace GuildIdle.Activities
             DangerBoundaryReached = 2,
             ValidationFailed = 3,
             RuntimeError = 4
+        }
+
+        private sealed class DangerHandoffMutationResult
+        {
+            public bool Success;
+            public string Code;
+            public string RequestId;
+            public string PendingResultId;
+            public int CombatEntryCount;
+            public int NonCombatEntryCount;
+            public bool ActivityBagResolved;
+            public bool RequestCreated;
+            public bool Replayed;
         }
 
         private readonly struct WorkCycleOptions
@@ -186,6 +201,22 @@ namespace GuildIdle.Activities
                 false);
         }
 
+        internal static ActivityRuntimeService CreateDangerEncounterPreparationCore(
+            IActivityRuntimeStore store,
+            IActivityPlayerState activityState,
+            FormulaRuntime formulas)
+        {
+            return new ActivityRuntimeService(
+                store,
+                activityState,
+                new SystemActivityRandom(1),
+                formulas,
+                null,
+                null,
+                null,
+                false);
+        }
+
         public void Dispose()
         {
             if (_disposed)
@@ -274,6 +305,135 @@ namespace GuildIdle.Activities
                 },
                 issues = issues.ToArray()
             };
+        }
+
+        internal DangerEncounterPreparationResult PrepareDangerEncounterCore(
+            DangerEncounterPreparationRequest request)
+        {
+            var issues = new List<ActivityRequirementIssue>();
+            var deferredResolvedEvents = new List<PendingResultDeferredResolvedEvent>();
+            var executionId = request?.ExecutionId;
+            if (request == null || string.IsNullOrWhiteSpace(executionId))
+            {
+                AddIssue(
+                    issues,
+                    string.Empty,
+                    DangerEncounterPreparationCode.ValidationFailed,
+                    executionId,
+                    1,
+                    0,
+                    true,
+                    false,
+                    "Danger encounter preparation requires executionId.");
+                return FinishDangerEncounterPreparation(
+                    false,
+                    DangerEncounterPreparationCode.ValidationFailed,
+                    executionId,
+                    null,
+                    issues,
+                    deferredResolvedEvents);
+            }
+
+            var execution = GetExecution(executionId);
+            if (execution == null)
+            {
+                AddIssue(
+                    issues,
+                    string.Empty,
+                    DangerEncounterPreparationCode.ExecutionNotFound,
+                    executionId,
+                    1,
+                    0,
+                    true,
+                    false,
+                    $"Activity execution '{executionId}' was not found.");
+                return FinishDangerEncounterPreparation(
+                    false,
+                    DangerEncounterPreparationCode.ExecutionNotFound,
+                    executionId,
+                    null,
+                    issues,
+                    deferredResolvedEvents);
+            }
+
+            var hasLinkedCombat = execution.linkedCombat != null;
+            if (!hasLinkedCombat &&
+                (execution.status != CoreActivityRuntimeStatus.Running ||
+                 !string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal) ||
+                 !string.Equals(execution.cyclePhase, CyclePhaseResultStaged, StringComparison.Ordinal) ||
+                 !IsTriggeredDangerBoundary(execution)))
+            {
+                AddIssue(
+                    issues,
+                    execution.activityId,
+                    DangerEncounterPreparationCode.NotDangerBoundary,
+                    execution.executionId,
+                    1,
+                    0,
+                    false,
+                    false,
+                    "Execution is not a saved triggered Work danger boundary.");
+                return FinishDangerEncounterPreparation(
+                    false,
+                    DangerEncounterPreparationCode.NotDangerBoundary,
+                    executionId,
+                    null,
+                    issues,
+                    deferredResolvedEvents);
+            }
+
+            if (!TryGetRuntimeInfo(execution.activityId, issues, out var info) || !IsWork(info) ||
+                (!hasLinkedCombat && !ValidateWorkAdvanceExecution(execution, info, issues)))
+            {
+                return FinishDangerEncounterPreparation(
+                    false,
+                    DangerEncounterPreparationCode.ValidationFailed,
+                    executionId,
+                    null,
+                    issues,
+                    deferredResolvedEvents);
+            }
+
+            var checkpoint = _activityState.CaptureCheckpoint();
+            DangerHandoffMutationResult handoff;
+            try
+            {
+                handoff = PrepareDangerHandoff(
+                    execution,
+                    info,
+                    issues,
+                    true,
+                    deferredResolvedEvents);
+            }
+            catch (Exception exception)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(
+                    issues,
+                    execution.activityId,
+                    DangerEncounterPreparationCode.RuntimeError,
+                    execution.executionId,
+                    1,
+                    0,
+                    true,
+                    false,
+                    $"Danger encounter preparation failed: {exception.Message}");
+                handoff = new DangerHandoffMutationResult
+                {
+                    Success = false,
+                    Code = DangerEncounterPreparationCode.RuntimeError
+                };
+            }
+
+            if (!handoff.Success)
+                _activityState.RestoreCheckpoint(checkpoint);
+            return FinishDangerEncounterPreparation(
+                handoff.Success,
+                handoff.Code,
+                executionId,
+                handoff,
+                issues,
+                deferredResolvedEvents);
         }
 
         internal WorkAdvanceResult AdvanceWorkCore(WorkAdvanceRequest request)
@@ -1393,64 +1553,20 @@ namespace GuildIdle.Activities
                 if (options.StopAtDangerBoundary)
                     return WorkCycleOutcome.DangerBoundaryReached;
 
-                var combatLoot = new List<ActivityStagedRewardSaveData>();
-                var nonCombat = new List<ActivityStagedRewardSaveData>();
-                foreach (var entry in staged)
-                {
-                    if (IsLootRewardType(entry.rewardType))
-                    {
-                        entry.origin = PendingResultOrigin.ActivityLootInCombat;
-                        combatLoot.Add(entry);
-                    }
-                    else
-                    {
-                        nonCombat.Add(entry);
-                    }
-                }
-                var encounters = RuntimeConfigs.Activities.GetDangerEncounters(execution.activityId);
-                if (encounters.Length == 0)
-                {
-                    AddIssue(issues, execution.activityId, "DangerEncounter", execution.activityId, 1, 0, true, false, "Staged danger result no longer has an encounter descriptor.");
-                    return WorkCycleOutcome.RuntimeError;
-                }
-                var encounter = encounters[0];
-                execution.endReason = EndReasonDangerTriggered;
-                execution.stagedRewards = Array.Empty<ActivityStagedRewardSaveData>();
-                execution.linkedCombat = new LinkedCombatStartRequestSaveData
-                {
-                    requestId = $"linked-combat:{execution.executionId}:{execution.completedCycles}",
-                    rootExecutionId = execution.executionId,
-                    occupationOwnerId = execution.executionId,
-                    heroId = execution.heroId,
-                    dangerEncounterId = encounter.dangerEncounterId,
-                    enemyGroupId = encounter.enemyGroupId,
-                    combatMode = encounter.combatMode,
-                    enemyExpTargetId = info.activity.mainSkillId,
-                    defeatLossRule = encounter.defeatLossRule,
-                    suppressFatigueCost = true,
-                    loot = combatLoot.ToArray()
-                };
-                execution.activityBagResolved = false;
-                if (!UpdateExecution(execution))
-                {
-                    _activityState.RestoreCheckpoint(checkpoint);
-                    AddIssue(issues, execution.activityId, "ActivityExecution", execution.executionId, 1, 0, true, false, "Failed to persist danger handoff.");
-                    return WorkCycleOutcome.RuntimeError;
-                }
-                var dangerFormation = _activityState.PendingResults.CreateOrAppend(
-                    $"activity:{execution.executionId}:danger:{execution.completedCycles}",
-                    BuildPendingDraft(execution, nonCombat.ToArray()),
-                    true,
-                    GetPendingResultRevision(execution));
-                if (!dangerFormation.Success)
-                {
-                    _activityState.RestoreCheckpoint(checkpoint);
-                    AddIssue(issues, execution.activityId, "PendingResult", execution.executionId, 1, 0, true, false, dangerFormation.Message ?? "Failed to form danger work result.");
-                    return WorkCycleOutcome.RuntimeError;
-                }
-                execution.pendingResultId = dangerFormation.Result?.resultId ?? execution.pendingResultId;
-                execution.status = CoreActivityRuntimeStatus.ResultPending;
-                changed = true;
+                var handoff = PrepareDangerHandoff(
+                    execution,
+                    info,
+                    issues,
+                    !options.SaveStagedBoundary,
+                    deferredResolvedEvents);
+                if (!handoff.Success)
+                    return string.Equals(
+                        handoff.Code,
+                        DangerEncounterPreparationCode.ValidationFailed,
+                        StringComparison.Ordinal)
+                        ? WorkCycleOutcome.ValidationFailed
+                        : WorkCycleOutcome.RuntimeError;
+                changed = handoff.RequestCreated || changed;
                 return WorkCycleOutcome.Completed;
             }
 
@@ -1538,6 +1654,517 @@ namespace GuildIdle.Activities
                 execution.status = CoreActivityRuntimeStatus.ResultPending;
             changed = true;
             return fatigueStopped ? WorkCycleOutcome.InsufficientFatigue : WorkCycleOutcome.Completed;
+        }
+
+        private DangerHandoffMutationResult PrepareDangerHandoff(
+            ActivityExecutionSaveData execution,
+            ActivityRuntimeInfo info,
+            List<ActivityRequirementIssue> issues,
+            bool useOuterTransaction,
+            List<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
+        {
+            var checkpoint = _activityState.CaptureCheckpoint();
+            var encounters = RuntimeConfigs.Activities.GetDangerEncounters(execution?.activityId);
+            if (execution == null || info?.activity == null || encounters.Length == 0)
+            {
+                AddIssue(
+                    issues,
+                    execution?.activityId,
+                    DangerEncounterPreparationCode.ValidationFailed,
+                    execution?.activityId,
+                    1,
+                    0,
+                    true,
+                    false,
+                    "Staged danger result has no encounter descriptor.");
+                return new DangerHandoffMutationResult
+                {
+                    Success = false,
+                    Code = DangerEncounterPreparationCode.ValidationFailed
+                };
+            }
+
+            var encounter = encounters[0];
+            if (execution.linkedCombat != null)
+            {
+                if (!ValidatePreparedDangerHandoff(execution, info, encounter, out var integrityMessage))
+                {
+                    AddIssue(
+                        issues,
+                        execution.activityId,
+                        DangerEncounterPreparationCode.DataIntegrityFailure,
+                        execution.executionId,
+                        1,
+                        0,
+                        true,
+                        false,
+                        integrityMessage);
+                    return new DangerHandoffMutationResult
+                    {
+                        Success = false,
+                        Code = DangerEncounterPreparationCode.DataIntegrityFailure
+                    };
+                }
+
+                return new DangerHandoffMutationResult
+                {
+                    Success = true,
+                    Code = DangerEncounterPreparationCode.AlreadyPrepared,
+                    RequestId = execution.linkedCombat.requestId,
+                    PendingResultId = execution.activityBagResolved ? string.Empty : execution.pendingResultId,
+                    CombatEntryCount = execution.linkedCombat.loot?.Length ?? 0,
+                    NonCombatEntryCount = execution.dangerNonCombatEntryCount,
+                    ActivityBagResolved = execution.activityBagResolved,
+                    RequestCreated = false,
+                    Replayed = true
+                };
+            }
+
+            if (!string.IsNullOrWhiteSpace(execution.dangerHandoffFingerprint))
+            {
+                AddIssue(
+                    issues,
+                    execution.activityId,
+                    DangerEncounterPreparationCode.DataIntegrityFailure,
+                    execution.executionId,
+                    1,
+                    0,
+                    true,
+                    false,
+                    "Danger handoff marker exists without its linked request.");
+                return new DangerHandoffMutationResult
+                {
+                    Success = false,
+                    Code = DangerEncounterPreparationCode.DataIntegrityFailure
+                };
+            }
+
+            if (execution.status != CoreActivityRuntimeStatus.Running ||
+                !string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal) ||
+                !string.Equals(execution.cyclePhase, CyclePhaseResultStaged, StringComparison.Ordinal) ||
+                !IsTriggeredDangerBoundary(execution))
+            {
+                AddIssue(
+                    issues,
+                    execution.activityId,
+                    DangerEncounterPreparationCode.NotDangerBoundary,
+                    execution.executionId,
+                    1,
+                    0,
+                    false,
+                    false,
+                    "Execution is not a saved triggered Work danger boundary.");
+                return new DangerHandoffMutationResult
+                {
+                    Success = false,
+                    Code = DangerEncounterPreparationCode.NotDangerBoundary
+                };
+            }
+
+            var bagIntegrityMessage = (string)null;
+            var occupationValid = HasValidDangerOccupation(execution);
+            var activityBagValid = ValidateActivityBagBeforeDangerHandoff(
+                execution,
+                out bagIntegrityMessage);
+            if (!occupationValid || !activityBagValid)
+            {
+                AddIssue(
+                    issues,
+                    execution.activityId,
+                    DangerEncounterPreparationCode.DataIntegrityFailure,
+                    execution.executionId,
+                    1,
+                    0,
+                    true,
+                    false,
+                    bagIntegrityMessage ?? "Danger boundary no longer owns its hero occupation.");
+                return new DangerHandoffMutationResult
+                {
+                    Success = false,
+                    Code = DangerEncounterPreparationCode.DataIntegrityFailure
+                };
+            }
+
+            var combatLoot = new List<ActivityStagedRewardSaveData>();
+            var nonCombat = new List<ActivityStagedRewardSaveData>();
+            foreach (var sourceEntry in execution.stagedRewards ?? Array.Empty<ActivityStagedRewardSaveData>())
+            {
+                if (sourceEntry == null || sourceEntry.quantity <= 0 ||
+                    string.IsNullOrWhiteSpace(sourceEntry.rewardType) ||
+                    string.IsNullOrWhiteSpace(sourceEntry.targetId))
+                {
+                    AddIssue(
+                        issues,
+                        execution.activityId,
+                        DangerEncounterPreparationCode.ValidationFailed,
+                        execution.executionId,
+                        1,
+                        0,
+                        true,
+                        false,
+                        "Staged danger rewards contain an invalid entry.");
+                    return new DangerHandoffMutationResult
+                    {
+                        Success = false,
+                        Code = DangerEncounterPreparationCode.ValidationFailed
+                    };
+                }
+
+                var entry = CloneStagedReward(sourceEntry);
+                if (IsLootRewardType(entry.rewardType))
+                {
+                    entry.origin = PendingResultOrigin.ActivityLootInCombat;
+                    combatLoot.Add(entry);
+                }
+                else
+                {
+                    nonCombat.Add(entry);
+                }
+            }
+
+            var request = new LinkedCombatStartRequestSaveData
+            {
+                requestId = BuildLinkedCombatRequestId(execution),
+                rootExecutionId = execution.executionId,
+                occupationOwnerId = execution.executionId,
+                heroId = execution.heroId,
+                dangerEncounterId = encounter.dangerEncounterId,
+                enemyGroupId = encounter.enemyGroupId,
+                combatMode = encounter.combatMode,
+                enemyExpTargetId = info.activity.mainSkillId,
+                defeatLossRule = encounter.defeatLossRule,
+                suppressFatigueCost = true,
+                combatExecutionId = string.Empty,
+                resolved = false,
+                loot = combatLoot.ToArray()
+            };
+            var fingerprint = BuildDangerHandoffFingerprint(execution, request, nonCombat.Count);
+            var draft = CloneExecution(execution);
+            draft.endReason = EndReasonDangerTriggered;
+            draft.stagedRewards = Array.Empty<ActivityStagedRewardSaveData>();
+            draft.linkedCombat = request;
+            draft.dangerHandoffFingerprint = fingerprint;
+            draft.dangerNonCombatEntryCount = nonCombat.Count;
+            draft.activityBagResolved = false;
+            if (!UpdateExecution(draft))
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(
+                    issues,
+                    execution.activityId,
+                    DangerEncounterPreparationCode.RuntimeError,
+                    execution.executionId,
+                    1,
+                    0,
+                    true,
+                    false,
+                    "Failed to persist danger handoff source state.");
+                return new DangerHandoffMutationResult
+                {
+                    Success = false,
+                    Code = DangerEncounterPreparationCode.RuntimeError
+                };
+            }
+
+            var pendingDraft = BuildPendingDraft(draft, nonCombat.ToArray());
+            pendingDraft.OperationContext = $"danger-handoff|{fingerprint}";
+            var operationId = $"activity:{execution.executionId}:danger:{execution.completedCycles}";
+            PendingResultFormationResult formation;
+            if (useOuterTransaction)
+            {
+                if (!(_activityState.PendingResults is ITransactionalPendingResultService transactionalPendingResults))
+                {
+                    _activityState.RestoreCheckpoint(checkpoint);
+                    AddIssue(
+                        issues,
+                        execution.activityId,
+                        DangerEncounterPreparationCode.PendingResultFailed,
+                        execution.executionId,
+                        1,
+                        0,
+                        true,
+                        false,
+                        "PendingResult service does not support outer transactions.");
+                    return new DangerHandoffMutationResult
+                    {
+                        Success = false,
+                        Code = DangerEncounterPreparationCode.PendingResultFailed
+                    };
+                }
+
+                formation = transactionalPendingResults.CreateOrAppendInTransaction(
+                    operationId,
+                    pendingDraft,
+                    true,
+                    GetPendingResultRevision(execution));
+            }
+            else
+            {
+                formation = _activityState.PendingResults.CreateOrAppend(
+                    operationId,
+                    pendingDraft,
+                    true,
+                    GetPendingResultRevision(execution));
+            }
+
+            if (formation == null || !formation.Success)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(
+                    issues,
+                    execution.activityId,
+                    DangerEncounterPreparationCode.PendingResultFailed,
+                    execution.executionId,
+                    1,
+                    0,
+                    true,
+                    false,
+                    formation?.Message ?? "Failed to form danger work result.");
+                return new DangerHandoffMutationResult
+                {
+                    Success = false,
+                    Code = DangerEncounterPreparationCode.PendingResultFailed
+                };
+            }
+
+            var stored = GetExecution(execution.executionId);
+            var postconditionMessage = (string)null;
+            var postconditionValid = stored != null &&
+                                     ValidatePreparedDangerHandoff(
+                                         stored,
+                                         info,
+                                         encounter,
+                                         out postconditionMessage);
+            if (!postconditionValid)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(
+                    issues,
+                    execution.activityId,
+                    DangerEncounterPreparationCode.DataIntegrityFailure,
+                    execution.executionId,
+                    1,
+                    0,
+                    true,
+                    false,
+                    postconditionMessage ?? "Danger handoff did not reach a valid persisted state.");
+                return new DangerHandoffMutationResult
+                {
+                    Success = false,
+                    Code = DangerEncounterPreparationCode.DataIntegrityFailure
+                };
+            }
+
+            if (formation.DeferredResolvedEvent != null)
+                deferredResolvedEvents?.Add(formation.DeferredResolvedEvent);
+            CopyExecutionState(stored, execution);
+            return new DangerHandoffMutationResult
+            {
+                Success = true,
+                Code = DangerEncounterPreparationCode.PendingEncounterCreated,
+                RequestId = stored.linkedCombat.requestId,
+                PendingResultId = stored.activityBagResolved ? string.Empty : stored.pendingResultId,
+                CombatEntryCount = combatLoot.Count,
+                NonCombatEntryCount = nonCombat.Count,
+                ActivityBagResolved = stored.activityBagResolved,
+                RequestCreated = true,
+                Replayed = false
+            };
+        }
+
+        private bool ValidatePreparedDangerHandoff(
+            ActivityExecutionSaveData execution,
+            ActivityRuntimeInfo info,
+            DangerEncounterConfigDto encounter,
+            out string message)
+        {
+            message = null;
+            var request = execution?.linkedCombat;
+            if (execution == null || request == null || info?.activity == null || encounter == null ||
+                execution.status != CoreActivityRuntimeStatus.ResultPending ||
+                !string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal) ||
+                !string.Equals(execution.cyclePhase, CyclePhaseResultStaged, StringComparison.Ordinal) ||
+                !string.Equals(execution.endReason, EndReasonDangerTriggered, StringComparison.Ordinal) ||
+                !IsTriggeredDangerBoundary(execution) ||
+                (execution.stagedRewards?.Length ?? 0) != 0 ||
+                execution.dangerNonCombatEntryCount < 0 ||
+                string.IsNullOrWhiteSpace(execution.dangerHandoffFingerprint))
+            {
+                message = "Linked combat is incompatible with the staged danger source state.";
+                return false;
+            }
+
+            if (!HasValidDangerOccupation(execution) ||
+                !string.Equals(request.requestId, BuildLinkedCombatRequestId(execution), StringComparison.Ordinal) ||
+                !string.Equals(request.rootExecutionId, execution.executionId, StringComparison.Ordinal) ||
+                !string.Equals(request.occupationOwnerId, execution.executionId, StringComparison.Ordinal) ||
+                !string.Equals(request.heroId, execution.heroId, StringComparison.Ordinal) ||
+                !string.Equals(request.dangerEncounterId, encounter.dangerEncounterId, StringComparison.Ordinal) ||
+                !string.Equals(request.enemyGroupId, encounter.enemyGroupId, StringComparison.Ordinal) ||
+                !string.Equals(request.combatMode, encounter.combatMode, StringComparison.Ordinal) ||
+                !string.Equals(request.enemyExpTargetId, info.activity.mainSkillId, StringComparison.Ordinal) ||
+                !string.Equals(request.defeatLossRule, encounter.defeatLossRule, StringComparison.Ordinal) ||
+                !request.suppressFatigueCost)
+            {
+                message = "Linked combat source links, hero, encounter, or combat context do not match the danger boundary.";
+                return false;
+            }
+
+            foreach (var loot in request.loot ?? Array.Empty<ActivityStagedRewardSaveData>())
+            {
+                if (loot == null || loot.quantity <= 0 || !IsLootRewardType(loot.rewardType) ||
+                    !string.Equals(loot.origin, PendingResultOrigin.ActivityLootInCombat, StringComparison.Ordinal))
+                {
+                    message = "Linked combat partition loot is invalid.";
+                    return false;
+                }
+            }
+
+            var fingerprint = BuildDangerHandoffFingerprint(
+                execution,
+                request,
+                execution.dangerNonCombatEntryCount);
+            if (!string.Equals(execution.dangerHandoffFingerprint, fingerprint, StringComparison.Ordinal))
+            {
+                message = "Linked combat request or partition loot does not match its saved integrity marker.";
+                return false;
+            }
+
+            var activityResults = FindActivityPendingResults(execution.executionId);
+            if (execution.activityBagResolved)
+            {
+                if (!string.IsNullOrWhiteSpace(execution.pendingResultId) || activityResults.Count != 0)
+                {
+                    message = "Resolved Activity Bag still has pending result state.";
+                    return false;
+                }
+            }
+            else if (activityResults.Count != 1 || string.IsNullOrWhiteSpace(execution.pendingResultId) ||
+                     !string.Equals(activityResults[0].resultId, execution.pendingResultId, StringComparison.Ordinal) ||
+                     !string.Equals(activityResults[0].sourceId, execution.activityId, StringComparison.Ordinal) ||
+                     !string.Equals(activityResults[0].ownerHeroId, execution.heroId, StringComparison.Ordinal))
+            {
+                message = "Unresolved Activity Bag is missing or does not match its danger source.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool ValidateActivityBagBeforeDangerHandoff(
+            ActivityExecutionSaveData execution,
+            out string message)
+        {
+            message = null;
+            var activityResults = FindActivityPendingResults(execution.executionId);
+            if (activityResults.Count > 1)
+            {
+                message = "Danger source has multiple Activity Bags.";
+                return false;
+            }
+            if (activityResults.Count == 0)
+            {
+                if (!string.IsNullOrWhiteSpace(execution.pendingResultId))
+                {
+                    message = "Danger source references a missing Activity Bag.";
+                    return false;
+                }
+                return true;
+            }
+
+            var result = activityResults[0];
+            if (string.IsNullOrWhiteSpace(execution.pendingResultId) ||
+                !string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal) ||
+                !string.Equals(execution.activityId, result.sourceId, StringComparison.Ordinal) ||
+                !string.Equals(execution.heroId, result.ownerHeroId, StringComparison.Ordinal))
+            {
+                message = "Existing Activity Bag does not match its danger source.";
+                return false;
+            }
+            return true;
+        }
+
+        private List<PendingResultSaveData> FindActivityPendingResults(string executionId)
+        {
+            var results = new List<PendingResultSaveData>();
+            foreach (var result in _activityState.PendingResults.GetAll() ?? Array.Empty<PendingResultSaveData>())
+            {
+                if (result != null &&
+                    string.Equals(result.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal) &&
+                    string.Equals(result.sourceExecutionId, executionId, StringComparison.Ordinal))
+                    results.Add(result);
+            }
+            return results;
+        }
+
+        private bool HasValidDangerOccupation(ActivityExecutionSaveData execution) =>
+            execution != null && !string.IsNullOrWhiteSpace(execution.heroId) &&
+            _activityState.IsHeroBusy(execution.heroId) &&
+            string.Equals(
+                _activityState.GetHeroCurrentActivityExecutionId(execution.heroId),
+                execution.executionId,
+                StringComparison.Ordinal);
+
+        private static bool IsTriggeredDangerBoundary(ActivityExecutionSaveData execution) =>
+            execution != null && execution.dangerRollCompleted &&
+            !float.IsNaN(execution.dangerRiskPercent) &&
+            !float.IsInfinity(execution.dangerRiskPercent) &&
+            execution.dangerRiskPercent >= 0f && execution.dangerRiskPercent <= 100f &&
+            execution.dangerRoll >= 1 && execution.dangerRoll <= 100 &&
+            execution.dangerRoll <= execution.dangerRiskPercent;
+
+        private static string BuildLinkedCombatRequestId(ActivityExecutionSaveData execution) =>
+            $"linked-combat:{execution.executionId}:{execution.completedCycles}";
+
+        private static string BuildDangerHandoffFingerprint(
+            ActivityExecutionSaveData execution,
+            LinkedCombatStartRequestSaveData request,
+            int nonCombatEntryCount)
+        {
+            var builder = new StringBuilder();
+            AppendFingerprintField(builder, execution.executionId);
+            AppendFingerprintField(builder, execution.activityId);
+            AppendFingerprintField(builder, execution.runtimeKind);
+            AppendFingerprintField(builder, execution.heroId);
+            AppendFingerprintField(builder, execution.cyclePhase);
+            AppendFingerprintField(builder, execution.completedCycles.ToString(CultureInfo.InvariantCulture));
+            AppendFingerprintField(builder, execution.plannedCycles.ToString(CultureInfo.InvariantCulture));
+            AppendFingerprintField(builder, execution.startedAtUnixSeconds.ToString(CultureInfo.InvariantCulture));
+            AppendFingerprintField(builder, execution.dangerRollCompleted ? "1" : "0");
+            AppendFingerprintField(builder, execution.dangerRiskPercent.ToString("R", CultureInfo.InvariantCulture));
+            AppendFingerprintField(builder, execution.dangerRoll.ToString(CultureInfo.InvariantCulture));
+            AppendFingerprintField(builder, nonCombatEntryCount.ToString(CultureInfo.InvariantCulture));
+            AppendFingerprintField(builder, request.requestId);
+            AppendFingerprintField(builder, request.rootExecutionId);
+            AppendFingerprintField(builder, request.occupationOwnerId);
+            AppendFingerprintField(builder, request.heroId);
+            AppendFingerprintField(builder, request.dangerEncounterId);
+            AppendFingerprintField(builder, request.enemyGroupId);
+            AppendFingerprintField(builder, request.combatMode);
+            AppendFingerprintField(builder, request.enemyExpTargetId);
+            AppendFingerprintField(builder, request.defeatLossRule);
+            AppendFingerprintField(builder, request.suppressFatigueCost ? "1" : "0");
+            var loot = request.loot ?? Array.Empty<ActivityStagedRewardSaveData>();
+            AppendFingerprintField(builder, loot.Length.ToString(CultureInfo.InvariantCulture));
+            foreach (var entry in loot)
+            {
+                AppendFingerprintField(builder, entry?.rewardType);
+                AppendFingerprintField(builder, entry?.targetId);
+                AppendFingerprintField(builder, (entry?.quantity ?? 0L).ToString(CultureInfo.InvariantCulture));
+                AppendFingerprintField(builder, entry?.origin);
+                AppendFingerprintField(builder, (entry?.quality ?? 0).ToString(CultureInfo.InvariantCulture));
+                AppendFingerprintField(builder, entry?.instanceId);
+            }
+            return builder.ToString();
+        }
+
+        private static void AppendFingerprintField(StringBuilder builder, string value)
+        {
+            value ??= string.Empty;
+            builder.Append(value.Length.ToString(CultureInfo.InvariantCulture));
+            builder.Append(':');
+            builder.Append(value);
+            builder.Append('|');
         }
 
         private void ProcessBuildTick(
@@ -2611,6 +3238,8 @@ namespace GuildIdle.Activities
                 dangerRollCompleted = execution.dangerRollCompleted,
                 dangerRiskPercent = execution.dangerRiskPercent,
                 dangerRoll = execution.dangerRoll,
+                dangerHandoffFingerprint = execution.dangerHandoffFingerprint,
+                dangerNonCombatEntryCount = execution.dangerNonCombatEntryCount,
                 activityBagResolved = execution.activityBagResolved,
                 materialsPaid = execution.materialsPaid,
                 accumulatedBuildPoints = execution.accumulatedBuildPoints,
@@ -2643,6 +3272,8 @@ namespace GuildIdle.Activities
             target.dangerRollCompleted = source.dangerRollCompleted;
             target.dangerRiskPercent = source.dangerRiskPercent;
             target.dangerRoll = source.dangerRoll;
+            target.dangerHandoffFingerprint = source.dangerHandoffFingerprint;
+            target.dangerNonCombatEntryCount = source.dangerNonCombatEntryCount;
             target.activityBagResolved = source.activityBagResolved;
             target.materialsPaid = source.materialsPaid;
             target.accumulatedBuildPoints = source.accumulatedBuildPoints;
@@ -2675,6 +3306,21 @@ namespace GuildIdle.Activities
             return result;
         }
 
+        private static ActivityStagedRewardSaveData CloneStagedReward(ActivityStagedRewardSaveData source)
+        {
+            if (source == null)
+                return null;
+            return new ActivityStagedRewardSaveData
+            {
+                rewardType = source.rewardType,
+                targetId = source.targetId,
+                quantity = source.quantity,
+                origin = source.origin,
+                quality = source.quality,
+                instanceId = source.instanceId
+            };
+        }
+
         private static LinkedCombatStartRequestSaveData CloneLinkedCombat(LinkedCombatStartRequestSaveData source)
         {
             if (source == null)
@@ -2701,7 +3347,9 @@ namespace GuildIdle.Activities
         {
             if (!ActivityTypeParser.TryParseRewardType(rewardType, out var type))
                 return false;
-            return type == RewardTypeEnum.Resource || type == RewardTypeEnum.Item || type == RewardTypeEnum.Consumable || type == RewardTypeEnum.Equipment;
+            return type == RewardTypeEnum.Resource || type == RewardTypeEnum.Item ||
+                   type == RewardTypeEnum.Consumable || type == RewardTypeEnum.Equipment ||
+                   type == RewardTypeEnum.Recipe;
         }
 
         private static bool HeroOwnsSkill(HeroConfigDto hero, string skillId)
@@ -2834,6 +3482,37 @@ namespace GuildIdle.Activities
             result.issues = issues.ToArray();
             result.snapshot = GetSnapshot();
             return result;
+        }
+
+        private DangerEncounterPreparationResult FinishDangerEncounterPreparation(
+            bool success,
+            string code,
+            string executionId,
+            DangerHandoffMutationResult handoff,
+            List<ActivityRequirementIssue> issues,
+            List<PendingResultDeferredResolvedEvent> deferredResolvedEvents)
+        {
+            var execution = string.IsNullOrWhiteSpace(executionId) ? null : GetExecution(executionId);
+            var finalSuccess = success && !HasBlockingIssues(issues);
+            return new DangerEncounterPreparationResult(
+                finalSuccess,
+                code,
+                executionId,
+                handoff?.RequestId ?? execution?.linkedCombat?.requestId,
+                handoff?.PendingResultId ??
+                (execution?.activityBagResolved == true ? string.Empty : execution?.pendingResultId),
+                handoff?.CombatEntryCount ?? execution?.linkedCombat?.loot?.Length ?? 0,
+                handoff?.NonCombatEntryCount ?? execution?.dangerNonCombatEntryCount ?? 0,
+                execution?.status ?? CoreActivityRuntimeStatus.None,
+                execution?.cyclePhase,
+                handoff?.ActivityBagResolved ?? execution?.activityBagResolved ?? false,
+                finalSuccess && handoff?.RequestCreated == true,
+                finalSuccess && handoff?.Replayed == true,
+                Array.AsReadOnly(issues?.ToArray() ?? Array.Empty<ActivityRequirementIssue>()),
+                finalSuccess
+                    ? Array.AsReadOnly(deferredResolvedEvents?.ToArray() ??
+                                       Array.Empty<PendingResultDeferredResolvedEvent>())
+                    : Array.AsReadOnly(Array.Empty<PendingResultDeferredResolvedEvent>()));
         }
 
         private WorkAdvanceResult FinishWorkAdvance(
@@ -2974,6 +3653,45 @@ namespace GuildIdle.Activities
             Triggered,
             Failed
         }
+    }
+
+    public sealed class DangerEncounterPreparationProcessor : IDisposable
+    {
+        private readonly ITransactionalPendingResultService _pendingResults;
+        private readonly ActivityRuntimeService _core;
+
+        public DangerEncounterPreparationProcessor(
+            IActivityRuntimeStore store,
+            IActivityPlayerState activityState,
+            FormulaRuntime formulas = null)
+        {
+            if (activityState == null)
+                throw new ArgumentNullException(nameof(activityState));
+
+            _pendingResults = activityState.PendingResults as ITransactionalPendingResultService ??
+                              throw new ArgumentException(
+                                  "PendingResult service must support outer transactions.",
+                                  nameof(activityState));
+            _core = ActivityRuntimeService.CreateDangerEncounterPreparationCore(
+                store,
+                activityState,
+                formulas);
+        }
+
+        public DangerEncounterPreparationResult Prepare(DangerEncounterPreparationRequest request) =>
+            _core.PrepareDangerEncounterCore(request);
+
+        public void PublishDeferredResolvedEvents(DangerEncounterPreparationResult result)
+        {
+            if (result == null)
+                throw new ArgumentNullException(nameof(result));
+            if (!result.Success || !result.TryMarkDeferredEventsPublished())
+                return;
+            foreach (var deferredEvent in result.DeferredResolvedEvents)
+                _pendingResults.PublishDeferred(deferredEvent);
+        }
+
+        public void Dispose() => _core.Dispose();
     }
 
     public sealed class WorkAdvanceProcessor : IDisposable

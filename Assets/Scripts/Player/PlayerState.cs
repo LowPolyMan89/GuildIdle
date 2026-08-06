@@ -2657,7 +2657,12 @@ namespace GuildIdle.Player
                 Debug.LogError($"[PlayerState] Activity execution '{execution.executionId}' has unknown status '{execution.status}'.");
                 return false;
             }
-            if (execution.status == ActivityRuntimeStatus.ResultPending && string.IsNullOrWhiteSpace(execution.pendingResultId))
+            if (execution.status == ActivityRuntimeStatus.ResultPending &&
+                string.IsNullOrWhiteSpace(execution.pendingResultId) &&
+                !(execution.activityBagResolved && execution.linkedCombat != null &&
+                  !string.IsNullOrWhiteSpace(execution.linkedCombat.requestId) &&
+                  string.Equals(execution.linkedCombat.rootExecutionId, execution.executionId, StringComparison.Ordinal) &&
+                  string.Equals(execution.linkedCombat.occupationOwnerId, execution.executionId, StringComparison.Ordinal)))
             {
                 Debug.LogError($"[PlayerState] ResultPending execution '{execution.executionId}' has no pending result id.");
                 return false;
@@ -2712,6 +2717,8 @@ namespace GuildIdle.Player
                 dangerRollCompleted = execution.dangerRollCompleted,
                 dangerRiskPercent = execution.dangerRiskPercent,
                 dangerRoll = execution.dangerRoll,
+                dangerHandoffFingerprint = execution.dangerHandoffFingerprint,
+                dangerNonCombatEntryCount = Math.Max(0, execution.dangerNonCombatEntryCount),
                 activityBagResolved = execution.activityBagResolved,
                 materialsPaid = execution.materialsPaid,
                 accumulatedBuildPoints = Math.Max(0f, execution.accumulatedBuildPoints),

@@ -694,6 +694,286 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void PrepareDangerEncounterPartitionsCurrentCycleAndKeepsPreviousBag()
+        {
+            var state = NewState();
+            var random = new CountingDangerSequenceRandom(100, 1);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 3));
+            var workProcessor = NewWorkAdvanceProcessor(state, random);
+            Assert.That(
+                workProcessor.Advance(new WorkAdvanceRequest(started.executionId, 30)).DangerBoundaryReached,
+                Is.True);
+            var randomCallsAtBoundary = random.RangeCalls;
+            var fatigueAtBoundary = state.GetHeroFatigue("ren");
+            using var processor = NewDangerEncounterPreparationProcessor(state);
+
+            var prepared = processor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
+            var execution = state.GetActivityExecution(started.executionId);
+            var bag = state.PendingResults.GetAll()[0];
+            long bagResources = 0;
+            long bagSkillExp = 0;
+            foreach (var entry in bag.entries)
+            {
+                if (entry.rewardType == "Resource") bagResources += entry.quantity;
+                if (entry.rewardType == "SkillExp") bagSkillExp += entry.quantity;
+            }
+
+            Assert.That(prepared.Success, Is.True);
+            Assert.That(prepared.Code, Is.EqualTo(DangerEncounterPreparationCode.PendingEncounterCreated));
+            Assert.That(prepared.RequestCreated, Is.True);
+            Assert.That(prepared.Replayed, Is.False);
+            Assert.That(prepared.CombatEntryCount, Is.EqualTo(1));
+            Assert.That(prepared.NonCombatEntryCount, Is.EqualTo(1));
+            Assert.That(execution.status, Is.EqualTo(ActivityRuntimeStatus.ResultPending));
+            Assert.That(execution.cyclePhase, Is.EqualTo("ResultStaged"));
+            Assert.That(execution.stagedRewards, Is.Empty);
+            Assert.That(execution.linkedCombat.loot, Has.Length.EqualTo(1));
+            Assert.That(
+                execution.linkedCombat.loot[0].origin,
+                Is.EqualTo(PendingResultOrigin.ActivityLootInCombat));
+            Assert.That(bagResources, Is.EqualTo(1), "Previous-cycle loot must stay in the Activity Bag.");
+            Assert.That(bagSkillExp, Is.EqualTo(4), "Skill EXP from both cycles must stay outside combat loss.");
+            Assert.That(execution.activityBagResolved, Is.False);
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
+            Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(fatigueAtBoundary));
+            Assert.That(random.RangeCalls, Is.EqualTo(randomCallsAtBoundary));
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+        }
+
+        [Test]
+        public void PrepareDangerEncounterMovesEveryItemLikeTypeAndResolvesEmptyBagAfterCommit()
+        {
+            var storage = new MemorySaveStorage();
+            var state = NewState();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            state = SaveService.Load(_factory, storage);
+            var random = new CountingDangerSequenceRandom(1);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
+            var started = runtime.Start(WorkStart("hunt_boars", "ren", 2));
+            Assert.That(
+                NewWorkAdvanceProcessor(state, random)
+                    .Advance(new WorkAdvanceRequest(started.executionId, 10))
+                    .DangerBoundaryReached,
+                Is.True);
+            var saveCallsBefore = storage.SaveCalls;
+            var resolvedEvents = 0;
+            state.PendingResults.Resolved += _ => resolvedEvents++;
+            using var processor = NewDangerEncounterPreparationProcessor(state);
+
+            var prepared = processor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
+            var execution = state.GetActivityExecution(started.executionId);
+            var lootTypes = new HashSet<string>();
+            foreach (var entry in execution.linkedCombat.loot)
+                lootTypes.Add(entry.rewardType);
+
+            Assert.That(prepared.Success, Is.True);
+            Assert.That(prepared.CombatEntryCount, Is.EqualTo(5));
+            Assert.That(prepared.NonCombatEntryCount, Is.Zero);
+            Assert.That(prepared.ActivityPendingResultId, Is.Empty);
+            Assert.That(prepared.ActivityBagResolved, Is.True);
+            Assert.That(prepared.DeferredResolvedEvents, Has.Count.EqualTo(1));
+            Assert.That(execution.pendingResultId, Is.Null.Or.Empty);
+            Assert.That(execution.activityBagResolved, Is.True);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(lootTypes, Is.EquivalentTo(new[] { "Resource", "Consumable", "Recipe", "Equipment", "Item" }));
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
+            Assert.That(storage.SaveCalls, Is.EqualTo(saveCallsBefore), "Offline core must not save.");
+            Assert.That(resolvedEvents, Is.Zero);
+
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            processor.PublishDeferredResolvedEvents(prepared);
+            processor.PublishDeferredResolvedEvents(prepared);
+            Assert.That(resolvedEvents, Is.EqualTo(1));
+
+            var restored = SaveService.Load(_factory, storage);
+            var restoredExecution = restored.GetActivityExecution(started.executionId);
+            Assert.That(restoredExecution, Is.Not.Null);
+            Assert.That(restoredExecution.pendingResultId, Is.Null.Or.Empty);
+            Assert.That(restoredExecution.activityBagResolved, Is.True);
+            Assert.That(restoredExecution.linkedCombat, Is.Not.Null);
+            Assert.That(restored.PendingResults.GetAll(), Is.Empty);
+            Assert.That(restored.IsHeroBusy("ren"), Is.True);
+        }
+
+        [Test]
+        public void PrepareDangerEncounterReplayAcceptsStartedLinkAndRejectsCorruptLootWithoutRepair()
+        {
+            var state = NewState();
+            var random = new CountingDangerSequenceRandom(1);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 2));
+            Assert.That(
+                NewWorkAdvanceProcessor(state, random)
+                    .Advance(new WorkAdvanceRequest(started.executionId, 10))
+                    .DangerBoundaryReached,
+                Is.True);
+            using var processor = NewDangerEncounterPreparationProcessor(state);
+            Assert.That(
+                processor.Prepare(new DangerEncounterPreparationRequest(started.executionId)).Success,
+                Is.True);
+            var preparedState = JsonUtility.ToJson(state.ToSaveData());
+
+            var replay = processor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
+
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.Code, Is.EqualTo(DangerEncounterPreparationCode.AlreadyPrepared));
+            Assert.That(replay.RequestCreated, Is.False);
+            Assert.That(replay.Replayed, Is.True);
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(preparedState));
+
+            var startedLink = state.GetActivityExecution(started.executionId);
+            startedLink.linkedCombat.combatExecutionId = "combat-child";
+            Assert.That(state.UpdateActivityExecution(startedLink), Is.True);
+            Assert.That(
+                processor.Prepare(new DangerEncounterPreparationRequest(started.executionId)).Code,
+                Is.EqualTo(DangerEncounterPreparationCode.AlreadyPrepared));
+
+            var corrupt = state.GetActivityExecution(started.executionId);
+            corrupt.linkedCombat.loot[0].quantity++;
+            Assert.That(state.UpdateActivityExecution(corrupt), Is.True);
+            var corruptState = JsonUtility.ToJson(state.ToSaveData());
+
+            var rejected = processor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
+
+            Assert.That(rejected.Success, Is.False);
+            Assert.That(rejected.Code, Is.EqualTo(DangerEncounterPreparationCode.DataIntegrityFailure));
+            Assert.That(JsonUtility.ToJson(state.ToSaveData()), Is.EqualTo(corruptState));
+        }
+
+        [Test]
+        public void PrepareDangerEncounterCanBeRolledBackByOuterCheckpoint()
+        {
+            var state = NewState();
+            var activityState = new PlayerStateActivityAdapter(state);
+            var random = new CountingDangerSequenceRandom(1);
+            var runtime = new ActivityRuntimeService(state, activityState, random);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 2));
+            Assert.That(
+                NewWorkAdvanceProcessor(state, random)
+                    .Advance(new WorkAdvanceRequest(started.executionId, 10))
+                    .DangerBoundaryReached,
+                Is.True);
+            var checkpoint = activityState.CaptureCheckpoint();
+            var before = state.GetActivityExecution(started.executionId);
+            using var processor = NewDangerEncounterPreparationProcessor(state);
+
+            Assert.That(
+                processor.Prepare(new DangerEncounterPreparationRequest(started.executionId)).Success,
+                Is.True);
+            activityState.RestoreCheckpoint(checkpoint);
+            var restored = state.GetActivityExecution(started.executionId);
+
+            Assert.That(restored.status, Is.EqualTo(ActivityRuntimeStatus.Running));
+            Assert.That(restored.cyclePhase, Is.EqualTo("ResultStaged"));
+            Assert.That(restored.stagedRewards, Has.Length.EqualTo(before.stagedRewards.Length));
+            Assert.That(restored.linkedCombat, Is.Null);
+            Assert.That(restored.dangerHandoffFingerprint, Is.Null.Or.Empty);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
+        }
+
+        [Test]
+        public void OnlineAndOfflineDangerHandoffProduceEquivalentPartitionAndRequestContext()
+        {
+            var onlineState = NewState();
+            var onlineRuntime = new ActivityRuntimeService(
+                onlineState,
+                new PlayerStateActivityAdapter(onlineState),
+                new CountingDangerSequenceRandom(1));
+            var onlineStart = onlineRuntime.Start(WorkStart("hunt_boars", "ren", 2));
+            Assert.That(onlineRuntime.Tick(10f).success, Is.True);
+            var online = onlineState.GetActivityExecution(onlineStart.executionId);
+
+            var offlineState = NewState();
+            var offlineRandom = new CountingDangerSequenceRandom(1);
+            var offlineRuntime = new ActivityRuntimeService(
+                offlineState,
+                new PlayerStateActivityAdapter(offlineState),
+                offlineRandom);
+            var offlineStart = offlineRuntime.Start(WorkStart("hunt_boars", "ren", 2));
+            Assert.That(
+                NewWorkAdvanceProcessor(offlineState, offlineRandom)
+                    .Advance(new WorkAdvanceRequest(offlineStart.executionId, 10))
+                    .DangerBoundaryReached,
+                Is.True);
+            using var processor = NewDangerEncounterPreparationProcessor(offlineState);
+            Assert.That(
+                processor.Prepare(new DangerEncounterPreparationRequest(offlineStart.executionId)).Success,
+                Is.True);
+            var offline = offlineState.GetActivityExecution(offlineStart.executionId);
+
+            Assert.That(offline.endReason, Is.EqualTo(online.endReason));
+            Assert.That(offline.status, Is.EqualTo(online.status));
+            Assert.That(offline.cyclePhase, Is.EqualTo(online.cyclePhase));
+            Assert.That(offline.activityBagResolved, Is.EqualTo(online.activityBagResolved));
+            Assert.That(offline.linkedCombat.heroId, Is.EqualTo(online.linkedCombat.heroId));
+            Assert.That(offline.linkedCombat.dangerEncounterId, Is.EqualTo(online.linkedCombat.dangerEncounterId));
+            Assert.That(offline.linkedCombat.enemyGroupId, Is.EqualTo(online.linkedCombat.enemyGroupId));
+            Assert.That(offline.linkedCombat.combatMode, Is.EqualTo(online.linkedCombat.combatMode));
+            Assert.That(offline.linkedCombat.enemyExpTargetId, Is.EqualTo(online.linkedCombat.enemyExpTargetId));
+            Assert.That(offline.linkedCombat.defeatLossRule, Is.EqualTo(online.linkedCombat.defeatLossRule));
+            Assert.That(offline.linkedCombat.suppressFatigueCost, Is.EqualTo(online.linkedCombat.suppressFatigueCost));
+            Assert.That(offline.linkedCombat.loot, Has.Length.EqualTo(online.linkedCombat.loot.Length));
+            for (var index = 0; index < online.linkedCombat.loot.Length; index++)
+            {
+                Assert.That(offline.linkedCombat.loot[index].rewardType, Is.EqualTo(online.linkedCombat.loot[index].rewardType));
+                Assert.That(offline.linkedCombat.loot[index].targetId, Is.EqualTo(online.linkedCombat.loot[index].targetId));
+                Assert.That(offline.linkedCombat.loot[index].quantity, Is.EqualTo(online.linkedCombat.loot[index].quantity));
+                Assert.That(offline.linkedCombat.loot[index].origin, Is.EqualTo(online.linkedCombat.loot[index].origin));
+            }
+            Assert.That(offlineState.GetCombatAggregates(), Is.Empty);
+        }
+
+        [Test]
+        public void PrepareDangerEncounterRejectsExecutionBeforeTriggeredBoundary()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 2));
+            using var processor = NewDangerEncounterPreparationProcessor(state);
+
+            var result = processor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Code, Is.EqualTo(DangerEncounterPreparationCode.NotDangerBoundary));
+            Assert.That(state.GetActivityExecution(started.executionId).linkedCombat, Is.Null);
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+        }
+
+        [Test]
+        public void PreparedDangerEncounterSurvivesSaveLoadAndReplaysWithoutDuplicates()
+        {
+            var storage = new MemorySaveStorage();
+            var state = NewState();
+            var random = new CountingDangerSequenceRandom(1);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), random);
+            var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 2));
+            Assert.That(
+                NewWorkAdvanceProcessor(state, random)
+                    .Advance(new WorkAdvanceRequest(started.executionId, 10))
+                    .DangerBoundaryReached,
+                Is.True);
+            using (var processor = NewDangerEncounterPreparationProcessor(state))
+                Assert.That(
+                    processor.Prepare(new DangerEncounterPreparationRequest(started.executionId)).Success,
+                    Is.True);
+            Assert.That(SaveService.Save(state, storage), Is.True);
+
+            state = SaveService.Load(_factory, storage);
+            using var restoredProcessor = NewDangerEncounterPreparationProcessor(state);
+            var replay = restoredProcessor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
+
+            Assert.That(replay.Success, Is.True);
+            Assert.That(replay.Code, Is.EqualTo(DangerEncounterPreparationCode.AlreadyPrepared));
+            Assert.That(state.GetActivityExecutions(), Has.Length.EqualTo(1));
+            Assert.That(state.GetActivityExecution(started.executionId).linkedCombat, Is.Not.Null);
+            Assert.That(state.PendingResults.GetAll(), Has.Length.EqualTo(1));
+            Assert.That(state.GetCombatAggregates(), Is.Empty);
+        }
+
+        [Test]
         public void AdvanceWorkProcessingLimitPreservesRemainingIntervalAndCanResume()
         {
             var state = NewState();
@@ -1883,6 +2163,14 @@ namespace GuildIdle.Editor.Activities
                 random ?? new SystemActivityRandom(12345));
         }
 
+        private static DangerEncounterPreparationProcessor NewDangerEncounterPreparationProcessor(
+            PlayerState state)
+        {
+            return new DangerEncounterPreparationProcessor(
+                state,
+                new PlayerStateActivityAdapter(state));
+        }
+
         private static ConstructionAdvanceProcessor NewConstructionAdvanceProcessor(
             PlayerState state,
             IActivityRuntimeProgressionProcessor progression = null,
@@ -1943,6 +2231,27 @@ namespace GuildIdle.Editor.Activities
                             checkIntervalSeconds = 1d
                         }
                     },
+                    equipmentWeapons = new[]
+                    {
+                        new EquipmentWeaponConfigDto
+                        {
+                            id = "test_danger_weapon",
+                            kind = "equipment",
+                            equipmentSlot = "weapon",
+                            weaponDamageMin = 1,
+                            weaponDamageMax = 1,
+                            weaponAttackInterval = 1f
+                        }
+                    },
+                    recipes = new[]
+                    {
+                        new RecipeConfigDto
+                        {
+                            id = "test_danger_recipe",
+                            kind = "recipe",
+                            enabled = true
+                        }
+                    },
                     currencies = new[]
                     {
                         new CurrencyConfigDto { currencyId = "gold_id" }
@@ -1990,6 +2299,7 @@ namespace GuildIdle.Editor.Activities
                         new ActivityConfigDto { id = "bad_danger_unsupported_work", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_reward_range_work", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
                         new ActivityConfigDto { id = "hunt_rabbits", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
+                        new ActivityConfigDto { id = "hunt_boars", type = "Work", category = "Hunting", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_hunting", isRepeatable = true },
                         new ActivityConfigDto { id = "empty_repeat", type = "Work", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_cycle", type = "Work", cycleSec = 5, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "one_shot", type = "Explore", durationSec = 5, fatigueCost = 5, isRepeatable = false },
@@ -2019,6 +2329,11 @@ namespace GuildIdle.Editor.Activities
                         Reward("bad_reward_range_work", "Resource", "resource_pine_wood", 5, 1, 100, "OnCycle"),
                         Reward("hunt_rabbits", "Resource", "resource_rabbit_meat", 1, "OnCycle"),
                         Reward("hunt_rabbits", "SkillExp", "skill_hunting", 2, "OnCycle"),
+                        Reward("hunt_boars", "Resource", "resource_rabbit_meat", 1, "OnCycle"),
+                        Reward("hunt_boars", "Consumable", "test_work_consumable", 1, "OnCycle"),
+                        Reward("hunt_boars", "Recipe", "test_danger_recipe", 1, "OnCycle"),
+                        Reward("hunt_boars", "Equipment", "test_danger_weapon", 1, "OnCycle"),
+                        Reward("hunt_boars", "Item", "resource_stone", 1, "OnCycle"),
                         Reward("bad_cycle", "Unsupported", "bad_reward", 1, "OnCycle"),
                         Reward("one_shot_new", "Resource", "resource_pine_wood", 1, "OnComplete"),
                         Reward("one_shot_new", "Gold", "gold_id", 2, "OnFirstComplete")
@@ -2059,6 +2374,16 @@ namespace GuildIdle.Editor.Activities
                         {
                             dangerEncounterId = "danger_test_rabbits",
                             activityId = "hunt_rabbits",
+                            riskPercent = 25,
+                            enemyGroupId = "enemy_group_test_rabbits",
+                            combatMode = "Queue_1v1",
+                            defeatLossRule = "CombatDefeatLootLoss25To50",
+                            riskFormulaId = "test_danger_risk"
+                        },
+                        new DangerEncounterConfigDto
+                        {
+                            dangerEncounterId = "danger_test_boars",
+                            activityId = "hunt_boars",
                             riskPercent = 25,
                             enemyGroupId = "enemy_group_test_rabbits",
                             combatMode = "Queue_1v1",

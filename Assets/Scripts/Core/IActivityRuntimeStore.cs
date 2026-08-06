@@ -36,6 +36,8 @@ namespace GuildIdle.Core
         public bool dangerRollCompleted;
         public float dangerRiskPercent;
         public int dangerRoll;
+        public string dangerHandoffFingerprint;
+        public int dangerNonCombatEntryCount;
         public bool activityBagResolved;
         public bool materialsPaid;
         public float accumulatedBuildPoints;
