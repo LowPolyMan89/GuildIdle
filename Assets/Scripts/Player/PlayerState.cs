@@ -816,7 +816,6 @@ namespace GuildIdle.Player
                 return false;
             var execution = normalized.execution;
             if (execution.status != CombatExecutionStatus.Running ||
-                _combatAggregates.Count >= CombatRuntimeSaveDataUtility.PersistentCollectionLimit ||
                 _combatAggregates.ContainsKey(execution.executionId) || _activityExecutions.ContainsKey(execution.executionId) ||
                 _craftExecutions.ContainsKey(execution.executionId) ||
                 HasCombatSession(normalized.session.sessionId) ||
@@ -827,6 +826,21 @@ namespace GuildIdle.Player
             }
             if (!CanApplyCombatOwnership(normalized))
                 return false;
+
+            var evictionsNeeded = Math.Max(
+                0,
+                _combatAggregates.Count -
+                CombatRuntimeSaveDataUtility.PersistentAggregateLimit + 1);
+            var evictedExecutionIds = GetCompletedCombatEvictionIds(
+                _combatAggregates.Values,
+                evictionsNeeded);
+            if (evictedExecutionIds.Count != evictionsNeeded)
+            {
+                Debug.LogError("[PlayerState] Combat runtime has no completed aggregate available for bounded retention.");
+                return false;
+            }
+            foreach (var evictedExecutionId in evictedExecutionIds)
+                _combatAggregates.Remove(evictedExecutionId);
 
             _combatAggregates.Add(execution.executionId, normalized);
             ApplyCombatOwnership(normalized);
@@ -1505,6 +1519,27 @@ namespace GuildIdle.Player
                 acceptedSessionIds.Add(aggregate.session.sessionId);
             }
 
+            var evictionsNeeded = Math.Max(
+                0,
+                staged.Count - CombatRuntimeSaveDataUtility.PersistentAggregateLimit);
+            var evictedExecutionIds = GetCompletedCombatEvictionIds(
+                staged,
+                evictionsNeeded);
+            if (evictedExecutionIds.Count != evictionsNeeded)
+            {
+                Debug.LogError("[PlayerState] Combat runtime exceeds bounded retention with unfinished aggregates.");
+                staged.Clear();
+                WasNormalized = true;
+            }
+            else if (evictionsNeeded > 0)
+            {
+                var evicted = new HashSet<string>(
+                    evictedExecutionIds,
+                    StringComparer.Ordinal);
+                staged.RemoveAll(value => evicted.Contains(value.execution.executionId));
+                WasNormalized = true;
+            }
+
             foreach (var session in sessions)
             {
                 if (session == null || string.IsNullOrWhiteSpace(session.sessionId) || !acceptedSessionIds.Contains(session.sessionId))
@@ -1590,6 +1625,39 @@ namespace GuildIdle.Player
                     return true;
             }
             return false;
+        }
+
+        private static List<string> GetCompletedCombatEvictionIds(
+            IEnumerable<CombatRuntimeAggregate> aggregates,
+            int count)
+        {
+            var completed = new List<CombatRuntimeAggregate>();
+            if (count <= 0)
+                return new List<string>();
+            foreach (var aggregate in aggregates)
+                if (aggregate?.execution != null &&
+                    !CombatRuntimeSaveDataUtility.IsUnfinished(aggregate.execution))
+                    completed.Add(aggregate);
+            completed.Sort((left, right) =>
+            {
+                var comparison = left.execution.completedAtUnixSeconds.CompareTo(
+                    right.execution.completedAtUnixSeconds);
+                if (comparison != 0)
+                    return comparison;
+                comparison = left.execution.startedAtUnixSeconds.CompareTo(
+                    right.execution.startedAtUnixSeconds);
+                return comparison != 0
+                    ? comparison
+                    : string.Compare(
+                        left.execution.executionId,
+                        right.execution.executionId,
+                        StringComparison.Ordinal);
+            });
+
+            var result = new List<string>();
+            for (var index = 0; index < count && index < completed.Count; index++)
+                result.Add(completed[index].execution.executionId);
+            return result;
         }
 
         private static bool IsValidCombatLifecycleTransition(CombatExecutionSaveData previous, CombatExecutionSaveData next)

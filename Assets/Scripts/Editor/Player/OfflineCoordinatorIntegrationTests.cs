@@ -18,6 +18,8 @@ namespace GuildIdle.Editor.Player
     public sealed class OfflineCoordinatorIntegrationTests
     {
         private const int SaveSizeLimitBytes = 200 * 1024;
+        private const int PersistentCombatAggregateLimit = 8;
+        private const int PersistentCombatCollectionLimit = 64;
         private const int ReceiptRetentionLimit = 64;
         private const int StatusStackLimit = 8;
 
@@ -921,64 +923,6 @@ namespace GuildIdle.Editor.Player
         {
             var setup = ActivitySetup();
             Assert.That(setup.State.AddHero("test_builder_hero"), Is.True);
-            var heroIds = new[] { "ren", "test_builder_hero" };
-            for (var index = 0; index < heroIds.Length; index++)
-            {
-                var executionId = $"bounded-craft-{index}";
-                Assert.That(setup.State.SetHeroBusy(heroIds[index], executionId), Is.True);
-                Assert.That(setup.State.AddCraftExecution(new CraftExecutionSaveData
-                {
-                    executionId = executionId,
-                    craftId = $"bounded-craft-definition-{index}",
-                    heroId = heroIds[index],
-                    stationBuildingId = "building_hall",
-                    stationBuildingLevel = 0,
-                    status = CraftExecutionStatus.Running,
-                    progressSeconds = 10f,
-                    durationSeconds = 10,
-                    outputItemId = "resource_pine_wood",
-                    outputCount = 1,
-                    skillId = "skill_gathering",
-                    skillExp = 1,
-                    costsPaid = true,
-                    startOperationKey = $"bounded-start-{index}",
-                    startFingerprint = $"bounded-start-fingerprint-{index}",
-                    requiredBuildings = Array.Empty<CraftRequiredBuildingSnapshotSaveData>(),
-                    paidCosts = Array.Empty<CraftPaidCostSaveData>(),
-                    recipe = new CraftRecipeAuditSaveData(),
-                    advanceReceipts = Array.Empty<CraftAdvanceReceiptSaveData>(),
-                    startedAtUnixSeconds = 1_000L
-                }), Is.True);
-                var formed = setup.State.PendingResults.CreateOrAppend(
-                    $"bounded-result-{index}",
-                    new PendingResultDraft
-                    {
-                        SourceType = PendingResultSourceType.Craft,
-                        SourceId = $"bounded-craft-definition-{index}",
-                        SourceExecutionId = executionId,
-                        OwnerHeroId = heroIds[index],
-                        Entries = new[]
-                        {
-                            new PendingResultEntryDraft
-                            {
-                                RewardType = "Item",
-                                TargetId = "resource_pine_wood",
-                                Quantity = 1,
-                                Origin = PendingResultOrigin.CraftOutput
-                            },
-                            new PendingResultEntryDraft
-                            {
-                                SortOrder = 1,
-                                RewardType = "SkillExp",
-                                TargetId = "skill_gathering",
-                                Quantity = 1,
-                                Origin = PendingResultOrigin.CraftOutput
-                            }
-                        }
-                    },
-                    makeClaimable: true);
-                Assert.That(formed.Success, Is.True, formed.Message);
-            }
 
             var save = setup.State.ToSaveData();
             save.activityRuntime = new ActivityRuntimeSaveData
@@ -1016,7 +960,9 @@ namespace GuildIdle.Editor.Player
                 };
             }
 
-            var combats = CreateBoundedCombatFixtures(8);
+            var combats = CreateBoundedCombatFixtures(PersistentCombatAggregateLimit);
+            AssertRunningCombatCollectionsAreMaxFilled(combats[0]);
+            AssertTerminalCombatCollectionsAreMaxFilled(combats[1]);
             save.combatRuntime = new CombatRuntimeSaveData
             {
                 executions = new CombatExecutionSaveData[combats.Length],
@@ -1032,12 +978,38 @@ namespace GuildIdle.Editor.Player
             var boundedSave = bounded.ToSaveData();
             var bytes = Encoding.UTF8.GetByteCount(JsonUtility.ToJson(boundedSave));
             TestContext.WriteLine($"Bounded worst-case save size: {bytes} bytes.");
+            TestContext.WriteLine($"Combat runtime size: {Encoding.UTF8.GetByteCount(JsonUtility.ToJson(boundedSave.combatRuntime))} bytes.");
+
+            var persistedCombats = bounded.GetCombatAggregates();
+            var unfinishedCount = 0;
+            var compactCompletedCount = 0;
+            CombatRuntimeAggregate heavy = null;
+            foreach (var aggregate in persistedCombats)
+            {
+                if (aggregate.execution.status != CombatExecutionStatus.Completed ||
+                    (aggregate.execution.resultCreated && !aggregate.execution.pendingResultResolved))
+                {
+                    unfinishedCount++;
+                    heavy = aggregate;
+                    continue;
+                }
+
+                AssertCompletedCombatIsCompacted(aggregate);
+                compactCompletedCount++;
+            }
 
             Assert.That(boundedSave.heroes, Has.Length.EqualTo(2));
             Assert.That(bounded.GetActivityExecutions(), Has.Length.EqualTo(8));
-            Assert.That(bounded.GetCraftExecutions(), Has.Length.EqualTo(2));
-            Assert.That(bounded.GetCombatAggregates(), Has.Length.EqualTo(8));
-            Assert.That(bounded.PendingResults.GetAll(), Has.Length.EqualTo(2));
+            Assert.That(bounded.GetCraftExecutions(), Is.Empty);
+            Assert.That(persistedCombats, Has.Length.EqualTo(PersistentCombatAggregateLimit));
+            Assert.That(
+                ActiveHeroLimitResolver.GetCurrentLimit(new PlayerStateActivityAdapter(bounded)),
+                Is.EqualTo(1),
+                "The production active-hero limit permits only one unfinished heavy execution.");
+            Assert.That(unfinishedCount, Is.EqualTo(1));
+            Assert.That(compactCompletedCount, Is.EqualTo(PersistentCombatAggregateLimit - 1));
+            Assert.That(heavy, Is.Not.Null);
+            AssertRunningCombatCollectionsAreMaxFilled(heavy);
             Assert.That(boundedSave.operationReceipts, Has.Length.EqualTo(ReceiptRetentionLimit));
             Assert.That(bytes, Is.LessThanOrEqualTo(SaveSizeLimitBytes));
         }
@@ -1477,10 +1449,18 @@ namespace GuildIdle.Editor.Player
                 var executionId = $"bounded-combat-{index}";
                 var sessionId = $"bounded-session-{index}";
                 var aggregate = CombatAggregate(executionId, sessionId, "ren");
-                aggregate.execution.status = CombatExecutionStatus.Completed;
                 aggregate.session.rng = CombatRngStateFactory.CreateSplitMix64((ulong)(index + 1));
-                if (index == 0)
-                    PopulateBoundedCombatCollections(aggregate.session, 64);
+                PopulateBoundedCombatCollections(aggregate.session, PersistentCombatCollectionLimit);
+                if (index > 0)
+                    CompleteCombatAggregate(aggregate, index);
+                else
+                {
+                    // Outcome rewards and defeat loss are produced only after the
+                    // scheduler has stopped, so they cannot coexist with this
+                    // max-filled Running scheduler in a persisted production state.
+                    aggregate.session.outcomeRewards = Array.Empty<CombatRewardEntrySaveData>();
+                    aggregate.session.defeatLoss = null;
+                }
                 fixtures[index] = aggregate;
             }
             return fixtures;
@@ -1488,9 +1468,13 @@ namespace GuildIdle.Editor.Player
 
         private static void PopulateBoundedCombatCollections(CombatSessionSaveData session, int count)
         {
+            session.enemyQueue = new CombatEnemyQueueEntrySaveData[count];
             session.hero.abilityCooldowns = new CombatAbilityCooldownSaveData[count];
             session.hero.statuses = new CombatStatusInstanceSaveData[count];
             session.hero.independentModifiers = new CombatTemporaryModifierSaveData[count];
+            session.currentEnemy.abilityCooldowns = new CombatAbilityCooldownSaveData[count];
+            session.currentEnemy.statuses = new CombatStatusInstanceSaveData[count];
+            session.currentEnemy.independentModifiers = new CombatTemporaryModifierSaveData[count];
             session.scheduler.nextSequence = count;
             session.scheduler.scheduledEvents = new CombatScheduledEventSaveData[count];
             session.loot = new CombatRewardEntrySaveData[count];
@@ -1503,6 +1487,13 @@ namespace GuildIdle.Editor.Player
             };
             for (var index = 0; index < count; index++)
             {
+                session.enemyQueue[index] = new CombatEnemyQueueEntrySaveData
+                {
+                    combatantId = $"{session.sessionId}:enemy:{index}",
+                    enemyId = $"bounded-enemy-{index}",
+                    level = index + 1,
+                    queueIndex = index
+                };
                 session.hero.abilityCooldowns[index] = new CombatAbilityCooldownSaveData
                 {
                     abilityId = $"bounded-ability-{index}",
@@ -1535,6 +1526,38 @@ namespace GuildIdle.Editor.Player
                     expiresAtSeconds = 100d + index,
                     appliedEventKey = $"bounded-modifier-apply-{index}"
                 };
+                session.currentEnemy.abilityCooldowns[index] = new CombatAbilityCooldownSaveData
+                {
+                    abilityId = $"bounded-enemy-ability-{index}",
+                    nextReadyAtSeconds = index + 1d,
+                    lastTriggerEventKey = $"bounded-enemy-trigger-{index}",
+                    lastChanceRoll = 5_000,
+                    lastChanceResolved = true
+                };
+                var enemyStackIds = new string[StatusStackLimit];
+                for (var stackIndex = 0; stackIndex < enemyStackIds.Length; stackIndex++)
+                    enemyStackIds[stackIndex] = $"bounded-enemy-status-stack-{index}-{stackIndex}";
+                session.currentEnemy.statuses[index] = new CombatStatusInstanceSaveData
+                {
+                    statusInstanceId = $"bounded-enemy-status-instance-{index}",
+                    statusId = $"bounded-enemy-status-{index}",
+                    sourceCombatantId = session.currentEnemy.combatantId,
+                    stackIds = enemyStackIds,
+                    expiresAtSeconds = 100d + index,
+                    nextTickAtSeconds = 50d + index,
+                    lastApplyEventKey = $"bounded-enemy-status-apply-{index}",
+                    lastTickEventKey = $"bounded-enemy-status-tick-{index}"
+                };
+                session.currentEnemy.independentModifiers[index] = new CombatTemporaryModifierSaveData
+                {
+                    modifierInstanceId = $"bounded-enemy-modifier-{index}",
+                    sourceId = $"bounded-enemy-source-{index}",
+                    statId = "damage",
+                    operation = "Add",
+                    value = index + 1,
+                    expiresAtSeconds = 100d + index,
+                    appliedEventKey = $"bounded-enemy-modifier-apply-{index}"
+                };
                 session.scheduler.scheduledEvents[index] = new CombatScheduledEventSaveData
                 {
                     eventKey = $"bounded-event-{index}",
@@ -1557,6 +1580,84 @@ namespace GuildIdle.Editor.Player
                     quantityKept = 3
                 };
             }
+
+            session.currentEnemy.combatantId = session.enemyQueue[0].combatantId;
+            session.currentEnemy.definitionId = session.enemyQueue[0].enemyId;
+        }
+
+        private static void CompleteCombatAggregate(CombatRuntimeAggregate aggregate, int index)
+        {
+            aggregate.execution.status = CombatExecutionStatus.Completed;
+            aggregate.execution.outcome = CombatTerminalCandidateKinds.Defeat;
+            aggregate.execution.outcomeFinalized = true;
+            aggregate.execution.resultCreated = true;
+            aggregate.execution.pendingResultResolved = true;
+            aggregate.execution.failurePublished = true;
+            aggregate.execution.pendingResultId = $"bounded-combat-result-{index}";
+            aggregate.execution.resultSourceSequence = index;
+            aggregate.execution.completedAtUnixSeconds = 200 + index;
+            aggregate.session.combatTimeSeconds = index;
+            aggregate.session.hero.currentHp = 0;
+            aggregate.session.scheduler.scheduledEvents = Array.Empty<CombatScheduledEventSaveData>();
+            aggregate.session.terminalCandidate = new CombatTerminalCandidateSaveData
+            {
+                candidateId = $"bounded-terminal-{index}",
+                kind = CombatTerminalCandidateKinds.Defeat,
+                eventKey = $"bounded-terminal-event-{index}",
+                createdAtSeconds = index
+            };
+            aggregate.session.simulationStopped = true;
+        }
+
+        private static void AssertRunningCombatCollectionsAreMaxFilled(CombatRuntimeAggregate aggregate)
+        {
+            Assert.That(aggregate.session.enemyQueue, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.hero.abilityCooldowns, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.hero.statuses, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.hero.statuses[0].stackIds, Has.Length.EqualTo(StatusStackLimit));
+            Assert.That(aggregate.session.hero.independentModifiers, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.currentEnemy.abilityCooldowns, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.currentEnemy.statuses, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.currentEnemy.statuses[0].stackIds, Has.Length.EqualTo(StatusStackLimit));
+            Assert.That(aggregate.session.currentEnemy.independentModifiers, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.scheduler.scheduledEvents, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.loot, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.completionRewards, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.outcomeRewards, Is.Empty);
+            Assert.That(aggregate.session.defeatLoss, Is.Null);
+        }
+
+        private static void AssertTerminalCombatCollectionsAreMaxFilled(CombatRuntimeAggregate aggregate)
+        {
+            Assert.That(aggregate.session.enemyQueue, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.hero.abilityCooldowns, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.hero.statuses, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.hero.statuses[0].stackIds, Has.Length.EqualTo(StatusStackLimit));
+            Assert.That(aggregate.session.hero.independentModifiers, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.currentEnemy.abilityCooldowns, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.currentEnemy.statuses, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.currentEnemy.statuses[0].stackIds, Has.Length.EqualTo(StatusStackLimit));
+            Assert.That(aggregate.session.currentEnemy.independentModifiers, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.scheduler.scheduledEvents, Is.Empty);
+            Assert.That(aggregate.session.loot, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.completionRewards, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.outcomeRewards, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+            Assert.That(aggregate.session.defeatLoss.entries, Has.Length.EqualTo(PersistentCombatCollectionLimit));
+        }
+
+        private static void AssertCompletedCombatIsCompacted(CombatRuntimeAggregate aggregate)
+        {
+            Assert.That(aggregate.execution.status, Is.EqualTo(CombatExecutionStatus.Completed));
+            Assert.That(aggregate.session.enemyQueue, Is.Empty);
+            Assert.That(aggregate.session.currentEnemy, Is.Null);
+            Assert.That(aggregate.session.hero.abilityCooldowns, Is.Empty);
+            Assert.That(aggregate.session.hero.statuses, Is.Empty);
+            Assert.That(aggregate.session.hero.independentModifiers, Is.Empty);
+            Assert.That(aggregate.session.scheduler.scheduledEvents, Is.Empty);
+            Assert.That(aggregate.session.loot, Is.Empty);
+            Assert.That(aggregate.session.completionRewards, Is.Empty);
+            Assert.That(aggregate.session.outcomeRewards, Is.Empty);
+            Assert.That(aggregate.session.defeatLoss, Is.Null);
         }
 
         private static CombatRewardEntrySaveData CombatReward(string entryId, int sortOrder)

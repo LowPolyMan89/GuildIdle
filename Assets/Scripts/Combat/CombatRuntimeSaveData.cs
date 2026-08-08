@@ -289,6 +289,9 @@ namespace GuildIdle.Combat
 
     internal static class CombatRuntimeSaveDataUtility
     {
+        // One max-filled Running aggregate plus seven compact lifecycle records
+        // keeps the bounded production save below the global 200 KB contract.
+        public const int PersistentAggregateLimit = 8;
         public const int PersistentCollectionLimit = 64;
         public const int StatusStackLimit = 8;
 
@@ -341,7 +344,57 @@ namespace GuildIdle.Combat
                     out error);
             }
 
+            if (execution.status == CombatExecutionStatus.ResultPending ||
+                execution.status == CombatExecutionStatus.Completed)
+                changed |= CompactResolvedSession(
+                    session,
+                    execution.status == CombatExecutionStatus.Completed);
+
             aggregate = new CombatRuntimeAggregate { execution = execution, session = session };
+            return true;
+        }
+
+        private static bool CompactResolvedSession(
+            CombatSessionSaveData session,
+            bool clearResultPayload)
+        {
+            var changed = session.enemyQueue.Length != 0 || session.queuePosition != 0 ||
+                          session.currentEnemy != null ||
+                          session.hero.abilityCooldowns.Length != 0 ||
+                          session.hero.statuses.Length != 0 ||
+                          session.hero.independentModifiers.Length != 0 ||
+                          session.scheduler.scheduledEvents.Length != 0 ||
+                          session.lastEnemyRewardOperation != null ||
+                          session.lastDeathPreventionOperation != null ||
+                          clearResultPayload &&
+                          (session.loot.Length != 0 ||
+                           session.accumulatedEnemyExp != 0 ||
+                           session.completionRewards.Length != 0 ||
+                           session.outcomeRewards.Length != 0 ||
+                           session.defeatLoss != null);
+            if (!changed)
+                return false;
+
+            // ResultPending is created only after its rewards have been copied to
+            // PendingResult. Simulation payloads can then be dropped; result/loss
+            // audit data remains available until the execution becomes Completed.
+            session.enemyQueue = Array.Empty<CombatEnemyQueueEntrySaveData>();
+            session.queuePosition = 0;
+            session.currentEnemy = null;
+            session.hero.abilityCooldowns = Array.Empty<CombatAbilityCooldownSaveData>();
+            session.hero.statuses = Array.Empty<CombatStatusInstanceSaveData>();
+            session.hero.independentModifiers = Array.Empty<CombatTemporaryModifierSaveData>();
+            session.scheduler.scheduledEvents = Array.Empty<CombatScheduledEventSaveData>();
+            session.lastEnemyRewardOperation = null;
+            session.lastDeathPreventionOperation = null;
+            if (clearResultPayload)
+            {
+                session.loot = Array.Empty<CombatRewardEntrySaveData>();
+                session.accumulatedEnemyExp = 0;
+                session.completionRewards = Array.Empty<CombatRewardEntrySaveData>();
+                session.outcomeRewards = Array.Empty<CombatRewardEntrySaveData>();
+                session.defeatLoss = null;
+            }
             return true;
         }
 

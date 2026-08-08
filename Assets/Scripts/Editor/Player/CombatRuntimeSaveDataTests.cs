@@ -470,15 +470,71 @@ namespace GuildIdle.Editor.Player
             pending.execution.pendingResultId = "result:Combat:combat-a";
             Assert.That(state.UpdateCombatAggregate(pending), Is.True);
             Assert.That(state.GetHeroCurrentActivityExecutionId("ren"), Is.EqualTo("combat-a"));
+            var compactPending = state.GetCombatAggregate("combat-a");
+            Assert.That(compactPending.session.enemyQueue, Is.Empty);
+            Assert.That(compactPending.session.currentEnemy, Is.Null);
 
             var completed = state.GetCombatAggregate("combat-a");
+            completed.session.hero.abilityCooldowns = Cooldowns(1);
+            completed.session.hero.statuses = Statuses(1, completed.session.hero.combatantId);
+            completed.session.hero.independentModifiers = Modifiers(1);
+            completed.session.loot = Rewards(1, "loot");
+            completed.session.completionRewards = Rewards(1, "completion");
+            completed.session.outcomeRewards = Rewards(1, "outcome");
+            completed.session.defeatLoss = Loss(1);
             completed.execution.status = CombatExecutionStatus.Completed;
             completed.execution.pendingResultResolved = true;
             completed.execution.completedAtUnixSeconds = 200;
             Assert.That(state.UpdateCombatAggregate(completed), Is.True);
             Assert.That(state.IsHeroBusy("ren"), Is.False);
+            var compacted = state.GetCombatAggregate("combat-a");
+            Assert.That(compacted.session.enemyQueue, Is.Empty);
+            Assert.That(compacted.session.currentEnemy, Is.Null);
+            Assert.That(compacted.session.hero.abilityCooldowns, Is.Empty);
+            Assert.That(compacted.session.hero.statuses, Is.Empty);
+            Assert.That(compacted.session.hero.independentModifiers, Is.Empty);
+            Assert.That(compacted.session.loot, Is.Empty);
+            Assert.That(compacted.session.completionRewards, Is.Empty);
+            Assert.That(compacted.session.outcomeRewards, Is.Empty);
+            Assert.That(compacted.session.defeatLoss, Is.Null);
+            Assert.That(compacted.session.terminalCandidate.candidateId, Is.EqualTo("candidate-a"));
             Assert.That(state.RemoveCombatAggregate("combat-a"), Is.True);
             Assert.That(state.GetCombatAggregates(), Is.Empty);
+        }
+
+        [Test]
+        public void CombatAggregateRetentionKeepsNewestCompletedEntriesAndRoomForRunningCombat()
+        {
+            const int aggregateRetentionLimit = 8;
+            var save = _factory.CreateDefault().ToSaveData();
+            save.combatRuntime.executions = new CombatExecutionSaveData[aggregateRetentionLimit + 1];
+            save.combatRuntime.sessions = new CombatSessionSaveData[aggregateRetentionLimit + 1];
+            for (var index = 0; index < aggregateRetentionLimit + 1; index++)
+            {
+                var aggregate = Aggregate(
+                    $"completed-{index}",
+                    $"completed-session-{index}",
+                    "ren",
+                    $"completed-group-{index}",
+                    $"completed-enemy-{index}");
+                aggregate.execution.status = CombatExecutionStatus.Completed;
+                aggregate.execution.completedAtUnixSeconds = index + 1;
+                save.combatRuntime.executions[index] = aggregate.execution;
+                save.combatRuntime.sessions[index] = aggregate.session;
+            }
+
+            var state = _factory.Create(save);
+
+            Assert.That(state.GetCombatAggregates(), Has.Length.EqualTo(aggregateRetentionLimit));
+            Assert.That(state.GetCombatAggregate("completed-0"), Is.Null);
+            Assert.That(state.GetCombatAggregate("completed-8"), Is.Not.Null);
+            Assert.That(
+                state.AddCombatAggregate(
+                    Aggregate("combat-running", "session-running", "ren", "group-running", "enemy-running")),
+                Is.True);
+            Assert.That(state.GetCombatAggregates(), Has.Length.EqualTo(aggregateRetentionLimit));
+            Assert.That(state.GetCombatAggregate("completed-1"), Is.Null);
+            Assert.That(state.GetCombatAggregate("combat-running"), Is.Not.Null);
         }
 
         [Test]
