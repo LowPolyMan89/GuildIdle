@@ -908,7 +908,6 @@ namespace GuildIdle.Player
             LoadActivities(saveData.availableActivities, _availableActivities);
             EnsureHeroStatesForAcquiredHeroes();
             EnsureFatigueRemaindersForHeroes();
-            TimeProgress.EnsureInitializedBaseline();
             LoadEquipmentSlots(saveData.equipmentSlots);
             NormalizeOrphanEquippedInstances();
             LoadActivityRuntime(saveData.activityRuntime);

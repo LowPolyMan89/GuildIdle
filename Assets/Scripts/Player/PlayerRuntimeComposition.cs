@@ -16,6 +16,9 @@ namespace GuildIdle.Player
         public static event Action<CraftStartedEvent> CraftStarted;
         public static event Action<CraftResultPendingEvent> CraftResultPending;
         public static event Action<CombatStartedEvent> CombatStarted;
+        public static event Action<OfflineCoordinatorReport> OfflineProcessed;
+
+        public static OfflineCoordinatorReport LastOfflineReport { get; private set; }
 
         public static ActivityRuntimeService CreateRuntimeService()
         {
@@ -81,6 +84,41 @@ namespace GuildIdle.Player
                 state,
                 new PlayerStateActivityAdapter(state),
                 CreateActivityProgressionProcessor(state));
+        }
+
+        public static OfflineCoordinator CreateOfflineCoordinator(
+            PlayerState state,
+            ITransactionalActivityRandom random = null,
+            Action<ActivityRuntimeEvent> activityEventSink = null,
+            Action<CraftResultPendingEvent> craftEventSink = null,
+            Action<OfflineCoordinatorReport> diagnosticSink = null,
+            int workOperationLimit = ActivityRuntimeService.DefaultWorkAdvanceOperationLimit,
+            int constructionOperationLimit = ActivityRuntimeService.DefaultConstructionAdvanceOperationLimit)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+
+            var activityState = new PlayerStateActivityAdapter(state);
+            return new OfflineCoordinator(
+                state,
+                new WorkAdvanceProcessor(
+                    state,
+                    activityState,
+                    random ?? new SystemActivityRandom()),
+                new DangerEncounterPreparationProcessor(
+                    state,
+                    activityState,
+                    new LinkedCombatIntegrityReader(state)),
+                new ConstructionAdvanceProcessor(
+                    state,
+                    activityState,
+                    CreateActivityProgressionProcessor(state)),
+                new CraftAdvanceProcessor(new PlayerStateCraftAdapter(state)),
+                activityEventSink ?? HandleActivityRuntimeEvent,
+                craftEventSink ?? HandleCraftResultPendingEvent,
+                diagnosticSink ?? HandleOfflineProcessed,
+                workOperationLimit,
+                constructionOperationLimit);
         }
 
         public static IStorageService CreateStorageService()
@@ -314,6 +352,12 @@ namespace GuildIdle.Player
         private static void HandleCombatStartedEvent(CombatStartedEvent combatStartedEvent)
         {
             CombatStarted?.Invoke(combatStartedEvent);
+        }
+
+        private static void HandleOfflineProcessed(OfflineCoordinatorReport report)
+        {
+            LastOfflineReport = report;
+            OfflineProcessed?.Invoke(report);
         }
 
         private static PlayerStateFactory GetPlayerStateFactory()

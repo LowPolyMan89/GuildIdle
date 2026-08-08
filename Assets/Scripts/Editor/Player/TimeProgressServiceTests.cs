@@ -46,7 +46,7 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
-        public void MissingBaselineIsInitializedWithoutChargingUnknownInterval()
+        public void MissingBaselineProducesInitializationPlanWithoutChargingUnknownInterval()
         {
             var original = _factory.CreateDefault();
             Assert.That(original.SpendHeroFatigue("ren", 10), Is.True);
@@ -63,7 +63,13 @@ namespace GuildIdle.Editor.Player
             _clock.UtcNowSeconds = 5_000L;
 
             var normalized = _factory.Create(saveData);
+            var plan = normalized.TimeProgress.PrepareAdvance();
+            var applied = normalized.TimeProgress.Apply(
+                plan,
+                normalized.TimeProgress.CaptureEligibilitySnapshot());
 
+            Assert.That(applied.Success, Is.True);
+            Assert.That(applied.Code, Is.EqualTo(TimeAdvanceResultCode.BaselineInitialized));
             Assert.That(normalized.GetHeroFatigue("ren"), Is.EqualTo(original.GetHeroFatigue("ren")));
             AssertTimeProgress(normalized, 5_000L, 0);
         }

@@ -1763,7 +1763,7 @@ namespace GuildIdle.Editor.Crafting
             return false;
         }
 
-        private static ConfigDatabase CreateDatabase()
+        internal static ConfigDatabase CreateDatabase()
         {
             return new ConfigDatabase(
                 new ItemsRuntimeConfigDto

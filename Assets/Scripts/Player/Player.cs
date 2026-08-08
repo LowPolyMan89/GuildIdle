@@ -41,6 +41,19 @@ namespace GuildIdle.Player
                 return false;
             }
 
+            OfflineCoordinatorReport offlineReport;
+            using (var offline = PlayerRuntimeComposition.CreateOfflineCoordinator(loadedState))
+                offlineReport = offline.Run();
+            if (!offlineReport.Success)
+            {
+                Debug.LogError(
+                    $"[Player] Offline processing failed with '{offlineReport.Code}' at " +
+                    $"'{offlineReport.FailedStage}:{offlineReport.FailedExecutionId}'.");
+                _state = null;
+                _progression = null;
+                return false;
+            }
+
             _state = loadedState;
             _progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(_state);
             _progression.Initialize();

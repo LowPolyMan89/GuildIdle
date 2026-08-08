@@ -56,6 +56,7 @@ namespace GuildIdle.Player
             ApplyStarterHeroes(state, _bootstrap.InitialStageId);
             ApplyDefaultBuildings(state);
             ApplyStarterEquipment(state, _bootstrap.InitialStageId);
+            state.TimeProgress.EnsureInitializedBaseline();
             return state;
         }
 

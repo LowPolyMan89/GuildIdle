@@ -2329,7 +2329,7 @@ namespace GuildIdle.Editor.Activities
             return new ActivityStartRequest { activityId = activityId, heroId = heroId, plannedCycleCount = cycles };
         }
 
-        private static ConfigDatabase CreateDatabase()
+        internal static ConfigDatabase CreateDatabase()
         {
             return new ConfigDatabase(
                 new ItemsRuntimeConfigDto
