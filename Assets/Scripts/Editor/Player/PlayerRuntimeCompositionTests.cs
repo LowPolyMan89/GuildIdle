@@ -1363,7 +1363,7 @@ namespace GuildIdle.Editor.Player
                             StringComparison.Ordinal));
         }
 
-        private static ConfigDatabase CreateConstructionProgressionDatabase(
+        internal static ConfigDatabase CreateConstructionProgressionDatabase(
             bool includeDirectCombatQuests = false,
             int rabbitMinCount = 1,
             int rabbitMaxCount = 3,
