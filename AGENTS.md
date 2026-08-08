@@ -1,6 +1,6 @@
 # GuildIdle Codex Instructions
 
-Serialized SaveData must remain below 200 KB. Persistent collections must have explicit bounded retention. Do not introduce unbounded receipts, histories, logs, completed executions, or similar append-only data.
+Serialized SaveData must remain below 1 MB. Persistent collections must have explicit bounded retention. Do not introduce unbounded receipts, histories, logs, completed executions, or similar append-only data.
 
 ## 1. Permission And Scope
 

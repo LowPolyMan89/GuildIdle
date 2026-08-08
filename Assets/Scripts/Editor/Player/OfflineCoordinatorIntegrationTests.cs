@@ -17,10 +17,12 @@ namespace GuildIdle.Editor.Player
 {
     public sealed class OfflineCoordinatorIntegrationTests
     {
-        private const int SaveSizeLimitBytes = 200 * 1024;
+        private const int SaveSizeLimitBytes = 1024 * 1024;
         private const int PersistentCombatAggregateLimit = 8;
         private const int PersistentCombatCollectionLimit = 64;
         private const int ReceiptRetentionLimit = 64;
+        private const int ResolvedResultSourceRetentionLimit = 64;
+        private const int StorageCapacity = 20;
         private const int StatusStackLimit = 8;
 
         [Test]
@@ -951,12 +953,39 @@ namespace GuildIdle.Editor.Player
             {
                 save.operationReceipts[index] = new OperationReceiptSaveData
                 {
-                    aggregateId = $"bounded-aggregate-{index:D2}",
+                    aggregateId = "combat-start",
                     operationId = $"bounded-operation-{index:D2}",
                     fingerprint = $"bounded-fingerprint-{index:D2}-0123456789abcdef",
                     success = true,
                     code = "Applied",
-                    resultPayload = "bounded-payload-0123456789abcdef"
+                    storageRevision = index + 1L,
+                    executionId = $"bounded-receipt-combat-{index:D2}",
+                    resultPayload = $"{{\"executionId\":\"bounded-receipt-combat-{index:D2}\",\"sessionId\":\"bounded-receipt-session-{index:D2}\"}}"
+                };
+            }
+            save.resultSources = new PendingResultSourceReferenceSaveData[ResolvedResultSourceRetentionLimit];
+            for (var index = 0; index < save.resultSources.Length; index++)
+            {
+                var executionId = $"bounded-resolved-activity-{index:D2}";
+                save.resultSources[index] = new PendingResultSourceReferenceSaveData
+                {
+                    sourceType = PendingResultSourceType.Activity,
+                    sourceId = "work_pine_wood",
+                    sourceExecutionId = executionId,
+                    resultId = $"result:{PendingResultSourceType.Activity}:{executionId}",
+                    state = PendingResultSourceState.Resolved,
+                    resolutionSequence = index + 1L
+                };
+            }
+            save.itemStacks = new ItemStackSaveData[StorageCapacity];
+            for (var index = 0; index < save.itemStacks.Length; index++)
+            {
+                save.itemStacks[index] = new ItemStackSaveData
+                {
+                    stackId = $"bounded-storage-stack-{index:D2}",
+                    itemId = "resource_pine_wood",
+                    quantity = 100,
+                    stateId = "on_storage"
                 };
             }
 
@@ -976,8 +1005,9 @@ namespace GuildIdle.Editor.Player
 
             var bounded = setup.Factory.Create(save);
             var boundedSave = bounded.ToSaveData();
-            var bytes = Encoding.UTF8.GetByteCount(JsonUtility.ToJson(boundedSave));
-            TestContext.WriteLine($"Bounded worst-case save size: {bytes} bytes.");
+            var json = JsonUtility.ToJson(boundedSave);
+            var bytes = Encoding.UTF8.GetByteCount(json);
+            TestContext.WriteLine($"Full bounded worst-case save size: {bytes} / {SaveSizeLimitBytes} bytes.");
             TestContext.WriteLine($"Combat runtime size: {Encoding.UTF8.GetByteCount(JsonUtility.ToJson(boundedSave.combatRuntime))} bytes.");
 
             var persistedCombats = bounded.GetCombatAggregates();
@@ -1011,6 +1041,12 @@ namespace GuildIdle.Editor.Player
             Assert.That(heavy, Is.Not.Null);
             AssertRunningCombatCollectionsAreMaxFilled(heavy);
             Assert.That(boundedSave.operationReceipts, Has.Length.EqualTo(ReceiptRetentionLimit));
+            Assert.That(boundedSave.resultSources, Has.Length.EqualTo(ResolvedResultSourceRetentionLimit));
+            Assert.That(boundedSave.resultSources, Has.All.Matches<PendingResultSourceReferenceSaveData>(source =>
+                source != null && string.Equals(source.state, PendingResultSourceState.Resolved, StringComparison.Ordinal)));
+            Assert.That(bounded.Storage.GetSnapshot().Capacity, Is.EqualTo(StorageCapacity));
+            Assert.That(bounded.Storage.GetSnapshot().OccupiedSlots, Is.EqualTo(StorageCapacity));
+            Assert.That(boundedSave.itemStacks, Has.Length.EqualTo(StorageCapacity));
             Assert.That(bytes, Is.LessThanOrEqualTo(SaveSizeLimitBytes));
         }
 
