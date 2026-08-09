@@ -162,6 +162,7 @@ namespace GuildIdle.Crafting
         public string HeroId { get; set; }
         public string StationBuildingId { get; set; }
         public int StationBuildingLevel { get; set; }
+        public int PlannedCycles { get; set; } = 1;
         public string OperationKey { get; set; }
     }
 
@@ -211,6 +212,8 @@ namespace GuildIdle.Crafting
         public string HeroId { get; }
         public string StationBuildingId { get; }
         public int StationBuildingLevel { get; }
+        public int PlannedCycles { get; }
+        public int MaxCycles { get; }
         public int DurationSeconds { get; }
         public string OutputItemId { get; }
         public int OutputCount { get; }
@@ -229,6 +232,8 @@ namespace GuildIdle.Crafting
             string heroId,
             string stationBuildingId,
             int stationBuildingLevel,
+            int plannedCycles,
+            int maxCycles,
             int durationSeconds,
             string outputItemId,
             int outputCount,
@@ -246,6 +251,8 @@ namespace GuildIdle.Crafting
             HeroId = heroId ?? string.Empty;
             StationBuildingId = stationBuildingId ?? string.Empty;
             StationBuildingLevel = stationBuildingLevel;
+            PlannedCycles = plannedCycles;
+            MaxCycles = maxCycles;
             DurationSeconds = durationSeconds;
             OutputItemId = outputItemId ?? string.Empty;
             OutputCount = outputCount;

@@ -117,6 +117,16 @@ namespace GuildIdle.Player
             return EnsureLoaded("get hero max fatigue") ? _state.GetHeroMaxFatigue(heroId) : 0;
         }
 
+        public static int GetHeroLevel(string heroId)
+        {
+            return EnsureLoaded("get hero level") ? _state.GetHeroState(heroId)?.level ?? 0 : 0;
+        }
+
+        public static int GetHeroStat(string heroId, string statId)
+        {
+            return EnsureLoaded("get hero stat") ? _state.CalculateHeroStat(heroId, statId) : 0;
+        }
+
         public static bool SpendHeroFatigue(string heroId, int amount)
         {
             return EnsureLoaded("spend hero fatigue") && _state.SpendHeroFatigue(heroId, amount);
@@ -180,6 +190,11 @@ namespace GuildIdle.Player
         public static bool SpendItem(string itemId, int amount)
         {
             return EnsureLoaded("spend item") && _state.SpendItem(itemId, amount);
+        }
+
+        public static ItemInstanceSaveData GetEquippedItem(string heroId, string equipmentSlot)
+        {
+            return EnsureLoaded("get equipped item") ? _state.GetEquippedItem(heroId, equipmentSlot) : null;
         }
 
         public static long GetCurrency(string currencyId)

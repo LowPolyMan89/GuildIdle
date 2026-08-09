@@ -30,6 +30,26 @@ namespace GuildIdle.Progression.Editor
         }
 
         [Test]
+        public void RuntimeEventRefreshesStateBackedResourceStepWithoutReinitialization()
+        {
+            var store = new TestStore("stage_1");
+            var configs = Configs(
+                stories: new[] { Story("quest_a") },
+                conditions: new[] { Condition("quest_a", "NewGame") },
+                steps: new[] { Step("quest_a", "collect", "ResourceCount", "wood", 2) },
+                stages: new[] { Stage("stage_1", null) });
+            var runtime = Runtime(configs, store);
+            runtime.Handle(new NewGame());
+
+            store.SetItem("wood", 1);
+            var update = runtime.Handle(new ActivityCompleted("unrelated_activity"));
+
+            var step = update.QuestSnapshot.ActiveInstances[0].Steps[0];
+            Assert.That(step.CurrentValue, Is.EqualTo(1));
+            Assert.That(step.Completed, Is.False);
+        }
+
+        [Test]
         public void CoordinatorSavesOnceAfterCompletionQueueAndSingleTransition()
         {
             var store = new TestStore("stage_1");
@@ -272,6 +292,7 @@ namespace GuildIdle.Progression.Editor
             public QuestInstanceSaveData[] GetQuestInstances() { var values = new QuestInstanceSaveData[_instances.Count]; _instances.Values.CopyTo(values, 0); return values; }
             public bool SetQuestInstance(QuestInstanceSaveData instance) { if (instance == null || string.IsNullOrWhiteSpace(instance.instanceId)) return false; _instances[instance.instanceId] = instance; return true; }
             public int GetItem(string itemId) => _items.TryGetValue(itemId, out var value) ? value : 0;
+            public void SetItem(string itemId, int value) => _items[itemId] = value;
             public int GetBuildingLevel(string buildingId) => _buildings.TryGetValue(buildingId, out var value) ? value : 0;
             public bool SetBuildingLevel(string buildingId, int level) { _buildings[buildingId] = level; return true; }
             public bool IsActivityCompleted(string activityId) => false;

@@ -23,6 +23,7 @@ namespace GuildIdle.Crafting
         public string heroId;
         public string stationBuildingId;
         public int stationBuildingLevel;
+        public int plannedCycles = 1;
         public CraftExecutionStatus status = CraftExecutionStatus.Running;
         public float progressSeconds;
         public int durationSeconds;

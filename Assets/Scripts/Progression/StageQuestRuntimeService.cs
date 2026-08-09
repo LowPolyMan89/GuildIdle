@@ -35,6 +35,7 @@ namespace GuildIdle.Progression
             if (progressionEvent == null) throw new ArgumentNullException(nameof(progressionEvent));
             var result = new QuestRuntimeResult();
             ActivateDefinitions(progressionEvent, stateOnly: false, result);
+            ApplyStateBackedSteps(result);
             ApplyEventToActiveInstances(progressionEvent, result);
             CompleteReadyInstances(result);
             return result;

@@ -1422,6 +1422,11 @@ namespace GuildIdle.Player
             foreach (var execution in runtime.executions)
             {
                 var stored = CloneCraftExecution(execution);
+                if (stored != null && stored.plannedCycles <= 0)
+                {
+                    stored.plannedCycles = 1;
+                    WasNormalized = true;
+                }
                 if (NormalizeLegacyCraftAdvanceSequences(stored))
                     WasNormalized = true;
                 if (!ValidateCraftExecution(stored) || _craftExecutions.ContainsKey(stored.executionId) ||
@@ -2458,7 +2463,7 @@ namespace GuildIdle.Player
             if (execution == null || string.IsNullOrWhiteSpace(execution.executionId) ||
                 string.IsNullOrWhiteSpace(execution.craftId) || string.IsNullOrWhiteSpace(execution.heroId) ||
                 !_acquiredHeroes.Contains(execution.heroId) || string.IsNullOrWhiteSpace(execution.stationBuildingId) ||
-                execution.stationBuildingLevel < 0 || execution.durationSeconds <= 0 ||
+                execution.stationBuildingLevel < 0 || execution.plannedCycles <= 0 || execution.durationSeconds <= 0 ||
                 float.IsNaN(execution.progressSeconds) || float.IsInfinity(execution.progressSeconds) || execution.progressSeconds < 0f ||
                 string.IsNullOrWhiteSpace(execution.outputItemId) || execution.outputCount <= 0 ||
                 string.IsNullOrWhiteSpace(execution.skillId) || execution.skillExp < 0 || execution.fatigueCostPaid < 0 ||
@@ -2594,6 +2599,7 @@ namespace GuildIdle.Player
                 heroId = source.heroId,
                 stationBuildingId = source.stationBuildingId,
                 stationBuildingLevel = source.stationBuildingLevel,
+                plannedCycles = source.plannedCycles,
                 status = source.status,
                 progressSeconds = Math.Max(0f, source.progressSeconds),
                 durationSeconds = source.durationSeconds,
@@ -2629,7 +2635,8 @@ namespace GuildIdle.Player
                 !string.Equals(left.craftId, right.craftId, StringComparison.Ordinal) ||
                 !string.Equals(left.heroId, right.heroId, StringComparison.Ordinal) ||
                 !string.Equals(left.stationBuildingId, right.stationBuildingId, StringComparison.Ordinal) ||
-                left.stationBuildingLevel != right.stationBuildingLevel || left.durationSeconds != right.durationSeconds ||
+                left.stationBuildingLevel != right.stationBuildingLevel || left.plannedCycles != right.plannedCycles ||
+                left.durationSeconds != right.durationSeconds ||
                 !string.Equals(left.outputItemId, right.outputItemId, StringComparison.Ordinal) || left.outputCount != right.outputCount ||
                 !string.Equals(left.skillId, right.skillId, StringComparison.Ordinal) || left.skillExp != right.skillExp ||
                 left.fatigueCostPaid != right.fatigueCostPaid || left.costsPaid != right.costsPaid ||

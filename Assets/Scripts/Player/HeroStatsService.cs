@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using GuildIdle.Configs;
 
 namespace GuildIdle.Player
@@ -15,6 +16,20 @@ namespace GuildIdle.Player
     {
         public const string MaxFatigueFormulaId = "hero_max_fatigue";
         public const int DefaultMaxFatigue = 100;
+
+        private static readonly string[] PrimaryStatIdValues =
+        {
+            "Strength",
+            "Agility",
+            "Intelligence",
+            "Luck",
+            "Endurance"
+        };
+
+        private static readonly IReadOnlyList<string> ReadOnlyPrimaryStatIds =
+            Array.AsReadOnly(PrimaryStatIdValues);
+
+        public static IReadOnlyList<string> PrimaryStatIds => ReadOnlyPrimaryStatIds;
 
         private readonly IHeroStatsConfigProvider _configs;
 

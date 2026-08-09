@@ -69,6 +69,39 @@ namespace GuildIdle.Editor.Crafting
         }
 
         [Test]
+        public void PlannedCyclesAreLimitedByIngredientsAndBatchTotalsArePersisted()
+        {
+            var state = NewState();
+            Seed(state, "resource_rabbit_meat", 6);
+            var runtime = Runtime(state);
+            var request = Request("cook_roasted_rabbit_meat", "op-batch-too-large");
+            request.PlannedCycles = 3;
+
+            var descriptor = runtime.GetStartDescriptor(request);
+            var rejected = runtime.Start(request);
+
+            Assert.That(descriptor.MaxCycles, Is.EqualTo(2));
+            Assert.That(descriptor.CanStart, Is.False);
+            Assert.That(rejected.Success, Is.False);
+            Assert.That(rejected.Code, Is.EqualTo(CraftStartCode.MissingMaterials));
+            Assert.That(state.GetItem("resource_rabbit_meat"), Is.EqualTo(6));
+
+            request.OperationKey = "op-batch-two";
+            request.PlannedCycles = 2;
+            var started = runtime.Start(request);
+
+            Assert.That(started.Success, Is.True);
+            Assert.That(started.Descriptor.MaxCycles, Is.EqualTo(2));
+            Assert.That(started.Execution.plannedCycles, Is.EqualTo(2));
+            Assert.That(started.Execution.durationSeconds, Is.EqualTo(20));
+            Assert.That(started.Execution.outputCount, Is.EqualTo(2));
+            Assert.That(started.Execution.skillExp, Is.EqualTo(4));
+            Assert.That(started.Execution.fatigueCostPaid, Is.EqualTo(4));
+            Assert.That(FindCost(started.Execution, "resource_rabbit_meat").quantity, Is.EqualTo(6));
+            Assert.That(state.GetItem("resource_rabbit_meat"), Is.Zero);
+        }
+
+        [Test]
         public void PartialAdvancePersistsProgressAndReplayDoesNotApplyDeltaTwice()
         {
             var state = StartBasic(out var runtime, out var executionId);

@@ -380,6 +380,8 @@ namespace GuildIdle.Crafting
 
             if (!TryValidateDefinition(definition, out var definitionError))
                 return Blocked(request, CraftStartCode.InvalidCraftDescriptor, definitionError, fingerprint, definition);
+            if (request.PlannedCycles <= 0)
+                return Blocked(request, CraftStartCode.InvalidCraftDescriptor, "Planned craft cycles must be positive.", fingerprint, definition);
 
             if (!_state.IsBuildingUnlocked(request.StationBuildingId) ||
                 _state.GetBuildingLevel(request.StationBuildingId) != request.StationBuildingLevel)
@@ -422,11 +424,27 @@ namespace GuildIdle.Crafting
             if (_state.GetActiveHeroCount() >= _state.GetActiveHeroLimit())
                 return Blocked(request, CraftStartCode.ActiveHeroLimitReached, "Active hero limit has been reached.", fingerprint, definition);
 
-            if (_state.GetHeroFatigue(request.HeroId) < definition.FatigueCost)
-                return Blocked(request, CraftStartCode.InsufficientFatigue, "Hero has insufficient fatigue.", fingerprint, definition);
-
-            if (!TryBuildCosts(definition, out var costs, out var recipe, out var costErrorCode, out var costError))
+            if (!TryBuildCosts(definition, out var baseCosts, out var baseRecipe, out var costErrorCode, out var costError))
                 return Blocked(request, costErrorCode, costError, fingerprint, definition);
+            var maxCycles = CalculateMaxCycles(definition, baseCosts, baseRecipe);
+            if (request.PlannedCycles > maxCycles)
+            {
+                return Blocked(
+                    request,
+                    CraftStartCode.MissingMaterials,
+                    $"Requested {request.PlannedCycles} craft cycles, but available ingredients allow {maxCycles}.",
+                    fingerprint,
+                    definition,
+                    baseCosts,
+                    baseRecipe,
+                    maxCycles);
+            }
+            if (!TryScaleBatch(baseCosts, baseRecipe, request.PlannedCycles, out var costs, out var recipe))
+                return Blocked(request, CraftStartCode.InvalidCraftDescriptor, "Craft batch totals overflow Int32.", fingerprint, definition, baseCosts, baseRecipe, maxCycles);
+
+            var totalFatigue = checked(definition.FatigueCost * request.PlannedCycles);
+            if (_state.GetHeroFatigue(request.HeroId) < totalFatigue)
+                return Blocked(request, CraftStartCode.InsufficientFatigue, "Hero has insufficient fatigue for all planned cycles.", fingerprint, definition, costs, recipe, maxCycles);
 
             foreach (var cost in costs)
             {
@@ -461,8 +479,74 @@ namespace GuildIdle.Crafting
             return new PreflightResult
             {
                 Fingerprint = fingerprint,
-                Descriptor = CreateDescriptor(request, definition, costs, recipe, true, CraftStartCode.Available, string.Empty)
+                Descriptor = CreateDescriptor(request, definition, costs, recipe, true, CraftStartCode.Available, string.Empty, maxCycles)
             };
+        }
+
+        private int CalculateMaxCycles(
+            CraftDefinitionDescriptor definition,
+            IList<CraftCostDescriptor> costs,
+            CraftRecipeDescriptor recipe)
+        {
+            var maximum = int.MaxValue;
+            foreach (var cost in costs ?? Array.Empty<CraftCostDescriptor>())
+            {
+                if (cost == null || cost.Quantity <= 0)
+                    continue;
+                var available = _state.GetAvailableForCraftCount(cost.ItemId);
+                if (!string.IsNullOrWhiteSpace(recipe?.RequiredItemId) &&
+                    !recipe.Consume &&
+                    string.Equals(recipe.RequiredItemId, cost.ItemId, StringComparison.Ordinal))
+                {
+                    available = Math.Max(0, available - recipe.RequiredCount);
+                }
+                maximum = Math.Min(maximum, available / cost.Quantity);
+            }
+            if (!string.IsNullOrWhiteSpace(recipe?.RequiredItemId) && !recipe.Consume)
+            {
+                if (_state.GetAvailableForCraftCount(recipe.RequiredItemId) < recipe.RequiredCount)
+                    return 0;
+            }
+            maximum = LimitByProduct(maximum, definition.CraftDurationSec);
+            maximum = LimitByProduct(maximum, definition.OutputCount);
+            maximum = LimitByProduct(maximum, definition.SkillExp);
+            maximum = LimitByProduct(maximum, definition.FatigueCost);
+            return maximum == int.MaxValue ? 1 : Math.Max(0, maximum);
+        }
+
+        private static int LimitByProduct(int maximum, int perCycle)
+        {
+            return perCycle <= 0 ? maximum : Math.Min(maximum, int.MaxValue / perCycle);
+        }
+
+        private static bool TryScaleBatch(
+            IList<CraftCostDescriptor> baseCosts,
+            CraftRecipeDescriptor baseRecipe,
+            int cycles,
+            out List<CraftCostDescriptor> costs,
+            out CraftRecipeDescriptor recipe)
+        {
+            costs = new List<CraftCostDescriptor>();
+            recipe = null;
+            try
+            {
+                foreach (var cost in baseCosts ?? Array.Empty<CraftCostDescriptor>())
+                    costs.Add(new CraftCostDescriptor(cost.ItemId, checked(cost.Quantity * cycles), cost.Kind));
+                var requiredCount = baseRecipe?.RequiredCount ?? 0;
+                if (baseRecipe?.Consume == true)
+                    requiredCount = checked(requiredCount * cycles);
+                recipe = new CraftRecipeDescriptor(
+                    baseRecipe?.RequiredItemId,
+                    requiredCount,
+                    baseRecipe?.Consume ?? false);
+                return true;
+            }
+            catch (OverflowException)
+            {
+                costs.Clear();
+                recipe = baseRecipe;
+                return false;
+            }
         }
 
         private bool IsAvailableAtStation(string craftId, string buildingId, int buildingLevel)
@@ -575,6 +659,7 @@ namespace GuildIdle.Crafting
                 heroId = descriptor.HeroId,
                 stationBuildingId = descriptor.StationBuildingId,
                 stationBuildingLevel = descriptor.StationBuildingLevel,
+                plannedCycles = descriptor.PlannedCycles,
                 status = CraftExecutionStatus.Running,
                 progressSeconds = 0f,
                 durationSeconds = descriptor.DurationSeconds,
@@ -601,7 +686,10 @@ namespace GuildIdle.Crafting
 
         private static string BuildFingerprint(CraftStartRequest request)
         {
-            return $"craft:{Part(request?.CraftId)}|hero:{Part(request?.HeroId)}|station:{Part(request?.StationBuildingId)}|level:{request?.StationBuildingLevel ?? 0}";
+            var fingerprint = $"craft:{Part(request?.CraftId)}|hero:{Part(request?.HeroId)}|station:{Part(request?.StationBuildingId)}|level:{request?.StationBuildingLevel ?? 0}";
+            return request?.PlannedCycles == 1
+                ? fingerprint
+                : $"{fingerprint}|cycles:{request?.PlannedCycles ?? 0}";
         }
 
         private static string Part(string value)
@@ -617,12 +705,13 @@ namespace GuildIdle.Crafting
             string fingerprint,
             CraftDefinitionDescriptor definition = null,
             IList<CraftCostDescriptor> costs = null,
-            CraftRecipeDescriptor recipe = null)
+            CraftRecipeDescriptor recipe = null,
+            int maxCycles = 0)
         {
             return new PreflightResult
             {
                 Fingerprint = fingerprint,
-                Descriptor = CreateDescriptor(request, definition, costs, recipe, false, code, message)
+                Descriptor = CreateDescriptor(request, definition, costs, recipe, false, code, message, maxCycles)
             };
         }
 
@@ -633,7 +722,8 @@ namespace GuildIdle.Crafting
             CraftRecipeDescriptor recipe,
             bool canStart,
             string code,
-            string message)
+            string message,
+            int maxCycles)
         {
             request ??= new CraftStartRequest();
             var requirements = new List<CraftBuildingRequirementDescriptor>();
@@ -645,18 +735,26 @@ namespace GuildIdle.Crafting
                 request.HeroId,
                 request.StationBuildingId,
                 request.StationBuildingLevel,
-                definition?.CraftDurationSec ?? 0,
+                request.PlannedCycles,
+                maxCycles,
+                MultiplyOrZero(definition?.CraftDurationSec ?? 0, request.PlannedCycles),
                 definition?.TargetItemId,
-                definition?.OutputCount ?? 0,
+                MultiplyOrZero(definition?.OutputCount ?? 0, request.PlannedCycles),
                 definition?.CraftSkillId,
-                definition?.SkillExp ?? 0,
-                definition?.FatigueCost ?? 0,
+                MultiplyOrZero(definition?.SkillExp ?? 0, request.PlannedCycles),
+                MultiplyOrZero(definition?.FatigueCost ?? 0, request.PlannedCycles),
                 requirements,
                 costs ?? Array.Empty<CraftCostDescriptor>(),
                 recipe ?? new CraftRecipeDescriptor(definition?.RequiredRecipeItemId, definition?.RequiredRecipeItemCount ?? 0, definition?.ConsumeRecipeItem ?? false),
                 canStart,
                 code,
                 message);
+        }
+
+        private static int MultiplyOrZero(int value, int cycles)
+        {
+            try { return checked(value * cycles); }
+            catch (OverflowException) { return 0; }
         }
 
         private static CraftStartDescriptor DescriptorFromExecution(CraftExecutionSaveData execution)
@@ -673,6 +771,8 @@ namespace GuildIdle.Crafting
                 execution.heroId,
                 execution.stationBuildingId,
                 execution.stationBuildingLevel,
+                execution.plannedCycles,
+                execution.plannedCycles,
                 execution.durationSeconds,
                 execution.outputItemId,
                 execution.outputCount,
@@ -734,6 +834,7 @@ namespace GuildIdle.Crafting
             if (execution == null || string.IsNullOrWhiteSpace(execution.executionId) ||
                 string.IsNullOrWhiteSpace(execution.craftId) || string.IsNullOrWhiteSpace(execution.heroId) ||
                 string.IsNullOrWhiteSpace(execution.stationBuildingId) || execution.stationBuildingLevel < 0 ||
+                execution.plannedCycles <= 0 ||
                 execution.durationSeconds <= 0 || float.IsNaN(execution.progressSeconds) ||
                 float.IsInfinity(execution.progressSeconds) || execution.progressSeconds < 0f ||
                 string.IsNullOrWhiteSpace(execution.outputItemId) || execution.outputCount <= 0 ||
@@ -1075,6 +1176,7 @@ namespace GuildIdle.Crafting
                    string.Equals(execution.heroId, request.HeroId, StringComparison.Ordinal) &&
                    string.Equals(execution.stationBuildingId, request.StationBuildingId, StringComparison.Ordinal) &&
                    execution.stationBuildingLevel == request.StationBuildingLevel &&
+                   execution.plannedCycles == request.PlannedCycles &&
                    string.Equals(execution.startOperationKey, request.OperationKey, StringComparison.Ordinal) &&
                    string.Equals(execution.startFingerprint, fingerprint, StringComparison.Ordinal) &&
                    IsActive(execution.status) &&
@@ -1120,6 +1222,7 @@ namespace GuildIdle.Crafting
                 heroId = source.heroId,
                 stationBuildingId = source.stationBuildingId,
                 stationBuildingLevel = source.stationBuildingLevel,
+                plannedCycles = source.plannedCycles,
                 status = source.status,
                 progressSeconds = source.progressSeconds,
                 durationSeconds = source.durationSeconds,
