@@ -40,7 +40,6 @@ namespace GuildIdle.Editor.Activities
         private string _openCraftBuildingId;
         private int _openCraftBuildingLevel;
         private double _nextRefreshAt;
-        private double _lastCombatAdvanceAt;
         private string _combatLogExecutionId;
         private readonly List<string> _combatLog = new List<string>();
 
@@ -58,6 +57,7 @@ namespace GuildIdle.Editor.Activities
             RuntimeConfigs.OnLoaded += HandleConfigsLoaded;
             RuntimeConfigs.OnLoadFailed += HandleConfigsLoadFailed;
             OnlineActivityRuntime.Updated += HandleRuntimeUpdated;
+            OnlineActivityRuntime.CombatAdvanced += HandleCombatAdvanced;
             OnlineActivityRuntime.Failed += HandleRuntimeFailed;
         }
 
@@ -142,6 +142,7 @@ namespace GuildIdle.Editor.Activities
             RuntimeConfigs.OnLoaded -= HandleConfigsLoaded;
             RuntimeConfigs.OnLoadFailed -= HandleConfigsLoadFailed;
             OnlineActivityRuntime.Updated -= HandleRuntimeUpdated;
+            OnlineActivityRuntime.CombatAdvanced -= HandleCombatAdvanced;
             OnlineActivityRuntime.Failed -= HandleRuntimeFailed;
             ReleaseBindings();
         }
@@ -194,9 +195,7 @@ namespace GuildIdle.Editor.Activities
         {
             if (EditorApplication.timeSinceStartup < _nextRefreshAt)
                 return;
-            var now = EditorApplication.timeSinceStartup;
-            _nextRefreshAt = now + RefreshIntervalSeconds;
-            AdvanceOpenCombat(now);
+            _nextRefreshAt = EditorApplication.timeSinceStartup + RefreshIntervalSeconds;
             RefreshAll();
         }
 
@@ -214,27 +213,7 @@ namespace GuildIdle.Editor.Activities
         private void HandleConfigsLoadFailed(string error) => SetNotice(error);
         private void HandleRuntimeUpdated(ActivityRuntimeSnapshot snapshot) => RefreshAll();
         private void HandleRuntimeFailed(string message) => SetNotice(message);
-        private void HandleStorageChanged(StorageSnapshot snapshot)
-        {
-            if (_progression != null && _boundState != null)
-            {
-                var steps = _progression.GetQuestSnapshot()?.ActiveInstances
-                    .SelectMany(instance => instance.Steps)
-                    .Where(step => step != null && !step.Completed &&
-                                   (step.ObjectiveType == "ResourceCount" || step.ObjectiveType == "ItemCount"))
-                    .GroupBy(step => $"{step.ObjectiveType}\n{step.TargetId}", StringComparer.Ordinal)
-                    .Select(group => group.First())
-                    .ToArray() ?? Array.Empty<QuestStepSnapshot>();
-                foreach (var step in steps)
-                {
-                    var count = _boundState.GetItem(step.TargetId);
-                    _progression.Handle(step.ObjectiveType == "ResourceCount"
-                        ? (ProgressionEvent)new ResourceQuantityChanged(step.TargetId, count)
-                        : new ItemQuantityChanged(step.TargetId, count));
-                }
-            }
-            RefreshAll();
-        }
+        private void HandleStorageChanged(StorageSnapshot snapshot) => RefreshAll();
         private void HandleProgressionUpdated(ProgressionRuntimeUpdate update) => RefreshAll();
 
         private bool EnsureBindings()
@@ -988,31 +967,18 @@ namespace GuildIdle.Editor.Activities
 
             _openModalKind = "combat";
             _openModalId = executionId;
-            _lastCombatAdvanceAt = EditorApplication.timeSinceStartup;
             ShowModalOverlay();
             BuildCombatModal(executionId);
         }
 
-        private void AdvanceOpenCombat(double now)
+        private void HandleCombatAdvanced(OnlineCombatAdvanceResult result)
         {
-            if (!string.Equals(_openModalKind, "combat", StringComparison.Ordinal) ||
-                string.IsNullOrWhiteSpace(_openModalId))
+            if (result == null || result.snapshot == null ||
+                !string.Equals(_openModalKind, "combat", StringComparison.Ordinal) ||
+                !string.Equals(_openModalId, result.snapshot.executionId, StringComparison.Ordinal))
             {
                 return;
             }
-
-            var elapsed = Math.Max(0d, now - _lastCombatAdvanceAt);
-            _lastCombatAdvanceAt = now;
-            if (elapsed <= 0d)
-                return;
-
-            var before = OnlineActivityRuntime.GetCombatSnapshot(_openModalId);
-            if (before == null || before.status != CombatExecutionStatus.Running)
-                return;
-
-            var result = OnlineActivityRuntime.AdvanceCombat(
-                _openModalId,
-                Math.Min(elapsed, 1d));
             if (!result.success)
             {
                 SetNotice($"Ошибка симуляции боя: {result.code} — {result.message}");
@@ -1242,7 +1208,6 @@ namespace GuildIdle.Editor.Activities
             _openModalId = null;
             _openCraftBuildingId = null;
             _openCraftBuildingLevel = 0;
-            _lastCombatAdvanceAt = 0d;
         }
 
         private List<ActivityChoice> GetBuildingChoices(string buildingId, int level)
@@ -1252,9 +1217,7 @@ namespace GuildIdle.Editor.Activities
                          .Where(value => value != null && value.buildingId == buildingId && value.buildingLevel == level)
                          .OrderBy(value => value.sortOrder))
             {
-                if (!string.IsNullOrWhiteSpace(mapping.showIfActivityCompleted) && !RuntimePlayer.IsActivityCompleted(mapping.showIfActivityCompleted))
-                    continue;
-                if (!string.IsNullOrWhiteSpace(mapping.hideIfActivityCompleted) && RuntimePlayer.IsActivityCompleted(mapping.hideIfActivityCompleted))
+                if (!ActivityAvailabilityResolver.IsExposedByBuilding(mapping, _boundState))
                     continue;
                 if (RuntimeConfigs.Activities.TryGet(mapping.activityId, out var activity))
                     result.Add(new ActivityChoice(activity));

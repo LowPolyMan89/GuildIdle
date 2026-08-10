@@ -16,12 +16,14 @@ namespace GuildIdle.Player
         private readonly StorageService _storage;
         private readonly FormulasConfigRepository _formulas;
         private readonly ItemsConfigRepository _items;
+        private readonly BuildingsConfigRepository _buildings;
         private bool _storageChanged;
 
         public PlayerStateCombatStartAdapter(
             PlayerState state,
             FormulasConfigRepository formulas,
-            ItemsConfigRepository items)
+            ItemsConfigRepository items,
+            BuildingsConfigRepository buildings)
         {
             _state = state ?? throw new ArgumentNullException(nameof(state));
             _activityAdapter = new PlayerStateActivityAdapter(state);
@@ -30,6 +32,7 @@ namespace GuildIdle.Player
                            "PlayerState must use StorageService for combat start transactions.");
             _formulas = formulas ?? throw new ArgumentNullException(nameof(formulas));
             _items = items ?? throw new ArgumentNullException(nameof(items));
+            _buildings = buildings ?? throw new ArgumentNullException(nameof(buildings));
         }
 
         public SaveData CaptureCheckpoint()
@@ -80,7 +83,10 @@ namespace GuildIdle.Player
         public int GetActiveHeroLimit() =>
             ActiveHeroLimitResolver.GetCurrentLimit(_activityAdapter);
         public bool IsActivityAvailable(string activityId) =>
-            _state.IsActivityAvailable(activityId);
+            ActivityAvailabilityResolver.IsAvailableForDirectStart(
+                activityId,
+                _state,
+                _buildings);
         public ActivityCheckResult CanStartActivity(
             ActivityExecutionContext context) =>
             ActivityResolver.CanStart(context, _activityAdapter);

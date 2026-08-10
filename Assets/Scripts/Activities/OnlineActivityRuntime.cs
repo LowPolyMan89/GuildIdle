@@ -100,9 +100,10 @@ namespace GuildIdle.Activities
 
     public static class OnlineActivityRuntime
     {
-        private static OnlineActivityRuntimeHost _host;
+        private static OnlineGameplayCoordinatorHost _host;
 
         public static event Action<ActivityRuntimeSnapshot> Updated;
+        public static event Action<OnlineCombatAdvanceResult> CombatAdvanced;
         public static event Action<string> Failed;
 
         public static bool IsReady => EnsureHost() != null && _host.EnsureBound();
@@ -198,18 +199,6 @@ namespace GuildIdle.Activities
                 };
         }
 
-        public static OnlineCombatAdvanceResult AdvanceCombat(string executionId, double deltaSeconds)
-        {
-            return IsReady
-                ? _host.AdvanceCombat(executionId, deltaSeconds)
-                : new OnlineCombatAdvanceResult
-                {
-                    success = false,
-                    code = "OnlineRuntimeNotReady",
-                    message = "Online activity runtime is waiting for Configs and Player."
-                };
-        }
-
         public static OnlineCombatSnapshot GetCombatSnapshot(string executionId)
         {
             return IsReady ? _host.GetCombatSnapshot(executionId) : null;
@@ -259,12 +248,12 @@ namespace GuildIdle.Activities
             return IsReady ? _host.GetCraftSnapshots() : Array.Empty<OnlineCraftSnapshot>();
         }
 
-        internal static void RegisterHost(OnlineActivityRuntimeHost host)
+        internal static void RegisterHost(OnlineGameplayCoordinatorHost host)
         {
             _host = host;
         }
 
-        internal static void UnregisterHost(OnlineActivityRuntimeHost host)
+        internal static void UnregisterHost(OnlineGameplayCoordinatorHost host)
         {
             if (ReferenceEquals(_host, host))
                 _host = null;
@@ -280,16 +269,22 @@ namespace GuildIdle.Activities
             Failed?.Invoke(message ?? string.Empty);
         }
 
-        private static OnlineActivityRuntimeHost EnsureHost()
+        internal static void PublishCombatAdvanced(OnlineCombatAdvanceResult result)
+        {
+            if (result != null)
+                CombatAdvanced?.Invoke(result);
+        }
+
+        private static OnlineGameplayCoordinatorHost EnsureHost()
         {
             if (!Application.isPlaying)
                 return null;
             if (_host != null)
                 return _host;
 
-            var gameObject = new GameObject("GuildIdle Online Activity Runtime");
+            var gameObject = new GameObject("GuildIdle Online Gameplay Coordinator");
             UnityEngine.Object.DontDestroyOnLoad(gameObject);
-            _host = gameObject.AddComponent<OnlineActivityRuntimeHost>();
+            _host = gameObject.AddComponent<OnlineGameplayCoordinatorHost>();
             return _host;
         }
 
@@ -305,9 +300,12 @@ namespace GuildIdle.Activities
         }
     }
 
-    internal sealed class OnlineActivityRuntimeHost : MonoBehaviour
+    internal sealed class OnlineGameplayCoordinatorHost : MonoBehaviour
     {
-        private const float PollIntervalSeconds = 0.2f;
+        // Combat stays responsive in memory; the shared elapsed transaction checkpoints all
+        // running systems together so ordinary Play Mode does not rewrite SaveData every frame.
+        private const float CombatAdvanceIntervalSeconds = 0.2f;
+        private const float ElapsedTimeCheckpointIntervalSeconds = 5f;
 
         private PlayerState _boundState;
         private ActivityRuntimeService _activities;
@@ -315,7 +313,9 @@ namespace GuildIdle.Activities
         private CombatRuntimeService _combatRuntime;
         private OnlineCombatDescriptorProvider _combatDescriptors;
         private CraftRuntimeService _crafts;
-        private float _pollAccumulator;
+        private OfflineCoordinator _elapsedCoordinator;
+        private float _combatAccumulator;
+        private float _elapsedTimeAccumulator;
         private string _lastFailure;
 
         private void Awake()
@@ -333,12 +333,22 @@ namespace GuildIdle.Activities
             if (!EnsureBound())
                 return;
 
-            _pollAccumulator += Time.unscaledDeltaTime;
-            if (_pollAccumulator < PollIntervalSeconds)
-                return;
+            var deltaSeconds = Math.Max(0f, Time.unscaledDeltaTime);
+            _combatAccumulator += deltaSeconds;
+            _elapsedTimeAccumulator += deltaSeconds;
 
-            _pollAccumulator = 0f;
-            AdvanceElapsedTime();
+            if (_combatAccumulator >= CombatAdvanceIntervalSeconds)
+            {
+                var combatDelta = _combatAccumulator;
+                _combatAccumulator = 0f;
+                AdvanceCombats(combatDelta);
+            }
+
+            if (_elapsedTimeAccumulator >= ElapsedTimeCheckpointIntervalSeconds)
+            {
+                _elapsedTimeAccumulator = 0f;
+                AdvanceElapsedTime();
+            }
         }
 
         private void OnDestroy()
@@ -365,9 +375,12 @@ namespace GuildIdle.Activities
             _combatStart = PlayerRuntimeComposition.CreateCombatStartService(_boundState);
             _combatRuntime = PlayerRuntimeComposition.CreateCombatRuntimeService(
                 _boundState,
-                _combatDescriptors);
+                _combatDescriptors,
+                persistRunningCombatUpdates: false);
             _crafts = PlayerRuntimeComposition.CreateCraftRuntimeService(_boundState);
-            _pollAccumulator = 0f;
+            _elapsedCoordinator = PlayerRuntimeComposition.CreateOfflineCoordinator(_boundState);
+            _combatAccumulator = 0f;
+            _elapsedTimeAccumulator = 0f;
             _lastFailure = null;
             OnlineActivityRuntime.Publish(_activities.GetSnapshot());
             return true;
@@ -495,6 +508,16 @@ namespace GuildIdle.Activities
             string stackId,
             int quantity)
         {
+            if (!AdvanceElapsedTime())
+            {
+                return new OnlineCombatStartResult
+                {
+                    success = false,
+                    code = "ElapsedTimeAdvanceFailed",
+                    message = _lastFailure ?? "Elapsed-time coordinator failed before combat start."
+                };
+            }
+
             if (!RuntimeConfigs.Activities.TryGetCombatDetails(activityId, out var details) || details == null)
             {
                 return new OnlineCombatStartResult
@@ -505,26 +528,10 @@ namespace GuildIdle.Activities
                 };
             }
 
-            var madeAvailable = false;
-            if (!_boundState.IsActivityAvailable(activityId))
-            {
-                if (!IsVisibleBuildingActivity(activityId))
-                {
-                    return new OnlineCombatStartResult
-                    {
-                        success = false,
-                        code = CombatStartCode.ActivityUnavailable.ToString(),
-                        message = $"Combat activity '{activityId}' is not exposed by an available building."
-                    };
-                }
-
-                madeAvailable = _boundState.SetActivityAvailable(activityId, true);
-            }
-
-            var requestId = $"runtime-ui:combat:source:{Guid.NewGuid():N}";
+            var requestId = $"online-runtime:combat:source:{Guid.NewGuid():N}";
             var result = _combatStart.Start(new CombatStartCommand
             {
-                OperationId = $"runtime-ui:combat:start:{Guid.NewGuid():N}",
+                OperationId = $"online-runtime:combat:start:{Guid.NewGuid():N}",
                 Kind = CombatStartKind.Direct,
                 SourceActivityId = activityId,
                 SourceRequestId = requestId,
@@ -535,8 +542,6 @@ namespace GuildIdle.Activities
                 RequestedQuantity = quantity,
                 ExpectedStorageRevision = _boundState.Storage.GetSnapshot().Revision
             });
-            if (!result.Success && madeAvailable)
-                _boundState.SetActivityAvailable(activityId, false);
 
             OnlineActivityRuntime.Publish(GetSnapshot());
             return new OnlineCombatStartResult
@@ -548,40 +553,39 @@ namespace GuildIdle.Activities
             };
         }
 
-        internal OnlineCombatAdvanceResult AdvanceCombat(string executionId, double deltaSeconds)
+        private bool AdvanceCombats(double deltaSeconds)
         {
-            var aggregate = _boundState.GetCombatAggregate(executionId);
-            if (aggregate?.execution == null || aggregate.session == null)
+            var success = true;
+            var processed = false;
+            foreach (var aggregate in _boundState.GetCombatAggregates())
             {
-                return new OnlineCombatAdvanceResult
+                if (aggregate?.execution == null || aggregate.session == null ||
+                    aggregate.execution.status != CombatExecutionStatus.Running ||
+                    aggregate.session.simulationStopped)
+                    continue;
+
+                processed = true;
+                var targetTime = aggregate.session.combatTimeSeconds + Math.Max(0d, deltaSeconds);
+                var advanced = _combatRuntime.AdvanceTo(aggregate.execution.executionId, targetTime);
+                var result = new OnlineCombatAdvanceResult
                 {
-                    success = false,
-                    code = CombatAdvanceErrorCode.CombatNotFound.ToString(),
-                    message = "Combat execution was not found."
+                    success = advanced.Success,
+                    code = advanced.Error?.Code.ToString(),
+                    message = advanced.Error?.Message,
+                    events = advanced.Events,
+                    snapshot = GetCombatSnapshot(aggregate.execution.executionId)
                 };
+                OnlineActivityRuntime.PublishCombatAdvanced(result);
+                if (advanced.Success)
+                    continue;
+                success = false;
+                Fail($"Combat '{aggregate.execution.executionId}' advance failed: " +
+                     $"{advanced.Error?.Code}: {advanced.Error?.Message}");
             }
 
-            if (aggregate.execution.status != CombatExecutionStatus.Running ||
-                aggregate.session.simulationStopped)
-            {
-                return new OnlineCombatAdvanceResult
-                {
-                    success = true,
-                    snapshot = GetCombatSnapshot(executionId)
-                };
-            }
-
-            var targetTime = aggregate.session.combatTimeSeconds + Math.Max(0d, deltaSeconds);
-            var result = _combatRuntime.AdvanceTo(executionId, targetTime);
-            OnlineActivityRuntime.Publish(GetSnapshot());
-            return new OnlineCombatAdvanceResult
-            {
-                success = result.Success,
-                code = result.Error?.Code.ToString(),
-                message = result.Error?.Message,
-                events = result.Events,
-                snapshot = GetCombatSnapshot(executionId)
-            };
+            if (processed)
+                OnlineActivityRuntime.Publish(GetSnapshot());
+            return success;
         }
 
         internal OnlineCombatSnapshot GetCombatSnapshot(string executionId)
@@ -616,7 +620,7 @@ namespace GuildIdle.Activities
                 StationBuildingId = stationBuildingId,
                 StationBuildingLevel = stationBuildingLevel,
                 PlannedCycles = plannedCycles,
-                OperationKey = "runtime-ui:craft:preview"
+                OperationKey = "online-runtime:craft:preview"
             });
         }
 
@@ -644,7 +648,7 @@ namespace GuildIdle.Activities
                 StationBuildingId = stationBuildingId,
                 StationBuildingLevel = stationBuildingLevel,
                 PlannedCycles = plannedCycles,
-                OperationKey = $"runtime-ui:craft:start:{Guid.NewGuid():N}"
+                OperationKey = $"online-runtime:craft:start:{Guid.NewGuid():N}"
             });
             OnlineActivityRuntime.Publish(GetSnapshot());
             return new OnlineCraftStartResult
@@ -742,93 +746,23 @@ namespace GuildIdle.Activities
             };
         }
 
-        private bool IsVisibleBuildingActivity(string activityId)
-        {
-            foreach (var mapping in RuntimeConfigs.Buildings.BuildingActivities)
-            {
-                if (mapping == null ||
-                    !string.Equals(mapping.activityId, activityId, StringComparison.Ordinal) ||
-                    _boundState.GetBuildingLevel(mapping.buildingId) != mapping.buildingLevel ||
-                    !_boundState.IsBuildingUnlocked(mapping.buildingId) ||
-                    (!string.IsNullOrWhiteSpace(mapping.showIfActivityCompleted) &&
-                     !_boundState.IsActivityCompleted(mapping.showIfActivityCompleted)) ||
-                    (!string.IsNullOrWhiteSpace(mapping.hideIfActivityCompleted) &&
-                     _boundState.IsActivityCompleted(mapping.hideIfActivityCompleted)))
-                {
-                    continue;
-                }
-
-                return true;
-            }
-            return false;
-        }
-
         private bool AdvanceElapsedTime()
         {
-            if (_boundState == null || _activities == null)
+            if (_boundState == null || _activities == null || _elapsedCoordinator == null)
                 return false;
 
-            var plan = _boundState.TimeProgress.PrepareAdvance();
-            if (plan.Code == TimeAdvanceResultCode.NoElapsedTime ||
-                plan.Code == TimeAdvanceResultCode.ClockRollback)
-            {
-                return true;
-            }
-
-            var checkpoint = _boundState.ToSaveData();
-            var eligibility = _boundState.TimeProgress.CaptureEligibilitySnapshot();
-            var applied = _boundState.TimeProgress.Apply(plan, eligibility);
-            if (!applied.Success)
-            {
-                var message =
-                    $"Online time baseline could not advance: {applied.Code}.";
-                return FailAndRestore(checkpoint, message);
-            }
-
-            if (plan.Code == TimeAdvanceResultCode.Applied && plan.DeltaSeconds > 0L)
-            {
-                var tick = _activities.Tick(plan.DeltaSeconds);
-                if (!tick.success)
-                    return FailAndRestore(checkpoint, FirstIssue(tick.issues, "Activity runtime tick failed."));
-                if (!AdvanceCrafts(plan.DeltaSeconds, out var craftError))
-                    return FailAndRestore(checkpoint, craftError);
-                if (!tick.saved && !_boundState.Save())
-                    return FailAndRestore(checkpoint, "Online elapsed-time state could not be saved.");
-                OnlineActivityRuntime.Publish(tick.snapshot ?? GetSnapshot());
-            }
-            else if (!_boundState.Save())
-            {
-                return FailAndRestore(checkpoint, "Online time baseline could not be saved.");
-            }
+            var report = _elapsedCoordinator.Run();
+            if (!report.Success)
+                return Fail(FirstIssue(report));
 
             _lastFailure = null;
+            if (report.StateCommitted)
+                OnlineActivityRuntime.Publish(GetSnapshot());
             return true;
         }
 
-        private bool AdvanceCrafts(long deltaSeconds, out string error)
+        private bool Fail(string message)
         {
-            error = null;
-            foreach (var execution in _boundState.GetCraftExecutions())
-            {
-                if (execution == null || execution.status != CraftExecutionStatus.Running)
-                    continue;
-                var sequence = execution.lastAdvanceSequence + 1L;
-                var result = _crafts.Advance(
-                    execution.executionId,
-                    deltaSeconds,
-                    $"online-craft:{execution.executionId}:{sequence}",
-                    sequence);
-                if (result.Success)
-                    continue;
-                error = $"Craft '{execution.craftId}' advance failed: {result.Code}: {result.Message}";
-                return false;
-            }
-            return true;
-        }
-
-        private bool FailAndRestore(SaveData checkpoint, string message)
-        {
-            _boundState.RestoreTransactional(checkpoint);
             if (!string.Equals(_lastFailure, message, StringComparison.Ordinal))
             {
                 _lastFailure = message;
@@ -838,23 +772,27 @@ namespace GuildIdle.Activities
             return false;
         }
 
-        private static string FirstIssue(ActivityRequirementIssue[] issues, string fallback)
+        private static string FirstIssue(OfflineCoordinatorReport report)
         {
-            if (issues == null || issues.Length == 0 || issues[0] == null)
-                return fallback;
-            return $"{issues[0].issueType}: {issues[0].message}";
+            if (report?.Issues == null || report.Issues.Count == 0 || report.Issues[0] == null)
+                return $"Elapsed-time coordinator failed with '{report?.Code}'.";
+            var issue = report.Issues[0];
+            return $"{issue.Code}: {issue.Message}";
         }
 
         private void Release()
         {
             _activities?.Dispose();
+            _elapsedCoordinator?.Dispose();
             _activities = null;
             _combatStart = null;
             _combatRuntime = null;
             _combatDescriptors = null;
             _crafts = null;
+            _elapsedCoordinator = null;
             _boundState = null;
-            _pollAccumulator = 0f;
+            _combatAccumulator = 0f;
+            _elapsedTimeAccumulator = 0f;
         }
     }
 

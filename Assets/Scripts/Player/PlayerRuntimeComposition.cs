@@ -165,7 +165,8 @@ namespace GuildIdle.Player
                 new PlayerStateCombatStartAdapter(
                     state,
                     RuntimeConfigs.Formulas,
-                    RuntimeConfigs.Items),
+                    RuntimeConfigs.Items,
+                    RuntimeConfigs.Buildings),
                 new ConfigCombatStartActivityDescriptorProvider(RuntimeConfigs.Activities),
                 RuntimeConfigs.CombatConsumables,
                 new ConfigCombatEnemyQueueProvider(RuntimeConfigs.Enemies),
@@ -203,7 +204,8 @@ namespace GuildIdle.Player
 
         public static CombatRuntimeService CreateCombatRuntimeService(
             PlayerState state,
-            ICombatDescriptorProvider descriptors)
+            ICombatDescriptorProvider descriptors,
+            bool persistRunningCombatUpdates = true)
         {
             if (state == null)
                 throw new ArgumentNullException(nameof(state));
@@ -228,7 +230,9 @@ namespace GuildIdle.Player
                     new ConfigCombatEnemyRewardProvider(
                         RuntimeConfigs.Enemies,
                         RuntimeConfigs.Items),
-                committer: new CombatOutcomeService(state));
+                committer: new CombatOutcomeService(
+                    state,
+                    persistRunningUpdates: persistRunningCombatUpdates));
         }
 
         public static IPendingResultService CreatePendingResultService()

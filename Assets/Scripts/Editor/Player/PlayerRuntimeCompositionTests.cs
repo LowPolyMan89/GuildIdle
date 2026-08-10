@@ -1229,7 +1229,8 @@ namespace GuildIdle.Editor.Player
                 new PlayerStateCombatStartAdapter(
                     state,
                     RuntimeConfigs.Formulas,
-                    RuntimeConfigs.Items),
+                    RuntimeConfigs.Items,
+                    RuntimeConfigs.Buildings),
                 new ConfigCombatStartActivityDescriptorProvider(
                     RuntimeConfigs.Activities),
                 RuntimeConfigs.CombatConsumables,

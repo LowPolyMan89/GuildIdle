@@ -50,6 +50,27 @@ namespace GuildIdle.Progression.Editor
         }
 
         [Test]
+        public void ExplicitStateRefreshUpdatesResourceStepWithoutSyntheticEvent()
+        {
+            var store = new TestStore("stage_1");
+            var configs = Configs(
+                stories: new[] { Story("quest_a") },
+                conditions: new[] { Condition("quest_a", "NewGame") },
+                steps: new[] { Step("quest_a", "collect", "ResourceCount", "wood", 2) },
+                stages: new[] { Stage("stage_1", null) });
+            var runtime = Runtime(configs, store);
+            runtime.Handle(new NewGame());
+            store.SaveCalls = 0;
+
+            store.SetItem("wood", 2);
+            var update = runtime.RefreshStateBacked();
+
+            Assert.That(update.CompletedInstanceIds, Does.Contain("story:quest_a"));
+            Assert.That(update.Changed, Is.True);
+            Assert.That(store.SaveCalls, Is.EqualTo(1));
+        }
+
+        [Test]
         public void CoordinatorSavesOnceAfterCompletionQueueAndSingleTransition()
         {
             var store = new TestStore("stage_1");

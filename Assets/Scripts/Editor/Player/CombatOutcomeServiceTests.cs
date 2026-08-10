@@ -29,6 +29,27 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
+        public void RunningCombatCommitCanBeCheckpointedByOuterCoordinator()
+        {
+            var aggregate = RunningAggregate();
+            Assert.That(_state.AddCombatAggregate(aggregate), Is.True);
+            var saveCalls = _storage.SaveCalls;
+            aggregate.session.combatTimeSeconds = 1d;
+
+            var committed = new CombatOutcomeService(
+                    _state,
+                    persistRunningUpdates: false)
+                .TryCommit(aggregate, out var error);
+
+            Assert.That(committed, Is.True, error?.Message);
+            Assert.That(_storage.SaveCalls, Is.EqualTo(saveCalls));
+            Assert.That(
+                _state.GetCombatAggregate(aggregate.execution.executionId)
+                    .session.combatTimeSeconds,
+                Is.EqualTo(1d));
+        }
+
+        [Test]
         public void VictoryFormsOneCombatResultAndClaimCompletesDirectCombat()
         {
             var aggregate = Aggregate(
@@ -630,6 +651,8 @@ namespace GuildIdle.Editor.Player
             private readonly Dictionary<string, string> _values =
                 new Dictionary<string, string>(StringComparer.Ordinal);
 
+            public int SaveCalls { get; private set; }
+
             public bool HasKey(string key) => _values.ContainsKey(key);
             public string GetString(string key, string defaultValue) =>
                 _values.TryGetValue(key, out var value)
@@ -638,7 +661,7 @@ namespace GuildIdle.Editor.Player
             public void SetString(string key, string value) =>
                 _values[key] = value;
             public void DeleteKey(string key) => _values.Remove(key);
-            public void Save() { }
+            public void Save() => SaveCalls++;
         }
 
         private sealed class OutcomeDescriptorProvider :

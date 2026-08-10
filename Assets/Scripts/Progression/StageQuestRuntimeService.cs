@@ -41,6 +41,14 @@ namespace GuildIdle.Progression
             return result;
         }
 
+        public QuestRuntimeResult RefreshStateBacked()
+        {
+            var result = new QuestRuntimeResult();
+            ApplyStateBackedSteps(result);
+            CompleteReadyInstances(result);
+            return result;
+        }
+
         public QuestRuntimeSnapshot GetSnapshot()
         {
             var active = new List<QuestInstanceSnapshot>();
@@ -412,6 +420,7 @@ namespace GuildIdle.Progression
         }
         public event Action<ProgressionRuntimeUpdate> Updated;
         public ProgressionRuntimeUpdate Initialize() => CompleteTransaction(_quests.Initialize(), true, true);
+        public ProgressionRuntimeUpdate RefreshStateBacked() => CompleteTransaction(_quests.RefreshStateBacked(), true, true);
         public ProgressionRuntimeUpdate Handle(ProgressionEvent progressionEvent) => CompleteTransaction(_quests.Handle(progressionEvent ?? throw new ArgumentNullException(nameof(progressionEvent))), true, true);
         public ProgressionRuntimeUpdate HandleActivityCompleted(string activityId) => CompleteTransaction(BuildActivityCompletion(activityId), true, true);
         internal ProgressionRuntimeUpdate ApplyWithinOuterTransaction(ProgressionEvent progressionEvent) => CompleteTransaction(_quests.Handle(progressionEvent ?? throw new ArgumentNullException(nameof(progressionEvent))), false, false);

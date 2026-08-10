@@ -29,13 +29,16 @@ namespace GuildIdle.Combat
 
         private readonly PlayerState _state;
         private readonly ICombatRngFactory _rngFactory;
+        private readonly bool _persistRunningUpdates;
 
         public CombatOutcomeService(
             PlayerState state,
-            ICombatRngFactory rngFactory = null)
+            ICombatRngFactory rngFactory = null,
+            bool persistRunningUpdates = true)
         {
             _state = state ?? throw new ArgumentNullException(nameof(state));
             _rngFactory = rngFactory ?? new CombatRngFactory();
+            _persistRunningUpdates = persistRunningUpdates;
         }
 
         public CombatOutcomeResult RequestRetreat(CombatRetreatCommand command)
@@ -123,12 +126,15 @@ namespace GuildIdle.Combat
             var checkpoint = _state.ToSaveData();
             if (aggregate.session.terminalCandidate == null)
             {
-                if (!_state.UpdateCombatAggregate(aggregate) || !_state.Save())
+                if (!_state.UpdateCombatAggregate(aggregate) ||
+                    (_persistRunningUpdates && !_state.Save()))
                 {
                     _state.RestoreTransactional(checkpoint);
                     error = new CombatAdvanceError(
                         CombatAdvanceErrorCode.StoreUpdateFailed,
-                        "Combat aggregate update could not be saved.");
+                        _persistRunningUpdates
+                            ? "Combat aggregate update could not be saved."
+                            : "Combat aggregate update was rejected.");
                     return false;
                 }
                 return true;

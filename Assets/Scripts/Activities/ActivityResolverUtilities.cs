@@ -7,6 +7,46 @@ using RuntimeConfigs = GuildIdle.Configs.Configs;
 
 namespace GuildIdle.Activities
 {
+    public static class ActivityAvailabilityResolver
+    {
+        public static bool IsAvailableForDirectStart(
+            string activityId,
+            GuildIdle.Player.PlayerState state,
+            BuildingsConfigRepository buildings = null)
+        {
+            if (state == null || string.IsNullOrWhiteSpace(activityId))
+                return false;
+            if (state.IsActivityAvailable(activityId))
+                return true;
+
+            foreach (var mapping in (buildings ?? RuntimeConfigs.Buildings).BuildingActivities)
+            {
+                if (mapping != null &&
+                    string.Equals(mapping.activityId, activityId, StringComparison.Ordinal) &&
+                    IsExposedByBuilding(mapping, state))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool IsExposedByBuilding(
+            BuildingActivityConfigDto mapping,
+            GuildIdle.Player.PlayerState state)
+        {
+            return mapping != null &&
+                   state != null &&
+                   state.IsBuildingUnlocked(mapping.buildingId) &&
+                   state.GetBuildingLevel(mapping.buildingId) == mapping.buildingLevel &&
+                   (string.IsNullOrWhiteSpace(mapping.showIfActivityCompleted) ||
+                    state.IsActivityCompleted(mapping.showIfActivityCompleted)) &&
+                   (string.IsNullOrWhiteSpace(mapping.hideIfActivityCompleted) ||
+                    !state.IsActivityCompleted(mapping.hideIfActivityCompleted));
+        }
+    }
+
     internal static class ActivityResolverUtilities
     {
         public const string GoldCurrencyId = "gold_id";

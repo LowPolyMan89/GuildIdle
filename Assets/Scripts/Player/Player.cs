@@ -36,11 +36,15 @@ namespace GuildIdle.Player
             var loadedState = PlayerRuntimeComposition.LoadPlayerState(out var origin);
             if (loadedState == null)
             {
+                ReleaseRuntimeBindings();
                 _state = null;
                 _progression = null;
                 return false;
             }
 
+            ReleaseRuntimeBindings();
+            _state = null;
+            _progression = null;
             OfflineCoordinatorReport offlineReport;
             using (var offline = PlayerRuntimeComposition.CreateOfflineCoordinator(loadedState))
                 offlineReport = offline.Run();
@@ -59,6 +63,7 @@ namespace GuildIdle.Player
             _progression.Initialize();
             if (origin == SaveLoadOrigin.Fresh)
                 _progression.Handle(new NewGame());
+            BindRuntimeBindings();
             return true;
         }
 
@@ -75,10 +80,13 @@ namespace GuildIdle.Player
                 return false;
             }
 
-            _state = PlayerRuntimeComposition.ResetPlayerState();
+            ReleaseRuntimeBindings();
+            var resetState = PlayerRuntimeComposition.ResetPlayerState();
+            _state = resetState;
             _progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(_state);
             _progression.Initialize();
             _progression.Handle(new NewGame());
+            BindRuntimeBindings();
             return true;
         }
 
@@ -294,6 +302,7 @@ namespace GuildIdle.Player
 
         private static void HandleConfigLoadFailed(string error)
         {
+            ReleaseRuntimeBindings();
             _state = null;
             _progression = null;
             PlayerRuntimeComposition.InvalidatePlayerStateFactory();
@@ -314,6 +323,23 @@ namespace GuildIdle.Player
             var reason = RuntimeConfigs.HasErrors ? $"config load failed: {RuntimeConfigs.LastError}" : "runtime configs are not loaded";
             Debug.LogError($"[Player] Cannot {action}: {reason}.");
             return false;
+        }
+
+        private static void BindRuntimeBindings()
+        {
+            if (_state?.Storage != null)
+                _state.Storage.Changed += HandleStorageChanged;
+        }
+
+        private static void ReleaseRuntimeBindings()
+        {
+            if (_state?.Storage != null)
+                _state.Storage.Changed -= HandleStorageChanged;
+        }
+
+        private static void HandleStorageChanged(StorageSnapshot snapshot)
+        {
+            _progression?.RefreshStateBacked();
         }
 
     }

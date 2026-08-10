@@ -363,6 +363,15 @@ namespace GuildIdle.Editor.Configs
                 buildingLevels = new[]
                 {
                     new BuildingLevelConfigDto { buildingId = "building_warehouse", level = 0 }
+                },
+                buildingActivities = new[]
+                {
+                    new BuildingActivityConfigDto
+                    {
+                        buildingId = "building_underwood",
+                        buildingLevel = 1,
+                        activityId = "work_pine_wood"
+                    }
                 }
             };
             _quests ??= new QuestRuntimeConfigDto();

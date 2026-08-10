@@ -632,7 +632,8 @@ namespace GuildIdle.Editor.Player
                 new PlayerStateCombatStartAdapter(
                     state,
                     database.Formulas,
-                    database.Items),
+                    database.Items,
+                    database.Buildings),
                 new ConfigCombatStartActivityDescriptorProvider(
                     database.Activities),
                 database.CombatConsumables,
@@ -663,7 +664,8 @@ namespace GuildIdle.Editor.Player
                 new PlayerStateCombatStartAdapter(
                     loaded,
                     database.Formulas,
-                    database.Items),
+                    database.Items,
+                    database.Buildings),
                 new ConfigCombatStartActivityDescriptorProvider(
                     database.Activities),
                 database.CombatConsumables,
@@ -738,7 +740,8 @@ namespace GuildIdle.Editor.Player
                 new PlayerStateCombatStartAdapter(
                     state,
                     database.Formulas,
-                    database.Items),
+                    database.Items,
+                    database.Buildings),
                 new ConfigCombatStartActivityDescriptorProvider(
                     database.Activities),
                 database.CombatConsumables,

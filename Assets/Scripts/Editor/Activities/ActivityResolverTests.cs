@@ -45,6 +45,36 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void DirectStartAvailabilityUsesVisibleBuildingMappingWithoutMutatingSaveState()
+        {
+            var state = NewState();
+
+            Assert.That(
+                ActivityAvailabilityResolver.IsAvailableForDirectStart(
+                    "work_pine_wood",
+                    state),
+                Is.False);
+
+            Assert.That(state.UnlockBuilding("building_underwood"), Is.True);
+            Assert.That(state.SetBuildingLevel("building_underwood", 1), Is.True);
+
+            Assert.That(
+                ActivityAvailabilityResolver.IsAvailableForDirectStart(
+                    "work_pine_wood",
+                    state),
+                Is.True);
+            Assert.That(
+                new PlayerStateCombatStartAdapter(
+                        state,
+                        RuntimeConfigs.Formulas,
+                        RuntimeConfigs.Items,
+                        RuntimeConfigs.Buildings)
+                    .IsActivityAvailable("work_pine_wood"),
+                Is.True);
+            Assert.That(state.IsActivityAvailable("work_pine_wood"), Is.False);
+        }
+
+        [Test]
         public void UnknownActivity_ReturnsIssueWithoutThrowing()
         {
             LogAssert.Expect(LogType.Error, "[ActivityResolver] Unknown activity id 'missing_activity'.");
