@@ -146,6 +146,115 @@ namespace GuildIdle.Progression.Editor
         }
 
         [Test]
+        public void FinalStageCompletionClosesConfiguredActiveOptionalQuestWithoutTransition()
+        {
+            var store = new TestStore("stage_final");
+            store.SetQuestInstance(new QuestInstanceSaveData
+            {
+                instanceId = "story:required", questId = "required",
+                status = QuestInstanceStatus.Completed, rewardsGranted = true
+            });
+            store.SetQuestInstance(QuestStateBuilder.Create("story:optional", "optional", null, new[]
+            {
+                Step("optional", "optional_step", "ResourceCount", "meat", 10)
+            }));
+            var configs = Configs(
+                stories: new[] { Story("required"), Story("optional", 20, true) },
+                steps: new[] { Step("optional", "optional_step", "ResourceCount", "meat", 10) },
+                stages: new[] { Stage("stage_final", null) },
+                stageQuests: new[]
+                {
+                    StageQuest("stage_final", "required"),
+                    StageQuest("stage_final", "optional", required: false)
+                });
+            var runtime = Runtime(configs, store);
+
+            var update = runtime.Handle(new ActivityFailed("unrelated"));
+
+            Assert.That(store.CurrentStageId, Is.EqualTo("stage_final"));
+            Assert.That(store.GetQuestInstance("story:optional").status, Is.EqualTo(QuestInstanceStatus.Closed));
+            Assert.That(update.Transition.Occurred, Is.False);
+            Assert.That(update.CompletedInstanceIds, Is.Empty);
+            Assert.That(update.PublishedQuestCompletedEvents, Is.Empty);
+            Assert.That(update.Rewards, Is.Empty);
+            Assert.That(store.GetQuestInstances(), Has.Length.EqualTo(2));
+            Assert.That(update.Changed, Is.True);
+            Assert.That(store.SaveCalls, Is.EqualTo(1));
+
+            var repeated = runtime.Handle(new ActivityFailed("unrelated"));
+            Assert.That(store.GetQuestInstance("story:optional").status, Is.EqualTo(QuestInstanceStatus.Closed));
+            Assert.That(repeated.Changed, Is.False);
+            Assert.That(store.SaveCalls, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void FinalStageCompletionPreservesRewardPendingOptionalQuest()
+        {
+            var store = new TestStore("stage_final");
+            store.SetQuestInstance(new QuestInstanceSaveData
+            {
+                instanceId = "story:required", questId = "required",
+                status = QuestInstanceStatus.Completed, rewardsGranted = true
+            });
+            store.SetQuestInstance(new QuestInstanceSaveData
+            {
+                instanceId = "story:optional", questId = "optional",
+                status = QuestInstanceStatus.RewardPending, pendingResultId = "result:Quest:story:optional"
+            });
+            var configs = Configs(
+                stories: new[] { Story("required"), Story("optional", 20, true) },
+                stages: new[] { Stage("stage_final", null) },
+                stageQuests: new[]
+                {
+                    StageQuest("stage_final", "required"),
+                    StageQuest("stage_final", "optional", required: false)
+                });
+
+            var update = Runtime(configs, store).Handle(new ActivityFailed("unrelated"));
+
+            var pending = store.GetQuestInstance("story:optional");
+            Assert.That(store.CurrentStageId, Is.EqualTo("stage_final"));
+            Assert.That(pending.status, Is.EqualTo(QuestInstanceStatus.RewardPending));
+            Assert.That(pending.pendingResultId, Is.EqualTo("result:Quest:story:optional"));
+            Assert.That(update.Transition.Occurred, Is.False);
+            Assert.That(update.Changed, Is.False);
+            Assert.That(store.SaveCalls, Is.Zero);
+        }
+
+        [Test]
+        public void BrokenNextStageDoesNotCloseConfiguredActiveOptionalQuest()
+        {
+            var store = new TestStore("stage_1");
+            store.SetQuestInstance(new QuestInstanceSaveData
+            {
+                instanceId = "story:required", questId = "required",
+                status = QuestInstanceStatus.Completed, rewardsGranted = true
+            });
+            store.SetQuestInstance(QuestStateBuilder.Create("story:optional", "optional", null, new[]
+            {
+                Step("optional", "optional_step", "ResourceCount", "meat", 10)
+            }));
+            var configs = Configs(
+                stories: new[] { Story("required"), Story("optional", 20, true) },
+                steps: new[] { Step("optional", "optional_step", "ResourceCount", "meat", 10) },
+                stages: new[] { Stage("stage_1", "missing_stage") },
+                stageQuests: new[]
+                {
+                    StageQuest("stage_1", "required"),
+                    StageQuest("stage_1", "optional", required: false)
+                });
+
+            var update = Runtime(configs, store).Handle(new ActivityFailed("unrelated"));
+
+            Assert.That(store.CurrentStageId, Is.EqualTo("stage_1"));
+            Assert.That(store.GetQuestInstance("story:optional").status, Is.EqualTo(QuestInstanceStatus.Active));
+            Assert.That(update.Transition.Occurred, Is.False);
+            Assert.That(update.Issues, Has.Some.Property("Code").EqualTo("StageTransitionFailed"));
+            Assert.That(update.Changed, Is.False);
+            Assert.That(store.SaveCalls, Is.Zero);
+        }
+
+        [Test]
         public void StageCompletionPreservesNonClosableMissingCompletedAndRewardPendingQuests()
         {
             var store = new TestStore("stage_1");

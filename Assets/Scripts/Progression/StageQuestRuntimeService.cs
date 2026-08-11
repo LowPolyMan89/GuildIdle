@@ -364,13 +364,14 @@ namespace GuildIdle.Progression
         private readonly IStageProgressionConfigProvider _configs;
         private readonly IProgressionRuntimeStore _store;
         public StageProgressionService(IStageProgressionConfigProvider configs, IProgressionRuntimeStore store) { _configs = configs ?? throw new ArgumentNullException(nameof(configs)); _store = store ?? throw new ArgumentNullException(nameof(store)); }
-        public StageTransitionResult TryTransition() => TryTransition(new List<ProgressionIssue>());
+        public StageTransitionResult TryTransition() => TryTransition(new List<ProgressionIssue>(), out _);
 
-        internal StageTransitionResult TryTransition(List<ProgressionIssue> issues)
+        internal StageTransitionResult TryTransition(List<ProgressionIssue> issues, out bool stateChanged)
         {
+            stateChanged = false;
             if (!_configs.TryGetStage(_store.CurrentStageId, out var stage) || stage == null || !stage.enabled)
             { issues.Add(new ProgressionIssue("InvalidCurrentStage", $"Current stage '{_store.CurrentStageId}' is missing or disabled.")); return StageTransitionResult.None; }
-            if (stage.completionRule != "AllRequired" || string.IsNullOrWhiteSpace(stage.nextStageId)) return StageTransitionResult.None;
+            if (stage.completionRule != "AllRequired") return StageTransitionResult.None;
             var hasRequiredQuest = false;
             foreach (var relation in _configs.GetStageQuests(stage.stageId) ?? Array.Empty<StageQuestConfigDto>())
             {
@@ -380,14 +381,21 @@ namespace GuildIdle.Progression
                 if (instance == null || instance.questId != relation.questId || instance.status != QuestInstanceStatus.Completed || !instance.rewardsGranted) return StageTransitionResult.None;
             }
             if (!hasRequiredQuest) return StageTransitionResult.None;
+            if (string.IsNullOrWhiteSpace(stage.nextStageId))
+            {
+                stateChanged = CloseConfiguredActiveQuests(stage.stageId, issues);
+                return StageTransitionResult.None;
+            }
             if (!_configs.TryGetStage(stage.nextStageId, out var next) || next == null || !next.enabled || !_store.SetCurrentStage(next.stageId))
             { issues.Add(new ProgressionIssue("StageTransitionFailed", $"Could not enter stage '{stage.nextStageId}'.")); return StageTransitionResult.None; }
-            CloseConfiguredActiveQuests(stage.stageId, issues);
+            stateChanged = true;
+            stateChanged |= CloseConfiguredActiveQuests(stage.stageId, issues);
             return new StageTransitionResult { Occurred = true, FromStageId = stage.stageId, ToStageId = next.stageId };
         }
 
-        private void CloseConfiguredActiveQuests(string stageId, List<ProgressionIssue> issues)
+        private bool CloseConfiguredActiveQuests(string stageId, List<ProgressionIssue> issues)
         {
+            var changed = false;
             foreach (var relation in _configs.GetStageQuests(stageId) ?? Array.Empty<StageQuestConfigDto>())
             {
                 if (relation == null || !relation.enabled || !_configs.TryGetDefinition(relation.questId, out var definition) ||
@@ -400,7 +408,10 @@ namespace GuildIdle.Progression
                 instance.pendingResultId = null;
                 if (!_store.SetQuestInstance(instance))
                     issues.Add(new ProgressionIssue("QuestAutoCloseFailed", "Could not persist automatic quest closure after stage completion.", relation.questId, instance.instanceId));
+                else
+                    changed = true;
             }
+            return changed;
         }
 
         public StageProgressionSnapshot GetSnapshot()
@@ -486,7 +497,8 @@ namespace GuildIdle.Progression
         private ProgressionRuntimeUpdate CompleteTransaction(QuestRuntimeResult aggregate, bool persist, bool publish)
         {
             DrainQuestCompleted(aggregate);
-            var transition = _stages.TryTransition(aggregate.IssueValues);
+            var transition = _stages.TryTransition(aggregate.IssueValues, out var stageStateChanged);
+            aggregate.ChangedValue |= stageStateChanged;
             if (transition.Occurred)
             {
                 aggregate.ChangedValue = true;
