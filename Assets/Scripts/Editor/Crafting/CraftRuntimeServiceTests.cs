@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using GuildIdle.Configs;
 using GuildIdle.Core;
@@ -73,6 +74,7 @@ namespace GuildIdle.Editor.Crafting
         {
             var state = NewState();
             Seed(state, "resource_rabbit_meat", 6);
+            Seed(state, "resource_herb", 2);
             var runtime = Runtime(state);
             var request = Request("cook_roasted_rabbit_meat", "op-batch-too-large");
             request.PlannedCycles = 3;
@@ -98,7 +100,9 @@ namespace GuildIdle.Editor.Crafting
             Assert.That(started.Execution.skillExp, Is.EqualTo(4));
             Assert.That(started.Execution.fatigueCostPaid, Is.EqualTo(4));
             Assert.That(FindCost(started.Execution, "resource_rabbit_meat").quantity, Is.EqualTo(6));
+            Assert.That(FindCost(started.Execution, "resource_herb").quantity, Is.EqualTo(2));
             Assert.That(state.GetItem("resource_rabbit_meat"), Is.Zero);
+            Assert.That(state.GetItem("resource_herb"), Is.Zero);
         }
 
         [Test]
@@ -1479,7 +1483,8 @@ namespace GuildIdle.Editor.Crafting
 
             var recipe = NewState();
             Seed(recipe, "resource_rabbit_meat", 1);
-            AssertBlockedWithoutMutation(recipe, Request("craft_recipe_kept", "op-missing-recipe"), CraftStartCode.MissingOrInvalidRecipe);
+            ReplaceCraftDefinition("craft_recipe_consumed", definition => definition.requiredRecipeItemCount = 0);
+            AssertBlockedWithoutMutation(recipe, Request("craft_recipe_consumed", "op-missing-recipe"), CraftStartCode.MissingOrInvalidRecipe);
 
             var materials = NewState();
             Seed(materials, "resource_rabbit_meat", 2);
@@ -1771,6 +1776,45 @@ namespace GuildIdle.Editor.Crafting
             foreach (var cost in execution.paidCosts ?? Array.Empty<CraftPaidCostSaveData>())
                 if (cost != null && string.Equals(cost.itemId, itemId, StringComparison.Ordinal)) return cost;
             return null;
+        }
+
+        private void ReplaceCraftDefinition(string craftId, Action<CraftDefinitionConfigDto> mutate)
+        {
+            var source = FindDefinition(craftId);
+            Assert.That(source, Is.Not.Null);
+
+            var updated = new CraftDefinitionConfigDto
+            {
+                craftId = source.craftId,
+                targetItemId = source.targetItemId,
+                craftStationId = source.craftStationId,
+                craftDurationSec = source.craftDurationSec,
+                craftSkillId = source.craftSkillId,
+                requiredBuildings = source.requiredBuildings,
+                materials = source.materials,
+                requiredRecipeItemId = source.requiredRecipeItemId,
+                requiredRecipeItemCount = source.requiredRecipeItemCount,
+                consumeRecipeItem = source.consumeRecipeItem,
+                outputCount = source.outputCount,
+                fatigueCost = source.fatigueCost,
+                skillExp = source.skillExp
+            };
+
+            mutate(updated);
+
+            var ctor = typeof(CraftDefinitionDescriptor).GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                null,
+                new[] { typeof(CraftDefinitionConfigDto) },
+                null);
+            Assert.That(ctor, Is.Not.Null);
+
+            var descriptor = (CraftDefinitionDescriptor)ctor.Invoke(new object[] { updated });
+            var definitionsField = typeof(CraftsConfigRepository).GetField("_definitionsById", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(definitionsField, Is.Not.Null);
+
+            var definitions = (Dictionary<string, CraftDefinitionDescriptor>)definitionsField.GetValue(_database.Crafts);
+            definitions[craftId] = descriptor;
         }
 
         private static bool HasStartReceipt(PlayerState state, string operationKey, string executionId)
