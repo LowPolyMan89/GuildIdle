@@ -126,12 +126,19 @@ namespace GuildIdle.Player
         public const string Active = "Active";
         public const string RewardPending = "RewardPending";
         public const string Completed = "Completed";
+        public const string Closed = "Closed";
         public const string Expired = "Expired";
 
         public static bool IsValid(string value) =>
             string.Equals(value, Active, StringComparison.Ordinal) ||
             string.Equals(value, RewardPending, StringComparison.Ordinal) ||
             string.Equals(value, Completed, StringComparison.Ordinal) ||
+            string.Equals(value, Closed, StringComparison.Ordinal) ||
+            string.Equals(value, Expired, StringComparison.Ordinal);
+
+        public static bool IsTerminal(string value) =>
+            string.Equals(value, Completed, StringComparison.Ordinal) ||
+            string.Equals(value, Closed, StringComparison.Ordinal) ||
             string.Equals(value, Expired, StringComparison.Ordinal);
     }
 

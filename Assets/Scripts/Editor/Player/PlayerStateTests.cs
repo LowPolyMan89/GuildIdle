@@ -450,7 +450,7 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
-        public void V10RoundtripPreservesUnknownInstanceAndTwoDailyCycles()
+        public void V10RoundtripPreservesClosedUnknownInstanceAndTwoDailyCycles()
         {
             var state = _factory.Create(new SaveData
             {
@@ -459,6 +459,7 @@ namespace GuildIdle.Editor.Player
                 questInstances = new[]
                 {
                     new QuestInstanceSaveData { instanceId = "custom:kept", questId = "missing_definition", status = QuestInstanceStatus.Active, steps = new[] { new QuestStepSaveData { stepId = "unknown_step", currentValue = 3 } } },
+                    new QuestInstanceSaveData { instanceId = "custom:closed", questId = "missing_definition", status = QuestInstanceStatus.Closed },
                     new QuestInstanceSaveData { instanceId = "daily:cycle_1:quest_daily", questId = "quest_daily", cycleId = "cycle_1", status = QuestInstanceStatus.Active },
                     new QuestInstanceSaveData { instanceId = "daily:cycle_2:quest_daily", questId = "quest_daily", cycleId = "cycle_2", status = QuestInstanceStatus.Expired }
                 }
@@ -469,6 +470,7 @@ namespace GuildIdle.Editor.Player
             var restored = SaveService.Load(_factory, storage);
 
             Assert.That(restored.GetQuestInstance("custom:kept").steps[0].stepId, Is.EqualTo("unknown_step"));
+            Assert.That(restored.GetQuestInstance("custom:closed").status, Is.EqualTo(QuestInstanceStatus.Closed));
             Assert.That(restored.GetQuestInstance("daily:cycle_1:quest_daily").cycleId, Is.EqualTo("cycle_1"));
             Assert.That(restored.GetQuestInstance("daily:cycle_2:quest_daily").status, Is.EqualTo(QuestInstanceStatus.Expired));
         }

@@ -382,7 +382,25 @@ namespace GuildIdle.Progression
             if (!hasRequiredQuest) return StageTransitionResult.None;
             if (!_configs.TryGetStage(stage.nextStageId, out var next) || next == null || !next.enabled || !_store.SetCurrentStage(next.stageId))
             { issues.Add(new ProgressionIssue("StageTransitionFailed", $"Could not enter stage '{stage.nextStageId}'.")); return StageTransitionResult.None; }
+            CloseConfiguredActiveQuests(stage.stageId, issues);
             return new StageTransitionResult { Occurred = true, FromStageId = stage.stageId, ToStageId = next.stageId };
+        }
+
+        private void CloseConfiguredActiveQuests(string stageId, List<ProgressionIssue> issues)
+        {
+            foreach (var relation in _configs.GetStageQuests(stageId) ?? Array.Empty<StageQuestConfigDto>())
+            {
+                if (relation == null || !relation.enabled || !_configs.TryGetDefinition(relation.questId, out var definition) ||
+                    definition == null || !definition.Enabled || !definition.CloseOnStageComplete) continue;
+                var instance = _store.GetQuestInstance(QuestInstanceIds.Story(relation.questId));
+                if (instance == null || !string.Equals(instance.questId, relation.questId, StringComparison.Ordinal) ||
+                    instance.status != QuestInstanceStatus.Active) continue;
+                instance.status = QuestInstanceStatus.Closed;
+                instance.rewardsGranted = false;
+                instance.pendingResultId = null;
+                if (!_store.SetQuestInstance(instance))
+                    issues.Add(new ProgressionIssue("QuestAutoCloseFailed", "Could not persist automatic quest closure after stage completion.", relation.questId, instance.instanceId));
+            }
         }
 
         public StageProgressionSnapshot GetSnapshot()

@@ -20,7 +20,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             ["Stages"] = new[] { "stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes" },
             ["StageQuests"] = new[] { "stage_id", "quest_id", "weight_percent", "required", "show_in_stage_ui", "sort_order", "enabled", "notes" },
-            ["StoryQuests"] = new[] { "quest_id", "name_id", "description_id", "icon_id", "journal_category", "sort_order", "is_tutorial", "enabled", "notes" },
+            ["StoryQuests"] = new[] { "quest_id", "name_id", "description_id", "icon_id", "journal_category", "sort_order", "is_tutorial", "close_on_stage_complete", "enabled", "notes" },
             ["DailyQuests"] = new[] { "quest_id", "name_id", "description_id", "icon_id", "journal_category", "daily_pool_id", "selection_weight", "sort_order", "enabled", "notes" },
             ["QuestStartConditions"] = new[] { "quest_id", "condition_group", "condition_type", "target_id", "operator", "value", "sort_order", "notes" },
             ["QuestSteps"] = new[] { "quest_id", "step_id", "step_order", "objective_type", "target_id", "operator", "target_value", "description_id", "required", "notes" },
@@ -43,7 +43,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         private static readonly HashSet<string> BoolColumns = new HashSet<string>(StringComparer.Ordinal)
         {
-            "enabled", "required", "show_in_stage_ui", "is_tutorial"
+            "enabled", "required", "show_in_stage_ui", "is_tutorial", "close_on_stage_complete"
         };
 
         public bool Supports(ConfigSourceSettings source) =>
@@ -215,7 +215,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private void ValidateQuestStatusEnums()
             {
-                var required = new[] { "Active", "RewardPending", "Completed", "Expired" };
+                var required = new[] { "Active", "RewardPending", "Completed", "Closed", "Expired" };
                 if (!_enums.TryGetValue("QuestInstanceStatus", out var values))
                 {
                     Issue("EnumValues", 0, "enum_group", "QuestInstanceStatus", "QuestInstanceStatus enum group is required.");
@@ -296,6 +296,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                         if (sheet == "StoryQuests")
                         {
                             Bool(row, "is_tutorial");
+                            Bool(row, "close_on_stage_complete");
+                            if (ReadBool(row, "close_on_stage_complete", false) && !HasEnabledStageQuest(row.Get("quest_id")))
+                                Issue(sheet, row.RowNumber, "close_on_stage_complete", row.Get("close_on_stage_complete"), "close_on_stage_complete = TRUE requires at least one enabled StageQuests relation.");
                         }
                         else
                         {
@@ -305,6 +308,14 @@ namespace GuildIdle.Editor.ConfigDownloader
                         }
                     }
                 }
+            }
+
+            private bool HasEnabledStageQuest(string questId)
+            {
+                if (string.IsNullOrWhiteSpace(questId) || !_tables.TryGetValue("StageQuests", out var table)) return false;
+                foreach (var row in table.DataRows)
+                    if (string.Equals(row.Get("quest_id"), questId, StringComparison.Ordinal) && ReadBool(row, "enabled", false)) return true;
+                return false;
             }
 
             private void ValidateConditions()

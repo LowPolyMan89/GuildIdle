@@ -408,7 +408,7 @@ namespace GuildIdle.Configs
         {
             QuestId = value.questId, NameId = value.nameId, DescriptionId = value.descriptionId, IconId = value.iconId,
             JournalCategory = value.journalCategory, SortOrder = value.sortOrder, IsTutorial = value.isTutorial,
-            Enabled = value.enabled, Kind = QuestDefinitionKind.Story
+            CloseOnStageComplete = value.closeOnStageComplete, Enabled = value.enabled, Kind = QuestDefinitionKind.Story
         };
 
         private static QuestDefinition ToDefinition(DailyQuestConfigDto value) => value == null ? null : new QuestDefinition

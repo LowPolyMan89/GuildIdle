@@ -513,6 +513,7 @@ namespace GuildIdle.Configs
         public string journalCategory;
         public int sortOrder;
         public bool isTutorial;
+        public bool closeOnStageComplete;
         public bool enabled = true;
     }
 
@@ -545,6 +546,7 @@ namespace GuildIdle.Configs
         public string JournalCategory { get; internal set; }
         public int SortOrder { get; internal set; }
         public bool IsTutorial { get; internal set; }
+        public bool CloseOnStageComplete { get; internal set; }
         public bool Enabled { get; internal set; }
         public QuestDefinitionKind Kind { get; internal set; }
         public string DailyPoolId { get; internal set; }

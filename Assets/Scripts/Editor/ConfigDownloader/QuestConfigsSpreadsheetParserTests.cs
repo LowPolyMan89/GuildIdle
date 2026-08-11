@@ -31,7 +31,36 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(json, Does.Contain("\"compareOperator\": \"GreaterOrEqual\""));
             Assert.That(json, Does.Contain("\"enumGroup\": \"QuestInstanceStatus\""));
             Assert.That(json, Does.Contain("\"value\": \"RewardPending\""));
+            Assert.That(json, Does.Contain("\"closeOnStageComplete\": false"));
             Assert.That(json, Does.Not.Contain("notes"));
+        }
+
+        [Test]
+        public void CloseOnStageCompleteMustBeBoolean()
+        {
+            var download = CreateValidDownload();
+            download.sheets[2].rows[1].cells[7] = "sometimes";
+            Write(download);
+
+            var report = new QuestConfigsSpreadsheetParser().BuildRuntimeJson(Source(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("close_on_stage_complete"));
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Expected TRUE or FALSE"));
+        }
+
+        [Test]
+        public void CloseOnStageCompleteRequiresEnabledStageQuestRelation()
+        {
+            var download = CreateValidDownload();
+            download.sheets[2].rows[1].cells[7] = "TRUE";
+            download.sheets[1].rows[1].cells[6] = "FALSE";
+            Write(download);
+
+            var report = new QuestConfigsSpreadsheetParser().BuildRuntimeJson(Source(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("close_on_stage_complete = TRUE requires at least one enabled StageQuests relation"));
         }
 
         [TestCase("story:quest_intro")]
@@ -96,6 +125,19 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void ClosedQuestStatusIsRequired()
+        {
+            var download = CreateValidDownload();
+            download.sheets[7].rows[11].cells[1] = "Completed";
+            Write(download);
+
+            var report = new QuestConfigsSpreadsheetParser().BuildRuntimeJson(Source(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("QuestInstanceStatus must declare 'Closed'."));
+        }
+
+        [Test]
         public void CrossValidatorRejectsQuestCompletedInstanceId()
         {
             var download = CreateValidDownload();
@@ -127,8 +169,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("stage_id", "quest_id", "weight_percent", "required", "show_in_stage_ui", "sort_order", "enabled", "notes"),
                         Row("stage_arrival", "quest_intro", "100", "TRUE", "TRUE", "10", "TRUE", "")),
                     Sheet("StoryQuests",
-                        Row("quest_id", "name_id", "description_id", "icon_id", "journal_category", "sort_order", "is_tutorial", "enabled", "notes"),
-                        Row("quest_intro", "quest.name", "quest.desc", "quest_icon", "Story", "10", "TRUE", "TRUE", "")),
+                        Row("quest_id", "name_id", "description_id", "icon_id", "journal_category", "sort_order", "is_tutorial", "close_on_stage_complete", "enabled", "notes"),
+                        Row("quest_intro", "quest.name", "quest.desc", "quest_icon", "Story", "10", "TRUE", "FALSE", "TRUE", "")),
                     Sheet("DailyQuests", Row("quest_id", "name_id", "description_id", "icon_id", "journal_category", "daily_pool_id", "selection_weight", "sort_order", "enabled", "notes")),
                     Sheet("QuestStartConditions",
                         Row("quest_id", "condition_group", "condition_type", "target_id", "operator", "value", "sort_order", "notes"),
@@ -149,6 +191,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("QuestInstanceStatus", "Active", ""),
                         Row("QuestInstanceStatus", "RewardPending", ""),
                         Row("QuestInstanceStatus", "Completed", ""),
+                        Row("QuestInstanceStatus", "Closed", ""),
                         Row("QuestInstanceStatus", "Expired", ""))
                 }
             };

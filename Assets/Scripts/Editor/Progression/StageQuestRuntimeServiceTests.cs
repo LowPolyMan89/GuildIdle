@@ -104,6 +104,93 @@ namespace GuildIdle.Progression.Editor
         }
 
         [Test]
+        public void StageCompletionClosesConfiguredActiveOptionalQuestWithoutCompletionSideEffects()
+        {
+            var store = new TestStore("stage_1");
+            var configs = Configs(
+                stories: new[] { Story("required"), Story("generic_optional", 20, true) },
+                conditions: new[] { Condition("required", "NewGame"), Condition("generic_optional", "NewGame") },
+                steps: new[]
+                {
+                    Step("required", "required_step", "ResourceCount", "wood", 1),
+                    Step("generic_optional", "optional_step", "ResourceCount", "meat", 10)
+                },
+                stages: TwoStages(),
+                stageQuests: new[]
+                {
+                    StageQuest("stage_1", "required"),
+                    StageQuest("stage_1", "generic_optional", required: false)
+                });
+            var runtime = Runtime(configs, store);
+            runtime.Handle(new NewGame());
+            store.SaveCalls = 0;
+
+            var update = runtime.Handle(new ResourceQuantityChanged("wood", 1));
+
+            var closed = store.GetQuestInstance("story:generic_optional");
+            Assert.That(closed.status, Is.EqualTo(QuestInstanceStatus.Closed));
+            Assert.That(closed.rewardsGranted, Is.False);
+            Assert.That(closed.pendingResultId, Is.Null);
+            Assert.That(update.CompletedInstanceIds, Is.EqualTo(new[] { "story:required" }));
+            Assert.That(update.PublishedQuestCompletedEvents, Has.Count.EqualTo(1));
+            Assert.That(update.PublishedQuestCompletedEvents[0].QuestId, Is.EqualTo("required"));
+            Assert.That(update.Rewards, Is.Empty);
+            Assert.That(update.QuestSnapshot.ActiveInstances, Has.None.Property("QuestId").EqualTo("generic_optional"));
+            Assert.That(store.SaveCalls, Is.EqualTo(1));
+
+            var afterReload = Runtime(configs, store).Initialize();
+            Assert.That(store.GetQuestInstance("story:generic_optional").status, Is.EqualTo(QuestInstanceStatus.Closed));
+            Assert.That(afterReload.Changed, Is.False);
+            Assert.That(afterReload.PublishedQuestCompletedEvents, Is.Empty);
+            Assert.That(store.SaveCalls, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void StageCompletionPreservesNonClosableMissingCompletedAndRewardPendingQuests()
+        {
+            var store = new TestStore("stage_1");
+            var configs = Configs(
+                stories: new[]
+                {
+                    Story("required"), Story("kept_active", 20), Story("never_created", 30, true),
+                    Story("already_completed", 40, true), Story("reward_pending", 50, true)
+                },
+                conditions: new[] { Condition("required", "NewGame"), Condition("kept_active", "NewGame") },
+                steps: new[]
+                {
+                    Step("required", "required_step", "ResourceCount", "wood", 1),
+                    Step("kept_active", "kept_step", "ResourceCount", "stone", 10)
+                },
+                stages: TwoStages(),
+                stageQuests: new[]
+                {
+                    StageQuest("stage_1", "required"), StageQuest("stage_1", "kept_active", required: false),
+                    StageQuest("stage_1", "never_created", required: false), StageQuest("stage_1", "already_completed", required: false),
+                    StageQuest("stage_1", "reward_pending", required: false)
+                });
+            store.SetQuestInstance(new QuestInstanceSaveData
+            {
+                instanceId = "story:already_completed", questId = "already_completed",
+                status = QuestInstanceStatus.Completed, rewardsGranted = true
+            });
+            store.SetQuestInstance(new QuestInstanceSaveData
+            {
+                instanceId = "story:reward_pending", questId = "reward_pending",
+                status = QuestInstanceStatus.RewardPending, pendingResultId = "result:Quest:story:reward_pending"
+            });
+            var runtime = Runtime(configs, store);
+            runtime.Handle(new NewGame());
+
+            runtime.Handle(new ResourceQuantityChanged("wood", 1));
+
+            Assert.That(store.GetQuestInstance("story:kept_active").status, Is.EqualTo(QuestInstanceStatus.Active));
+            Assert.That(store.GetQuestInstance("story:never_created"), Is.Null);
+            Assert.That(store.GetQuestInstance("story:already_completed").status, Is.EqualTo(QuestInstanceStatus.Completed));
+            Assert.That(store.GetQuestInstance("story:reward_pending").status, Is.EqualTo(QuestInstanceStatus.RewardPending));
+            Assert.That(store.GetQuestInstance("story:reward_pending").pendingResultId, Is.EqualTo("result:Quest:story:reward_pending"));
+        }
+
+        [Test]
         public void InvalidConditionBlocksOnlyItsDefinition()
         {
             var store = new TestStore("stage_1");
@@ -270,8 +357,8 @@ namespace GuildIdle.Progression.Editor
             }));
         }
 
-        private static StoryQuestConfigDto Story(string id, int order = 10) =>
-            new StoryQuestConfigDto { questId = id, sortOrder = order, enabled = true };
+        private static StoryQuestConfigDto Story(string id, int order = 10, bool closeOnStageComplete = false) =>
+            new StoryQuestConfigDto { questId = id, sortOrder = order, closeOnStageComplete = closeOnStageComplete, enabled = true };
 
         private static DailyQuestConfigDto Daily(string id) =>
             new DailyQuestConfigDto { questId = id, dailyPoolId = "pool", selectionWeight = 1, enabled = true };
@@ -295,8 +382,8 @@ namespace GuildIdle.Progression.Editor
 
         private static StageConfigDto[] TwoStages() => new[] { Stage("stage_1", "stage_2"), Stage("stage_2", null) };
 
-        private static StageQuestConfigDto StageQuest(string stageId, string questId) =>
-            new StageQuestConfigDto { stageId = stageId, questId = questId, weightPercent = 100, required = true, showInStageUi = true, enabled = true };
+        private static StageQuestConfigDto StageQuest(string stageId, string questId, bool required = true) =>
+            new StageQuestConfigDto { stageId = stageId, questId = questId, weightPercent = required ? 100 : 0, required = required, showInStageUi = true, enabled = true };
 
         private sealed class TestStore : IProgressionRuntimeStore
         {

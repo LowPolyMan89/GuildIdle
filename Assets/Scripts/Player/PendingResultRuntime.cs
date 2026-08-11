@@ -242,7 +242,7 @@ namespace GuildIdle.Player
         {
             var quest = result == null ? null : _state.GetQuestInstance(result.sourceExecutionId);
             if (quest == null || _state.IsPendingResultSourceQuarantined(result.sourceType, result.sourceExecutionId) ||
-                quest.rewardsGranted || quest.status == QuestInstanceStatus.Completed || quest.status == QuestInstanceStatus.Expired ||
+                quest.rewardsGranted || QuestInstanceStatus.IsTerminal(quest.status) ||
                 !string.Equals(quest.questId, result.sourceId, StringComparison.Ordinal) ||
                 (!string.IsNullOrWhiteSpace(quest.pendingResultId) && !string.Equals(quest.pendingResultId, result.resultId, StringComparison.Ordinal)))
                 return false;
