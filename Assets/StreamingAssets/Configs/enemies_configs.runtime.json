@@ -334,8 +334,8 @@
       "lootGroupId": "loot_enemy_rabbit",
       "enemyId": "enemy_rabbit",
       "lootId": "resource_rabbit_meat",
-      "minCount": 1,
-      "maxCount": 1,
+      "minCount": 2,
+      "maxCount": 2,
       "chancePercent": 70,
       "qualityMin": 0,
       "qualityMax": 0

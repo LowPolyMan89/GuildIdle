@@ -160,6 +160,35 @@ namespace GuildIdle.Editor.ConfigDownloader
         }
 
         [Test]
+        public void Validate_QuestActivityCompletedAcceptsGeneratedBuildAction()
+        {
+            var quests = Download(
+                Sheet("QuestSteps",
+                    Row("quest_id", "objective_type", "target_id"),
+                    Row("quest_build_hut", "ActivityCompleted", "build_hall")));
+            var collection = Collection(
+                Source("activity_configs", "Activity Configs", "quest-build-activity.json", Download(
+                    Sheet("Activities", Row("id"), Row("work_pine_wood")),
+                    Sheet("Skills", Row("skill_id"), Row("skill_construction")))),
+                Source("formula_configs", "Formula Configs", "quest-build-formulas.json", Download(
+                    Sheet("HeroDerivedStats", Row("formula_id"), Row("formula_build")))),
+                Source("buildings_configs", "Buildings Configs", "quest-build-buildings.json", Download(
+                    Sheet("Index", Row("building_id", "levels", "start_level", "clickable_requirement"), Row("building_hall", "1", "0", "")),
+                    Sheet("Hall", Row("building_id", "building_hall"), Row("level", "source_activity_id", "build_formula_id", "skill_id", "active_hero_limit"), Row("1", "build_hall", "formula_build", "skill_construction", "1")))),
+                Source("quest_configs", "Quest Configs", "quest-build-quests.json", quests));
+
+            var validReport = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(validReport.Success, Is.True, validReport.ToDisplayMessage());
+
+            FindSheet(quests, "QuestSteps").rows[1].cells[2] = "build_missing";
+            var invalidReport = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(invalidReport.Success, Is.False);
+            Assert.That(invalidReport.ToDisplayMessage(), Does.Contain("Activity Configs / Activities.id or generated Buildings buildActions"));
+        }
+
+        [Test]
         public void Validate_BuildingCraftablesUseCraftDefinitionRegistry()
         {
             var items = Source("items_configs", "Items Configs", "craft-items.json", Download(

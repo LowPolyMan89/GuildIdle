@@ -5,7 +5,7 @@
       "nameId": "stage_arrival_name_id",
       "descriptionId": "stage_arrival_description_id",
       "stagePrefabId": "stage_arrival_location",
-      "targetDurationSec": 1800,
+      "targetDurationSec": 0,
       "completionRule": "AllRequired",
       "nextStageId": "stage_2",
       "sortOrder": 10,
@@ -25,8 +25,8 @@
   "stageQuests": [
     {
       "stageId": "stage_arrival",
-      "questId": "quest_build_hut",
-      "weightPercent": 50,
+      "questId": "quest_light_campfire",
+      "weightPercent": 15,
       "required": true,
       "showInStageUi": true,
       "sortOrder": 10,
@@ -34,11 +34,29 @@
     },
     {
       "stageId": "stage_arrival",
-      "questId": "quest_clear_underwood",
-      "weightPercent": 50,
+      "questId": "quest_inspect_underwood",
+      "weightPercent": 15,
       "required": true,
       "showInStageUi": true,
       "sortOrder": 20,
+      "enabled": true
+    },
+    {
+      "stageId": "stage_arrival",
+      "questId": "quest_clear_underwood",
+      "weightPercent": 30,
+      "required": true,
+      "showInStageUi": true,
+      "sortOrder": 30,
+      "enabled": true
+    },
+    {
+      "stageId": "stage_arrival",
+      "questId": "quest_build_hut",
+      "weightPercent": 40,
+      "required": true,
+      "showInStageUi": true,
+      "sortOrder": 40,
       "enabled": true
     },
     {
@@ -47,19 +65,31 @@
       "weightPercent": 0,
       "required": false,
       "showInStageUi": true,
-      "sortOrder": 30,
+      "sortOrder": 50,
       "enabled": true
     }
   ],
   "storyQuests": [
     {
-      "questId": "quest_build_hut",
-      "nameId": "quest_build_hut_name_id",
-      "descriptionId": "quest_build_hut_description_id",
-      "iconId": "building_hall_small_icon_id",
+      "questId": "quest_light_campfire",
+      "nameId": "quest_light_campfire_name_id",
+      "descriptionId": "quest_light_campfire_description_id",
+      "iconId": "building_campfire_small_icon_id",
       "journalCategory": "Main",
       "sortOrder": 10,
       "isTutorial": true,
+      "closeOnStageComplete": false,
+      "enabled": true
+    },
+    {
+      "questId": "quest_inspect_underwood",
+      "nameId": "quest_inspect_underwood_name_id",
+      "descriptionId": "quest_inspect_underwood_description_id",
+      "iconId": "building_underwood_small_icon_id",
+      "journalCategory": "Main",
+      "sortOrder": 20,
+      "isTutorial": true,
+      "closeOnStageComplete": false,
       "enabled": true
     },
     {
@@ -68,8 +98,20 @@
       "descriptionId": "quest_clear_underwood_description_id",
       "iconId": "icon_combat_wolf",
       "journalCategory": "Main",
-      "sortOrder": 20,
+      "sortOrder": 30,
       "isTutorial": true,
+      "closeOnStageComplete": false,
+      "enabled": true
+    },
+    {
+      "questId": "quest_build_hut",
+      "nameId": "quest_build_hut_name_id",
+      "descriptionId": "quest_build_hut_description_id",
+      "iconId": "building_hall_small_icon_id",
+      "journalCategory": "Main",
+      "sortOrder": 40,
+      "isTutorial": true,
+      "closeOnStageComplete": false,
       "enabled": true
     },
     {
@@ -78,15 +120,16 @@
       "descriptionId": "quest_prepare_for_wolves_description_id",
       "iconId": "building_campfire_small_icon_id",
       "journalCategory": "Side",
-      "sortOrder": 30,
+      "sortOrder": 50,
       "isTutorial": true,
+      "closeOnStageComplete": true,
       "enabled": true
     }
   ],
   "dailyQuests": [],
   "questStartConditions": [
     {
-      "questId": "quest_build_hut",
+      "questId": "quest_light_campfire",
       "conditionGroup": "start",
       "conditionType": "NewGame",
       "compareOperator": "GreaterOrEqual",
@@ -94,9 +137,28 @@
       "sortOrder": 10
     },
     {
+      "questId": "quest_inspect_underwood",
+      "conditionGroup": "start",
+      "conditionType": "QuestCompleted",
+      "targetId": "quest_light_campfire",
+      "compareOperator": "GreaterOrEqual",
+      "value": 1,
+      "sortOrder": 10
+    },
+    {
       "questId": "quest_clear_underwood",
       "conditionGroup": "start",
-      "conditionType": "NewGame",
+      "conditionType": "QuestCompleted",
+      "targetId": "quest_inspect_underwood",
+      "compareOperator": "GreaterOrEqual",
+      "value": 1,
+      "sortOrder": 10
+    },
+    {
+      "questId": "quest_build_hut",
+      "conditionGroup": "start",
+      "conditionType": "QuestCompleted",
+      "targetId": "quest_clear_underwood",
       "compareOperator": "GreaterOrEqual",
       "value": 1,
       "sortOrder": 10
@@ -113,36 +175,25 @@
   ],
   "questSteps": [
     {
-      "questId": "quest_build_hut",
-      "stepId": "step_collect_wood",
+      "questId": "quest_light_campfire",
+      "stepId": "step_build_campfire",
       "stepOrder": 10,
-      "objectiveType": "ResourceCount",
-      "targetId": "resource_pine_wood",
-      "compareOperator": "GreaterOrEqual",
-      "targetValue": 8,
-      "descriptionId": "quest_build_hut_step_collect_wood_id",
-      "required": true
-    },
-    {
-      "questId": "quest_build_hut",
-      "stepId": "step_collect_stone",
-      "stepOrder": 20,
-      "objectiveType": "ResourceCount",
-      "targetId": "resource_stone",
-      "compareOperator": "GreaterOrEqual",
-      "targetValue": 6,
-      "descriptionId": "quest_build_hut_step_collect_stone_id",
-      "required": true
-    },
-    {
-      "questId": "quest_build_hut",
-      "stepId": "step_build_hut",
-      "stepOrder": 30,
-      "objectiveType": "BuildingLevel",
-      "targetId": "building_hall",
+      "objectiveType": "ActivityCompleted",
+      "targetId": "build_campfire",
       "compareOperator": "GreaterOrEqual",
       "targetValue": 1,
-      "descriptionId": "quest_build_hut_step_build_hut_id",
+      "descriptionId": "quest_light_campfire_step_build_id",
+      "required": true
+    },
+    {
+      "questId": "quest_inspect_underwood",
+      "stepId": "step_inspect_underwood",
+      "stepOrder": 10,
+      "objectiveType": "ActivityCompleted",
+      "targetId": "explore_underwood",
+      "compareOperator": "GreaterOrEqual",
+      "targetValue": 1,
+      "descriptionId": "quest_inspect_underwood_step_inspect_id",
       "required": true
     },
     {
@@ -157,20 +208,42 @@
       "required": true
     },
     {
-      "questId": "quest_prepare_for_wolves",
-      "stepId": "step_build_campfire",
+      "questId": "quest_build_hut",
+      "stepId": "step_collect_wood",
       "stepOrder": 10,
-      "objectiveType": "BuildingLevel",
-      "targetId": "building_campfire",
+      "objectiveType": "ResourceCount",
+      "targetId": "resource_pine_wood",
+      "compareOperator": "GreaterOrEqual",
+      "targetValue": 20,
+      "descriptionId": "quest_build_hut_step_collect_wood_id",
+      "required": true
+    },
+    {
+      "questId": "quest_build_hut",
+      "stepId": "step_collect_stone",
+      "stepOrder": 20,
+      "objectiveType": "ResourceCount",
+      "targetId": "resource_stone",
+      "compareOperator": "GreaterOrEqual",
+      "targetValue": 20,
+      "descriptionId": "quest_build_hut_step_collect_stone_id",
+      "required": true
+    },
+    {
+      "questId": "quest_build_hut",
+      "stepId": "step_build_hut",
+      "stepOrder": 30,
+      "objectiveType": "ActivityCompleted",
+      "targetId": "build_hall",
       "compareOperator": "GreaterOrEqual",
       "targetValue": 1,
-      "descriptionId": "quest_prepare_for_wolves_step_build_campfire_id",
+      "descriptionId": "quest_build_hut_step_build_hut_id",
       "required": true
     },
     {
       "questId": "quest_prepare_for_wolves",
       "stepId": "step_hunt_meat",
-      "stepOrder": 20,
+      "stepOrder": 10,
       "objectiveType": "ResourceCount",
       "targetId": "resource_rabbit_meat",
       "compareOperator": "GreaterOrEqual",
@@ -181,7 +254,7 @@
     {
       "questId": "quest_prepare_for_wolves",
       "stepId": "step_cook_meat",
-      "stepOrder": 30,
+      "stepOrder": 20,
       "objectiveType": "ItemCount",
       "targetId": "consumable_roasted_rabbit_meat",
       "compareOperator": "GreaterOrEqual",
@@ -291,6 +364,11 @@
       "enumGroup": "QuestInstanceStatus",
       "value": "Completed",
       "description": "Экземпляр завершён; rewards_granted хранится отдельно для atomic retry."
+    },
+    {
+      "enumGroup": "QuestInstanceStatus",
+      "value": "Closed",
+      "description": "Терминальное неуспешное автозакрытие Active StoryQuest при завершении Stage; без rewards и QuestCompleted."
     },
     {
       "enumGroup": "QuestInstanceStatus",

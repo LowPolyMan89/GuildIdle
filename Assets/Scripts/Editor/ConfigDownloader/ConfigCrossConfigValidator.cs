@@ -3026,13 +3026,21 @@ namespace GuildIdle.Editor.ConfigDownloader
                             if (TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Buildings.BuildingIds, "Buildings Configs / Index.building_id");
                             break;
                         case "ActivityCompleted":
-                            if (TryGetRequiredRegistry(report, registry.Activity, "Activity Configs")) ValidateIdSet(report, quests.Source.DisplayName, table.Name, row, "target_id", registry.Activity.ActivityIds, "Activity Configs / Activities.id");
+                            ValidateActivityOrBuildAction(quests, registry, report, table, row);
                             break;
                         case "QuestCompleted":
                             ValidateDefinitionTarget(quests, report, table, row);
                             break;
                     }
                 }
+            }
+
+            private static void ValidateActivityOrBuildAction(QuestRegistry quests, ConfigRegistry registry, ConfigPipelineReport report, ConfigSheetTable table, ConfigSheetDataRow row)
+            {
+                if (!TryGetRequiredRegistry(report, registry.Activity, "Activity Configs")) return;
+                var target = row.Get("target_id");
+                if (registry.Activity.ActivityIds.Contains(target) || registry.Buildings != null && registry.Buildings.BuildActionIds.Contains(target)) return;
+                AddIssue(report, quests.Source.DisplayName, table.Name, row.RowNumber, "target_id", target, "Referenced action does not exist in Activity Configs / Activities.id or generated Buildings buildActions.");
             }
 
             private static void ValidateDefinitionTarget(QuestRegistry quests, ConfigPipelineReport report, ConfigSheetTable table, ConfigSheetDataRow row)

@@ -50,15 +50,15 @@
     },
     {
       "id": "combat_clear_hall_forest_name_id",
-      "ru": "Очистить Подлесок",
-      "en": "Clear the Underwood",
-      "tr": "Alt Ormanı Temizle"
+      "ru": "Охота на волков",
+      "en": "Hunt the Wolves",
+      "tr": "Kurtları Avla"
     },
     {
       "id": "combat_clear_hall_forest_description_id",
-      "ru": "Одна группа: 4 тощих волка и Вожак. Неподготовленная попытка обычно заканчивается поражением; подготовьте Жареное мясо кролика и повторите бой.",
-      "en": "One group contains 4 Lean Wolves and the Wolf Leader. An unprepared attempt will usually fail; prepare Roasted Rabbit Meat and retry.",
-      "tr": "Grup 4 zayıf kurt ve Kurt Liderinden oluşur. Hazırlıksız deneme genellikle yenilgiyle biter; et hazırlayıp tekrar savaşın."
+      "ru": "Победите очередь из 4 тощих волков и Вожака. После поражения можно дополнительно подготовить Жареное мясо кролика и повторить бой.",
+      "en": "Defeat the queue of 4 Lean Wolves and the Wolf Leader. After a defeat, you can optionally prepare Roasted Rabbit Meat and retry.",
+      "tr": "4 Zayıf Kurt ve Kurt Lideri kuyruğunu yen. Yenilgiden sonra isteğe bağlı olarak Kızarmış Tavşan Eti hazırlayıp tekrar deneyebilirsin."
     },
     {
       "id": "work_pine_wood_name_id",
@@ -68,9 +68,9 @@
     },
     {
       "id": "work_pine_wood_description_id",
-      "ru": "Повторяемая добыча древесины в Подлеске.",
-      "en": "Repeatable wood gathering in the Underwood.",
-      "tr": "Alt Orman'da odun toplama."
+      "ru": "Повторяемая добыча 1–3 Сосновой древесины за цикл 10 секунд.",
+      "en": "Repeatable gathering of 1–3 Pine Wood per 10-second cycle.",
+      "tr": "10 saniyelik döngü başına 1–3 Çam Odunu topla."
     },
     {
       "id": "build_hall_name_id",
@@ -80,9 +80,9 @@
     },
     {
       "id": "build_hall_description_id",
-      "ru": "Постройте Хижину из 8 Древесины и 6 Камня.",
-      "en": "Build the Hut using 8 Wood and 6 Stone.",
-      "tr": "8 odun ve 6 taşla kulübe yap."
+      "ru": "Постройте Хижину из 20 Сосновой древесины и 20 Камня.",
+      "en": "Build the Hut using 20 Pine Wood and 20 Stone.",
+      "tr": "20 Çam Odunu ve 20 Taş kullanarak Kulübeyi inşa et."
     },
     {
       "id": "hunt_rabbits_name_id",
@@ -92,9 +92,9 @@
     },
     {
       "id": "hunt_rabbits_description_id",
-      "ru": "Охота в Подлеске: 1–2 Мяса кролика за 90 секунд, с риском опасной встречи.",
-      "en": "Hunt in the Underwood: 1–2 Rabbit Meat per 90 seconds, with danger risk.",
-      "tr": "Alt Orman'da 90 saniyede 1–2 Tavşan Eti avla; tehlikeli karşılaşma riski vardır."
+      "ru": "Охота в Подлеске: 1–2 Мяса кролика за цикл 10 секунд, 5% шанс опасной встречи.",
+      "en": "Hunt in the Underwood: 1–2 Rabbit Meat per 10-second cycle, with a 5% chance of a dangerous encounter.",
+      "tr": "Alt Orman'da 10 saniyelik döngü başına 1–2 Tavşan Eti avla; tehlikeli karşılaşma şansı %5."
     },
     {
       "id": "skill_gathering_name_id",
@@ -446,27 +446,27 @@
     },
     {
       "id": "work_stone_name_id",
-      "ru": "Сбор камня",
-      "en": "Gather Stone",
-      "tr": "Taş Topla"
+      "ru": "Добыча камня",
+      "en": "Stone Gathering",
+      "tr": "Taş Çıkarma"
     },
     {
       "id": "work_stone_description_id",
-      "ru": "Повторяемая добыча Камня в Груде камней.",
-      "en": "Repeatable Stone gathering at the Stone Pile.",
-      "tr": "Taş Yığınından taş topla."
+      "ru": "Повторяемая добыча 1–3 Камня за цикл 10 секунд.",
+      "en": "Repeatable gathering of 1–3 Stone per 10-second cycle.",
+      "tr": "10 saniyelik döngü başına 1–3 Taş topla."
     },
     {
       "id": "build_campfire_name_id",
-      "ru": "Разжечь Костёр",
-      "en": "Build the Campfire",
-      "tr": "Kamp Ateşi Yak"
+      "ru": "Развести костёр",
+      "en": "Light the Campfire",
+      "tr": "Kamp Ateşini Yak"
     },
     {
       "id": "build_campfire_description_id",
-      "ru": "Постройте Костёр из 2 Древесины и 2 Камня.",
-      "en": "Build the Campfire using 2 Wood and 2 Stone.",
-      "tr": "2 odun ve 2 taşla kamp ateşi yap."
+      "ru": "Разведите Костёр, используя 2 Сосновой древесины и 2 Камня.",
+      "en": "Light the Campfire using 2 Pine Wood and 2 Stone.",
+      "tr": "2 Çam Odunu ve 2 Taş kullanarak Kamp Ateşini yak."
     },
     {
       "id": "building_stone_pile_name_id",
@@ -512,9 +512,9 @@
     },
     {
       "id": "stage_arrival_description_id",
-      "ru": "Обустройте лесную стоянку, постройте Хижину и очистите Подлесок.",
-      "en": "Establish the forest camp, build the Hut, and clear the Underwood.",
-      "tr": "Orman kampını kur."
+      "ru": "Разведите Костёр, осмотрите Подлесок, разберитесь с волками и завершите Этап строительством Хижины.",
+      "en": "Light the Campfire, inspect the Underwood, deal with the wolves, and finish the Stage by building the Hut.",
+      "tr": "Kamp Ateşini yak, Alt Ormanı incele, kurtlarla başa çık ve Kulübeyi inşa ederek Aşamayı tamamla."
     },
     {
       "id": "stage_2_name_id",
@@ -536,45 +536,45 @@
     },
     {
       "id": "quest_build_hut_description_id",
-      "ru": "Соберите 8 Древесины и 6 Камня, затем завершите строительство.",
-      "en": "Gather 8 Wood and 6 Stone, then finish construction.",
-      "tr": "Malzemeleri topla."
+      "ru": "Финальная задача Этапа: соберите 20 Сосновой древесины и 20 Камня, затем завершите строительство Хижины.",
+      "en": "Final Stage task: gather 20 Pine Wood and 20 Stone, then finish building the Hut.",
+      "tr": "Aşamanın son görevi: 20 Çam Odunu ve 20 Taş topla, ardından Kulübeyi tamamla."
     },
     {
       "id": "quest_clear_underwood_name_id",
-      "ru": "Очистить Подлесок",
-      "en": "Clear the Underwood",
-      "tr": "Alt Ormanı Temizle"
+      "ru": "Охота на волков",
+      "en": "Hunt the Wolves",
+      "tr": "Kurtları Avla"
     },
     {
       "id": "quest_clear_underwood_description_id",
-      "ru": "Победите единую группу из 4 волков и Вожака.",
-      "en": "Defeat the single group of 4 wolves and the Wolf Leader.",
-      "tr": "Kurtları yen."
+      "ru": "Победите 4 тощих волков и Вожака. После первого поражения откроется дополнительная подготовка с мясом кролика.",
+      "en": "Defeat 4 Lean Wolves and the Wolf Leader. After the first defeat, optional preparation with Rabbit Meat becomes available.",
+      "tr": "4 Zayıf Kurt ve Kurt Liderini yen. İlk yenilgiden sonra Tavşan Eti ile isteğe bağlı hazırlık açılır."
     },
     {
       "id": "quest_prepare_for_wolves_name_id",
-      "ru": "Подготовиться к волкам",
-      "en": "Prepare for the Wolves",
-      "tr": "Kurtlara Hazırlan"
+      "ru": "Жареное мясо",
+      "en": "Roasted Rabbit Meat",
+      "tr": "Kızarmış Tavşan Eti"
     },
     {
       "id": "quest_prepare_for_wolves_description_id",
-      "ru": "Необязательная помощь после поражения: постройте Костёр, добудьте 10 Мяса кролика и приготовьте 10 расходников.",
-      "en": "Optional help after a defeat: build the Campfire, gather 10 Rabbit Meat, and cook 10 consumables.",
-      "tr": "Yenilgiden sonra isteğe bağlı yardım: Kamp Ateşi kur, 10 Tavşan Eti topla ve 10 tüketilebilir eşya pişir."
+      "ru": "Дополнительно после поражения: добудьте 10 Мяса кролика и приготовьте 10 Жареного мяса. Задача не влияет на прогресс Этапа.",
+      "en": "Optional after a defeat: gather 10 Rabbit Meat and cook 10 Roasted Rabbit Meat. This quest does not affect Stage Progress.",
+      "tr": "Yenilgiden sonra isteğe bağlı: 10 Tavşan Eti topla ve 10 Kızarmış Tavşan Eti pişir. Bu görev Aşama ilerlemesini etkilemez."
     },
     {
       "id": "quest_build_hut_step_collect_wood_id",
-      "ru": "Добыть 8 Сосновой древесины",
-      "en": "Gather 8 Pine Wood",
-      "tr": "8 Çam Odunu topla"
+      "ru": "Добыть 20 Сосновой древесины",
+      "en": "Gather 20 Pine Wood",
+      "tr": "20 Çam Odunu topla"
     },
     {
       "id": "quest_build_hut_step_collect_stone_id",
-      "ru": "Добыть 6 Камня",
-      "en": "Gather 6 Stone",
-      "tr": "6 Taş topla"
+      "ru": "Добыть 20 Камня",
+      "en": "Gather 20 Stone",
+      "tr": "20 Taş topla"
     },
     {
       "id": "quest_build_hut_step_build_hut_id",
@@ -605,6 +605,78 @@
       "ru": "Приготовить 10 Жареного мяса",
       "en": "Cook 10 Roasted Meat",
       "tr": "10 et pişir"
+    },
+    {
+      "id": "quest_light_campfire_name_id",
+      "ru": "Развести костёр",
+      "en": "Light the Campfire",
+      "tr": "Kamp Ateşini Yak"
+    },
+    {
+      "id": "quest_light_campfire_description_id",
+      "ru": "Соберите 2 Сосновой древесины и 2 Камня стартовыми одноразовыми работами и разведите Костёр.",
+      "en": "Gather 2 Pine Wood and 2 Stone with the one-time starting jobs and light the Campfire.",
+      "tr": "Başlangıçtaki tek seferlik işlerle 2 Çam Odunu ve 2 Taş topla ve Kamp Ateşini yak."
+    },
+    {
+      "id": "quest_light_campfire_step_build_id",
+      "ru": "Развести костёр",
+      "en": "Light the Campfire",
+      "tr": "Kamp Ateşini Yak"
+    },
+    {
+      "id": "quest_inspect_underwood_name_id",
+      "ru": "Осмотреть Подлесок",
+      "en": "Inspect the Underwood",
+      "tr": "Alt Ormanı İncele"
+    },
+    {
+      "id": "quest_inspect_underwood_description_id",
+      "ru": "Осмотрите Подлесок. После завершения откроются Рубка сосны, Добыча камня, Охота на кроликов и Охота на волков.",
+      "en": "Inspect the Underwood. When complete, Pine Woodcutting, Stone Gathering, Rabbit Hunting, and Hunt the Wolves become available.",
+      "tr": "Alt Ormanı incele. Tamamlandığında Çam Kesimi, Taş Çıkarma, Tavşan Avı ve Kurt Avı açılır."
+    },
+    {
+      "id": "quest_inspect_underwood_step_inspect_id",
+      "ru": "Осмотреть Подлесок",
+      "en": "Inspect the Underwood",
+      "tr": "Alt Ormanı İncele"
+    },
+    {
+      "id": "work_collect_brushwood_name_id",
+      "ru": "Сбор хвороста",
+      "en": "Gather Brushwood",
+      "tr": "Çalı Çırpı Topla"
+    },
+    {
+      "id": "work_collect_brushwood_description_id",
+      "ru": "Одноразовый стартовый сбор: 10 секунд, награда 2 Сосновой древесины.",
+      "en": "One-time starting gather: 10 seconds, rewards 2 Pine Wood.",
+      "tr": "Tek seferlik başlangıç toplaması: 10 saniye, ödül 2 Çam Odunu."
+    },
+    {
+      "id": "work_collect_stone_name_id",
+      "ru": "Сбор камня",
+      "en": "Gather Stone",
+      "tr": "Taş Topla"
+    },
+    {
+      "id": "work_collect_stone_description_id",
+      "ru": "Одноразовый стартовый сбор: 10 секунд, награда 2 Камня.",
+      "en": "One-time starting gather: 10 seconds, rewards 2 Stone.",
+      "tr": "Tek seferlik başlangıç toplaması: 10 saniye, ödül 2 Taş."
+    },
+    {
+      "id": "explore_underwood_name_id",
+      "ru": "Осмотреть Подлесок",
+      "en": "Inspect the Underwood",
+      "tr": "Alt Ormanı İncele"
+    },
+    {
+      "id": "explore_underwood_description_id",
+      "ru": "Одноразовый осмотр с сохраняемой шкалой прогресса. После завершения открывает основные активности Этапа 1.",
+      "en": "A one-time inspection with saved progress. Completing it unlocks the main Stage 1 activities.",
+      "tr": "Kaydedilen ilerlemeye sahip tek seferlik inceleme. Tamamlandığında 1. Aşamanın ana etkinlikleri açılır."
     }
   ]
 }

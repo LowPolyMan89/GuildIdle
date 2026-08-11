@@ -20,6 +20,62 @@
       "statProfileId": "profile_combat"
     },
     {
+      "id": "work_collect_brushwood",
+      "nameId": "work_collect_brushwood_name_id",
+      "descriptionId": "work_collect_brushwood_description_id",
+      "iconId": "icon_resource_pine_wood",
+      "type": "Work",
+      "category": "Gathering",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Timer",
+      "durationSec": 10,
+      "cycleSec": 0,
+      "fatigueCost": 1,
+      "mainSkillId": "skill_gathering",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_gathering"
+    },
+    {
+      "id": "work_collect_stone",
+      "nameId": "work_collect_stone_name_id",
+      "descriptionId": "work_collect_stone_description_id",
+      "iconId": "icon_resource_stone",
+      "type": "Work",
+      "category": "Gathering",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "Timer",
+      "durationSec": 10,
+      "cycleSec": 0,
+      "fatigueCost": 1,
+      "mainSkillId": "skill_gathering",
+      "isRepeatable": false,
+      "offlineEnabled": false,
+      "statProfileId": "profile_gathering"
+    },
+    {
+      "id": "explore_underwood",
+      "nameId": "explore_underwood_name_id",
+      "descriptionId": "explore_underwood_description_id",
+      "iconId": "building_underwood_small_icon_id",
+      "type": "Explore",
+      "category": "Inspection",
+      "rarityId": "Common",
+      "tier": 1,
+      "locationId": "village",
+      "progressMode": "ProgressBar",
+      "durationSec": 0,
+      "cycleSec": 0,
+      "fatigueCost": 0,
+      "mainSkillId": "skill_exploration",
+      "isRepeatable": false,
+      "offlineEnabled": false
+    },
+    {
       "id": "work_pine_wood",
       "nameId": "work_pine_wood_name_id",
       "descriptionId": "work_pine_wood_description_id",
@@ -31,7 +87,7 @@
       "locationId": "village",
       "progressMode": "Cycle",
       "durationSec": 0,
-      "cycleSec": 90,
+      "cycleSec": 10,
       "fatigueCost": 1,
       "mainSkillId": "skill_gathering",
       "isRepeatable": true,
@@ -50,7 +106,7 @@
       "locationId": "village",
       "progressMode": "Cycle",
       "durationSec": 0,
-      "cycleSec": 90,
+      "cycleSec": 10,
       "fatigueCost": 1,
       "mainSkillId": "skill_gathering",
       "isRepeatable": true,
@@ -69,7 +125,7 @@
       "locationId": "village",
       "progressMode": "Cycle",
       "durationSec": 0,
-      "cycleSec": 90,
+      "cycleSec": 10,
       "fatigueCost": 2,
       "mainSkillId": "skill_hunting",
       "isRepeatable": true,
@@ -78,6 +134,16 @@
     }
   ],
   "workDetails": [
+    {
+      "activityId": "work_collect_brushwood",
+      "successChance": 100,
+      "autoRepeat": false
+    },
+    {
+      "activityId": "work_collect_stone",
+      "successChance": 100,
+      "autoRepeat": false
+    },
     {
       "activityId": "work_pine_wood",
       "successChance": 100,
@@ -97,7 +163,13 @@
   ],
   "orderDetails": [],
   "eventDetails": [],
-  "exploreDetails": [],
+  "exploreDetails": [
+    {
+      "activityId": "explore_underwood",
+      "discoveryPointsRequired": 40,
+      "dangerLevel": 0
+    }
+  ],
   "combatDetails": [
     {
       "activityId": "combat_clear_hall_forest",
@@ -119,6 +191,24 @@
       "grantMoment": "OnComplete"
     },
     {
+      "activityId": "work_collect_brushwood",
+      "rewardType": "Resource",
+      "targetId": "resource_pine_wood",
+      "min": 2,
+      "max": 2,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
+      "activityId": "work_collect_stone",
+      "rewardType": "Resource",
+      "targetId": "resource_stone",
+      "min": 2,
+      "max": 2,
+      "chance": 100,
+      "grantMoment": "OnComplete"
+    },
+    {
       "activityId": "work_pine_wood",
       "rewardType": "Resource",
       "targetId": "resource_pine_wood",
@@ -131,8 +221,8 @@
       "activityId": "work_pine_wood",
       "rewardType": "SkillExp",
       "targetId": "skill_gathering",
-      "min": 10,
-      "max": 10,
+      "min": 1,
+      "max": 1,
       "chance": 100,
       "grantMoment": "OnCycle"
     },
@@ -149,8 +239,8 @@
       "activityId": "work_stone",
       "rewardType": "SkillExp",
       "targetId": "skill_gathering",
-      "min": 10,
-      "max": 10,
+      "min": 1,
+      "max": 1,
       "chance": 100,
       "grantMoment": "OnCycle"
     },
@@ -167,8 +257,8 @@
       "activityId": "hunt_rabbits",
       "rewardType": "SkillExp",
       "targetId": "skill_hunting",
-      "min": 10,
-      "max": 10,
+      "min": 1,
+      "max": 1,
       "chance": 100,
       "grantMoment": "OnCycle"
     }
@@ -859,7 +949,7 @@
     {
       "dangerEncounterId": "danger_hunt_rabbits",
       "activityId": "hunt_rabbits",
-      "riskPercent": 25,
+      "riskPercent": 5,
       "rollMoment": "OnActivityComplete",
       "enemyGroupId": "enemy_group_hunting_rabbits",
       "combatMode": "Queue_1v1",

@@ -90,11 +90,11 @@
       "materials": [
       {
         "id": "resource_pine_wood",
-        "count": 8
+        "count": 20
       },
       {
         "id": "resource_stone",
-        "count": 6
+        "count": 20
       }
     ],
       "requirementsActivities": [],
@@ -227,11 +227,11 @@
       "materials": [
       {
         "id": "resource_pine_wood",
-        "count": 8
+        "count": 20
       },
       {
         "id": "resource_stone",
-        "count": 6
+        "count": 20
       }
     ],
       "requirementsActivities": [],
@@ -270,7 +270,7 @@
       "buildingLevel": 0,
       "activityId": "build_hall",
       "sortOrder": 10,
-      "showIfActivityCompleted": "",
+      "showIfActivityCompleted": "combat_clear_hall_forest",
       "hideIfActivityCompleted": "build_hall",
       "clickableRequirement": ""
     },
@@ -286,9 +286,27 @@
     {
       "buildingId": "building_underwood",
       "buildingLevel": 0,
-      "activityId": "combat_clear_hall_forest",
+      "activityId": "work_collect_brushwood",
       "sortOrder": 10,
       "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "work_collect_brushwood",
+      "clickableRequirement": ""
+    },
+    {
+      "buildingId": "building_underwood",
+      "buildingLevel": 0,
+      "activityId": "explore_underwood",
+      "sortOrder": 20,
+      "showIfActivityCompleted": "build_campfire",
+      "hideIfActivityCompleted": "explore_underwood",
+      "clickableRequirement": ""
+    },
+    {
+      "buildingId": "building_underwood",
+      "buildingLevel": 0,
+      "activityId": "combat_clear_hall_forest",
+      "sortOrder": 30,
+      "showIfActivityCompleted": "explore_underwood",
       "hideIfActivityCompleted": "combat_clear_hall_forest",
       "clickableRequirement": ""
     },
@@ -296,8 +314,8 @@
       "buildingId": "building_underwood",
       "buildingLevel": 0,
       "activityId": "work_pine_wood",
-      "sortOrder": 20,
-      "showIfActivityCompleted": "",
+      "sortOrder": 40,
+      "showIfActivityCompleted": "explore_underwood",
       "hideIfActivityCompleted": "",
       "clickableRequirement": ""
     },
@@ -305,8 +323,8 @@
       "buildingId": "building_underwood",
       "buildingLevel": 0,
       "activityId": "hunt_rabbits",
-      "sortOrder": 30,
-      "showIfActivityCompleted": "",
+      "sortOrder": 50,
+      "showIfActivityCompleted": "explore_underwood",
       "hideIfActivityCompleted": "",
       "clickableRequirement": ""
     },
@@ -331,9 +349,18 @@
     {
       "buildingId": "building_stone_pile",
       "buildingLevel": 1,
-      "activityId": "work_stone",
+      "activityId": "work_collect_stone",
       "sortOrder": 10,
       "showIfActivityCompleted": "",
+      "hideIfActivityCompleted": "work_collect_stone",
+      "clickableRequirement": ""
+    },
+    {
+      "buildingId": "building_stone_pile",
+      "buildingLevel": 1,
+      "activityId": "work_stone",
+      "sortOrder": 20,
+      "showIfActivityCompleted": "explore_underwood",
       "hideIfActivityCompleted": "",
       "clickableRequirement": ""
     }
