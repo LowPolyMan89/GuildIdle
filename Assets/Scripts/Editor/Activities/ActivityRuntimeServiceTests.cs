@@ -281,6 +281,85 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void ExploreProgressBarUsesDiscoveryTargetAndAdvancesOnline()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+
+            Assert.That(ActivityRuntimeService.TryGetRuntimeInfo("progress_explore", out var info), Is.True);
+            Assert.That(info.durationSeconds, Is.EqualTo(40));
+
+            var started = runtime.Start("progress_explore", "ren");
+            Assert.That(started.success, Is.True);
+            var ticked = runtime.TickStandardActivities(15f);
+            var running = state.GetActivityExecution(started.executionId);
+
+            Assert.That(ticked.success, Is.True);
+            Assert.That(running.elapsedSeconds, Is.EqualTo(15f));
+            Assert.That(ticked.snapshot.executions[0].progress, Is.EqualTo(0.375f));
+            Assert.That(ticked.snapshot.executions[0].remainingSeconds, Is.EqualTo(25f));
+            Assert.That(state.IsActivityCompleted("progress_explore"), Is.False);
+
+            Assert.That(runtime.TickStandardActivities(25f).success, Is.True);
+            Assert.That(state.IsActivityCompleted("progress_explore"), Is.True);
+            Assert.That(state.GetActivityExecutions(), Is.Empty);
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+        }
+
+        [Test]
+        public void ExploreProgressBarPauseSurvivesSaveLoadAndStartResumesIt()
+        {
+            var state = NewState();
+            Assert.That(state.AddHero("test_builder_hero"), Is.True);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start("progress_explore", "ren");
+            Assert.That(started.success, Is.True);
+            Assert.That(runtime.TickStandardActivities(12f).success, Is.True);
+
+            var pausedResult = runtime.Cancel(started.executionId);
+            var paused = state.GetActivityExecution(started.executionId);
+
+            Assert.That(pausedResult.success, Is.True);
+            Assert.That(paused.status, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.Paused));
+            Assert.That(paused.heroId, Is.Null);
+            Assert.That(paused.elapsedSeconds, Is.EqualTo(12f));
+            Assert.That(state.IsHeroBusy("ren"), Is.False);
+            Assert.That(runtime.TickStandardActivities(10f).processedExecutions, Is.Zero);
+            Assert.That(state.GetActivityExecution(started.executionId).elapsedSeconds, Is.EqualTo(12f));
+
+            var storage = new MemorySaveStorage();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            var restored = SaveService.Load(_factory, storage);
+            runtime = new ActivityRuntimeService(restored, new PlayerStateActivityAdapter(restored));
+
+            var resumed = runtime.Start("progress_explore", "test_builder_hero");
+            var running = restored.GetActivityExecution(started.executionId);
+
+            Assert.That(resumed.success, Is.True);
+            Assert.That(resumed.executionId, Is.EqualTo(started.executionId));
+            Assert.That(running.status, Is.EqualTo(GuildIdle.Core.ActivityRuntimeStatus.Running));
+            Assert.That(running.heroId, Is.EqualTo("test_builder_hero"));
+            Assert.That(running.elapsedSeconds, Is.EqualTo(12f));
+            Assert.That(restored.IsHeroBusy("test_builder_hero"), Is.True);
+        }
+
+        [Test]
+        public void ExploreProgressBarRequiresValidDetailsAndPositiveTarget()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+
+            var missingDetails = runtime.Start("progress_explore_missing_details", "ren");
+            var invalidTarget = runtime.Start("progress_explore_invalid_target", "ren");
+
+            Assert.That(missingDetails.success, Is.False);
+            Assert.That(HasIssue(missingDetails.issues, "ProgressBarDetails"), Is.True);
+            Assert.That(invalidTarget.success, Is.False);
+            Assert.That(HasIssue(invalidTarget.issues, "ProgressBarTarget"), Is.True);
+            Assert.That(state.GetActivityExecutions(), Is.Empty);
+        }
+
+        [Test]
         public void TickStandardActivitiesDoesNotAdvanceCycleWork()
         {
             var state = NewState();
@@ -2500,7 +2579,15 @@ namespace GuildIdle.Editor.Activities
                         new ActivityConfigDto { id = "bad_cycle", type = "Work", cycleSec = 5, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "one_shot", type = "Explore", durationSec = 5, fatigueCost = 5, isRepeatable = false },
                         new ActivityConfigDto { id = "one_shot_new", type = "Explore", durationSec = 5, isRepeatable = false },
-                        new ActivityConfigDto { id = "one_shot_work", type = "Work", category = "Gathering", progressMode = "Timer", durationSec = 5, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = false }
+                        new ActivityConfigDto { id = "one_shot_work", type = "Work", category = "Gathering", progressMode = "Timer", durationSec = 5, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = false },
+                        new ActivityConfigDto { id = "progress_explore", type = "Explore", progressMode = "ProgressBar", isRepeatable = false },
+                        new ActivityConfigDto { id = "progress_explore_missing_details", type = "Explore", progressMode = "ProgressBar", isRepeatable = false },
+                        new ActivityConfigDto { id = "progress_explore_invalid_target", type = "Explore", progressMode = "ProgressBar", isRepeatable = false }
+                    },
+                    exploreDetails = new[]
+                    {
+                        new ExploreDetailConfigDto { activityId = "progress_explore", discoveryPointsRequired = 40 },
+                        new ExploreDetailConfigDto { activityId = "progress_explore_invalid_target", discoveryPointsRequired = 0 }
                     },
                     skills = new[]
                     {

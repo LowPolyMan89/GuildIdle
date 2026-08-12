@@ -254,6 +254,24 @@ namespace GuildIdle.Activities
 
             if (IsCycleWork(info))
                 return StartWork(request, info);
+            if (IsProgressBar(info))
+            {
+                var existing = FindProgressBarExecution(request.activityId);
+                if (existing != null)
+                {
+                    if (existing.status == CoreActivityRuntimeStatus.Paused)
+                        return ResumeProgressBar(request, info, existing);
+
+                    var result = NewStartResult(request);
+                    result.executionId = existing.executionId;
+                    var code = existing.status == CoreActivityRuntimeStatus.ResultPending
+                        ? "ProgressBarResultPending"
+                        : "ProgressBarAlreadyRunning";
+                    AddIssue(issues, request.activityId, code, existing.executionId, 1, 1, false, false,
+                        $"ProgressBar activity '{request.activityId}' already has unfinished execution '{existing.executionId}'.");
+                    return FinishStart(result, issues, false);
+                }
+            }
             return StartStandard(request, info);
         }
 
@@ -1150,6 +1168,39 @@ namespace GuildIdle.Activities
             return FinishStart(result, issues, true);
         }
 
+        private ActivityCancelResult PauseProgressBar(string executionId)
+        {
+            var issues = new List<ActivityRequirementIssue>();
+            var result = new ActivityCancelResult { executionId = executionId };
+            var execution = GetExecution(executionId);
+            if (!IsProgressBarExecution(execution))
+            {
+                AddIssue(issues, string.Empty, "ProgressBarExecution", executionId, 1, 0, false, false,
+                    $"ProgressBar execution '{executionId}' does not exist.");
+                return FinishCancel(result, issues, new List<ActivityRuntimeEvent>(), false, false);
+            }
+            if (execution.status == CoreActivityRuntimeStatus.Paused)
+                return FinishCancel(result, issues, new List<ActivityRuntimeEvent>(), false, true);
+            if (execution.status != CoreActivityRuntimeStatus.Running)
+            {
+                AddIssue(issues, execution.activityId, "ProgressBarState", execution.executionId, 1, 0, false, false,
+                    "Only Running ProgressBar activity can be paused.");
+                return FinishCancel(result, issues, new List<ActivityRuntimeEvent>(), false, false);
+            }
+
+            var checkpoint = _activityState.CaptureCheckpoint();
+            execution.heroId = null;
+            execution.status = CoreActivityRuntimeStatus.Paused;
+            var changed = UpdateExecution(execution) && Save();
+            if (!changed)
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, execution.activityId, "PauseFailed", execution.executionId, 1, 0, true, false,
+                    "Failed to pause ProgressBar activity.");
+            }
+            return FinishCancel(result, issues, new List<ActivityRuntimeEvent>(), changed, changed);
+        }
+
         public ActivityCancelResult Cancel(string executionId)
         {
             var execution = GetExecution(executionId);
@@ -1157,6 +1208,8 @@ namespace GuildIdle.Activities
                 return StopWork(executionId);
             if (execution != null && string.Equals(execution.runtimeKind, RuntimeKindBuild, StringComparison.Ordinal))
                 return PauseConstruction(executionId);
+            if (IsProgressBarExecution(execution))
+                return PauseProgressBar(executionId);
 
             var issues = new List<ActivityRequirementIssue>();
             var result = new ActivityCancelResult { executionId = executionId };
@@ -1363,6 +1416,35 @@ namespace GuildIdle.Activities
                 AddIssue(issues, request.activityId, "ActivityExecution", result.executionId, 1, 0, true, false, "Failed to create activity execution.");
                 return FinishStart(result, issues, false);
             }
+            return FinishStart(result, issues, true);
+        }
+
+        private ActivityStartResult ResumeProgressBar(
+            ActivityStartRequest request,
+            ActivityRuntimeInfo info,
+            ActivityExecutionSaveData execution)
+        {
+            var result = NewStartResult(request);
+            result.executionId = execution.executionId;
+            result.context.executionId = execution.executionId;
+            var issues = new List<ActivityRequirementIssue>();
+            ValidateStandardStart(result, info, issues, includeCost: false);
+            if (HasBlockingIssues(issues))
+                return FinishStart(result, issues, false);
+
+            var checkpoint = _activityState.CaptureCheckpoint();
+            execution.heroId = request.heroId;
+            execution.status = CoreActivityRuntimeStatus.Running;
+            execution.startedAtUnixSeconds = result.context.startedAtUnixSeconds;
+            if (!UpdateExecution(execution) || !Save())
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                AddIssue(issues, execution.activityId, "ResumeFailed", execution.executionId, 1, 0, true, false,
+                    "Failed to resume ProgressBar activity.");
+                return FinishStart(result, issues, false);
+            }
+
+            result.context = ToContext(execution);
             return FinishStart(result, issues, true);
         }
 
@@ -2359,6 +2441,7 @@ namespace GuildIdle.Activities
             ActivityTickResult tickResult,
             ref bool changed)
         {
+            // ProgressBar activities persist this accumulator and gain one progress point per online second.
             execution.elapsedSeconds += deltaTime;
             changed = true;
             if (execution.elapsedSeconds < info.durationSeconds)
@@ -2935,6 +3018,22 @@ namespace GuildIdle.Activities
             return null;
         }
 
+        private ActivityExecutionSaveData FindProgressBarExecution(string activityId)
+        {
+            foreach (var execution in GetExecutions())
+            {
+                if (execution == null ||
+                    !string.Equals(execution.activityId, activityId, StringComparison.Ordinal) ||
+                    !IsProgressBarExecution(execution) ||
+                    (execution.status != CoreActivityRuntimeStatus.Running &&
+                     execution.status != CoreActivityRuntimeStatus.Paused &&
+                     execution.status != CoreActivityRuntimeStatus.ResultPending))
+                    continue;
+                return execution;
+            }
+            return null;
+        }
+
         private void ReconcilePendingBuildingEvents()
         {
             foreach (var execution in GetExecutions())
@@ -3403,6 +3502,9 @@ namespace GuildIdle.Activities
         private static bool IsCycleWork(ActivityRuntimeInfo info) =>
             ActivityRuntimeClassifier.IsCycleWork(info?.activity);
 
+        private static bool IsProgressBar(ActivityRuntimeInfo info) =>
+            ActivityRuntimeClassifier.IsProgressBar(info?.activity);
+
         private static bool IsCycleWorkExecution(ActivityExecutionSaveData execution)
         {
             if (execution == null)
@@ -3412,12 +3514,36 @@ namespace GuildIdle.Activities
                 : string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal);
         }
 
+        private static bool IsProgressBarExecution(ActivityExecutionSaveData execution)
+        {
+            return execution != null &&
+                   RuntimeConfigs.Activities.TryGet(execution.activityId, out var activity) &&
+                   ActivityRuntimeClassifier.IsProgressBar(activity);
+        }
+
         private static bool TryGetRuntimeInfo(string activityId, List<ActivityRequirementIssue> issues, out ActivityRuntimeInfo info)
         {
             info = null;
             if (!ActivityResolverUtilities.TryGetActivity(activityId, issues, out var activity))
                 return false;
             var duration = activity.durationSec > 0 ? activity.durationSec : activity.cycleSec;
+            if (ActivityRuntimeClassifier.IsProgressBar(activity))
+            {
+                if (!string.Equals(activity.type, "Explore", StringComparison.OrdinalIgnoreCase) ||
+                    !RuntimeConfigs.Activities.TryGetExploreDetails(activityId, out var details))
+                {
+                    AddIssue(issues, activityId, "ProgressBarDetails", activityId, 1, 0, true, false,
+                        $"ProgressBar activity '{activityId}' requires supported detail configuration.");
+                    return false;
+                }
+                duration = details.discoveryPointsRequired;
+                if (duration <= 0)
+                {
+                    AddIssue(issues, activityId, "ProgressBarTarget", activityId, 1, duration, true, false,
+                        $"Explore ProgressBar activity '{activityId}' requires positive discoveryPointsRequired.");
+                    return false;
+                }
+            }
             if (duration <= 0)
             {
                 AddIssue(issues, activityId, "ActivityDuration", activityId, 1, duration, true, false, $"Activity '{activityId}' has no positive durationSec or cycleSec.");

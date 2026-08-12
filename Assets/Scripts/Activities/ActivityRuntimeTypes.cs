@@ -8,6 +8,12 @@ namespace GuildIdle.Activities
 {
     public static class ActivityRuntimeClassifier
     {
+        public static bool IsProgressBar(ActivityConfigDto activity)
+        {
+            return activity != null &&
+                   string.Equals(activity.progressMode, "ProgressBar", StringComparison.OrdinalIgnoreCase);
+        }
+
         public static bool IsCycleWork(ActivityConfigDto activity)
         {
             if (activity == null || !string.Equals(activity.type, "Work", StringComparison.OrdinalIgnoreCase))

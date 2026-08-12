@@ -1368,7 +1368,9 @@ namespace GuildIdle.Editor.Activities
             {
                 if (string.Equals(choice.Activity.type, "CombatTask", StringComparison.OrdinalIgnoreCase))
                     return $"Бой до победы · энергия {choice.Activity.fatigueCost}";
-                var seconds = choice.Activity.cycleSec > 0 ? choice.Activity.cycleSec : choice.Activity.durationSec;
+                var seconds = ActivityRuntimeService.TryGetRuntimeInfo(choice.Id, out var runtimeInfo)
+                    ? runtimeInfo.durationSeconds
+                    : choice.Activity.cycleSec > 0 ? choice.Activity.cycleSec : choice.Activity.durationSec;
                 return $"{choice.Activity.type} · {FormatSeconds(seconds)} · энергия {choice.Activity.fatigueCost}";
             }
             return $"Уровень {choice.Build.targetLevel} · {choice.Build.buildPointsRequired} очков · энергия {choice.Build.fatigueCost}";
