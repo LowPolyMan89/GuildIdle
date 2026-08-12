@@ -345,10 +345,7 @@ namespace GuildIdle.Activities
             }
 
             if (_elapsedTimeAccumulator >= ElapsedTimeCheckpointIntervalSeconds)
-            {
-                _elapsedTimeAccumulator = 0f;
                 AdvanceElapsedTime();
-            }
         }
 
         private void OnDestroy()
@@ -751,12 +748,18 @@ namespace GuildIdle.Activities
             if (_boundState == null || _activities == null || _elapsedCoordinator == null)
                 return false;
 
+            var standardActivityDelta = Math.Max(0f, _elapsedTimeAccumulator);
             var report = _elapsedCoordinator.Run();
             if (!report.Success)
                 return Fail(FirstIssue(report));
 
+            var standardActivities = _activities.TickStandardActivities(standardActivityDelta);
+            if (!standardActivities.success)
+                return Fail(FirstIssue(standardActivities));
+
+            _elapsedTimeAccumulator = 0f;
             _lastFailure = null;
-            if (report.StateCommitted)
+            if (report.StateCommitted || standardActivities.saved)
                 OnlineActivityRuntime.Publish(GetSnapshot());
             return true;
         }
@@ -778,6 +781,14 @@ namespace GuildIdle.Activities
                 return $"Elapsed-time coordinator failed with '{report?.Code}'.";
             var issue = report.Issues[0];
             return $"{issue.Code}: {issue.Message}";
+        }
+
+        private static string FirstIssue(ActivityTickResult result)
+        {
+            if (result?.issues == null || result.issues.Length == 0 || result.issues[0] == null)
+                return "Standard activity advance failed.";
+            var issue = result.issues[0];
+            return $"{issue.issueType}: {issue.message}";
         }
 
         private void Release()

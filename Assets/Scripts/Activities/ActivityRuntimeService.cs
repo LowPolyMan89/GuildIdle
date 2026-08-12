@@ -921,7 +921,11 @@ namespace GuildIdle.Activities
                 deferredEvents, deferredResolvedEvents);
         }
 
-        public ActivityTickResult Tick(float deltaTime)
+        public ActivityTickResult Tick(float deltaTime) => Tick(deltaTime, false);
+
+        public ActivityTickResult TickStandardActivities(float deltaTime) => Tick(deltaTime, true);
+
+        private ActivityTickResult Tick(float deltaTime, bool standardOnly)
         {
             var issues = new List<ActivityRequirementIssue>();
             var rewards = new List<ActivityRewardResult>();
@@ -939,10 +943,12 @@ namespace GuildIdle.Activities
             {
                 if (execution == null || execution.status != CoreActivityRuntimeStatus.Running)
                     continue;
-                result.processedExecutions++;
 
                 if (string.Equals(execution.runtimeKind, RuntimeKindBuild, StringComparison.Ordinal))
                 {
+                    if (standardOnly)
+                        continue;
+                    result.processedExecutions++;
                     ProcessBuildTick(execution, deltaTime, issues, events, result, ref changed);
                     continue;
                 }
@@ -950,9 +956,17 @@ namespace GuildIdle.Activities
                 if (!TryGetRuntimeInfo(execution.activityId, issues, out var info))
                     continue;
                 if (IsCycleWork(info))
+                {
+                    if (standardOnly)
+                        continue;
+                    result.processedExecutions++;
                     ProcessWorkTick(execution, info, deltaTime, issues, rewards, result, ref changed);
+                }
                 else
+                {
+                    result.processedExecutions++;
                     ProcessStandardTick(execution, info, deltaTime, issues, rewards, result, ref changed);
+                }
             }
 
             return FinishTick(result, issues, rewards, events, changed);

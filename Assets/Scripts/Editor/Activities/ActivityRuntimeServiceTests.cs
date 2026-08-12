@@ -234,7 +234,7 @@ namespace GuildIdle.Editor.Activities
             var descriptor = runtime.GetWorkDescriptor("one_shot_work", "ren", 1);
             var started = runtime.Start("one_shot_work", "ren");
             var running = state.GetActivityExecution(started.executionId);
-            var ticked = runtime.Tick(5f);
+            var ticked = runtime.TickStandardActivities(5f);
             var pending = state.PendingResults.GetAll()[0];
 
             Assert.That(descriptor.success, Is.False);
@@ -278,6 +278,24 @@ namespace GuildIdle.Editor.Activities
             Assert.That(pending.entries, Has.Length.EqualTo(1));
             Assert.That(pending.entries[0].targetId, Is.EqualTo("resource_stone"));
             Assert.That(pending.entries[0].quantity, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void TickStandardActivitiesDoesNotAdvanceCycleWork()
+        {
+            var state = NewState();
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start(WorkStart("work_pine_wood", "ren", 1));
+            Assert.That(started.success, Is.True);
+
+            var ticked = runtime.TickStandardActivities(10f);
+            var execution = state.GetActivityExecution(started.executionId);
+
+            Assert.That(ticked.success, Is.True);
+            Assert.That(ticked.processedExecutions, Is.Zero);
+            Assert.That(execution.completedCycles, Is.Zero);
+            Assert.That(execution.elapsedSeconds, Is.Zero);
+            Assert.That(state.PendingResults.GetAll(), Is.Empty);
         }
 
         [Test]
