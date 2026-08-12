@@ -410,7 +410,7 @@ namespace GuildIdle.Player
             foreach (var execution in snapshot)
             {
                 if (execution == null || execution.status != ActivityRuntimeStatus.Running ||
-                    !string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal))
+                    !IsCycleWorkExecution(execution))
                     continue;
 
                 context.Work.Attempted++;
@@ -852,13 +852,22 @@ namespace GuildIdle.Player
                 message));
         }
 
-        private static bool IsDangerCandidate(ActivityExecutionSaveData execution)
+        private bool IsCycleWorkExecution(ActivityExecutionSaveData execution)
+        {
+            if (execution == null)
+                return false;
+            return _state.ConfigProvider.TryGetActivity(execution.activityId, out var activity)
+                ? ActivityRuntimeClassifier.IsCycleWork(activity)
+                : string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal);
+        }
+
+        private bool IsDangerCandidate(ActivityExecutionSaveData execution)
         {
             if (execution?.linkedCombat != null)
                 return true;
             return execution != null &&
                    execution.status == ActivityRuntimeStatus.Running &&
-                   string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal) &&
+                   IsCycleWorkExecution(execution) &&
                    string.Equals(execution.cyclePhase, CyclePhaseResultStaged, StringComparison.Ordinal) &&
                    execution.dangerRollCompleted &&
                    execution.dangerRoll <= execution.dangerRiskPercent;

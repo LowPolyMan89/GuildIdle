@@ -6,6 +6,20 @@ using GuildIdle.Player;
 
 namespace GuildIdle.Activities
 {
+    public static class ActivityRuntimeClassifier
+    {
+        public static bool IsCycleWork(ActivityConfigDto activity)
+        {
+            if (activity == null || !string.Equals(activity.type, "Work", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(activity.progressMode))
+                return string.Equals(activity.progressMode, "Cycle", StringComparison.OrdinalIgnoreCase);
+
+            return activity.isRepeatable && activity.cycleSec > 0;
+        }
+    }
+
     public sealed class ActivityRuntimeInfo
     {
         public string activityId;

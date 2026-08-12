@@ -252,7 +252,7 @@ namespace GuildIdle.Activities
             if (!TryGetRuntimeInfo(request.activityId, issues, out var info))
                 return FinishStart(NewStartResult(request), issues, false);
 
-            if (IsWork(info))
+            if (IsCycleWork(info))
                 return StartWork(request, info);
             return StartStandard(request, info);
         }
@@ -260,10 +260,10 @@ namespace GuildIdle.Activities
         public WorkDescriptorResult GetWorkDescriptor(string activityId, string heroId, int plannedCycleCount = 0)
         {
             var issues = new List<ActivityRequirementIssue>();
-            if (!TryGetRuntimeInfo(activityId, issues, out var info) || !IsWork(info))
+            if (!TryGetRuntimeInfo(activityId, issues, out var info) || !IsCycleWork(info))
             {
                 if (info != null)
-                    AddIssue(issues, activityId, "NotWorkActivity", activityId, 1, 0, false, false, $"Activity '{activityId}' is not a Work activity.");
+                    AddIssue(issues, activityId, "NotWorkActivity", activityId, 1, 0, false, false, $"Activity '{activityId}' is not a cyclic Work activity.");
                 return new WorkDescriptorResult { success = false, issues = issues.ToArray() };
             }
             if (string.IsNullOrWhiteSpace(heroId) || !_activityState.HasHero(heroId) || !_activityState.HasHeroState(heroId))
@@ -391,7 +391,7 @@ namespace GuildIdle.Activities
                     deferredResolvedEvents);
             }
 
-            if (!TryGetRuntimeInfo(execution.activityId, issues, out var info) || !IsWork(info) ||
+            if (!TryGetRuntimeInfo(execution.activityId, issues, out var info) || !IsCycleWork(info) ||
                 (!hasLinkedCombat && !ValidateWorkAdvanceExecution(execution, info, issues)))
             {
                 return FinishDangerEncounterPreparation(
@@ -511,7 +511,7 @@ namespace GuildIdle.Activities
             }
             if (!string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal))
             {
-                AddIssue(issues, execution.activityId, "NotWorkExecution", execution.executionId, 1, 0, false, false, $"Activity execution '{execution.executionId}' is not a Work execution.");
+                AddIssue(issues, execution.activityId, "NotWorkExecution", execution.executionId, 1, 0, false, false, $"Activity execution '{execution.executionId}' is not a cyclic Work execution.");
                 return FinishWorkAdvance(
                     false,
                     WorkAdvanceStopReason.NotWorkExecution,
@@ -536,7 +536,7 @@ namespace GuildIdle.Activities
                     issues,
                     deferredResolvedEvents);
             }
-            if (!IsWork(info))
+            if (!IsCycleWork(info))
             {
                 AddIssue(issues, execution.activityId, "NotWorkExecution", execution.executionId, 1, 0, false, false, $"Activity execution '{execution.executionId}' is not a Work execution.");
                 return FinishWorkAdvance(
@@ -949,7 +949,7 @@ namespace GuildIdle.Activities
 
                 if (!TryGetRuntimeInfo(execution.activityId, issues, out var info))
                     continue;
-                if (string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal) || IsWork(info))
+                if (IsCycleWork(info))
                     ProcessWorkTick(execution, info, deltaTime, issues, rewards, result, ref changed);
                 else
                     ProcessStandardTick(execution, info, deltaTime, issues, rewards, result, ref changed);
@@ -987,7 +987,7 @@ namespace GuildIdle.Activities
             if (!TryGetRuntimeInfo(execution.activityId, issues, out var info))
                 return FinishComplete(result, issues, rewards, events, changed);
             execution.elapsedSeconds = info.durationSeconds;
-            if (string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal) || IsWork(info))
+            if (IsCycleWork(info))
                 ProcessWorkTick(execution, info, 0f, issues, rewards, new ActivityTickResult(), ref changed);
             else if (info.isRepeatable)
                 ProcessLegacyRepeatableTick(execution, info, issues, rewards, new ActivityTickResult(), ref changed);
@@ -1139,7 +1139,7 @@ namespace GuildIdle.Activities
         public ActivityCancelResult Cancel(string executionId)
         {
             var execution = GetExecution(executionId);
-            if (execution != null && string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal))
+            if (IsCycleWorkExecution(execution))
                 return StopWork(executionId);
             if (execution != null && string.Equals(execution.runtimeKind, RuntimeKindBuild, StringComparison.Ordinal))
                 return PauseConstruction(executionId);
@@ -3386,7 +3386,17 @@ namespace GuildIdle.Activities
                    string.Equals(condition.Substring(prefix.Length).Trim(), category, StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool IsWork(ActivityRuntimeInfo info) => info != null && string.Equals(info.activityType, RuntimeKindWork, StringComparison.OrdinalIgnoreCase);
+        private static bool IsCycleWork(ActivityRuntimeInfo info) =>
+            ActivityRuntimeClassifier.IsCycleWork(info?.activity);
+
+        private static bool IsCycleWorkExecution(ActivityExecutionSaveData execution)
+        {
+            if (execution == null)
+                return false;
+            return RuntimeConfigs.Activities.TryGet(execution.activityId, out var activity)
+                ? ActivityRuntimeClassifier.IsCycleWork(activity)
+                : string.Equals(execution.runtimeKind, RuntimeKindWork, StringComparison.Ordinal);
+        }
 
         private static bool TryGetRuntimeInfo(string activityId, List<ActivityRequirementIssue> issues, out ActivityRuntimeInfo info)
         {

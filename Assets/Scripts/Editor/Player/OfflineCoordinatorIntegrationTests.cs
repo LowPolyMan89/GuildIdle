@@ -120,6 +120,35 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
+        public void SavedTimerWorkWithLegacyWorkKindSkipsOfflineCycleProcessor()
+        {
+            var setup = ActivitySetup();
+            using var runtime = new ActivityRuntimeService(
+                setup.State,
+                new PlayerStateActivityAdapter(setup.State));
+            var started = runtime.Start("one_shot_work", "ren");
+            Assert.That(started.success, Is.True);
+            var execution = setup.State.GetActivityExecution(started.executionId);
+            execution.runtimeKind = "Work";
+            execution.plannedCycles = 1;
+            execution.currentCycleFatiguePaid = true;
+            execution.cyclePhase = "Running";
+            Assert.That(setup.State.UpdateActivityExecution(execution), Is.True);
+            setup.Clock.UtcNowSeconds = 1_010L;
+
+            var report = Run(setup.State, new FixedRandom());
+            var ticked = runtime.Tick(5f);
+
+            Assert.That(report.Success, Is.True);
+            Assert.That(report.Work.Attempted, Is.Zero);
+            Assert.That(report.ProcessedExecutionIds, Is.Empty);
+            Assert.That(ticked.success, Is.True);
+            Assert.That(ticked.processedCycles, Is.Zero);
+            Assert.That(setup.State.GetActivityExecution(started.executionId).status,
+                Is.EqualTo(ActivityRuntimeStatus.ResultPending));
+        }
+
+        [Test]
         public void SnapshotOrderingIsOrdinalAndIndependentAcrossHeroes()
         {
             var setup = ActivitySetup();

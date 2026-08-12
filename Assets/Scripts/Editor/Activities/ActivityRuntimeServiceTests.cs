@@ -225,6 +225,62 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
+        public void TimerWorkUsesOnCompleteWithoutCycleEffects()
+        {
+            var state = NewState();
+            Assert.That(state.SetHeroEffectCounter("ren", "test_reliable_hands_effect", 1), Is.True);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+
+            var descriptor = runtime.GetWorkDescriptor("one_shot_work", "ren", 1);
+            var started = runtime.Start("one_shot_work", "ren");
+            var running = state.GetActivityExecution(started.executionId);
+            var ticked = runtime.Tick(5f);
+            var pending = state.PendingResults.GetAll()[0];
+
+            Assert.That(descriptor.success, Is.False);
+            Assert.That(started.success, Is.True);
+            Assert.That(running.runtimeKind, Is.EqualTo("Activity"));
+            Assert.That(ticked.success, Is.True);
+            Assert.That(ticked.processedCycles, Is.Zero);
+            Assert.That(state.GetHeroEffectCounter("ren", "test_reliable_hands_effect"), Is.EqualTo(1));
+            Assert.That(pending.entries, Has.Length.EqualTo(1));
+            Assert.That(pending.entries[0].rewardType, Is.EqualTo("Resource"));
+            Assert.That(pending.entries[0].targetId, Is.EqualTo("resource_stone"));
+            Assert.That(pending.entries[0].quantity, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void SavedTimerWorkWithLegacyWorkKindCompletesAsOneShot()
+        {
+            var state = NewState();
+            Assert.That(state.SetHeroEffectCounter("ren", "test_reliable_hands_effect", 1), Is.True);
+            var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state));
+            var started = runtime.Start("one_shot_work", "ren");
+            Assert.That(started.success, Is.True);
+            var execution = state.GetActivityExecution(started.executionId);
+            execution.runtimeKind = "Work";
+            execution.plannedCycles = 1;
+            execution.currentCycleFatiguePaid = true;
+            execution.cyclePhase = "Running";
+            Assert.That(state.UpdateActivityExecution(execution), Is.True);
+
+            var storage = new MemorySaveStorage();
+            Assert.That(SaveService.Save(state, storage), Is.True);
+            var restored = SaveService.Load(_factory, storage);
+            runtime = new ActivityRuntimeService(restored, new PlayerStateActivityAdapter(restored));
+
+            var ticked = runtime.Tick(5f);
+            var pending = restored.PendingResults.GetAll()[0];
+
+            Assert.That(ticked.success, Is.True);
+            Assert.That(ticked.processedCycles, Is.Zero);
+            Assert.That(restored.GetHeroEffectCounter("ren", "test_reliable_hands_effect"), Is.EqualTo(1));
+            Assert.That(pending.entries, Has.Length.EqualTo(1));
+            Assert.That(pending.entries[0].targetId, Is.EqualTo("resource_stone"));
+            Assert.That(pending.entries[0].quantity, Is.EqualTo(2));
+        }
+
+        [Test]
         public void CancelClearsExecutionWithoutRewardOrRefund()
         {
             var state = NewState();
@@ -2412,7 +2468,7 @@ namespace GuildIdle.Editor.Activities
                 {
                     activities = new[]
                     {
-                        new ActivityConfigDto { id = "work_pine_wood", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 2, mainSkillId = "skill_gathering", isRepeatable = true },
+                        new ActivityConfigDto { id = "work_pine_wood", type = "Work", category = "Gathering", progressMode = "Cycle", cycleSec = 10, fatigueCost = 2, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "random_reward_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "test_multi_loot_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_effect_target_work", type = "Work", category = "Gathering", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
@@ -2425,7 +2481,8 @@ namespace GuildIdle.Editor.Activities
                         new ActivityConfigDto { id = "empty_repeat", type = "Work", cycleSec = 10, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "bad_cycle", type = "Work", cycleSec = 5, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = true },
                         new ActivityConfigDto { id = "one_shot", type = "Explore", durationSec = 5, fatigueCost = 5, isRepeatable = false },
-                        new ActivityConfigDto { id = "one_shot_new", type = "Explore", durationSec = 5, isRepeatable = false }
+                        new ActivityConfigDto { id = "one_shot_new", type = "Explore", durationSec = 5, isRepeatable = false },
+                        new ActivityConfigDto { id = "one_shot_work", type = "Work", category = "Gathering", progressMode = "Timer", durationSec = 5, fatigueCost = 1, mainSkillId = "skill_gathering", isRepeatable = false }
                     },
                     skills = new[]
                     {
@@ -2458,7 +2515,8 @@ namespace GuildIdle.Editor.Activities
                         Reward("hunt_boars", "Item", "resource_stone", 1, "OnCycle"),
                         Reward("bad_cycle", "Unsupported", "bad_reward", 1, "OnCycle"),
                         Reward("one_shot_new", "Resource", "resource_pine_wood", 1, "OnComplete"),
-                        Reward("one_shot_new", "Gold", "gold_id", 2, "OnFirstComplete")
+                        Reward("one_shot_new", "Gold", "gold_id", 2, "OnFirstComplete"),
+                        Reward("one_shot_work", "Resource", "resource_stone", 2, "OnComplete")
                     },
                     dangerEncounters = new[]
                     {

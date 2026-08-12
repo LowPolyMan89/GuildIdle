@@ -672,7 +672,7 @@ namespace GuildIdle.Editor.Activities
             IntegerField cycles = null;
             PopupField<CombatLoadoutChoice> loadoutField = null;
             IntegerField loadoutQuantity = null;
-            if (choice.Activity != null && string.Equals(choice.Activity.type, "Work", StringComparison.OrdinalIgnoreCase))
+            if (ActivityRuntimeClassifier.IsCycleWork(choice.Activity))
             {
                 cycles = new IntegerField("Количество циклов") { value = 1 };
                 cycles.RegisterValueChangedCallback(_ => BuildActivityRuntimePreview(choice, heroField.value, cycles));
@@ -752,7 +752,7 @@ namespace GuildIdle.Editor.Activities
             if (string.Equals(choice.Activity.type, "CombatTask", StringComparison.OrdinalIgnoreCase))
                 preview.Add(Text("Бой будет симулироваться в отдельном окне и остановится при его закрытии."));
 
-            if (string.Equals(choice.Activity.type, "Work", StringComparison.OrdinalIgnoreCase))
+            if (ActivityRuntimeClassifier.IsCycleWork(choice.Activity))
             {
                 var descriptor = OnlineActivityRuntime.GetWorkDescriptor(choice.Id, heroId, Math.Max(1, cycles?.value ?? 1));
                 if (descriptor.success)
@@ -808,7 +808,7 @@ namespace GuildIdle.Editor.Activities
                 return;
             }
 
-            var isWork = choice.Activity != null && string.Equals(choice.Activity.type, "Work", StringComparison.OrdinalIgnoreCase);
+            var isWork = ActivityRuntimeClassifier.IsCycleWork(choice.Activity);
             var result = OnlineActivityRuntime.Start(new ActivityStartRequest
             {
                 activityId = choice.Id,
