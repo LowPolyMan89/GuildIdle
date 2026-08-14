@@ -483,7 +483,6 @@ namespace GuildIdle.Configs
         public string stageId;
         public string nameId;
         public string descriptionId;
-        public string stagePrefabId;
         public int targetDurationSec;
         public string completionRule;
         public string nextStageId;
@@ -601,7 +600,7 @@ namespace GuildIdle.Configs
         public BuildActionConfigDto[] buildActions = Array.Empty<BuildActionConfigDto>();
         public BuildingActivityConfigDto[] buildingActivities = Array.Empty<BuildingActivityConfigDto>();
         public BuildingCraftableConfigDto[] buildingCraftables = Array.Empty<BuildingCraftableConfigDto>();
-        public SettlementStageSlotConfigDto[] settlementStageSlots = Array.Empty<SettlementStageSlotConfigDto>();
+        public SettlementStageBuildingConfigDto[] settlementStageBuildings = Array.Empty<SettlementStageBuildingConfigDto>();
         public SettlementStageStarterHeroConfigDto[] settlementStageStarterHeroes = Array.Empty<SettlementStageStarterHeroConfigDto>();
         public SettlementStageStarterEquipmentConfigDto[] settlementStageStarterEquipment = Array.Empty<SettlementStageStarterEquipmentConfigDto>();
     }
@@ -682,12 +681,10 @@ namespace GuildIdle.Configs
     }
 
     [Serializable]
-    public sealed class SettlementStageSlotConfigDto
+    public sealed class SettlementStageBuildingConfigDto
     {
         public string stageId;
-        public string slotId;
         public string buildingId;
-        public int sortOrder;
         public bool enabled;
     }
 

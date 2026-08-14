@@ -846,7 +846,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", BuildingsStagesDownload(
                     objectiveQuestId: "quest_build_hut",
                     firstWeight: "100",
-                    includeStage2Slot: false)),
+                    includeStage2Building: false)),
                 Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
                 Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
                     "quest_build_hut_name_id",
@@ -877,7 +877,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 Source("buildings_configs", "GuildIdle - Buildings Configs", "buildings.json", BuildingsStagesDownload(
                     objectiveQuestId: "quest_missing",
                     firstWeight: "50",
-                    includeStage2Slot: true)),
+                    includeStage2Building: true)),
                 Source("items_configs", "GuildIdle - Items Configs", "items.json", ItemsResourcesDownload("resource_pine_wood", "resource.name", "resource.description")),
                 Source("localisation", "GuildIdle - Localisation", "localisation.json", LocalisationDownload(
                     "quest_build_hut_name_id",
@@ -915,13 +915,13 @@ namespace GuildIdle.Editor.ConfigDownloader
             var buildingsDownload = BuildingsStagesDownload(
                 objectiveQuestId: "quest_disabled",
                 firstWeight: "100",
-                includeStage2Slot: false);
+                includeStage2Building: false);
             FindSheet(buildingsDownload, "SettlementStages").rows = Append(
                 FindSheet(buildingsDownload, "SettlementStages").rows,
-                Row("stage_disabled", "stage_disabled_name_id", "stage_disabled_description_id", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE"));
-            FindSheet(buildingsDownload, "SettlementStageSlots").rows = Append(
-                FindSheet(buildingsDownload, "SettlementStageSlots").rows,
-                Row("stage_disabled", "slot_disabled", "building_hall", "30", "TRUE"));
+                Row("stage_disabled", "stage_disabled_name_id", "stage_disabled_description_id", "0", "AllRequired", "", "30", "FALSE"));
+            FindSheet(buildingsDownload, "SettlementStageBuildings").rows = Append(
+                FindSheet(buildingsDownload, "SettlementStageBuildings").rows,
+                Row("stage_disabled", "building_hall", "TRUE", ""));
             FindSheet(buildingsDownload, "SettlementStageObjectives").rows = Append(
                 FindSheet(buildingsDownload, "SettlementStageObjectives").rows,
                 Row("stage_disabled", "quest_build_hut", "100", "TRUE", "30"));
@@ -952,7 +952,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.False);
             Assert.That(message, Does.Contain("SettlementStageObjectives row 2 column 'quest_id' value 'quest_disabled'"));
-            Assert.That(message, Does.Contain("SettlementStageSlots row 3 column 'stage_id' value 'stage_disabled'"));
+            Assert.That(message, Does.Contain("SettlementStageBuildings row 3 column 'stage_id' value 'stage_disabled'"));
             Assert.That(message, Does.Contain("SettlementStageObjectives row 3 column 'stage_id' value 'stage_disabled'"));
             Assert.That(message, Does.Contain("enabled"));
         }
@@ -964,11 +964,11 @@ namespace GuildIdle.Editor.ConfigDownloader
             var buildingsDownload = BuildingsStagesDownload(
                 objectiveQuestId: "quest_build_hut",
                 firstWeight: "100",
-                includeStage2Slot: false);
-            FindSheet(buildingsDownload, "SettlementStages").rows[1].cells[6] = "stage_disabled";
+                includeStage2Building: false);
+            FindSheet(buildingsDownload, "SettlementStages").rows[1].cells[5] = "stage_disabled";
             FindSheet(buildingsDownload, "SettlementStages").rows = Append(
                 FindSheet(buildingsDownload, "SettlementStages").rows,
-                Row("stage_disabled", "stage_disabled_name_id", "stage_disabled_description_id", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE"));
+                Row("stage_disabled", "stage_disabled_name_id", "stage_disabled_description_id", "0", "AllRequired", "", "30", "FALSE"));
 
             var collection = Collection(
                 Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityQuestsDownload(
@@ -1068,10 +1068,10 @@ namespace GuildIdle.Editor.ConfigDownloader
             var buildingsDownload = BuildingsStagesDownload(
                 objectiveQuestId: "quest_build_hut",
                 firstWeight: "100",
-                includeStage2Slot: false);
+                includeStage2Building: false);
             FindSheet(buildingsDownload, "SettlementStages").rows = Append(
                 FindSheet(buildingsDownload, "SettlementStages").rows,
-                Row("stage_disabled", "stage_disabled_name_id", "stage_disabled_description_id", "stage_disabled_location", "0", "AllRequired", "", "30", "FALSE"));
+                Row("stage_disabled", "stage_disabled_name_id", "stage_disabled_description_id", "0", "AllRequired", "", "30", "FALSE"));
             var disabledStageCollection = Collection(
                 Source("activity_configs", "GuildIdle - Activity Configs", "activity.json", ActivityQuestsDownload(
                     questStepTargetId: "resource_pine_wood",
@@ -1120,12 +1120,14 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             var buildings = JsonUtility.FromJson<BuildingsRuntimeConfigDto>(
                 "{\"buildingLevels\":[{\"buildingId\":\"building_hall\",\"level\":0,\"activeHeroLimit\":1}]," +
+                "\"settlementStageBuildings\":[{\"stageId\":\"stage_runtime\",\"buildingId\":\"building_hall\",\"enabled\":true}]," +
                 "\"settlementStageStarterHeroes\":[{\"stageId\":\"stage_runtime\",\"heroId\":\"ren\",\"sortOrder\":10}]," +
                 "\"settlementStageStarterEquipment\":[{\"stageId\":\"stage_runtime\",\"heroId\":\"ren\",\"itemId\":\"item_wooden_club\",\"equipmentSlot\":\"weapon\",\"sortOrder\":10}]}");
             var buildingsRepository = new BuildingsConfigRepository(buildings);
 
             Assert.That(buildingsRepository.TryGetBuildingLevel("building_hall", 0, out var hallLevel), Is.True);
             Assert.That(hallLevel.activeHeroLimit, Is.EqualTo(1));
+            Assert.That(buildingsRepository.GetSettlementStageBuildings("stage_runtime")[0].buildingId, Is.EqualTo("building_hall"));
             Assert.That(buildingsRepository.GetSettlementStageStarterHeroes("stage_runtime")[0].heroId, Is.EqualTo("ren"));
             Assert.That(buildingsRepository.GetSettlementStageStarterEquipment("stage_runtime")[0].itemId, Is.EqualTo("item_wooden_club"));
         }
@@ -1164,6 +1166,34 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(invalidReport.Success, Is.False);
             Assert.That(message, Does.Contain("disabled_hero").And.Contain("enabled Heroes.HeroId"));
             Assert.That(message, Does.Contain("equipment_slot").And.Contain("slot 'weapon'"));
+        }
+
+        [Test]
+        public void Validate_StageBuildingsRequireEnabledQuestStageKnownBuildingAndUniqueMembership()
+        {
+            var buildings = Download(
+                Sheet("Index", Row("building_id"), Row("building_hall")),
+                Sheet("SettlementStageBuildings",
+                    Row("stage_id", "building_id", "enabled"),
+                    Row("stage_arrival", "building_hall", "TRUE"),
+                    Row("stage_arrival", "building_hall", "TRUE"),
+                    Row("stage_disabled", "building_hall", "TRUE"),
+                    Row("stage_arrival", "building_missing", "TRUE")));
+            var quests = Download(
+                Sheet("Stages",
+                    Row("stage_id", "enabled"),
+                    Row("stage_arrival", "TRUE"),
+                    Row("stage_disabled", "FALSE")));
+
+            var report = ConfigCrossConfigValidator.Validate(Collection(
+                Source("buildings_configs", "Buildings Configs", "stage-buildings.json", buildings),
+                Source("quest_configs", "Quest Configs", "stage-buildings-quests.json", quests)));
+            var message = report.ToDisplayMessage();
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(message, Does.Contain("Duplicate stage_id + building_id"));
+            Assert.That(message, Does.Contain("building_missing").And.Contain("Index.building_id"));
+            Assert.That(message, Does.Contain("stage_disabled").And.Contain("enabled Stages.stage_id"));
         }
 
         [Test]
@@ -1446,33 +1476,29 @@ namespace GuildIdle.Editor.ConfigDownloader
             return Download(
                 Sheet("Index",
                     Row("building_id", "name_id", "description_id", "levels", "start_level", "visible_at_start", "clickable_requirement"),
-                    Row(buildingId, nameId, descriptionId, levels, "0", "TRUE", "")),
-                Sheet("SettlementStages",
-                    Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled"),
-                    Row("stage_arrival", "stage_arrival_name_id", "stage_arrival_description_id", "stage_arrival_location", "1800", "AllRequired", "stage_2", "10", "TRUE"),
-                    Row("stage_2", "stage_2_name_id", "stage_2_description_id", "stage_2_location", "0", "AllRequired", "", "20", "TRUE")));
+                    Row(buildingId, nameId, descriptionId, levels, "0", "TRUE", "")));
         }
 
-        private static ConfigSheetDownload BuildingsStagesDownload(string objectiveQuestId, string firstWeight, bool includeStage2Slot)
+        private static ConfigSheetDownload BuildingsStagesDownload(string objectiveQuestId, string firstWeight, bool includeStage2Building)
         {
-            var slots = new List<ConfigSheetRow>
+            var stageBuildings = new List<ConfigSheetRow>
             {
-                Row("stage_id", "slot_id", "building_id", "sort_order", "enabled"),
-                Row("stage_arrival", "slot_hut", "building_hall", "10", "TRUE")
+                Row("stage_id", "building_id", "enabled", "notes"),
+                Row("stage_arrival", "building_hall", "TRUE", "")
             };
 
-            if (includeStage2Slot)
-                slots.Add(Row("stage_2", "slot_stage_2", "building_hall", "10", "TRUE"));
+            if (includeStage2Building)
+                stageBuildings.Add(Row("stage_2", "building_hall", "TRUE", ""));
 
             return Download(
                 Sheet("Index",
                     Row("building_id", "name_id", "description_id", "levels", "start_level", "visible_at_start", "clickable_requirement"),
                     Row("building_hall", "building_hall_name_id", "building_hall_description_id", "1", "0", "TRUE", "")),
                 Sheet("SettlementStages",
-                    Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled"),
-                    Row("stage_arrival", "stage_arrival_name_id", "stage_arrival_description_id", "stage_arrival_location", "1800", "AllRequired", "stage_2", "10", "TRUE"),
-                    Row("stage_2", "stage_2_name_id", "stage_2_description_id", "stage_2_location", "0", "AllRequired", "", "20", "TRUE")),
-                Sheet("SettlementStageSlots", slots.ToArray()),
+                    Row("stage_id", "name_id", "description_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled"),
+                    Row("stage_arrival", "stage_arrival_name_id", "stage_arrival_description_id", "1800", "AllRequired", "stage_2", "10", "TRUE"),
+                    Row("stage_2", "stage_2_name_id", "stage_2_description_id", "0", "AllRequired", "", "20", "TRUE")),
+                Sheet("SettlementStageBuildings", stageBuildings.ToArray()),
                 Sheet("SettlementStageObjectives",
                     Row("stage_id", "quest_id", "weight_percent", "required", "sort_order"),
                     Row("stage_arrival", objectiveQuestId, firstWeight, "TRUE", "10")));
@@ -1492,11 +1518,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     Row("1", "building_hall_level_1", "build_hall", "1")),
                 Sheet("BuildingActivities",
                     Row("building_id", "building_level", "activity_id", "sort_order", "show_if_activity_completed", "hide_if_activity_completed", "clickable_requirement", "enabled"),
-                    Row(buildingActivityBuildingId, buildingActivityLevel, buildingActivityId, "10", showIfCompleted, hideIfCompleted, "", "TRUE")),
-                Sheet("SettlementStages",
-                    Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled"),
-                    Row("stage_arrival", "stage_arrival_name_id", "stage_arrival_description_id", "stage_arrival_location", "1800", "AllRequired", "stage_2", "10", "TRUE"),
-                    Row("stage_2", "stage_2_name_id", "stage_2_description_id", "stage_2_location", "0", "AllRequired", "", "20", "TRUE")));
+                    Row(buildingActivityBuildingId, buildingActivityLevel, buildingActivityId, "10", showIfCompleted, hideIfCompleted, "", "TRUE")));
         }
 
         private static ConfigSheetDownload ItemsCurrenciesDownload(string currencyId, string nameId, string descriptionId)

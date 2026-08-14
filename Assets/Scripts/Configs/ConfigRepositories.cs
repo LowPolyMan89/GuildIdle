@@ -442,6 +442,7 @@ namespace GuildIdle.Configs
         private readonly Dictionary<string, BuildingLevelConfigDto> _buildingLevelsByIdAndLevel = ItemsConfigRepository.NewIndex<BuildingLevelConfigDto>();
         private readonly Dictionary<string, BuildActionConfigDto> _buildActionsById = ItemsConfigRepository.NewIndex<BuildActionConfigDto>();
         private readonly Dictionary<string, List<BuildingLevelConfigDto>> _levelsBySourceActivityId = new Dictionary<string, List<BuildingLevelConfigDto>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<SettlementStageBuildingConfigDto>> _stageBuildingsByStageId = new Dictionary<string, List<SettlementStageBuildingConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<SettlementStageStarterHeroConfigDto>> _starterHeroesByStageId = new Dictionary<string, List<SettlementStageStarterHeroConfigDto>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<SettlementStageStarterEquipmentConfigDto>> _starterEquipmentByStageId = new Dictionary<string, List<SettlementStageStarterEquipmentConfigDto>>(StringComparer.Ordinal);
 
@@ -450,7 +451,7 @@ namespace GuildIdle.Configs
         public BuildActionConfigDto[] BuildActions { get; }
         public BuildingActivityConfigDto[] BuildingActivities { get; }
         public BuildingCraftableConfigDto[] BuildingCraftables { get; }
-        public SettlementStageSlotConfigDto[] SettlementStageSlots { get; }
+        public SettlementStageBuildingConfigDto[] SettlementStageBuildings { get; }
         public SettlementStageStarterHeroConfigDto[] SettlementStageStarterHeroes { get; }
         public SettlementStageStarterEquipmentConfigDto[] SettlementStageStarterEquipment { get; }
         public int Count => _buildingsById.Count;
@@ -463,7 +464,7 @@ namespace GuildIdle.Configs
             BuildActions = dto.buildActions ?? Array.Empty<BuildActionConfigDto>();
             BuildingActivities = dto.buildingActivities ?? Array.Empty<BuildingActivityConfigDto>();
             BuildingCraftables = dto.buildingCraftables ?? Array.Empty<BuildingCraftableConfigDto>();
-            SettlementStageSlots = dto.settlementStageSlots ?? Array.Empty<SettlementStageSlotConfigDto>();
+            SettlementStageBuildings = dto.settlementStageBuildings ?? Array.Empty<SettlementStageBuildingConfigDto>();
             SettlementStageStarterHeroes = dto.settlementStageStarterHeroes ?? Array.Empty<SettlementStageStarterHeroConfigDto>();
             SettlementStageStarterEquipment = dto.settlementStageStarterEquipment ?? Array.Empty<SettlementStageStarterEquipmentConfigDto>();
 
@@ -476,6 +477,8 @@ namespace GuildIdle.Configs
             }
             foreach (var action in BuildActions)
                 ItemsConfigRepository.AddUnique(_buildActionsById, action.id, action, "Buildings/buildActions");
+            foreach (var stageBuilding in SettlementStageBuildings)
+                AddStageValue(_stageBuildingsByStageId, stageBuilding?.stageId, stageBuilding);
             foreach (var starterHero in SettlementStageStarterHeroes)
                 AddStageValue(_starterHeroesByStageId, starterHero?.stageId, starterHero);
             foreach (var starterEquipment in SettlementStageStarterEquipment)
@@ -536,6 +539,11 @@ namespace GuildIdle.Configs
             return string.IsNullOrWhiteSpace(activityId) || !_levelsBySourceActivityId.TryGetValue(activityId, out var levels)
                 ? Array.Empty<BuildingLevelConfigDto>()
                 : levels.ToArray();
+        }
+
+        public SettlementStageBuildingConfigDto[] GetSettlementStageBuildings(string stageId)
+        {
+            return GetStageValues(_stageBuildingsByStageId, stageId);
         }
 
         public SettlementStageStarterHeroConfigDto[] GetSettlementStageStarterHeroes(string stageId)

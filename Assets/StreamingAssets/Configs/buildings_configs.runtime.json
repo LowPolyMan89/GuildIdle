@@ -375,40 +375,30 @@
       "enabled": true
     }
   ],
-  "settlementStageSlots": [
+  "settlementStageBuildings": [
     {
       "stageId": "stage_arrival",
-      "slotId": "slot_hut",
       "buildingId": "building_hall",
-      "sortOrder": 10,
       "enabled": true
     },
     {
       "stageId": "stage_arrival",
-      "slotId": "slot_underwood",
       "buildingId": "building_underwood",
-      "sortOrder": 20,
       "enabled": true
     },
     {
       "stageId": "stage_arrival",
-      "slotId": "slot_stone_pile",
       "buildingId": "building_stone_pile",
-      "sortOrder": 30,
       "enabled": true
     },
     {
       "stageId": "stage_arrival",
-      "slotId": "slot_campfire",
       "buildingId": "building_campfire",
-      "sortOrder": 40,
       "enabled": true
     },
     {
       "stageId": "stage_arrival",
-      "slotId": "slot_bag",
       "buildingId": "building_warehouse",
-      "sortOrder": 50,
       "enabled": true
     }
   ],

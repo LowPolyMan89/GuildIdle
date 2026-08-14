@@ -67,7 +67,6 @@ namespace GuildIdle.Progression
         public string StageId { get; internal set; }
         public string NameId { get; internal set; }
         public string DescriptionId { get; internal set; }
-        public string StagePrefabId { get; internal set; }
         public string CompletionRule { get; internal set; }
         public string NextStageId { get; internal set; }
         public int RequiredProgressPercent { get; internal set; }

@@ -35,7 +35,8 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(runtimeJson, Does.Contain("\"buildActions\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingActivities\""));
             Assert.That(runtimeJson, Does.Contain("\"buildingCraftables\""));
-            Assert.That(runtimeJson, Does.Contain("\"settlementStageSlots\""));
+            Assert.That(runtimeJson, Does.Contain("\"settlementStageBuildings\""));
+            Assert.That(runtimeJson, Does.Not.Contain("slotId"));
             Assert.That(runtimeJson, Does.Not.Contain("\"settlementStages\""));
             Assert.That(runtimeJson, Does.Not.Contain("\"settlementStageObjectives\""));
             Assert.That(runtimeJson, Does.Contain("\"settlementStageStarterHeroes\""));
@@ -108,6 +109,22 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(report.Success, Is.False);
             Assert.That(message, Does.Contain("Duplicate stage_id + hero_id"));
             Assert.That(message, Does.Contain("hero_id must be enabled in SettlementStageStarterHeroes"));
+        }
+
+        [Test]
+        public void BuildRuntimeJson_RejectsDuplicateStageBuildingMembership()
+        {
+            var download = CreateValidDownload();
+            var memberships = FindSheet(download, "SettlementStageBuildings");
+            memberships.rows = Append(
+                memberships.rows,
+                Row("stage_arrival", "building_hall", "TRUE", "duplicate"));
+            WriteRaw(download);
+
+            var report = new BuildingsConfigsParser().BuildRuntimeJson(CreateSource(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("Duplicate stage_id + building_id"));
         }
 
         [Test]
@@ -373,6 +390,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.True, report.ToDisplayMessage());
             Assert.That(ReadProjectFile(TestRuntimePath), Does.Contain("\"buildingCraftables\""));
+            Assert.That(ReadProjectFile(TestRuntimePath), Does.Contain("\"settlementStageBuildings\""));
         }
 
         private static ConfigSourceSettings CreateSource()
@@ -420,10 +438,10 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("building_hall", "0", "build_hall", "10", "combat_clear_hall_forest", "build_hall", "", "TRUE", "note"),
                         Row("building_warehouse", "0", "build_warehouse", "20", "", "", "building_hall:1", "TRUE", "note"),
                         Row("building_carpentry", "0", "missing_disabled_activity", "30", "", "", "building_hall:1", "FALSE", "note")),
-                    Sheet("SettlementStageSlots",
-                        Row("stage_id", "slot_id", "building_id", "sort_order", "enabled", "notes"),
-                        Row("stage_arrival", "slot_hall", "building_hall", "10", "TRUE", "note"),
-                        Row("stage_arrival", "slot_underwood", "building_underwood", "20", "TRUE", "note")),
+                    Sheet("SettlementStageBuildings",
+                        Row("stage_id", "building_id", "enabled", "notes"),
+                        Row("stage_arrival", "building_hall", "TRUE", "note"),
+                        Row("stage_arrival", "building_underwood", "TRUE", "note")),
                     Sheet("SettlementStageStarterHeroes",
                         Row("stage_id", "hero_id", "sort_order", "enabled", "notes"),
                         Row("stage_arrival", "ren", "10", "TRUE", "note")),

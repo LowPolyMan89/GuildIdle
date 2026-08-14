@@ -18,7 +18,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
         private static readonly Dictionary<string, string[]> Columns = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
-            ["Stages"] = new[] { "stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes" },
+            ["Stages"] = new[] { "stage_id", "name_id", "description_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes" },
             ["StageQuests"] = new[] { "stage_id", "quest_id", "weight_percent", "required", "show_in_stage_ui", "sort_order", "enabled", "notes" },
             ["StoryQuests"] = new[] { "quest_id", "name_id", "description_id", "icon_id", "journal_category", "sort_order", "is_tutorial", "close_on_stage_complete", "enabled", "notes" },
             ["DailyQuests"] = new[] { "quest_id", "name_id", "description_id", "icon_id", "journal_category", "daily_pool_id", "selection_weight", "sort_order", "enabled", "notes" },
@@ -245,7 +245,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 if (!_tables.TryGetValue("Stages", out var table)) return;
                 foreach (var row in table.DataRows)
                 {
-                    Required(row, "name_id", "description_id", "stage_prefab_id", "completion_rule", "sort_order", "enabled");
+                    Required(row, "name_id", "description_id", "completion_rule", "sort_order", "enabled");
                     NonNegativeInt(row, "target_duration_sec"); NonNegativeInt(row, "sort_order"); Bool(row, "enabled");
                     Enum(row, "completion_rule", "CompletionRule");
                     var next = row.Get("next_stage_id");

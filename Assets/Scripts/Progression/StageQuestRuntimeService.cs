@@ -427,7 +427,7 @@ namespace GuildIdle.Progression
                 if (relation.showInStageUi && instance != null) visible.Add(new StageQuestInstanceSnapshot { InstanceId = instance.instanceId, QuestId = instance.questId, Status = instance.status, WeightPercent = relation.weightPercent, Required = relation.required, SortOrder = relation.sortOrder });
             }
             visible.Sort((left, right) => left.SortOrder.CompareTo(right.SortOrder));
-            return new StageProgressionSnapshot { StageId = stage.stageId, NameId = stage.nameId, DescriptionId = stage.descriptionId, StagePrefabId = stage.stagePrefabId, CompletionRule = stage.completionRule, NextStageId = stage.nextStageId, RequiredProgressPercent = Math.Min(100, progress), VisibleInstances = SnapshotLists.ReadOnly(visible) };
+            return new StageProgressionSnapshot { StageId = stage.stageId, NameId = stage.nameId, DescriptionId = stage.descriptionId, CompletionRule = stage.completionRule, NextStageId = stage.nextStageId, RequiredProgressPercent = Math.Min(100, progress), VisibleInstances = SnapshotLists.ReadOnly(visible) };
         }
     }
 

@@ -565,10 +565,10 @@ namespace GuildIdle.Editor.ConfigDownloader
         private sealed class QuestRegistry
         {
             public LoadedConfig Source { get; }
-            public HashSet<string> StageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            public HashSet<string> EnabledStageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> DefinitionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public HashSet<string> StoryQuestIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> StageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> EnabledStageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             private QuestRegistry(LoadedConfig source) { Source = source; }
 
@@ -846,8 +846,6 @@ namespace GuildIdle.Editor.ConfigDownloader
             public Dictionary<string, string> BuildingIdsBySheetName { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             public List<ConfigSheetTable> BuildingLevelTables { get; } = new List<ConfigSheetTable>();
             public HashSet<string> BuildActionIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            public HashSet<string> StageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            public HashSet<string> EnabledStageIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             private BuildingsRegistry(LoadedConfig source)
             {
@@ -878,26 +876,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                 foreach (var sheet in source.RawSheets)
                     registry.CollectBuildingSheet(sheet);
 
-                registry.CollectStageIds();
-
                 return registry;
-            }
-
-            private void CollectStageIds()
-            {
-                if (!Source.TryGetTable("SettlementStages", out var stages))
-                    return;
-
-                foreach (var row in stages.DataRows)
-                {
-                    var stageId = row.Get("stage_id");
-                    if (IsBlank(stageId))
-                        continue;
-
-                    StageIds.Add(stageId);
-                    if (IsTrue(row.Get("enabled")))
-                        EnabledStageIds.Add(stageId);
-                }
             }
 
             public bool ContainsBuildingLevel(string buildingId, string levelText)
@@ -932,9 +911,7 @@ namespace GuildIdle.Editor.ConfigDownloader
                     string.Equals(sheet.sheet_name, "Index", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(sheet.sheet_name, "README", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(sheet.sheet_name, "BuildingActivities", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(sheet.sheet_name, "SettlementStages", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(sheet.sheet_name, "SettlementStageSlots", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(sheet.sheet_name, "SettlementStageObjectives", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(sheet.sheet_name, "SettlementStageBuildings", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(sheet.sheet_name, "SettlementStageStarterHeroes", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(sheet.sheet_name, "SettlementStageStarterEquipment", StringComparison.OrdinalIgnoreCase) ||
                     sheet.sheet_name.StartsWith("Craftables -", StringComparison.OrdinalIgnoreCase))
@@ -1571,9 +1548,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                             break;
                         case "StageEntered":
                             if (ValidateRequiredTargetId(report, activity.Source.DisplayName, "QuestStartConditions", row, conditionType) &&
-                                TryGetRequiredRegistry(report, registry.Buildings, "Buildings Configs / SettlementStages"))
+                                TryGetRequiredRegistry(report, registry.Quests, "Quest Configs / Stages"))
                             {
-                                ValidateIdSet(report, activity.Source.DisplayName, "QuestStartConditions", row, "target_id", registry.Buildings.EnabledStageIds, "Buildings Configs / enabled SettlementStages.stage_id");
+                                ValidateIdSet(report, activity.Source.DisplayName, "QuestStartConditions", row, "target_id", registry.Quests.EnabledStageIds, "Quest Configs / enabled Stages.stage_id");
                             }
                             break;
                         case "BuildingLevel":
@@ -2463,42 +2440,16 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             private static void ValidateStageComposition(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
             {
-                ValidateStageSlots(buildings, report);
+                ValidateStageBuildings(buildings, report);
                 ValidateStageStarterHeroes(buildings, registry, report);
                 ValidateStageStarterEquipment(buildings, registry, report);
-                ValidateStage2HasNoRows(buildings, report, "SettlementStageSlots", "stage_2 must not have slots.");
                 ValidateStage2HasNoRows(buildings, report, "SettlementStageStarterHeroes", "stage_2 must not have starter heroes.");
                 ValidateStage2HasNoRows(buildings, report, "SettlementStageStarterEquipment", "stage_2 must not have starter equipment.");
             }
 
-            private static void ValidateStageRows(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
+            private static void ValidateStageBuildings(BuildingsRegistry buildings, ConfigPipelineReport report)
             {
-                if (!buildings.Source.TryGetTable("SettlementStages", out var table))
-                    return;
-
-                if (TryGetRequiredRegistry(report, registry.Localisation, "Localisation"))
-                {
-                    foreach (var row in table.DataRows)
-                    {
-                        ValidateIdSet(report, buildings.Source.DisplayName, "SettlementStages", row, "name_id", registry.Localisation.LocalisationIds, "Localisation.id");
-                        ValidateIdSet(report, buildings.Source.DisplayName, "SettlementStages", row, "description_id", registry.Localisation.LocalisationIds, "Localisation.id");
-                    }
-                }
-
-                foreach (var row in table.DataRows)
-                {
-                    if (IsDisabled(row.Get("enabled")))
-                        continue;
-
-                    var nextStageId = row.Get("next_stage_id");
-                    if (!IsBlank(nextStageId) && !buildings.EnabledStageIds.Contains(nextStageId))
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStages", row.RowNumber, "next_stage_id", nextStageId, "next_stage_id references missing enabled SettlementStages.stage_id.");
-                }
-            }
-
-            private static void ValidateStageSlots(BuildingsRegistry buildings, ConfigPipelineReport report)
-            {
-                if (!buildings.Source.TryGetTable("SettlementStageSlots", out var table))
+                if (!buildings.Source.TryGetTable("SettlementStageBuildings", out var table))
                     return;
 
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -2508,54 +2459,14 @@ namespace GuildIdle.Editor.ConfigDownloader
                         continue;
 
                     var stageId = row.Get("stage_id");
-                    var slotId = row.Get("slot_id");
                     var buildingId = row.Get("building_id");
 
                     if (!IsBlank(buildingId) && !buildings.BuildingIds.Contains(buildingId))
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageSlots", row.RowNumber, "building_id", buildingId, "building_id does not exist in Buildings Configs / Index.building_id.");
+                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageBuildings", row.RowNumber, "building_id", buildingId, "building_id does not exist in Buildings Configs / Index.building_id.");
 
-                    var key = $"{stageId}\n{slotId}";
-                    if (!IsBlank(stageId) && !IsBlank(slotId) && !seen.Add(key))
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageSlots", row.RowNumber, "slot_id", slotId, "Duplicate stage_id + slot_id.");
-                }
-            }
-
-            private static void ValidateStageObjectives(BuildingsRegistry buildings, ConfigRegistry registry, ConfigPipelineReport report)
-            {
-                if (!buildings.Source.TryGetTable("SettlementStageObjectives", out var table))
-                    return;
-
-                if (!TryGetRequiredRegistry(report, registry.Activity, "Activity Configs / Quests"))
-                    return;
-
-                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var requiredWeights = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-                foreach (var row in table.DataRows)
-                {
-                    var stageId = row.Get("stage_id");
-                    var questId = row.Get("quest_id");
-
-                    if (!IsBlank(stageId) && !buildings.EnabledStageIds.Contains(stageId))
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageObjectives", row.RowNumber, "stage_id", stageId, "stage_id references missing enabled SettlementStages.stage_id.");
-
-                    ValidateIdSet(report, buildings.Source.DisplayName, "SettlementStageObjectives", row, "quest_id", registry.Activity.EnabledQuestIds, "Activity Configs / enabled Quests.quest_id");
-
-                    var key = $"{stageId}\n{questId}";
-                    if (!IsBlank(stageId) && !IsBlank(questId) && !seen.Add(key))
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageObjectives", row.RowNumber, "quest_id", questId, "Duplicate stage_id + quest_id.");
-
-                    if (IsTrue(row.Get("required")) &&
-                        long.TryParse(row.Get("weight_percent"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var weight))
-                    {
-                        requiredWeights.TryGetValue(stageId, out var total);
-                        requiredWeights[stageId] = total + weight;
-                    }
-                }
-
-                foreach (var pair in requiredWeights)
-                {
-                    if (pair.Value != 100L)
-                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageObjectives", 0, "weight_percent", pair.Key, "Required objective weight_percent total must be 100 for each stage.");
+                    var key = $"{stageId}\n{buildingId}";
+                    if (!IsBlank(stageId) && !IsBlank(buildingId) && !seen.Add(key))
+                        AddIssue(report, buildings.Source.DisplayName, "SettlementStageBuildings", row.RowNumber, "building_id", buildingId, "Duplicate stage_id + building_id.");
                 }
             }
 
@@ -2597,45 +2508,6 @@ namespace GuildIdle.Editor.ConfigDownloader
                         AddIssue(report, buildings.Source.DisplayName, "SettlementStageStarterEquipment", row.RowNumber, "equipment_slot", row.Get("equipment_slot"), $"equipment_slot must match item '{itemId}' slot '{expectedSlot}'.");
                     }
                 }
-            }
-
-            private static void ValidateStage2IsEmpty(BuildingsRegistry buildings, ConfigPipelineReport report)
-            {
-                if (!buildings.StageIds.Contains("stage_2"))
-                {
-                    AddIssue(report, buildings.Source.DisplayName, "SettlementStages", 0, "stage_id", "stage_2", "stage_2 is required.");
-                    return;
-                }
-
-                if (!buildings.EnabledStageIds.Contains("stage_2"))
-                {
-                    AddIssue(report, buildings.Source.DisplayName, "SettlementStages", 0, "enabled", "stage_2", "stage_2 must be enabled.");
-                    return;
-                }
-
-                if (buildings.Source.TryGetTable("SettlementStageSlots", out var slots))
-                {
-                    foreach (var row in slots.DataRows)
-                    {
-                        if (IsDisabled(row.Get("enabled")))
-                            continue;
-
-                        if (string.Equals(row.Get("stage_id"), "stage_2", StringComparison.OrdinalIgnoreCase))
-                            AddIssue(report, buildings.Source.DisplayName, "SettlementStageSlots", row.RowNumber, "stage_id", "stage_2", "stage_2 must not have slots.");
-                    }
-                }
-
-                if (buildings.Source.TryGetTable("SettlementStageObjectives", out var objectives))
-                {
-                    foreach (var row in objectives.DataRows)
-                    {
-                        if (string.Equals(row.Get("stage_id"), "stage_2", StringComparison.OrdinalIgnoreCase))
-                            AddIssue(report, buildings.Source.DisplayName, "SettlementStageObjectives", row.RowNumber, "stage_id", "stage_2", "stage_2 must not have objectives.");
-                    }
-                }
-
-                ValidateStage2HasNoRows(buildings, report, "SettlementStageStarterHeroes", "stage_2 must not have starter heroes.");
-                ValidateStage2HasNoRows(buildings, report, "SettlementStageStarterEquipment", "stage_2 must not have starter equipment.");
             }
 
             private static void ValidateStage2HasNoRows(BuildingsRegistry buildings, ConfigPipelineReport report, string sheetName, string message)
@@ -3120,7 +2992,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             {
                 var buildings = registry.Buildings;
                 if (buildings == null) return;
-                foreach (var sheet in new[] { "SettlementStageSlots", "SettlementStageStarterHeroes", "SettlementStageStarterEquipment" })
+                foreach (var sheet in new[] { "SettlementStageBuildings", "SettlementStageStarterHeroes", "SettlementStageStarterEquipment" })
                 {
                     if (!buildings.Source.TryGetTable(sheet, out var table)) continue;
                     foreach (var row in table.DataRows)

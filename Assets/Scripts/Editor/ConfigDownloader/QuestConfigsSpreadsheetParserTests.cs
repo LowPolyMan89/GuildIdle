@@ -32,6 +32,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(json, Does.Contain("\"enumGroup\": \"QuestInstanceStatus\""));
             Assert.That(json, Does.Contain("\"value\": \"RewardPending\""));
             Assert.That(json, Does.Contain("\"closeOnStageComplete\": false"));
+            Assert.That(json, Does.Not.Contain("stagePrefabId"));
             Assert.That(json, Does.Not.Contain("notes"));
         }
 
@@ -162,9 +163,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                 sheets = new[]
                 {
                     Sheet("Stages",
-                        Row("stage_id", "name_id", "description_id", "stage_prefab_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes"),
-                        Row("stage_arrival", "stage.name", "stage.desc", "stage_prefab", "10", "AllRequired", "stage_2", "10", "TRUE", ""),
-                        Row("stage_2", "stage2.name", "stage2.desc", "stage2_prefab", "0", "AllRequired", "", "20", "TRUE", "")),
+                        Row("stage_id", "name_id", "description_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes"),
+                        Row("stage_arrival", "stage.name", "stage.desc", "10", "AllRequired", "stage_2", "10", "TRUE", ""),
+                        Row("stage_2", "stage2.name", "stage2.desc", "0", "AllRequired", "", "20", "TRUE", "")),
                     Sheet("StageQuests",
                         Row("stage_id", "quest_id", "weight_percent", "required", "show_in_stage_ui", "sort_order", "enabled", "notes"),
                         Row("stage_arrival", "quest_intro", "100", "TRUE", "TRUE", "10", "TRUE", "")),

@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cb599be0a9638fc43ad9749a2e4d7e60, type: 3}
+  m_Name: SettlementStageViewCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::GuildIdle.Settlement.SettlementStageViewCatalog
+  cameraPresets:
+  - stageId: stage_arrival
+    position: {x: 19.941013, y: 30.089436, z: 2.1246765}
+    eulerAngles: {x: 58.13345, y: 269.69092, z: 0.00028785635}
+    orthographic: 0
+    fieldOfView: 34
+    orthographicSize: 5
+  - stageId: stage_2
+    position: {x: 19.941013, y: 30.089436, z: 2.1246765}
+    eulerAngles: {x: 58.13345, y: 269.69092, z: 0.00028785635}
+    orthographic: 0
+    fieldOfView: 34
+    orthographicSize: 5
