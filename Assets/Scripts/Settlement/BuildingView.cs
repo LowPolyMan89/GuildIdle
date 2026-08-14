@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace GuildIdle.Settlement
@@ -17,6 +18,7 @@ namespace GuildIdle.Settlement
 
         [SerializeField] private string buildingId;
         [SerializeField] private LevelVisual[] levelVisuals = Array.Empty<LevelVisual>();
+        private readonly HashSet<int> _reportedInvalidVisualLevels = new HashSet<int>();
 
         public string BuildingId => buildingId;
         public int? CurrentLevel { get; private set; }
@@ -41,14 +43,19 @@ namespace GuildIdle.Settlement
             CurrentLevel = null;
             if (matches != 1)
             {
-                Debug.LogError(
-                    matches == 0
-                        ? $"[BuildingView] Building '{buildingId}' has no visual for level {level}."
-                        : $"[BuildingView] Building '{buildingId}' has {matches} visuals for level {level}; exactly one is required.",
-                    this);
+                if (_reportedInvalidVisualLevels.Add(level))
+                {
+                    Debug.LogError(
+                        matches == 0
+                            ? $"[BuildingView] Building '{buildingId}' has no visual for level {level}."
+                            : $"[BuildingView] Building '{buildingId}' has {matches} visuals for level {level}; exactly one is required.",
+                        this);
+                }
+
                 return false;
             }
 
+            _reportedInvalidVisualLevels.Remove(level);
             selected.SetActive(true);
             CurrentLevel = level;
             return true;

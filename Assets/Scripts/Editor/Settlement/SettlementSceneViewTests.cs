@@ -59,6 +59,41 @@ namespace GuildIdle.Settlement.Editor
         }
 
         [Test]
+        public void MissingLevelVisualIsReportedOnceUntilLevelChangesOrSucceeds()
+        {
+            var root = CreateObject("SettlementMap");
+            var hall = CreateBuilding(root.transform, "building_hall");
+            var source = new TestRuntimeSource("stage_arrival")
+                .AddMembership("stage_arrival", "building_hall")
+                .SetLevel("building_hall", 1);
+            LogAssert.Expect(LogType.Error, "[BuildingView] Building 'building_hall' has no visual for level 1.");
+            var sceneView = CreateSceneView(root.transform, source, "stage_arrival");
+
+            sceneView.RefreshNow();
+            sceneView.RefreshNow();
+            sceneView.RefreshNow();
+
+            LogAssert.Expect(LogType.Error, "[BuildingView] Building 'building_hall' has no visual for level 2.");
+            source.SetLevel("building_hall", 2);
+            sceneView.RefreshNow();
+            sceneView.RefreshNow();
+
+            SetLevelVisuals(hall, 2);
+            sceneView.RefreshNow();
+            Assert.That(hall.CurrentLevel, Is.EqualTo(2));
+
+            hall.ClearVisuals();
+            SetLevelVisuals(hall, 3);
+            source.SetLevel("building_hall", 3);
+            sceneView.RefreshNow();
+            Assert.That(hall.CurrentLevel, Is.EqualTo(3));
+
+            LogAssert.Expect(LogType.Error, "[BuildingView] Building 'building_hall' has no visual for level 2.");
+            source.SetLevel("building_hall", 2);
+            sceneView.RefreshNow();
+        }
+
+        [Test]
         public void StageChangeReusesMapAndAppliesNewMembershipAndCameraPreset()
         {
             var root = CreateObject("SettlementMap");
@@ -127,11 +162,17 @@ namespace GuildIdle.Settlement.Editor
             building.transform.SetParent(parent, false);
             var view = building.AddComponent<BuildingView>();
             SetField(view, "buildingId", buildingId);
+            SetLevelVisuals(view, levels);
+            return view;
+        }
+
+        private void SetLevelVisuals(BuildingView view, params int[] levels)
+        {
             var entries = new BuildingView.LevelVisual[levels.Length];
             for (var index = 0; index < levels.Length; index++)
             {
                 var visual = CreateObject($"Level_{levels[index]}");
-                visual.transform.SetParent(building.transform, false);
+                visual.transform.SetParent(view.transform, false);
                 var entry = new BuildingView.LevelVisual();
                 SetField(entry, "level", levels[index]);
                 SetField(entry, "visual", visual);
@@ -139,7 +180,6 @@ namespace GuildIdle.Settlement.Editor
             }
 
             SetField(view, "levelVisuals", entries);
-            return view;
         }
 
         private static SettlementStageViewCatalog.CameraPreset[] CreateCameraPresets(string[] stageIds)
