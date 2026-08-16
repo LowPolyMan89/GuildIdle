@@ -61,7 +61,7 @@ namespace GuildIdle.Editor.Player
                 .WithFullPlayerStateTestData()
                 .Build();
             RuntimeConfigs.SetDatabaseForTests(database);
-            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
+            var state = CreateIsolatedState(database);
 
             var runtime = PlayerRuntimeComposition.CreateProgressionRuntimeService(state);
 
@@ -80,7 +80,7 @@ namespace GuildIdle.Editor.Player
         {
             var database = CreateConstructionProgressionDatabase();
             RuntimeConfigs.SetDatabaseForTests(database);
-            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
+            var state = CreateIsolatedState(database);
             state.AddHero("ren");
             state.UnlockBuilding("building_hall");
             state.SetBuildingLevel("building_hall", 0);
@@ -118,7 +118,7 @@ namespace GuildIdle.Editor.Player
         {
             var database = CreateConstructionProgressionDatabase();
             RuntimeConfigs.SetDatabaseForTests(database);
-            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
+            var state = CreateIsolatedState(database);
             var progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(state);
             var updateCount = 0;
             progression.Updated += _ => updateCount++;
@@ -153,7 +153,7 @@ namespace GuildIdle.Editor.Player
         {
             var database = CreateConstructionProgressionDatabase();
             RuntimeConfigs.SetDatabaseForTests(database);
-            var state = TestPlayerComposition.CreatePlayerStateFactory(database).CreateDefault();
+            var state = CreateIsolatedState(database);
             state.AddHero("ren");
             var progression = PlayerRuntimeComposition.CreateProgressionRuntimeService(state);
             progression.Handle(new NewGame());
@@ -213,9 +213,7 @@ namespace GuildIdle.Editor.Player
         {
             var database = CreateConstructionProgressionDatabase();
             RuntimeConfigs.SetDatabaseForTests(database);
-            var state = TestPlayerComposition
-                .CreatePlayerStateFactory(database)
-                .CreateDefault();
+            var state = CreateIsolatedState(database);
             state.AddHero("ren");
             var progression =
                 PlayerRuntimeComposition
@@ -328,9 +326,7 @@ namespace GuildIdle.Editor.Player
             var database = CreateConstructionProgressionDatabase(
                 includeDirectCombatQuests: true);
             RuntimeConfigs.SetDatabaseForTests(database);
-            var state = TestPlayerComposition
-                .CreatePlayerStateFactory(database)
-                .CreateDefault();
+            var state = CreateIsolatedState(database);
             state.AddHero("ren");
             state.SetActivityAvailable(
                 "combat_clear_hall_forest",
@@ -1362,6 +1358,14 @@ namespace GuildIdle.Editor.Player
                             value.operationId,
                             operationId,
                             StringComparison.Ordinal));
+        }
+
+        private static PlayerState CreateIsolatedState(
+            ConfigDatabase database)
+        {
+            var factory =
+                TestPlayerComposition.CreatePlayerStateFactory(database);
+            return SaveService.Load(factory, new MemorySaveStorage());
         }
 
         internal static ConfigDatabase CreateConstructionProgressionDatabase(
