@@ -269,8 +269,8 @@ namespace GuildIdle.UI.Core
 
         private static void BindAndShow(UIView view, Action applyArguments)
         {
-            view.BindForNavigation(applyArguments);
-            view.Show();
+            view.BindForLifecycle(applyArguments);
+            view.ShowForLifecycle();
         }
 
         private void CloseCurrentScreen()
@@ -289,7 +289,7 @@ namespace GuildIdle.UI.Core
 
             try
             {
-                view.Hide();
+                view.HideForLifecycle();
             }
             finally
             {

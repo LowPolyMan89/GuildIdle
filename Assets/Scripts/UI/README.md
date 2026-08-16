@@ -73,6 +73,8 @@ Apply args -> Bind -> Show -> Hide -> Unbind -> Destroy
 
 `Show` and `Hide` are idempotent. Bind creates a fresh cleanup scope; subscriptions are registered during bind and released during unbind. Rebind first performs `Hide/Unbind`, then applies new arguments and performs `Bind/Show` on the same instance. `Hide` leaves no active lifecycle subscriptions, and destroy always performs final cleanup.
 
+`UIService` exclusively controls the lifecycle of top-level `UIScreen` and `UIWindow` instances. Those types do not expose public `Show` or `Hide` methods, so callers cannot hide a managed view while leaving it in the service registry. Feature code may directly call public `Show` and `Hide` on `UIPanel` instances that it owns.
+
 Feature views must not create lifecycle subscriptions in `OnEnable`. They should create them in `OnBind` and register their matching unsubscribe actions with `RegisterCleanup`, or release them explicitly in `OnUnbind`.
 
 Closed screens and windows are not cached. `UIService` owns only the current screen and currently open windows.

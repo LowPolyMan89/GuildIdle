@@ -12,7 +12,7 @@ namespace GuildIdle.UI.Core
         public bool IsBound { get; private set; }
         public bool IsShown { get; private set; }
 
-        public void Show()
+        internal void ShowForLifecycle()
         {
             if (_destroyed)
                 throw new InvalidOperationException($"Cannot show destroyed UI view '{GetType().FullName}'.");
@@ -21,7 +21,7 @@ namespace GuildIdle.UI.Core
                 return;
 
             if (!IsBound)
-                BindForNavigation();
+                BindForLifecycle();
 
             gameObject.SetActive(true);
             IsShown = true;
@@ -39,7 +39,7 @@ namespace GuildIdle.UI.Core
             }
         }
 
-        public void Hide()
+        internal void HideForLifecycle()
         {
             if (_destroyed)
                 return;
@@ -89,13 +89,13 @@ namespace GuildIdle.UI.Core
         {
         }
 
-        internal void BindForNavigation(Action applyArguments = null)
+        internal void BindForLifecycle(Action applyArguments = null)
         {
             if (_destroyed)
                 throw new InvalidOperationException($"Cannot bind destroyed UI view '{GetType().FullName}'.");
 
             if (IsShown || IsBound)
-                Hide();
+                HideForLifecycle();
 
             applyArguments?.Invoke();
             IsBound = true;
