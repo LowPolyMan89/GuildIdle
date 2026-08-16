@@ -1,0 +1,19 @@
+{
+  "name": "GuildIdle.UI.Core.PlayModeTests",
+  "rootNamespace": "GuildIdle.UI.Core.Tests.PlayMode",
+  "references": [
+    "GuildIdle.UI.Core"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

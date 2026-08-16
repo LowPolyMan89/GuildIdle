@@ -1,0 +1,14 @@
+{
+  "name": "GuildIdle.UI.Core",
+  "rootNamespace": "GuildIdle.UI.Core",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
