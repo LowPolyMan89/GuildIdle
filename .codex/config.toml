@@ -1,0 +1,16 @@
+[mcp_servers.guildidle_unity]
+command = "node"
+args = ["Tools/UnityMcp/unity-mcp-stdio.js"]
+cwd = "."
+enabled = true
+required = false
+startup_timeout_sec = 10
+tool_timeout_sec = 30
+default_tools_approval_mode = "writes"
+enabled_tools = ["unity_editor_status", "unity_selection", "unity_find_assets", "unity_scene_hierarchy", "unity_inspect_prefab", "unity_plan_create_ui_object", "unity_apply_create_ui_object"]
+
+[mcp_servers.guildidle_unity.tools.unity_apply_create_ui_object]
+approval_mode = "approve"
+
+[mcp_servers.guildidle_unity.env]
+GUILDIDLE_UNITY_PROJECT = "."
