@@ -6,7 +6,6 @@ using GuildIdle.Localisation;
 using GuildIdle.Player;
 using GuildIdle.Progression;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 using RuntimePlayer = GuildIdle.Player.Player;
 
@@ -24,25 +23,6 @@ public sealed class SettlementHudController : MonoBehaviour
     private float _nextRefreshTime;
 
     public event Action InventoryRequested;
-
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void RegisterSceneBinding()
-    {
-        SceneManager.sceneLoaded -= HandleSceneLoaded;
-        SceneManager.sceneLoaded += HandleSceneLoaded;
-    }
-
-    private static void HandleSceneLoaded(Scene scene, LoadSceneMode loadSceneMode)
-    {
-        foreach (var root in scene.GetRootGameObjects())
-        {
-            foreach (var view in root.GetComponentsInChildren<SettlementHudView>(true))
-            {
-                if (view.GetComponent<SettlementHudController>() == null)
-                    view.gameObject.AddComponent<SettlementHudController>();
-            }
-        }
-    }
 
     private void Awake()
     {
@@ -104,7 +84,7 @@ public sealed class SettlementHudController : MonoBehaviour
     private void Compose()
     {
         _view ??= GetComponent<SettlementHudView>();
-        _bottomNavigationPanelView ??= GetComponentInChildren<BottomNavigationPanelView>(true);
+        _bottomNavigationPanelView ??= _view.BottomNavigationPanelView;
         _runtimeSource ??= new RuntimeSettlementHudSource();
         _presenter ??= new SettlementHudPresenter(_view, _runtimeSource);
     }

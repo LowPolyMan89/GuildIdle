@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 9005355327738072219}
   - component: {fileID: 5104115485500285450}
+  - component: {fileID: 4689859284401186390}
   m_Layer: 0
   m_Name: SettlementHud
   m_TagString: Untagged
@@ -56,6 +57,18 @@ MonoBehaviour:
   _questPanelView: {fileID: 4988630612778361970}
   _activeHeroesPanelView: {fileID: 2650830117549722414}
   _bottomNavigationPanelView: {fileID: 4372908348796494399}
+--- !u!114 &4689859284401186390
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8363032003608177124}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 403b817831d9de24ea075bd440ae7c88, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::SettlementHudController
 --- !u!1001 &1208505446499899662
 PrefabInstance:
   m_ObjectHideFlags: 0

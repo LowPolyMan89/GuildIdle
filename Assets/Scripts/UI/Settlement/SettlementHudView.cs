@@ -7,6 +7,8 @@ public sealed class SettlementHudView : MonoBehaviour
     [SerializeField] private ActiveHeroesPanelView _activeHeroesPanelView;
     [SerializeField] private BottomNavigationPanelView _bottomNavigationPanelView;
 
+    public BottomNavigationPanelView BottomNavigationPanelView => _bottomNavigationPanelView;
+
     public void Render(SettlementHudState state)
     {
         state ??= SettlementHudState.Empty;
