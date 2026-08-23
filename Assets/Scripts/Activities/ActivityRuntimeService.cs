@@ -1309,6 +1309,26 @@ namespace GuildIdle.Activities
             return new ActivityRuntimeSnapshot { executions = snapshots };
         }
 
+        internal bool TryGetConstructionPresentationRate(string executionId, out float buildPointsPerSecond)
+        {
+            buildPointsPerSecond = 0f;
+            var execution = GetExecution(executionId);
+            if (execution == null ||
+                execution.status != CoreActivityRuntimeStatus.Running ||
+                !string.Equals(execution.runtimeKind, RuntimeKindBuild, StringComparison.Ordinal) ||
+                !RuntimeConfigs.Buildings.TryGetBuildAction(execution.activityId, out var action))
+            {
+                return false;
+            }
+
+            var result = EvaluateBuildFormula(action, execution.heroId);
+            if (!result.success || result.value <= 0f || float.IsNaN(result.value) || float.IsInfinity(result.value))
+                return false;
+
+            buildPointsPerSecond = result.value;
+            return true;
+        }
+
         public HeroActivityState GetHeroActivityState(string heroId) => new HeroActivityState
         {
             heroId = heroId,

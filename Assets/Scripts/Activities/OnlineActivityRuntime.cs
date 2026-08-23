@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using GuildIdle.Combat;
 using GuildIdle.Configs;
+using GuildIdle.Core;
 using GuildIdle.Crafting;
 using GuildIdle.Player;
 using UnityEngine;
@@ -117,6 +118,11 @@ namespace GuildIdle.Activities
         public static ActivityRuntimeSnapshot GetSnapshot()
         {
             return IsReady ? _host.GetSnapshot() : new ActivityRuntimeSnapshot();
+        }
+
+        public static ActivityRuntimeSnapshot GetPresentationSnapshot()
+        {
+            return IsReady ? _host.GetPresentationSnapshot() : new ActivityRuntimeSnapshot();
         }
 
         public static WorkDescriptorResult GetWorkDescriptor(
@@ -248,6 +254,11 @@ namespace GuildIdle.Activities
             return IsReady ? _host.GetCraftSnapshots() : Array.Empty<OnlineCraftSnapshot>();
         }
 
+        public static OnlineCraftSnapshot[] GetPresentationCraftSnapshots()
+        {
+            return IsReady ? _host.GetPresentationCraftSnapshots() : Array.Empty<OnlineCraftSnapshot>();
+        }
+
         internal static void RegisterHost(OnlineGameplayCoordinatorHost host)
         {
             _host = host;
@@ -306,6 +317,9 @@ namespace GuildIdle.Activities
         // running systems together so ordinary Play Mode does not rewrite SaveData every frame.
         private const float CombatAdvanceIntervalSeconds = 0.2f;
         private const float ElapsedTimeCheckpointIntervalSeconds = 5f;
+        private const string WorkRuntimeKind = "Work";
+        private const string BuildRuntimeKind = "Build";
+        private const string WorkResultStagedPhase = "ResultStaged";
 
         private PlayerState _boundState;
         private ActivityRuntimeService _activities;
@@ -386,6 +400,19 @@ namespace GuildIdle.Activities
         internal ActivityRuntimeSnapshot GetSnapshot()
         {
             return _activities?.GetSnapshot() ?? new ActivityRuntimeSnapshot();
+        }
+
+        internal ActivityRuntimeSnapshot GetPresentationSnapshot()
+        {
+            var snapshot = GetSnapshot();
+            var pendingSeconds = Math.Max(0f, _elapsedTimeAccumulator);
+            if (pendingSeconds <= 0f)
+                return snapshot;
+
+            foreach (var execution in snapshot.executions ?? Array.Empty<ActivityExecutionSnapshot>())
+                ProjectActivityForPresentation(execution, pendingSeconds);
+
+            return snapshot;
         }
 
         internal WorkDescriptorResult GetWorkDescriptor(
@@ -669,6 +696,96 @@ namespace GuildIdle.Activities
             for (var index = 0; index < source.Length; index++)
                 result[index] = BuildCraftSnapshot(source[index]);
             return result;
+        }
+
+        internal OnlineCraftSnapshot[] GetPresentationCraftSnapshots()
+        {
+            var snapshots = GetCraftSnapshots();
+            var pendingSeconds = Math.Max(0f, _elapsedTimeAccumulator);
+            if (pendingSeconds <= 0f)
+                return snapshots;
+
+            foreach (var snapshot in snapshots)
+            {
+                if (snapshot == null || snapshot.status != CraftExecutionStatus.Running || snapshot.durationSeconds <= 0)
+                    continue;
+
+                snapshot.progressSeconds = Math.Min(
+                    snapshot.durationSeconds,
+                    Math.Max(0f, snapshot.progressSeconds) + pendingSeconds);
+            }
+
+            return snapshots;
+        }
+
+        private void ProjectActivityForPresentation(
+            ActivityExecutionSnapshot execution,
+            float pendingSeconds)
+        {
+            if (execution == null ||
+                execution.status != ActivityRuntimeStatus.Running ||
+                execution.durationSeconds <= 0f ||
+                string.Equals(execution.cyclePhase, WorkResultStagedPhase, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (string.Equals(execution.runtimeKind, BuildRuntimeKind, StringComparison.Ordinal))
+            {
+                ProjectConstructionForPresentation(execution, pendingSeconds);
+                return;
+            }
+
+            var projectedElapsed = Math.Max(0f, execution.elapsedSeconds) + pendingSeconds;
+            var isCycle = string.Equals(execution.runtimeKind, WorkRuntimeKind, StringComparison.Ordinal);
+            if (!isCycle && RuntimeConfigs.Activities.TryGet(execution.activityId, out var activity))
+                isCycle = activity.isRepeatable;
+
+            if (!isCycle)
+            {
+                execution.elapsedSeconds = Math.Min(execution.durationSeconds, projectedElapsed);
+                execution.progress = Mathf.Clamp01(execution.elapsedSeconds / execution.durationSeconds);
+                execution.remainingSeconds = Math.Max(0f, execution.durationSeconds - execution.elapsedSeconds);
+                return;
+            }
+
+            var projectedCycles = Mathf.FloorToInt(projectedElapsed / execution.durationSeconds);
+            var projectedCompletedCycles = execution.completedCycles + projectedCycles;
+            if (execution.plannedCycles > 0 && projectedCompletedCycles >= execution.plannedCycles)
+            {
+                execution.completedCycles = execution.plannedCycles;
+                execution.elapsedSeconds = execution.durationSeconds;
+                execution.progress = 1f;
+                execution.remainingSeconds = 0f;
+                return;
+            }
+
+            execution.completedCycles = projectedCompletedCycles;
+            execution.elapsedSeconds = projectedElapsed - projectedCycles * execution.durationSeconds;
+            execution.progress = Mathf.Clamp01(execution.elapsedSeconds / execution.durationSeconds);
+            execution.remainingSeconds = Math.Max(0f, execution.durationSeconds - execution.elapsedSeconds);
+        }
+
+        private void ProjectConstructionForPresentation(
+            ActivityExecutionSnapshot execution,
+            float pendingSeconds)
+        {
+            if (_activities == null ||
+                !_activities.TryGetConstructionPresentationRate(
+                    execution.executionId,
+                    out var buildPointsPerSecond))
+            {
+                return;
+            }
+
+            execution.accumulatedBuildPoints = Math.Min(
+                execution.durationSeconds,
+                Math.Max(0f, execution.accumulatedBuildPoints) + buildPointsPerSecond * pendingSeconds);
+            execution.progress = Mathf.Clamp01(
+                execution.accumulatedBuildPoints / execution.durationSeconds);
+            execution.remainingSeconds = Math.Max(
+                0f,
+                (execution.durationSeconds - execution.accumulatedBuildPoints) / buildPointsPerSecond);
         }
 
         private static OnlineCraftSnapshot BuildCraftSnapshot(CraftExecutionSaveData execution)
