@@ -600,7 +600,7 @@ PrefabInstance:
       value: QuestPanel
       objectReference: {fileID: 0}
     - target: {fileID: 4844803868383220749, guid: 51b56c3d9e08f86498e42696a0ea1ae6, type: 3}
-      propertyPath: m_Spacing.y
+      propertyPath: m_Spacing
       value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4844803868383220749, guid: 51b56c3d9e08f86498e42696a0ea1ae6, type: 3}

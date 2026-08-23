@@ -406,14 +406,16 @@ namespace GuildIdle.Configs
 
         private static QuestDefinition ToDefinition(StoryQuestConfigDto value) => value == null ? null : new QuestDefinition
         {
-            QuestId = value.questId, NameId = value.nameId, DescriptionId = value.descriptionId, IconId = value.iconId,
+            QuestId = value.questId, NameId = value.nameId, ShortDescriptionId = value.shortDescriptionId,
+            DescriptionId = value.descriptionId, IconId = value.iconId,
             JournalCategory = value.journalCategory, SortOrder = value.sortOrder, IsTutorial = value.isTutorial,
             CloseOnStageComplete = value.closeOnStageComplete, Enabled = value.enabled, Kind = QuestDefinitionKind.Story
         };
 
         private static QuestDefinition ToDefinition(DailyQuestConfigDto value) => value == null ? null : new QuestDefinition
         {
-            QuestId = value.questId, NameId = value.nameId, DescriptionId = value.descriptionId, IconId = value.iconId,
+            QuestId = value.questId, NameId = value.nameId, ShortDescriptionId = value.shortDescriptionId,
+            DescriptionId = value.descriptionId, IconId = value.iconId,
             JournalCategory = value.journalCategory, SortOrder = value.sortOrder, Enabled = value.enabled,
             Kind = QuestDefinitionKind.Daily, DailyPoolId = value.dailyPoolId, SelectionWeight = value.selectionWeight
         };

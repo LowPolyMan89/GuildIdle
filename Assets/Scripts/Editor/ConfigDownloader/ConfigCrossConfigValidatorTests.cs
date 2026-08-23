@@ -1106,13 +1106,16 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             var quests = JsonUtility.FromJson<QuestRuntimeConfigDto>(
                 "{\"stages\":[{\"stageId\":\"stage_runtime\",\"completionRule\":\"AllRequired\",\"enabled\":true}]," +
-                "\"storyQuests\":[{\"questId\":\"quest_runtime\",\"journalCategory\":\"Story\",\"enabled\":true}]," +
+                "\"storyQuests\":[{\"questId\":\"quest_runtime\",\"shortDescriptionId\":\"quest.short\",\"descriptionId\":\"quest.full\",\"iconId\":\"quest_icon\",\"journalCategory\":\"Story\",\"enabled\":true}]," +
                 "\"questStartConditions\":[{\"questId\":\"quest_runtime\",\"conditionGroup\":\"default\",\"conditionType\":\"NewGame\",\"compareOperator\":\"GreaterOrEqual\",\"value\":1}]," +
                 "\"questSteps\":[{\"questId\":\"quest_runtime\",\"stepId\":\"step_runtime\",\"objectiveType\":\"ResourceCount\",\"targetId\":\"resource_pine_wood\",\"compareOperator\":\"GreaterOrEqual\",\"targetValue\":1,\"required\":true}]}");
             var questRepository = new QuestConfigRepository(quests);
 
             Assert.That(questRepository.TryGetDefinition("quest_runtime", out var quest), Is.True);
             Assert.That(quest.Kind, Is.EqualTo(QuestDefinitionKind.Story));
+            Assert.That(quest.ShortDescriptionId, Is.EqualTo("quest.short"));
+            Assert.That(quest.DescriptionId, Is.EqualTo("quest.full"));
+            Assert.That(quest.IconId, Is.EqualTo("quest_icon"));
             Assert.That(questRepository.TryGetStage("stage_runtime", out var stage), Is.True);
             Assert.That(stage.completionRule, Is.EqualTo("AllRequired"));
             Assert.That(questRepository.GetStartConditions("quest_runtime"), Has.Length.EqualTo(1));
@@ -1130,6 +1133,24 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(buildingsRepository.GetSettlementStageBuildings("stage_runtime")[0].buildingId, Is.EqualTo("building_hall"));
             Assert.That(buildingsRepository.GetSettlementStageStarterHeroes("stage_runtime")[0].heroId, Is.EqualTo("ren"));
             Assert.That(buildingsRepository.GetSettlementStageStarterEquipment("stage_runtime")[0].itemId, Is.EqualTo("item_wooden_club"));
+        }
+
+        [Test]
+        public void Validate_QuestShortDescriptionUsesLocalisationRegistry()
+        {
+            var collection = Collection(
+                Source("quest_configs", "Quest Configs", "quest-localisation.json", Download(
+                    Sheet("StoryQuests",
+                        Row("name_id", "short_description_id", "description_id"),
+                        Row("quest.name", "quest.short.missing", "quest.description")))),
+                Source("localisation", "Localisation", "localisation.json", LocalisationDownload(
+                    "quest.name",
+                    "quest.description")));
+
+            var report = ConfigCrossConfigValidator.Validate(collection);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("short_description_id").And.Contain("quest.short.missing"));
         }
 
         [Test]

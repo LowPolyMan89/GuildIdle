@@ -319,10 +319,15 @@ namespace GuildIdle.Editor.Activities
             var branch = stage.VisibleInstances.FirstOrDefault(value => value.InstanceId == quest.InstanceId);
             card.Add(CardTitle($"{(quest.IsTutorial ? "ОБУЧЕНИЕ · " : string.Empty)}{L(quest.NameId)}"));
             card.Add(Text($"{(branch?.Required == true ? "Обязательный" : "Дополнительный")} · {quest.Status}"));
-            foreach (var step in quest.Steps)
+            var steps = quest.Steps ?? Array.Empty<QuestStepSnapshot>();
+            if (steps.Count == 0)
+                card.Add(Text(L(quest.ShortDescriptionId)));
+            foreach (var step in steps)
             {
-                var marker = step.Completed ? "✓" : "○";
-                card.Add(Text($"{marker} {L(step.DescriptionId)}  {step.CurrentValue}/{step.TargetValue}"));
+                var stepText = Text($"{L(step.DescriptionId)}  {step.CurrentValue}/{step.TargetValue}");
+                if (step.Completed)
+                    stepText.style.color = new Color(0.18f, 0.63f, 0.26f);
+                card.Add(stepText);
             }
             return card;
         }

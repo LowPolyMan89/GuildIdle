@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
 using GuildIdle.Progression;
 using UnityEngine;
 
@@ -44,7 +43,9 @@ public sealed class SettlementHudPresenter
 
             quests.Add(new QuestItemState(
                 _runtimeSource.Localise(quest.NameId),
-                BuildQuestDescription(quest)));
+                _runtimeSource.Localise(quest.ShortDescriptionId),
+                BuildQuestSteps(quest),
+                quest.IconId));
         }
 
         return new SettlementHudState(currencies, BuildStageInfoState(), quests.ToArray(), BuildActiveHeroesState());
@@ -110,30 +111,20 @@ public sealed class SettlementHudPresenter
             : $"{minutes:00}:{seconds:00}";
     }
 
-    private string BuildQuestDescription(QuestInstanceSnapshot quest)
+    private IReadOnlyList<QuestStepItemState> BuildQuestSteps(QuestInstanceSnapshot quest)
     {
-        var result = new StringBuilder();
-        var description = _runtimeSource.Localise(quest.DescriptionId);
-        if (!string.IsNullOrWhiteSpace(description))
-            result.Append(description);
-
+        var result = new List<QuestStepItemState>();
         foreach (var step in quest.Steps ?? Array.Empty<QuestStepSnapshot>())
         {
             if (step == null)
                 continue;
 
-            if (result.Length > 0)
-                result.AppendLine();
-
-            result.Append(step.Completed ? "\u2713 " : "\u25CB ");
-            result.Append(_runtimeSource.Localise(step.DescriptionId));
-            result.Append(' ');
-            result.Append(step.CurrentValue);
-            result.Append('/');
-            result.Append(step.TargetValue);
+            result.Add(new QuestStepItemState(
+                $"{_runtimeSource.Localise(step.DescriptionId)} {step.CurrentValue}/{step.TargetValue}",
+                step.Completed));
         }
 
-        return result.ToString();
+        return result;
     }
 
     private static bool ContentEquals(SettlementHudState left, SettlementHudState right)
@@ -158,7 +149,30 @@ public sealed class SettlementHudPresenter
             var leftQuest = left.Quests[index];
             var rightQuest = right.Quests[index];
             if (!string.Equals(leftQuest.Name, rightQuest.Name, StringComparison.Ordinal) ||
-                !string.Equals(leftQuest.Description, rightQuest.Description, StringComparison.Ordinal))
+                !string.Equals(leftQuest.ShortDescription, rightQuest.ShortDescription, StringComparison.Ordinal) ||
+                !string.Equals(leftQuest.IconId, rightQuest.IconId, StringComparison.Ordinal) ||
+                !QuestStepsEqual(leftQuest.Steps, rightQuest.Steps))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool QuestStepsEqual(
+        IReadOnlyList<QuestStepItemState> left,
+        IReadOnlyList<QuestStepItemState> right)
+    {
+        if (ReferenceEquals(left, right))
+            return true;
+        if (left == null || right == null || left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (!string.Equals(left[index].Text, right[index].Text, StringComparison.Ordinal) ||
+                left[index].Completed != right[index].Completed)
             {
                 return false;
             }

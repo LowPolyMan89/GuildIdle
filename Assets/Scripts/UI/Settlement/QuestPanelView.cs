@@ -41,7 +41,10 @@ public class QuestPanelView : MonoBehaviour
             var view = _activeQuests[lastIndex];
             _activeQuests.RemoveAt(lastIndex);
             if (view != null)
+            {
+                view.gameObject.SetActive(false);
                 Destroy(view.gameObject);
+            }
         }
 
         return true;

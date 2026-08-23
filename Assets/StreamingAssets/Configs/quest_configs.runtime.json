@@ -71,6 +71,7 @@
     {
       "questId": "quest_light_campfire",
       "nameId": "quest_light_campfire_name_id",
+      "shortDescriptionId": "quest_light_campfire_short_description_id",
       "descriptionId": "quest_light_campfire_description_id",
       "iconId": "building_campfire_small_icon_id",
       "journalCategory": "Main",
@@ -82,6 +83,7 @@
     {
       "questId": "quest_inspect_underwood",
       "nameId": "quest_inspect_underwood_name_id",
+      "shortDescriptionId": "quest_inspect_underwood_short_description_id",
       "descriptionId": "quest_inspect_underwood_description_id",
       "iconId": "building_underwood_small_icon_id",
       "journalCategory": "Main",
@@ -93,6 +95,7 @@
     {
       "questId": "quest_clear_underwood",
       "nameId": "quest_clear_underwood_name_id",
+      "shortDescriptionId": "quest_clear_underwood_short_description_id",
       "descriptionId": "quest_clear_underwood_description_id",
       "iconId": "icon_combat_wolf",
       "journalCategory": "Main",
@@ -104,6 +107,7 @@
     {
       "questId": "quest_build_hut",
       "nameId": "quest_build_hut_name_id",
+      "shortDescriptionId": "quest_build_hut_short_description_id",
       "descriptionId": "quest_build_hut_description_id",
       "iconId": "building_hall_small_icon_id",
       "journalCategory": "Main",
@@ -115,6 +119,7 @@
     {
       "questId": "quest_prepare_for_wolves",
       "nameId": "quest_prepare_for_wolves_name_id",
+      "shortDescriptionId": "quest_prepare_for_wolves_short_description_id",
       "descriptionId": "quest_prepare_for_wolves_description_id",
       "iconId": "building_campfire_small_icon_id",
       "journalCategory": "Side",

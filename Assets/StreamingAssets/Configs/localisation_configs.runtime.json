@@ -677,6 +677,36 @@
       "ru": "Одноразовый осмотр с сохраняемой шкалой прогресса. После завершения открывает основные активности Этапа 1.",
       "en": "A one-time inspection with saved progress. Completing it unlocks the main Stage 1 activities.",
       "tr": "Kaydedilen ilerlemeye sahip tek seferlik inceleme. Tamamlandığında 1. Aşamanın ana etkinlikleri açılır."
+    },
+    {
+      "id": "quest_light_campfire_short_description_id",
+      "ru": "Соберите материалы и разведите Костёр.",
+      "en": "Gather materials and light the Campfire.",
+      "tr": "Malzemeleri topla ve Kamp Ateşini yak."
+    },
+    {
+      "id": "quest_inspect_underwood_short_description_id",
+      "ru": "Осмотрите Подлесок и откройте новые работы.",
+      "en": "Inspect the Underwood to unlock new jobs.",
+      "tr": "Yeni işleri açmak için Alt Ormanı incele."
+    },
+    {
+      "id": "quest_clear_underwood_short_description_id",
+      "ru": "Разберитесь с волками в Подлеске.",
+      "en": "Deal with the wolves in the Underwood.",
+      "tr": "Alt Ormandaki kurtlarla başa çık."
+    },
+    {
+      "id": "quest_build_hut_short_description_id",
+      "ru": "Соберите материалы и постройте Хижину.",
+      "en": "Gather materials and build the Hut.",
+      "tr": "Malzemeleri topla ve Kulübeyi inşa et."
+    },
+    {
+      "id": "quest_prepare_for_wolves_short_description_id",
+      "ru": "Подготовьте жареное мясо перед новой охотой.",
+      "en": "Prepare roasted meat before the next hunt.",
+      "tr": "Bir sonraki avdan önce kızarmış et hazırla."
     }
   ]
 }

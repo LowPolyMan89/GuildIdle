@@ -37,6 +37,7 @@ namespace GuildIdle.Progression
         public string Status { get; internal set; }
         public QuestDefinitionKind DefinitionKind { get; internal set; }
         public string NameId { get; internal set; }
+        public string ShortDescriptionId { get; internal set; }
         public string DescriptionId { get; internal set; }
         public string IconId { get; internal set; }
         public string JournalCategory { get; internal set; }

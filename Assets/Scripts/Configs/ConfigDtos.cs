@@ -507,6 +507,7 @@ namespace GuildIdle.Configs
     {
         public string questId;
         public string nameId;
+        public string shortDescriptionId;
         public string descriptionId;
         public string iconId;
         public string journalCategory;
@@ -521,6 +522,7 @@ namespace GuildIdle.Configs
     {
         public string questId;
         public string nameId;
+        public string shortDescriptionId;
         public string descriptionId;
         public string iconId;
         public string journalCategory;
@@ -540,6 +542,7 @@ namespace GuildIdle.Configs
     {
         public string QuestId { get; internal set; }
         public string NameId { get; internal set; }
+        public string ShortDescriptionId { get; internal set; }
         public string DescriptionId { get; internal set; }
         public string IconId { get; internal set; }
         public string JournalCategory { get; internal set; }

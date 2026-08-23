@@ -39,14 +39,34 @@ public sealed class CurrencyItemState
 
 public sealed class QuestItemState
 {
-    public QuestItemState(string name, string description)
+    public QuestItemState(
+        string name,
+        string shortDescription,
+        IReadOnlyList<QuestStepItemState> steps,
+        string iconId)
     {
         Name = name ?? string.Empty;
-        Description = description ?? string.Empty;
+        ShortDescription = shortDescription ?? string.Empty;
+        Steps = steps ?? Array.Empty<QuestStepItemState>();
+        IconId = iconId ?? string.Empty;
     }
 
     public string Name { get; }
-    public string Description { get; }
+    public string ShortDescription { get; }
+    public IReadOnlyList<QuestStepItemState> Steps { get; }
+    public string IconId { get; }
+}
+
+public sealed class QuestStepItemState
+{
+    public QuestStepItemState(string text, bool completed)
+    {
+        Text = text ?? string.Empty;
+        Completed = completed;
+    }
+
+    public string Text { get; }
+    public bool Completed { get; }
 }
 
 public sealed class StageInfoState

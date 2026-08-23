@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 using GuildIdle.Core;
 using UnityEditor;
 
@@ -20,8 +21,8 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             ["Stages"] = new[] { "stage_id", "name_id", "description_id", "target_duration_sec", "completion_rule", "next_stage_id", "sort_order", "enabled", "notes" },
             ["StageQuests"] = new[] { "stage_id", "quest_id", "weight_percent", "required", "show_in_stage_ui", "sort_order", "enabled", "notes" },
-            ["StoryQuests"] = new[] { "quest_id", "name_id", "description_id", "icon_id", "journal_category", "sort_order", "is_tutorial", "close_on_stage_complete", "enabled", "notes" },
-            ["DailyQuests"] = new[] { "quest_id", "name_id", "description_id", "icon_id", "journal_category", "daily_pool_id", "selection_weight", "sort_order", "enabled", "notes" },
+            ["StoryQuests"] = new[] { "quest_id", "name_id", "short_description_id", "description_id", "icon_id", "journal_category", "sort_order", "is_tutorial", "close_on_stage_complete", "enabled", "notes" },
+            ["DailyQuests"] = new[] { "quest_id", "name_id", "short_description_id", "description_id", "icon_id", "journal_category", "daily_pool_id", "selection_weight", "sort_order", "enabled", "notes" },
             ["QuestStartConditions"] = new[] { "quest_id", "condition_group", "condition_type", "target_id", "operator", "value", "sort_order", "notes" },
             ["QuestSteps"] = new[] { "quest_id", "step_id", "step_order", "objective_type", "target_id", "operator", "target_value", "description_id", "required", "notes" },
             ["QuestRewards"] = new[] { "quest_id", "reward_id", "reward_type", "target_id", "min", "max", "chance", "grant_moment", "sort_order", "notes" },
@@ -45,6 +46,8 @@ namespace GuildIdle.Editor.ConfigDownloader
         {
             "enabled", "required", "show_in_stage_ui", "is_tutorial", "close_on_stage_complete"
         };
+
+        private static readonly Regex IconIdRegex = new Regex("^[A-Za-z0-9._]+$", RegexOptions.Compiled);
 
         public bool Supports(ConfigSourceSettings source) =>
             source != null && string.Equals(source.config_id, ConfigId, StringComparison.OrdinalIgnoreCase);
@@ -291,7 +294,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     if (!_tables.TryGetValue(sheet, out var table)) continue;
                     foreach (var row in table.DataRows)
                     {
-                        Required(row, "name_id", "description_id", "icon_id", "journal_category", "sort_order", "enabled");
+                        Required(row, "name_id", "short_description_id", "description_id", "icon_id", "journal_category", "sort_order", "enabled");
+                        Identifier(row, "icon_id");
                         NonNegativeInt(row, "sort_order"); Bool(row, "enabled"); Enum(row, "journal_category", "QuestJournalCategory");
                         if (sheet == "StoryQuests")
                         {
@@ -440,6 +444,12 @@ namespace GuildIdle.Editor.ConfigDownloader
             private void DecimalRange(ConfigSheetDataRow row, string column, double min, double max)
             {
                 var raw = row.Get(column); if (!ConfigPipelineUtilities.TryParseFiniteNumber(raw, out var value) || value < min || value > max) Issue(row.Table.Name, row.RowNumber, column, raw, $"Expected a number from {min} to {max}.");
+            }
+            private void Identifier(ConfigSheetDataRow row, string column)
+            {
+                var value = row.Get(column);
+                if (!string.IsNullOrWhiteSpace(value) && !IconIdRegex.IsMatch(value))
+                    Issue(row.Table.Name, row.RowNumber, column, value, "Expected a latin identifier containing only letters, digits, dot, or underscore.");
             }
             private object ConvertValue(string column, string raw)
             {

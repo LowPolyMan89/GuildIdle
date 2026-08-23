@@ -2849,6 +2849,8 @@ namespace GuildIdle.Editor.ConfigDownloader
                     foreach (var row in table.DataRows)
                     {
                         ValidateIdSet(report, quests.Source.DisplayName, sheet, row, "name_id", registry.Localisation.LocalisationIds, "Localisation.id");
+                        if (!string.Equals(sheet, "Stages", StringComparison.Ordinal))
+                            ValidateIdSet(report, quests.Source.DisplayName, sheet, row, "short_description_id", registry.Localisation.LocalisationIds, "Localisation.id");
                         ValidateIdSet(report, quests.Source.DisplayName, sheet, row, "description_id", registry.Localisation.LocalisationIds, "Localisation.id");
                     }
                 }

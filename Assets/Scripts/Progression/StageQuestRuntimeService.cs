@@ -296,7 +296,7 @@ namespace GuildIdle.Progression
                 states.TryGetValue(config.stepId, out var state);
                 steps.Add(new QuestStepSnapshot { StepId = config.stepId, StepOrder = config.stepOrder, ObjectiveType = config.objectiveType, TargetId = config.targetId, CompareOperator = config.compareOperator, TargetValue = config.targetValue, CurrentValue = state?.currentValue ?? 0, DescriptionId = config.descriptionId, Required = config.required, Completed = state?.completed ?? false });
             }
-            return new QuestInstanceSnapshot { InstanceId = instance.instanceId, QuestId = instance.questId, CycleId = instance.cycleId, Status = instance.status, DefinitionKind = definition.Kind, NameId = definition.NameId, DescriptionId = definition.DescriptionId, IconId = definition.IconId, JournalCategory = definition.JournalCategory, SortOrder = definition.SortOrder, IsTutorial = definition.IsTutorial, RewardsGranted = instance.rewardsGranted, Steps = SnapshotLists.ReadOnly(steps) };
+            return new QuestInstanceSnapshot { InstanceId = instance.instanceId, QuestId = instance.questId, CycleId = instance.cycleId, Status = instance.status, DefinitionKind = definition.Kind, NameId = definition.NameId, ShortDescriptionId = definition.ShortDescriptionId, DescriptionId = definition.DescriptionId, IconId = definition.IconId, JournalCategory = definition.JournalCategory, SortOrder = definition.SortOrder, IsTutorial = definition.IsTutorial, RewardsGranted = instance.rewardsGranted, Steps = SnapshotLists.ReadOnly(steps) };
         }
 
         private bool HasCompletedDefinition(string questId)

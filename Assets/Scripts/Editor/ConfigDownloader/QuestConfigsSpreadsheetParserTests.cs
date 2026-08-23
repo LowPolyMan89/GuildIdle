@@ -32,6 +32,7 @@ namespace GuildIdle.Editor.ConfigDownloader
             Assert.That(json, Does.Contain("\"enumGroup\": \"QuestInstanceStatus\""));
             Assert.That(json, Does.Contain("\"value\": \"RewardPending\""));
             Assert.That(json, Does.Contain("\"closeOnStageComplete\": false"));
+            Assert.That(json, Does.Contain("\"shortDescriptionId\": \"quest.short\""));
             Assert.That(json, Does.Not.Contain("stagePrefabId"));
             Assert.That(json, Does.Not.Contain("notes"));
         }
@@ -40,7 +41,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         public void CloseOnStageCompleteMustBeBoolean()
         {
             var download = CreateValidDownload();
-            download.sheets[2].rows[1].cells[7] = "sometimes";
+            download.sheets[2].rows[1].cells[8] = "sometimes";
             Write(download);
 
             var report = new QuestConfigsSpreadsheetParser().BuildRuntimeJson(Source(), out _);
@@ -54,7 +55,7 @@ namespace GuildIdle.Editor.ConfigDownloader
         public void CloseOnStageCompleteRequiresEnabledStageQuestRelation()
         {
             var download = CreateValidDownload();
-            download.sheets[2].rows[1].cells[7] = "TRUE";
+            download.sheets[2].rows[1].cells[8] = "TRUE";
             download.sheets[1].rows[1].cells[6] = "FALSE";
             Write(download);
 
@@ -93,6 +94,19 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             Assert.That(report.Success, Is.False);
             Assert.That(report.ToDisplayMessage(), Does.Contain("Required exact column is missing"));
+        }
+
+        [Test]
+        public void IconIdMustBeAValidIdentifier()
+        {
+            var download = CreateValidDownload();
+            download.sheets[2].rows[1].cells[4] = "quest icon";
+            Write(download);
+
+            var report = new QuestConfigsSpreadsheetParser().BuildRuntimeJson(Source(), out _);
+
+            Assert.That(report.Success, Is.False);
+            Assert.That(report.ToDisplayMessage(), Does.Contain("icon_id").And.Contain("latin identifier"));
         }
 
         [Test]
@@ -170,9 +184,9 @@ namespace GuildIdle.Editor.ConfigDownloader
                         Row("stage_id", "quest_id", "weight_percent", "required", "show_in_stage_ui", "sort_order", "enabled", "notes"),
                         Row("stage_arrival", "quest_intro", "100", "TRUE", "TRUE", "10", "TRUE", "")),
                     Sheet("StoryQuests",
-                        Row("quest_id", "name_id", "description_id", "icon_id", "journal_category", "sort_order", "is_tutorial", "close_on_stage_complete", "enabled", "notes"),
-                        Row("quest_intro", "quest.name", "quest.desc", "quest_icon", "Story", "10", "TRUE", "FALSE", "TRUE", "")),
-                    Sheet("DailyQuests", Row("quest_id", "name_id", "description_id", "icon_id", "journal_category", "daily_pool_id", "selection_weight", "sort_order", "enabled", "notes")),
+                        Row("quest_id", "name_id", "short_description_id", "description_id", "icon_id", "journal_category", "sort_order", "is_tutorial", "close_on_stage_complete", "enabled", "notes"),
+                        Row("quest_intro", "quest.name", "quest.short", "quest.desc", "quest_icon", "Story", "10", "TRUE", "FALSE", "TRUE", "")),
+                    Sheet("DailyQuests", Row("quest_id", "name_id", "short_description_id", "description_id", "icon_id", "journal_category", "daily_pool_id", "selection_weight", "sort_order", "enabled", "notes")),
                     Sheet("QuestStartConditions",
                         Row("quest_id", "condition_group", "condition_type", "target_id", "operator", "value", "sort_order", "notes"),
                         Row("quest_intro", "default", "NewGame", "", "GreaterOrEqual", "1", "10", "")),
