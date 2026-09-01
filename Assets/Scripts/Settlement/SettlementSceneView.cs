@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using GuildIdle.Configs;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 using RuntimePlayer = GuildIdle.Player.Player;
 
@@ -15,6 +17,18 @@ namespace GuildIdle.Settlement
         bool TryGetBuildingLevel(string buildingId, out int level);
     }
 
+    public readonly struct BuildingSelectionContext
+    {
+        public BuildingSelectionContext(string buildingId, int buildingLevel)
+        {
+            BuildingId = buildingId ?? string.Empty;
+            BuildingLevel = buildingLevel;
+        }
+
+        public string BuildingId { get; }
+        public int BuildingLevel { get; }
+    }
+
     public sealed class SettlementSceneView : MonoBehaviour
     {
         [SerializeField] private Transform buildingRoot;
@@ -25,33 +39,48 @@ namespace GuildIdle.Settlement
         private readonly Dictionary<string, int> _appliedLevels = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly HashSet<string> _activeBuildingIds = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _reportedDiagnostics = new HashSet<string>(StringComparer.Ordinal);
+        private readonly List<RaycastResult> _uiRaycastResults = new List<RaycastResult>();
         private BuildingView[] _allBuildingViews = Array.Empty<BuildingView>();
         private ISettlementSceneRuntimeSource _runtimeSource;
+        private ObjectActivitiesController _activitiesController;
         private string _appliedStageId;
         private bool _lookupBuilt;
+        private bool _selectionBlocked;
 
         public string AppliedStageId => _appliedStageId;
+        public event Action<BuildingSelectionContext> BuildingSelected;
 
         private void Awake()
         {
             _runtimeSource ??= new RuntimeSettlementSceneSource();
             BuildBuildingLookup();
+            _activitiesController ??= new ObjectActivitiesController(this);
         }
 
         private void OnEnable()
         {
             RuntimeConfigs.OnLoaded += HandleConfigsLoaded;
+            _activitiesController ??= new ObjectActivitiesController(this);
+            _activitiesController.Bind();
             RefreshNow();
         }
 
         private void OnDisable()
         {
             RuntimeConfigs.OnLoaded -= HandleConfigsLoaded;
+            _activitiesController?.Dispose();
         }
 
         private void Update()
         {
             RefreshNow();
+            _activitiesController?.Tick();
+            HandleSelectionInput();
+        }
+
+        public void SetSelectionBlocked(bool blocked)
+        {
+            _selectionBlocked = blocked;
         }
 
         public void SetRuntimeSource(ISettlementSceneRuntimeSource runtimeSource)
@@ -186,6 +215,65 @@ namespace GuildIdle.Settlement
         {
             _appliedStageId = null;
             RefreshNow();
+        }
+
+        private void HandleSelectionInput()
+        {
+            if (_selectionBlocked || sceneCamera == null || !TryGetPointerPress(out var screenPosition))
+                return;
+
+            if (IsPointerOverUi(screenPosition))
+                return;
+
+            var ray = sceneCamera.ScreenPointToRay(screenPosition);
+            if (!Physics.Raycast(ray, out var hit, sceneCamera.farClipPlane, ~0, QueryTriggerInteraction.Collide))
+                return;
+
+            var view = hit.collider != null ? hit.collider.GetComponentInParent<BuildingView>() : null;
+            if (view == null || !view.CurrentLevel.HasValue || !view.gameObject.activeInHierarchy)
+                return;
+
+            if (!_buildingViews.TryGetValue(view.BuildingId, out var registered) ||
+                !ReferenceEquals(registered, view) ||
+                !_activeBuildingIds.Contains(view.BuildingId))
+            {
+                return;
+            }
+
+            BuildingSelected?.Invoke(new BuildingSelectionContext(view.BuildingId, view.CurrentLevel.Value));
+        }
+
+        private bool IsPointerOverUi(Vector2 screenPosition)
+        {
+            var eventSystem = EventSystem.current;
+            if (eventSystem == null)
+                return false;
+
+            _uiRaycastResults.Clear();
+            eventSystem.RaycastAll(
+                new PointerEventData(eventSystem) { position = screenPosition },
+                _uiRaycastResults);
+            return _uiRaycastResults.Count > 0;
+        }
+
+        private static bool TryGetPointerPress(out Vector2 screenPosition)
+        {
+            var touchscreen = Touchscreen.current;
+            if (touchscreen != null && touchscreen.primaryTouch.press.wasPressedThisFrame)
+            {
+                screenPosition = touchscreen.primaryTouch.position.ReadValue();
+                return true;
+            }
+
+            var mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+            {
+                screenPosition = mouse.position.ReadValue();
+                return true;
+            }
+
+            screenPosition = default;
+            return false;
         }
 
         private void ReportOnce(string key, string message)

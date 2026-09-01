@@ -6,6 +6,7 @@ namespace GuildIdle.UI.Core
     [DisallowMultipleComponent]
     public sealed class UIRoot : MonoBehaviour
     {
+        [SerializeField] private RectTransform hud;
         [SerializeField] private RectTransform screens;
         [SerializeField] private RectTransform windows;
         [SerializeField] private RectTransform popups;
@@ -13,6 +14,7 @@ namespace GuildIdle.UI.Core
         [SerializeField] private UIPrefabCatalog prefabCatalog;
 
         public UIService Service { get; private set; }
+        public RectTransform Hud => hud;
         public RectTransform Screens => screens;
         public RectTransform Windows => windows;
         public RectTransform Popups => popups;
@@ -33,19 +35,20 @@ namespace GuildIdle.UI.Core
 
         public void ValidateOrThrow()
         {
-            if (screens == null || windows == null || popups == null || overlays == null)
-                throw new InvalidOperationException($"UIRoot '{name}' must reference all four layer containers.");
+            if (hud == null || screens == null || windows == null || popups == null || overlays == null)
+                throw new InvalidOperationException($"UIRoot '{name}' must reference all five layer containers.");
 
             if (prefabCatalog == null)
                 throw new InvalidOperationException($"UIRoot '{name}' must reference a UIPrefabCatalog asset.");
 
-            if (screens == windows || screens == popups || screens == overlays ||
+            if (hud == screens || hud == windows || hud == popups || hud == overlays ||
+                screens == windows || screens == popups || screens == overlays ||
                 windows == popups || windows == overlays || popups == overlays)
             {
                 throw new InvalidOperationException($"UIRoot '{name}' layer containers must be distinct.");
             }
 
-            var layers = new[] { screens, windows, popups, overlays };
+            var layers = new[] { screens, hud, windows, popups, overlays };
             for (var index = 0; index < layers.Length; index++)
             {
                 var layer = layers[index];

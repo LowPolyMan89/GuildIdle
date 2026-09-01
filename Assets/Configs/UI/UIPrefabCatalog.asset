@@ -12,4 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f288c5553fee1b848ab5a635256d69f4, type: 3}
   m_Name: UIPrefabCatalog
   m_EditorClassIdentifier: GuildIdle.UI.Core::GuildIdle.UI.Core.UIPrefabCatalog
-  entries: []
+  entries:
+  - viewType:
+      assemblyQualifiedName: ObjectActivitiesWindowView, Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+    prefab: {fileID: 8456754518532589104, guid: cb384bb73bb3cc14c99351c71f36e2f4, type: 3}
+    targetLayer: 1

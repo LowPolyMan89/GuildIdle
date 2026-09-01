@@ -4,6 +4,8 @@ using GuildIdle.UI.Core;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
@@ -65,14 +67,18 @@ namespace GuildIdle.UI.Editor
                 var canvas = GetOrAddComponent<Canvas>(root);
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 GetOrAddComponent<GraphicRaycaster>(root);
+                GetOrAddComponent<EventSystem>(root);
+                GetOrAddComponent<InputSystemUIInputModule>(root);
                 var uiRoot = GetOrAddComponent<UIRoot>(root);
 
                 var screens = EnsureLayer(root.transform, "Screens", 0);
-                var windows = EnsureLayer(root.transform, "Windows", 1);
-                var popups = EnsureLayer(root.transform, "Popups", 2);
-                var overlays = EnsureLayer(root.transform, "Overlays", 3);
+                var hud = EnsureLayer(root.transform, "HUD", 1);
+                var windows = EnsureLayer(root.transform, "Windows", 2);
+                var popups = EnsureLayer(root.transform, "Popups", 3);
+                var overlays = EnsureLayer(root.transform, "Overlays", 4);
 
                 var serializedRoot = new SerializedObject(uiRoot);
+                serializedRoot.FindProperty("hud").objectReferenceValue = hud;
                 serializedRoot.FindProperty("screens").objectReferenceValue = screens;
                 serializedRoot.FindProperty("windows").objectReferenceValue = windows;
                 serializedRoot.FindProperty("popups").objectReferenceValue = popups;
