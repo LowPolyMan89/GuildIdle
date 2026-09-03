@@ -350,7 +350,8 @@ public sealed class SelectedActivityState
     public static readonly SelectedActivityState Empty = new SelectedActivityState(
         string.Empty, ObjectActivityKind.Activity, string.Empty, string.Empty, string.Empty, string.Empty,
         ActivityCardVisualState.Unavailable, false, false, 1, 1, string.Empty, string.Empty, string.Empty,
-        false, 0f, string.Empty, ActivityCardProductionState.Empty, false, string.Empty, false, string.Empty);
+        false, Array.Empty<HeroSelectionOptionState>(), 0f, string.Empty, ActivityCardProductionState.Empty,
+        false, string.Empty, false, string.Empty);
 
     public SelectedActivityState(
         string activityId,
@@ -368,6 +369,7 @@ public sealed class SelectedActivityState
         string heroName,
         string heroIconId,
         bool hasHeroes,
+        IReadOnlyList<HeroSelectionOptionState> heroChoices,
         float progress,
         string progressText,
         ActivityCardProductionState productionInfo,
@@ -392,6 +394,7 @@ public sealed class SelectedActivityState
         HeroName = heroName ?? string.Empty;
         HeroIconId = heroIconId ?? string.Empty;
         HasHeroes = hasHeroes;
+        HeroChoices = heroChoices ?? Array.Empty<HeroSelectionOptionState>();
         Progress = Mathf.Clamp01(progress);
         ProgressText = progressText ?? string.Empty;
         ProductionInfo = productionInfo ?? ActivityCardProductionState.Empty;
@@ -418,6 +421,7 @@ public sealed class SelectedActivityState
     public string HeroName { get; }
     public string HeroIconId { get; }
     public bool HasHeroes { get; }
+    public IReadOnlyList<HeroSelectionOptionState> HeroChoices { get; }
     public float Progress { get; }
     public string ProgressText { get; }
     public string Duration { get; internal set; }
@@ -442,7 +446,6 @@ public interface IObjectActivitiesRuntimeSource
     bool IsReady { get; }
     bool CanOpen(string buildingId, int buildingLevel);
     ObjectActivitiesWindowState BuildState(string buildingId, int buildingLevel, ObjectActivitiesSelection selection);
-    IReadOnlyList<string> GetAssignableHeroIds();
 }
 
 public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSource
@@ -457,19 +460,6 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         var state = RuntimePlayer.State;
         return IsReady && state.CanClickBuilding(buildingId) &&
                state.TryGetBuildingLevelState(buildingId, out var currentLevel) && currentLevel == buildingLevel;
-    }
-
-    public IReadOnlyList<string> GetAssignableHeroIds()
-    {
-        if (!IsReady)
-            return Array.Empty<string>();
-        return RuntimeConfigs.Heroes.Heroes
-            .Where(hero => hero != null && hero.enabled && RuntimePlayer.State.HasHero(hero.heroId) &&
-                           !RuntimePlayer.State.IsHeroBusy(hero.heroId))
-            .OrderBy(hero => hero.sortOrder)
-            .ThenBy(hero => hero.heroId, StringComparer.Ordinal)
-            .Select(hero => hero.heroId)
-            .ToArray();
     }
 
     public ObjectActivitiesWindowState BuildState(
@@ -580,9 +570,12 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         ResolveDescriptor(card.ActivityId, card.Kind, out var descriptor);
         var showCycles = IsCyclic(card.ActivityId, card.Kind);
         var plannedCycles = showCycles ? Mathf.Clamp(selection.PlannedCycles, 1, DefaultCycleLimit) : 1;
+        var heroChoices = BuildHeroChoices(card.ActivityId, card.Kind, selection.HeroId);
         var heroId = card.VisualState == ActivityCardVisualState.InProgress || card.VisualState == ActivityCardVisualState.Finished
             ? card.HeroId
-            : ResolveSelectedHero(selection.HeroId);
+            : ResolveSelectedHero(selection.HeroId, heroChoices);
+        if (!string.IsNullOrWhiteSpace(heroId) && heroChoices.All(value => !value.IsSelected))
+            heroChoices = BuildHeroChoices(card.ActivityId, card.Kind, heroId);
         ResolveHero(heroId, out var heroName, out var heroIcon);
         var canConfigure = card.VisualState == ActivityCardVisualState.Idle || card.VisualState == ActivityCardVisualState.Unavailable;
         var production = BuildProductionInfo(card.ActivityId, card.Kind, plannedCycles);
@@ -599,7 +592,7 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         var state = new SelectedActivityState(
             card.ActivityId, card.Kind, card.Name, LocaliseOrFallback(descriptor.DescriptionId, string.Empty),
             CategoryName(card.Kind), card.IconId, card.VisualState, showCycles, canConfigure,
-            plannedCycles, DefaultCycleLimit, heroId, heroName, heroIcon, GetAssignableHeroIds().Count > 0,
+            plannedCycles, DefaultCycleLimit, heroId, heroName, heroIcon, heroChoices.Any(value => value.CanSelect), heroChoices,
             card.Progress, BuildProgressText(card), production, primaryEnabled, primaryText,
             card.IsAvailable, notice, card.PendingResultId);
         state.Duration = ResolveTotalDuration(card.ActivityId, card.Kind, plannedCycles);
@@ -917,14 +910,84 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
             : ActivityCardVisualState.Idle;
     }
 
-    private static string ResolveSelectedHero(string requestedId)
+    private static IReadOnlyList<HeroSelectionOptionState> BuildHeroChoices(
+        string activityId,
+        ObjectActivityKind kind,
+        string selectedHeroId)
     {
-        var heroes = RuntimeConfigs.Heroes.Heroes.Where(hero => hero != null && hero.enabled &&
-            RuntimePlayer.State.HasHero(hero.heroId) && !RuntimePlayer.State.IsHeroBusy(hero.heroId))
-            .OrderBy(hero => hero.sortOrder).ThenBy(hero => hero.heroId, StringComparer.Ordinal).ToArray();
-        if (heroes.Any(hero => string.Equals(hero.heroId, requestedId, StringComparison.Ordinal)))
+        ResolveActivitySkill(activityId, kind, out var skillId, out var skillIconId);
+        var requiredEnergy = ResolveEnergyCost(activityId, kind);
+        return RuntimeConfigs.Heroes.Heroes
+            .Where(hero => hero != null && hero.enabled && RuntimePlayer.State.HasHero(hero.heroId))
+            .Select(hero =>
+            {
+                var busy = RuntimePlayer.State.IsHeroBusy(hero.heroId);
+                var energy = RuntimePlayer.State.GetHeroFatigue(hero.heroId);
+                var availability = busy
+                    ? HeroSelectionAvailability.Busy
+                    : energy < requiredEnergy
+                        ? HeroSelectionAvailability.NoEnergy
+                        : HeroSelectionAvailability.Available;
+                return new
+                {
+                    Hero = hero,
+                    Choice = new HeroSelectionOptionState(
+                        hero.heroId,
+                        LocaliseOrFallback(hero.nameId, hero.heroId),
+                        ActivityCardProductionInfo.IconResolver.ResolveHero(hero.iconSpriteId),
+                        availability,
+                        ActivityCardProductionInfo.IconResolver.ResolveSkill(skillIconId),
+                        string.IsNullOrWhiteSpace(skillId) ? 0 : RuntimePlayer.State.GetHeroSkillLevel(hero.heroId, skillId),
+                        energy,
+                        RuntimePlayer.State.GetHeroMaxFatigue(hero.heroId),
+                        string.Equals(hero.heroId, selectedHeroId, StringComparison.Ordinal),
+                        hero.sortOrder)
+                };
+            })
+            .OrderBy(value => value.Choice.CanSelect ? 0 : 1)
+            .ThenByDescending(value => value.Choice.SkillLevel)
+            .ThenBy(value => value.Hero.sortOrder)
+            .ThenBy(value => value.Hero.heroId, StringComparer.Ordinal)
+            .Select(value => value.Choice)
+            .ToArray();
+    }
+
+    private static string ResolveSelectedHero(
+        string requestedId,
+        IReadOnlyList<HeroSelectionOptionState> choices)
+    {
+        choices ??= Array.Empty<HeroSelectionOptionState>();
+        if (choices.Any(value => value.CanSelect &&
+                                 string.Equals(value.HeroId, requestedId, StringComparison.Ordinal)))
             return requestedId;
-        return heroes.FirstOrDefault()?.heroId ?? string.Empty;
+        return choices.FirstOrDefault(value => value.CanSelect)?.HeroId ?? string.Empty;
+    }
+
+    private static int ResolveEnergyCost(string id, ObjectActivityKind kind)
+    {
+        if (kind == ObjectActivityKind.Craft && RuntimeConfigs.Crafts.TryGetDefinition(id, out var craft))
+            return Math.Max(0, craft.FatigueCost);
+        if (kind == ObjectActivityKind.Construction && RuntimeConfigs.Buildings.TryGetBuildAction(id, out var build))
+            return Math.Max(0, build.fatigueCost);
+        return RuntimeConfigs.Activities.TryGet(id, out var activity) ? Math.Max(0, activity.fatigueCost) : 0;
+    }
+
+    private static void ResolveActivitySkill(
+        string id,
+        ObjectActivityKind kind,
+        out string skillId,
+        out string skillIconId)
+    {
+        skillId = string.Empty;
+        skillIconId = string.Empty;
+        if (kind == ObjectActivityKind.Craft && RuntimeConfigs.Crafts.TryGetDefinition(id, out var craft))
+            skillId = craft.CraftSkillId;
+        else if (kind == ObjectActivityKind.Construction && RuntimeConfigs.Buildings.TryGetBuildAction(id, out var build))
+            skillId = build.skillId;
+        else if (RuntimeConfigs.Activities.TryGet(id, out var activity))
+            skillId = activity.mainSkillId;
+
+        skillIconId = FindSkill(skillId)?.skillIconId ?? string.Empty;
     }
 
     private static void ResolveHero(string heroId, out string name, out string iconId)
@@ -1051,6 +1114,7 @@ public sealed class ObjectActivitiesController : IDisposable
     private readonly ObjectActivitiesSelection _selection = new ObjectActivitiesSelection();
     private UIService _uiService;
     private ObjectActivitiesWindowView _window;
+    private HeroSelectionPopupView _heroPopup;
     private ObjectActivitiesWindowState _state = ObjectActivitiesWindowState.Empty;
     private string _buildingId;
     private int _buildingLevel;
@@ -1114,7 +1178,7 @@ public sealed class ObjectActivitiesController : IDisposable
         {
             _window = _uiService.OpenWindow<ObjectActivitiesWindowView, ObjectActivitiesWindowOpenArgs>(
                 new ObjectActivitiesWindowOpenArgs(_state, CloseWindow, HandleWindowClosed,
-                    HandleActivitySelected, HandleCyclesChanged, HandleHeroRequested, HandlePrimaryActionRequested));
+                    HandleActivitySelected, HandleCyclesChanged, HandleHeroPickerRequested, HandlePrimaryActionRequested));
             _nextRefreshTime = Time.unscaledTime + RefreshIntervalSeconds;
         }
         catch
@@ -1136,6 +1200,7 @@ public sealed class ObjectActivitiesController : IDisposable
         _state = _runtimeSource.BuildState(_buildingId, _buildingLevel, _selection);
         AdoptRenderedSelection();
         _window?.Render(_state);
+        _heroPopup?.Render(BuildHeroSelectionState());
     }
 
     private void HandleActivitySelected(string activityId)
@@ -1155,21 +1220,43 @@ public sealed class ObjectActivitiesController : IDisposable
         RefreshWindow();
     }
 
-    private void HandleHeroRequested()
+    private void HandleHeroPickerRequested()
     {
-        var heroes = _runtimeSource.GetAssignableHeroIds();
-        if (heroes.Count == 0)
+        if (_uiService == null || _state.SelectedActivity == null || !_state.SelectedActivity.CanConfigure)
+            return;
+
+        _heroPopup = _uiService.OpenWindow<HeroSelectionPopupView, HeroSelectionPopupOpenArgs>(
+            new HeroSelectionPopupOpenArgs(
+                BuildHeroSelectionState(),
+                CloseHeroPopup,
+                HandleHeroPopupClosed,
+                HandleHeroSelected));
+    }
+
+    private void HandleHeroSelected(string heroId)
+    {
+        var choice = _state.SelectedActivity?.HeroChoices.FirstOrDefault(value =>
+            value.CanSelect && string.Equals(value.HeroId, heroId, StringComparison.Ordinal));
+        if (choice == null)
         {
-            _selection.Notice = "Нет свободного героя";
+            _selection.Notice = "Герой недоступен для этого действия";
             RefreshWindow();
             return;
         }
-        var current = -1;
-        for (var index = 0; index < heroes.Count; index++)
-            if (string.Equals(heroes[index], _selection.HeroId, StringComparison.Ordinal)) current = index;
-        _selection.HeroId = heroes[(current + 1) % heroes.Count];
+        _selection.HeroId = choice.HeroId;
         _selection.Notice = string.Empty;
+        CloseHeroPopup();
         RefreshWindow();
+    }
+
+    private HeroSelectionPopupState BuildHeroSelectionState()
+    {
+        var selected = _state.SelectedActivity ?? SelectedActivityState.Empty;
+        return new HeroSelectionPopupState(
+            "Выбор героя",
+            string.IsNullOrWhiteSpace(selected.Name) ? string.Empty : $"Для действия: {selected.Name}",
+            ActivityCardProductionInfo.IconResolver.ResolveItem("fatigue_icon"),
+            selected.HeroChoices);
     }
 
     private void HandlePrimaryActionRequested()
@@ -1237,6 +1324,7 @@ public sealed class ObjectActivitiesController : IDisposable
         if (service == null) { HandleWindowClosed(); return; }
         try
         {
+            CloseHeroPopup();
             if (service.IsWindowOpen<ObjectActivitiesWindowView>()) service.CloseWindow<ObjectActivitiesWindowView>();
             else HandleWindowClosed();
         }
@@ -1246,6 +1334,7 @@ public sealed class ObjectActivitiesController : IDisposable
     private void HandleWindowClosed()
     {
         _window = null;
+        _heroPopup = null;
         _uiService = null;
         _state = ObjectActivitiesWindowState.Empty;
         _buildingId = null;
@@ -1253,4 +1342,28 @@ public sealed class ObjectActivitiesController : IDisposable
         ResetSelection();
         _sceneView.SetSelectionBlocked(false);
     }
+
+    private void CloseHeroPopup()
+    {
+        var service = _uiService;
+        if (service == null)
+        {
+            HandleHeroPopupClosed();
+            return;
+        }
+
+        try
+        {
+            if (service.IsWindowOpen<HeroSelectionPopupView>())
+                service.CloseWindow<HeroSelectionPopupView>();
+            else
+                HandleHeroPopupClosed();
+        }
+        catch (ObjectDisposedException)
+        {
+            HandleHeroPopupClosed();
+        }
+    }
+
+    private void HandleHeroPopupClosed() => _heroPopup = null;
 }

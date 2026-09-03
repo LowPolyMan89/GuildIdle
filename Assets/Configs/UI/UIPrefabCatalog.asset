@@ -14,6 +14,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: GuildIdle.UI.Core::GuildIdle.UI.Core.UIPrefabCatalog
   entries:
   - viewType:
-      assemblyQualifiedName: ObjectActivitiesWindowView, Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      assemblyQualifiedName: ObjectActivitiesWindowView, Assembly-CSharp, Version=0.0.0.0,
+        Culture=neutral, PublicKeyToken=null
     prefab: {fileID: 8456754518532589104, guid: cb384bb73bb3cc14c99351c71f36e2f4, type: 3}
     targetLayer: 1
+  - viewType:
+      assemblyQualifiedName: HeroSelectionPopupView, Assembly-CSharp, Version=0.0.0.0,
+        Culture=neutral, PublicKeyToken=null
+    prefab: {fileID: 8075423937482786165, guid: 26286b8164008ff409e02bb978b7e38e, type: 3}
+    targetLayer: 2
