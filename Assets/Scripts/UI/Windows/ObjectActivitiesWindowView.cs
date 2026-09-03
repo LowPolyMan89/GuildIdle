@@ -557,13 +557,14 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         ActivityCardVisualState visualState,
         string selectedId)
     {
-        ResolveSkillInfo(id, kind, out var skillName, out var skillIcon);
+        ResolveSkillInfo(id, kind, out var requiredSkillValue, out var skillIcon);
         ResolveMetrics(id, kind, out var duration, out var energy);
+        var dangerChance = ResolveDangerChance(id);
         ResolveHero(heroId, out var heroName, out var heroIcon);
         return new OrderedCardState(sortOrder, id, new ActivityCardState(
             id, kind, LocaliseOrFallback(descriptor.NameId, id), descriptor.IconId, true, available,
             string.Equals(id, selectedId, StringComparison.Ordinal), blockReason, duration, energy,
-            skillName, skillIcon, heroId, heroName, heroIcon, progress, remaining, cycle, drops,
+            requiredSkillValue, skillIcon, dangerChance, heroId, heroName, heroIcon, progress, remaining, cycle, drops,
             pendingResultId, visualState));
     }
 
@@ -688,22 +689,48 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         return FormatRemainingTime(seconds * Math.Max(1, cycles));
     }
 
-    private static void ResolveSkillInfo(string id, ObjectActivityKind kind, out string name, out string iconId)
+    private static void ResolveSkillInfo(string id, ObjectActivityKind kind, out string requiredValue, out string iconId)
     {
-        name = string.Empty;
+        requiredValue = string.Empty;
         iconId = string.Empty;
         var skillId = string.Empty;
         if (kind == ObjectActivityKind.Craft && RuntimeConfigs.Crafts.TryGetDefinition(id, out var craft))
             skillId = craft.CraftSkillId;
         else if (kind == ObjectActivityKind.Construction && RuntimeConfigs.Buildings.TryGetBuildAction(id, out var build))
+        {
             skillId = build.skillId;
+            var requirement = (build.requirementsSkills ?? Array.Empty<RequiredSkillDto>()).FirstOrDefault(
+                value => value != null && string.Equals(value.skillId, skillId, StringComparison.Ordinal));
+            if (requirement != null && requirement.level > 0)
+                requiredValue = requirement.level.ToString(CultureInfo.InvariantCulture);
+        }
         else if (RuntimeConfigs.Activities.TryGet(id, out var activity))
+        {
             skillId = activity.mainSkillId;
+            var requirement = RuntimeConfigs.Activities.GetRequirements(id).FirstOrDefault(value =>
+                value != null && !value.hidden &&
+                string.Equals(value.targetId, skillId, StringComparison.Ordinal) &&
+                ActivityTypeParser.TryParseRequirementType(value.reqType, out var type) &&
+                type == RequirementTypeEnum.SkillLevel);
+            if (requirement != null && requirement.value > 0)
+                requiredValue = requirement.value.ToString(CultureInfo.InvariantCulture);
+        }
         var skill = FindSkill(skillId);
         if (skill == null)
             return;
-        name = LocaliseOrFallback(skill.skillNameId, skillId);
         iconId = skill.skillIconId;
+    }
+
+    private static string ResolveDangerChance(string activityId)
+    {
+        var encounter = RuntimeConfigs.Activities.GetDangerEncounters(activityId).FirstOrDefault();
+        if (encounter == null || encounter.riskPercent <= 0f || float.IsNaN(encounter.riskPercent) ||
+            float.IsInfinity(encounter.riskPercent))
+        {
+            return string.Empty;
+        }
+
+        return $"{encounter.riskPercent.ToString("0.#", CultureInfo.InvariantCulture)}%";
     }
 
     private static ActivityCardProductionState BuildProductionInfo(string id, ObjectActivityKind kind, int cycles)
@@ -818,8 +845,8 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
 
     private static ActivityCardState CloneSelection(ActivityCardState source, bool selected) => new ActivityCardState(
         source.ActivityId, source.Kind, source.Name, source.IconId, source.CanSelect, source.IsAvailable, selected,
-        source.BlockReason, source.DurationValue, source.EnergyValue, source.SkillName, source.SkillIconId,
-        source.HeroId, source.HeroName, source.HeroIconId, source.Progress, source.RemainingTime, source.Cycle,
+        source.BlockReason, source.DurationValue, source.EnergyValue, source.RequiredSkillValue, source.SkillIconId,
+        source.DangerChanceValue, source.HeroId, source.HeroName, source.HeroIconId, source.Progress, source.RemainingTime, source.Cycle,
         source.CurrentDropItemsCount, source.PendingResultId, source.VisualState);
 
     private static ActivityExecutionSnapshot FindExecution(IEnumerable<ActivityExecutionSnapshot> values, string id)

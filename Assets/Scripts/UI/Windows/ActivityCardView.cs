@@ -21,6 +21,8 @@ public sealed class ActivityCardView : MonoBehaviour
     [SerializeField] private GameObject _skillMetric;
     [SerializeField] private Image _skillIcon;
     [SerializeField] private TMP_Text _skillName;
+    [SerializeField] private GameObject _dangerMetric;
+    [SerializeField] private TMP_Text _dangerValue;
 
     [Header("States")]
     [SerializeField] private GameObject _finishState;
@@ -61,10 +63,11 @@ public sealed class ActivityCardView : MonoBehaviour
 
         SetMetric(_durationMetric, _durationValue, state.DurationValue);
         SetMetric(_energyMetric, _energyValue, state.EnergyValue);
-        SetMetric(_skillMetric, _skillName, state.SkillName);
+        SetMetric(_skillMetric, _skillName, state.RequiredSkillValue, !string.IsNullOrWhiteSpace(state.SkillIconId));
         ActivityCardProductionInfo.SetIcon(
             _skillIcon,
             ActivityCardProductionInfo.IconResolver.ResolveSkill(state.SkillIconId));
+        SetMetric(_dangerMetric, _dangerValue, state.DangerChanceValue);
 
         if (_activityProgress != null)
             _activityProgress.normalizedValue = Mathf.Clamp01(state.Progress);
@@ -127,7 +130,11 @@ public sealed class ActivityCardView : MonoBehaviour
 
     private static void SetMetric(GameObject container, TMP_Text text, string value)
     {
-        var visible = !string.IsNullOrWhiteSpace(value);
+        SetMetric(container, text, value, !string.IsNullOrWhiteSpace(value));
+    }
+
+    private static void SetMetric(GameObject container, TMP_Text text, string value, bool visible)
+    {
         SetActive(container, visible);
         SetText(text, value);
     }
@@ -171,7 +178,7 @@ public sealed class ActivityCardState
 {
     public static readonly ActivityCardState Empty = new ActivityCardState(
         string.Empty, ObjectActivityKind.Activity, string.Empty, string.Empty, false, false, false,
-        string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty,
+        string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty,
         string.Empty, string.Empty, 0f, string.Empty, string.Empty, 0L, string.Empty,
         ActivityCardVisualState.Unavailable);
 
@@ -186,8 +193,9 @@ public sealed class ActivityCardState
         string blockReason,
         string durationValue,
         string energyValue,
-        string skillName,
+        string requiredSkillValue,
         string skillIconId,
+        string dangerChanceValue,
         string heroId,
         string heroName,
         string heroIconId,
@@ -208,8 +216,9 @@ public sealed class ActivityCardState
         BlockReason = blockReason ?? string.Empty;
         DurationValue = durationValue ?? string.Empty;
         EnergyValue = energyValue ?? string.Empty;
-        SkillName = skillName ?? string.Empty;
+        RequiredSkillValue = requiredSkillValue ?? string.Empty;
         SkillIconId = skillIconId ?? string.Empty;
+        DangerChanceValue = dangerChanceValue ?? string.Empty;
         HeroId = heroId ?? string.Empty;
         HeroName = heroName ?? string.Empty;
         HeroIconId = heroIconId ?? string.Empty;
@@ -231,8 +240,9 @@ public sealed class ActivityCardState
     public string BlockReason { get; }
     public string DurationValue { get; }
     public string EnergyValue { get; }
-    public string SkillName { get; }
+    public string RequiredSkillValue { get; }
     public string SkillIconId { get; }
+    public string DangerChanceValue { get; }
     public string HeroId { get; }
     public string HeroName { get; }
     public string HeroIconId { get; }
