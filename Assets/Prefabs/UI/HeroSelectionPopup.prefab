@@ -2165,6 +2165,7 @@ MonoBehaviour:
   _closeButton: {fileID: 7030305561010417669}
   _title: {fileID: 3052938496897199024}
   _context: {fileID: 2612402986069561620}
+  _hint: {fileID: 6482597260954034273}
   _dialog: {fileID: 433637482033090899}
   _scroll: {fileID: 8364827450752015522}
   _content: {fileID: 6767618264528502568}

@@ -1010,10 +1010,10 @@ MonoBehaviour:
   m_ChildAlignment: 0
   m_StartCorner: 0
   m_StartAxis: 0
-  m_CellSize: {x: 62, y: 54}
+  m_CellSize: {x: 150, y: 44}
   m_Spacing: {x: 6, y: 6}
   m_Constraint: 1
-  m_ConstraintCount: 3
+  m_ConstraintCount: 1
 --- !u!1 &1198510784248793435
 GameObject:
   m_ObjectHideFlags: 0
@@ -1347,10 +1347,10 @@ MonoBehaviour:
   m_ChildAlignment: 0
   m_StartCorner: 0
   m_StartAxis: 0
-  m_CellSize: {x: 54, y: 54}
+  m_CellSize: {x: 150, y: 44}
   m_Spacing: {x: 6, y: 6}
   m_Constraint: 1
-  m_ConstraintCount: 3
+  m_ConstraintCount: 1
 --- !u!1 &1393430553453838416
 GameObject:
   m_ObjectHideFlags: 0
@@ -3376,10 +3376,10 @@ MonoBehaviour:
   m_ChildAlignment: 0
   m_StartCorner: 0
   m_StartAxis: 0
-  m_CellSize: {x: 62, y: 54}
+  m_CellSize: {x: 150, y: 44}
   m_Spacing: {x: 6, y: 6}
   m_Constraint: 1
-  m_ConstraintCount: 3
+  m_ConstraintCount: 1
 --- !u!1 &3439560284627788015
 GameObject:
   m_ObjectHideFlags: 0
@@ -8508,6 +8508,7 @@ MonoBehaviour:
   _closeButton: {fileID: 5936494432715780107}
   _activitiesContainer: {fileID: 3689900383032518946}
   _windowInfo:
+    _title: {fileID: 454221028718464569}
     _objectName: {fileID: 4559934910504459402}
     _objectLevel: {fileID: 5445004313371165371}
     _objectDescription: {fileID: 4560667001593136881}
@@ -8520,7 +8521,9 @@ MonoBehaviour:
     _category: {fileID: 8683806947299458649}
     _description: {fileID: 2056550382866792349}
     _duration: {fileID: 1220244269395646792}
+    _emptyHint: {fileID: 8503633007131574666}
     _cyclesPanel: {fileID: 4798880764715738587}
+    _cyclesLabel: {fileID: 5560780139109084775}
     _cyclesSlider: {fileID: 4818184780522220330}
     _cyclesValue: {fileID: 5256791577010254337}
     _heroButton: {fileID: 1600947303386037784}
@@ -8546,6 +8549,7 @@ MonoBehaviour:
         SkillIcon: {fileID: 229374634897921173}
         SkillLevel: {fileID: 8233789879930310884}
       RequiredSkillsPanel: {fileID: 374941401510828515}
+      RequiredSkillsTitle: {fileID: 2060627409868386744}
       RequiredItems:
       - ItemContainer: {fileID: 8283653181243227859}
         itemIcon: {fileID: 1626228620344288559}
@@ -8566,6 +8570,7 @@ MonoBehaviour:
         itemIcon: {fileID: 6416537305484112606}
         ItemCount: {fileID: 8874088998334527711}
       RequiredItemsPanel: {fileID: 360624952071973507}
+      RequiredItemsTitle: {fileID: 9210237016301221157}
       ProductItems:
       - ItemContainer: {fileID: 5053848583584437841}
         itemIcon: {fileID: 7192248218853016850}
@@ -8577,6 +8582,7 @@ MonoBehaviour:
         itemIcon: {fileID: 640681373589661958}
         ItemCount: {fileID: 8599081970085621052}
       ProductItemsPanel: {fileID: 4845160509533152222}
+      ProductItemsTitle: {fileID: 7384985856351717463}
 --- !u!1 &8470106452208065340
 GameObject:
   m_ObjectHideFlags: 0

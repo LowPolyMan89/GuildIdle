@@ -707,6 +707,222 @@
       "ru": "Подготовьте жареное мясо перед новой охотой.",
       "en": "Prepare roasted meat before the next hunt.",
       "tr": "Bir sonraki avdan önce kızarmış et hazırla."
+    },
+    {
+      "id": "ui.object_activities.title",
+      "ru": "Действия",
+      "en": "Actions",
+      "tr": "Eylemler"
+    },
+    {
+      "id": "ui.object_activities.level",
+      "ru": "Уровень {0}",
+      "en": "Level {0}",
+      "tr": "Seviye {0}"
+    },
+    {
+      "id": "ui.object_activities.available_count",
+      "ru": "{0} доступно",
+      "en": "{0} available",
+      "tr": "{0} kullanılabilir"
+    },
+    {
+      "id": "ui.object_activities.select_action",
+      "ru": "Выберите действие",
+      "en": "Select an action",
+      "tr": "Bir eylem seçin"
+    },
+    {
+      "id": "ui.object_activities.cycles",
+      "ru": "Количество",
+      "en": "Quantity",
+      "tr": "Adet"
+    },
+    {
+      "id": "ui.object_activities.energy",
+      "ru": "Энергия",
+      "en": "Energy",
+      "tr": "Enerji"
+    },
+    {
+      "id": "ui.object_activities.skills",
+      "ru": "Навыки",
+      "en": "Skills",
+      "tr": "Beceriler"
+    },
+    {
+      "id": "ui.object_activities.ingredients",
+      "ru": "Ингредиенты",
+      "en": "Ingredients",
+      "tr": "Malzemeler"
+    },
+    {
+      "id": "ui.object_activities.result",
+      "ru": "Результат",
+      "en": "Result",
+      "tr": "Sonuç"
+    },
+    {
+      "id": "ui.object_activities.assign_hero",
+      "ru": "Назначить героя",
+      "en": "Assign Hero",
+      "tr": "Kahraman ata"
+    },
+    {
+      "id": "ui.object_activities.start",
+      "ru": "Начать",
+      "en": "Start",
+      "tr": "Başlat"
+    },
+    {
+      "id": "ui.object_activities.claim",
+      "ru": "Получить",
+      "en": "Claim",
+      "tr": "Al"
+    },
+    {
+      "id": "ui.object_activities.in_progress",
+      "ru": "Выполняется",
+      "en": "In Progress",
+      "tr": "Devam ediyor"
+    },
+    {
+      "id": "ui.object_activities.hero_limit",
+      "ru": "Лимит героев",
+      "en": "Hero Limit",
+      "tr": "Kahraman sınırı"
+    },
+    {
+      "id": "ui.object_activities.no_free_hero",
+      "ru": "Нет свободного героя",
+      "en": "No available hero",
+      "tr": "Uygun kahraman yok"
+    },
+    {
+      "id": "ui.object_activities.hero_unavailable",
+      "ru": "Герой недоступен для этого действия",
+      "en": "Hero unavailable for this action",
+      "tr": "Kahraman bu eylem için uygun değil"
+    },
+    {
+      "id": "ui.object_activities.start_failed",
+      "ru": "Не удалось начать действие",
+      "en": "Could not start the action",
+      "tr": "Eylem başlatılamadı"
+    },
+    {
+      "id": "ui.object_activities.claim_failed",
+      "ru": "Не удалось получить результат",
+      "en": "Could not claim the result",
+      "tr": "Sonuç alınamadı"
+    },
+    {
+      "id": "ui.object_activities.category.action",
+      "ru": "Действие",
+      "en": "Action",
+      "tr": "Eylem"
+    },
+    {
+      "id": "ui.object_activities.category.work",
+      "ru": "Работа",
+      "en": "Work",
+      "tr": "İş"
+    },
+    {
+      "id": "ui.object_activities.category.hunting",
+      "ru": "Охота",
+      "en": "Hunt",
+      "tr": "Av"
+    },
+    {
+      "id": "ui.object_activities.category.construction",
+      "ru": "Строительство",
+      "en": "Construction",
+      "tr": "İnşaat"
+    },
+    {
+      "id": "ui.object_activities.category.craft",
+      "ru": "Крафт",
+      "en": "Crafting",
+      "tr": "Üretim"
+    },
+    {
+      "id": "ui.object_activities.requirement_level",
+      "ru": "{0}: {1}/{2}",
+      "en": "{0}: {1}/{2}",
+      "tr": "{0}: {1}/{2}"
+    },
+    {
+      "id": "ui.object_activities.skill_xp",
+      "ru": "+{0} XP",
+      "en": "+{0} XP",
+      "tr": "+{0} XP"
+    },
+    {
+      "id": "ui.hero_selection.title",
+      "ru": "Выбор героя",
+      "en": "Select Hero",
+      "tr": "Kahraman Seç"
+    },
+    {
+      "id": "ui.hero_selection.context",
+      "ru": "Для действия: {0}",
+      "en": "For action: {0}",
+      "tr": "Eylem için: {0}"
+    },
+    {
+      "id": "ui.hero_selection.hint",
+      "ru": "Сначала доступны свободные герои, затем — занятые и уставшие",
+      "en": "Available heroes are listed first, followed by busy and exhausted heroes",
+      "tr": "Önce müsait kahramanlar, ardından meşgul ve yorgun kahramanlar listelenir"
+    },
+    {
+      "id": "ui.hero_selection.status.available",
+      "ru": "Свободен",
+      "en": "Available",
+      "tr": "Müsait"
+    },
+    {
+      "id": "ui.hero_selection.status.busy",
+      "ru": "Занят",
+      "en": "Busy",
+      "tr": "Meşgul"
+    },
+    {
+      "id": "ui.hero_selection.status.no_energy",
+      "ru": "Нет энергии",
+      "en": "No Energy",
+      "tr": "Enerji yok"
+    },
+    {
+      "id": "ui.activity_card.ready",
+      "ru": "Готово",
+      "en": "Ready",
+      "tr": "Hazır"
+    },
+    {
+      "id": "ui.activity_card.available",
+      "ru": "Доступно",
+      "en": "Available",
+      "tr": "Kullanılabilir"
+    },
+    {
+      "id": "ui.activity_card.unavailable",
+      "ru": "Недоступно",
+      "en": "Unavailable",
+      "tr": "Kullanılamıyor"
+    },
+    {
+      "id": "ui.object_activities.cancel",
+      "ru": "Отменить",
+      "en": "Cancel",
+      "tr": "İptal"
+    },
+    {
+      "id": "ui.object_activities.cancel_failed",
+      "ru": "Не удалось отменить действие",
+      "en": "Could not cancel the action",
+      "tr": "Eylem iptal edilemedi"
     }
   ]
 }

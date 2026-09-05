@@ -9,11 +9,11 @@
             "output_json_path": "ConfigDownloads/localisation.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/localisation_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:56:44.4539585Z",
+            "last_download_time": "2026-09-05T12:06:33.1100182Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.1325182Z",
+            "last_parse_time": "2026-09-05T12:06:34.4179904Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6134603Z",
+            "last_validation_time": "2026-09-05T12:06:34.4179904Z",
             "error_message": ""
         },
         {
@@ -25,11 +25,11 @@
             "output_json_path": "ConfigDownloads/formula_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/formula_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:56:46.1530045Z",
+            "last_download_time": "2026-09-05T11:35:00.9473298Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.1699648Z",
+            "last_parse_time": "2026-09-05T12:06:34.4439900Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6159858Z",
+            "last_validation_time": "2026-09-05T12:06:34.4439900Z",
             "error_message": ""
         },
         {
@@ -41,11 +41,11 @@
             "output_json_path": "ConfigDownloads/items_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/items_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:56:50.8111367Z",
+            "last_download_time": "2026-09-05T11:35:06.2268100Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.2067768Z",
+            "last_parse_time": "2026-09-05T12:06:34.4703239Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6179898Z",
+            "last_validation_time": "2026-09-05T12:06:34.4703239Z",
             "error_message": ""
         },
         {
@@ -57,11 +57,11 @@
             "output_json_path": "ConfigDownloads/heroes_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/heroes_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:56:54.0084865Z",
+            "last_download_time": "2026-09-05T11:35:09.6372403Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.2428596Z",
+            "last_parse_time": "2026-09-05T12:06:34.5036924Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6200050Z",
+            "last_validation_time": "2026-09-05T12:06:34.5036924Z",
             "error_message": ""
         },
         {
@@ -73,11 +73,11 @@
             "output_json_path": "ConfigDownloads/enemies_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/enemies_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:56:58.3458763Z",
+            "last_download_time": "2026-09-05T11:35:15.8447105Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.2796790Z",
+            "last_parse_time": "2026-09-05T12:06:34.5348172Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6279886Z",
+            "last_validation_time": "2026-09-05T12:06:34.5348172Z",
             "error_message": ""
         },
         {
@@ -89,11 +89,11 @@
             "output_json_path": "ConfigDownloads/loot_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/loot_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:57:01.0812714Z",
+            "last_download_time": "2026-09-05T11:35:19.2316137Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.3073003Z",
+            "last_parse_time": "2026-09-05T12:06:34.5562957Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6289955Z",
+            "last_validation_time": "2026-09-05T12:06:34.5562957Z",
             "error_message": ""
         },
         {
@@ -105,11 +105,11 @@
             "output_json_path": "ConfigDownloads/map_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/map_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:57:06.7983394Z",
+            "last_download_time": "2026-09-05T11:35:23.6494634Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.3401249Z",
+            "last_parse_time": "2026-09-05T12:06:34.5797378Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6309946Z",
+            "last_validation_time": "2026-09-05T12:06:34.5797378Z",
             "error_message": ""
         },
         {
@@ -121,11 +121,11 @@
             "output_json_path": "ConfigDownloads/activity_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/activity_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:57:24.8760718Z",
+            "last_download_time": "2026-09-05T11:35:33.7747725Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.3891216Z",
+            "last_parse_time": "2026-09-05T12:06:34.6218908Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6426259Z",
+            "last_validation_time": "2026-09-05T12:06:34.6218908Z",
             "error_message": ""
         },
         {
@@ -137,11 +137,11 @@
             "output_json_path": "ConfigDownloads/buildings_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/buildings_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:57:30.9592941Z",
+            "last_download_time": "2026-09-05T11:35:42.0613800Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.4317618Z",
+            "last_parse_time": "2026-09-05T12:06:34.6550902Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6466172Z",
+            "last_validation_time": "2026-09-05T12:06:34.6550902Z",
             "error_message": ""
         },
         {
@@ -153,11 +153,11 @@
             "output_json_path": "ConfigDownloads/quest_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/quest_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:57:37.8637046Z",
+            "last_download_time": "2026-09-05T11:35:48.1249531Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.4649462Z",
+            "last_parse_time": "2026-09-05T12:06:34.6869191Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6486171Z",
+            "last_validation_time": "2026-09-05T12:06:34.6869191Z",
             "error_message": ""
         },
         {
@@ -169,11 +169,11 @@
             "output_json_path": "ConfigDownloads/storage_configs.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/storage_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-08-23T09:57:41.1643328Z",
+            "last_download_time": "2026-09-05T11:35:52.1027347Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-08-23T10:08:26.4959347Z",
+            "last_parse_time": "2026-09-05T12:06:34.7114987Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-08-23T10:08:29.6516364Z",
+            "last_validation_time": "2026-09-05T12:06:34.7114987Z",
             "error_message": ""
         }
     ]

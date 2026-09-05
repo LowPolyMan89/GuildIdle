@@ -99,14 +99,7 @@ namespace GuildIdle.Editor.ConfigDownloader
 
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
-                var tempPath = fullPath + ".tmp";
-                File.WriteAllText(tempPath, runtimeJson, ConfigPipelineUtilities.Utf8NoBom);
-
-                if (File.Exists(fullPath))
-                    File.Replace(tempPath, fullPath, null);
-                else
-                    File.Move(tempPath, fullPath);
+                ConfigPipelineUtilities.WriteRuntimeJson(fullPath, runtimeJson);
 
                 AssetDatabase.ImportAsset(ConfigPaths.NormalizeProjectPath(source.runtime_json_path));
                 AssetDatabase.Refresh();

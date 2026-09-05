@@ -6,6 +6,7 @@ using GuildIdle.Activities;
 using GuildIdle.Configs;
 using GuildIdle.Core;
 using GuildIdle.Crafting;
+using GuildIdle.Player;
 using GuildIdle.Settlement;
 using GuildIdle.UI.Core;
 using TMPro;
@@ -139,6 +140,7 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
     [Serializable]
     public sealed class ObjectActivitiesWindowInfo
     {
+        [SerializeField] private TMP_Text _title;
         [SerializeField] private TMP_Text _objectName;
         [SerializeField] private TMP_Text _objectLevel;
         [SerializeField] private TMP_Text _objectDescription;
@@ -147,10 +149,15 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
 
         public void Render(ObjectActivitiesWindowState state)
         {
+            SetText(_title, ActivityUiText.Get(ActivityUiText.WindowTitle));
             SetText(_objectName, state.ObjectName);
-            SetText(_objectLevel, state.BuildingLevel > 0 ? $"Уровень {state.BuildingLevel}" : string.Empty);
+            SetText(_objectLevel, state.BuildingLevel > 0
+                ? ActivityUiText.Format(ActivityUiText.Level, state.BuildingLevel)
+                : string.Empty);
             SetText(_objectDescription, state.ObjectDescription);
-            SetText(_availableCount, $"{state.Activities.Count(value => value.VisualState == ActivityCardVisualState.Idle)} доступно");
+            SetText(_availableCount, ActivityUiText.Format(
+                ActivityUiText.AvailableCount,
+                state.Activities.Count(value => value.VisualState == ActivityCardVisualState.Idle)));
             ActivityCardProductionInfo.SetIcon(
                 _objectImage,
                 ActivityCardProductionInfo.IconResolver.ResolveCard(state.IconId));
@@ -166,7 +173,9 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
         [SerializeField] private TMP_Text _category;
         [SerializeField] private TMP_Text _description;
         [SerializeField] private TMP_Text _duration;
+        [SerializeField] private TMP_Text _emptyHint;
         [SerializeField] private GameObject _cyclesPanel;
+        [SerializeField] private TMP_Text _cyclesLabel;
         [SerializeField] private Slider _cyclesSlider;
         [SerializeField] private TMP_Text _cyclesValue;
         [SerializeField] private Button _heroButton;
@@ -188,15 +197,24 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
         public void Render(SelectedActivityState state)
         {
             state ??= SelectedActivityState.Empty;
+            var hasActivity = !string.IsNullOrWhiteSpace(state.ActivityId);
             if (_panel != null)
-                _panel.SetActive(!string.IsNullOrWhiteSpace(state.ActivityId));
+                _panel.SetActive(hasActivity);
+            if (_emptyHint != null)
+            {
+                _emptyHint.gameObject.SetActive(!hasActivity);
+                SetText(_emptyHint, ActivityUiText.Get(ActivityUiText.SelectAction));
+            }
             ActivityCardProductionInfo.SetIcon(_icon, ActivityCardProductionInfo.IconResolver.ResolveCard(state.IconId));
             SetText(_name, state.Name);
             SetText(_category, state.Category);
             SetText(_description, state.Description);
             SetText(_duration, state.Duration);
             SetText(_cyclesValue, state.PlannedCycles.ToString(CultureInfo.InvariantCulture));
-            SetText(_heroButtonText, string.IsNullOrWhiteSpace(state.HeroName) ? "Назначить героя" : state.HeroName);
+            SetText(_cyclesLabel, ActivityUiText.Get(ActivityUiText.Cycles));
+            SetText(_heroButtonText, string.IsNullOrWhiteSpace(state.HeroName)
+                ? ActivityUiText.Get(ActivityUiText.AssignHero)
+                : state.HeroName);
             ActivityCardProductionInfo.SetIcon(_heroIcon, ActivityCardProductionInfo.IconResolver.ResolveHero(state.HeroIconId));
             SetText(_heroInitial, Initial(state.HeroName));
             SetText(_progressText, state.ProgressText);
@@ -377,6 +395,7 @@ public sealed class SelectedActivityState
         string primaryActionText,
         bool isAvailable,
         string notice,
+        string executionId = "",
         string pendingResultId = "")
     {
         ActivityId = activityId ?? string.Empty;
@@ -402,6 +421,7 @@ public sealed class SelectedActivityState
         PrimaryActionText = primaryActionText ?? string.Empty;
         IsAvailable = isAvailable;
         Notice = notice ?? string.Empty;
+        ExecutionId = executionId ?? string.Empty;
         PendingResultId = pendingResultId ?? string.Empty;
         Duration = string.Empty;
     }
@@ -430,6 +450,7 @@ public sealed class SelectedActivityState
     public string PrimaryActionText { get; }
     public bool IsAvailable { get; }
     public string Notice { get; }
+    public string ExecutionId { get; }
     public string PendingResultId { get; }
 }
 
@@ -439,6 +460,7 @@ public sealed class ObjectActivitiesSelection
     public string HeroId { get; set; }
     public int PlannedCycles { get; set; } = 1;
     public string Notice { get; set; }
+    public string NoticeId { get; set; }
 }
 
 public interface IObjectActivitiesRuntimeSource
@@ -496,7 +518,7 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
                 execution?.heroId, execution?.progress ?? 0f,
                 execution == null ? string.Empty : FormatRemainingTime(execution.remainingSeconds),
                 execution == null ? string.Empty : FormatCycle(execution.completedCycles, execution.plannedCycles),
-                GetCurrentDropItemsCount(execution?.pendingResultId), execution?.pendingResultId,
+                GetCurrentDropItemsCount(execution?.pendingResultId), execution?.executionId, execution?.pendingResultId,
                 visualState, selection.ActivityId));
         }
 
@@ -512,7 +534,7 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
                 execution?.heroId, GetCraftProgress(execution),
                 execution == null ? string.Empty : FormatRemainingTime(execution.durationSeconds - execution.progressSeconds),
                 FormatCraftCycle(execution), GetCurrentDropItemsCount(execution?.pendingResultId),
-                execution?.pendingResultId, ResolveCraftVisualState(execution), selection.ActivityId));
+                execution?.executionId, execution?.pendingResultId, ResolveCraftVisualState(execution), selection.ActivityId));
         }
 
         var ordered = cards.OrderBy(value => StatePriority(value.State.VisualState))
@@ -543,6 +565,7 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         string remaining,
         string cycle,
         long drops,
+        string executionId,
         string pendingResultId,
         ActivityCardVisualState visualState,
         string selectedId)
@@ -555,7 +578,7 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
             id, kind, LocaliseOrFallback(descriptor.NameId, id), descriptor.IconId, true, available,
             string.Equals(id, selectedId, StringComparison.Ordinal), blockReason, duration, energy,
             requiredSkillValue, skillIcon, dangerChance, heroId, heroName, heroIcon, progress, remaining, cycle, drops,
-            pendingResultId, visualState));
+            executionId, pendingResultId, visualState));
     }
 
     private SelectedActivityState BuildSelectedState(
@@ -569,7 +592,6 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
 
         ResolveDescriptor(card.ActivityId, card.Kind, out var descriptor);
         var showCycles = IsCyclic(card.ActivityId, card.Kind);
-        var plannedCycles = showCycles ? Mathf.Clamp(selection.PlannedCycles, 1, DefaultCycleLimit) : 1;
         var heroChoices = BuildHeroChoices(card.ActivityId, card.Kind, selection.HeroId);
         var heroId = card.VisualState == ActivityCardVisualState.InProgress || card.VisualState == ActivityCardVisualState.Finished
             ? card.HeroId
@@ -578,23 +600,41 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
             heroChoices = BuildHeroChoices(card.ActivityId, card.Kind, heroId);
         ResolveHero(heroId, out var heroName, out var heroIcon);
         var canConfigure = card.VisualState == ActivityCardVisualState.Idle || card.VisualState == ActivityCardVisualState.Unavailable;
-        var production = BuildProductionInfo(card.ActivityId, card.Kind, plannedCycles);
-        var notice = selection.Notice;
+        var maxCycles = showCycles && canConfigure
+            ? ResolveAvailableCycleLimit(card.ActivityId, card.Kind, heroId, DefaultCycleLimit)
+            : DefaultCycleLimit;
+        var plannedCycles = showCycles ? Mathf.Clamp(selection.PlannedCycles, 1, maxCycles) : 1;
+        var production = BuildProductionInfo(card.ActivityId, card.Kind, plannedCycles, heroId);
+        var notice = string.IsNullOrWhiteSpace(selection.NoticeId)
+            ? selection.Notice
+            : ActivityUiText.Get(selection.NoticeId);
         if (string.IsNullOrWhiteSpace(notice) && !card.IsAvailable)
             notice = card.BlockReason;
         if (string.IsNullOrWhiteSpace(notice) && canConfigure && string.IsNullOrWhiteSpace(heroId))
-            notice = "Нет свободного героя";
+            notice = ActivityUiText.Get(ActivityUiText.NoFreeHero);
 
-        var primaryText = card.VisualState == ActivityCardVisualState.Finished ? "Получить" :
-            card.VisualState == ActivityCardVisualState.InProgress ? "Выполняется" : "Начать";
-        var primaryEnabled = card.VisualState == ActivityCardVisualState.Finished ||
-                             (card.VisualState == ActivityCardVisualState.Idle && !string.IsNullOrWhiteSpace(heroId));
+        var heroLimitReached = card.VisualState == ActivityCardVisualState.Idle && IsActiveHeroLimitReached();
+        var canCancel = card.VisualState == ActivityCardVisualState.InProgress &&
+                        card.Kind == ObjectActivityKind.Work &&
+                        !string.IsNullOrWhiteSpace(card.ExecutionId);
+        var primaryText = card.VisualState == ActivityCardVisualState.Finished
+            ? ActivityUiText.Get(ActivityUiText.Claim)
+            : canCancel
+                ? ActivityUiText.Get(ActivityUiText.Cancel)
+                : card.VisualState == ActivityCardVisualState.InProgress
+                    ? ActivityUiText.Get(ActivityUiText.InProgress)
+                : heroLimitReached
+                    ? ActivityUiText.Get(ActivityUiText.HeroLimit)
+                    : ActivityUiText.Get(ActivityUiText.Start);
+        var primaryEnabled = card.VisualState == ActivityCardVisualState.Finished || canCancel ||
+                             (card.VisualState == ActivityCardVisualState.Idle && !heroLimitReached &&
+                              !string.IsNullOrWhiteSpace(heroId));
         var state = new SelectedActivityState(
             card.ActivityId, card.Kind, card.Name, LocaliseOrFallback(descriptor.DescriptionId, string.Empty),
             CategoryName(card.Kind), card.IconId, card.VisualState, showCycles, canConfigure,
-            plannedCycles, DefaultCycleLimit, heroId, heroName, heroIcon, heroChoices.Any(value => value.CanSelect), heroChoices,
+            plannedCycles, maxCycles, heroId, heroName, heroIcon, heroChoices.Any(value => value.CanSelect), heroChoices,
             card.Progress, BuildProgressText(card), production, primaryEnabled, primaryText,
-            card.IsAvailable, notice, card.PendingResultId);
+            card.IsAvailable, notice, card.ExecutionId, card.PendingResultId);
         state.Duration = ResolveTotalDuration(card.ActivityId, card.Kind, plannedCycles);
         return state;
     }
@@ -726,18 +766,22 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         return $"{encounter.riskPercent.ToString("0.#", CultureInfo.InvariantCulture)}%";
     }
 
-    private static ActivityCardProductionState BuildProductionInfo(string id, ObjectActivityKind kind, int cycles)
+    private static ActivityCardProductionState BuildProductionInfo(
+        string id,
+        ObjectActivityKind kind,
+        int cycles,
+        string heroId)
     {
         if (kind == ObjectActivityKind.Craft && RuntimeConfigs.Crafts.TryGetDefinition(id, out var craft))
-            return BuildCraftProductionInfo(craft, cycles);
+            return BuildCraftProductionInfo(craft, cycles, heroId);
         if (kind == ObjectActivityKind.Construction && RuntimeConfigs.Buildings.TryGetBuildAction(id, out var build))
-            return BuildConstructionProductionInfo(build);
+            return BuildConstructionProductionInfo(build, heroId);
 
         var skills = new List<ActivityCardProductionEntryState>();
         var inputs = new List<ActivityCardProductionEntryState>();
         var products = new List<ActivityCardProductionEntryState>();
         if (RuntimeConfigs.Activities.TryGet(id, out var activity) && activity.fatigueCost > 0)
-            inputs.Add(EnergyEntry(Scale(activity.fatigueCost, cycles)));
+            inputs.Add(EnergyEntry(Scale(activity.fatigueCost, cycles), heroId));
 
         foreach (var requirement in RuntimeConfigs.Activities.GetRequirements(id))
         {
@@ -749,9 +793,9 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
                 AddSkillEntry(skills, requirement.targetId, amount.ToString(CultureInfo.InvariantCulture));
             else if (type == RequirementTypeEnum.Resource || type == RequirementTypeEnum.Item ||
                      type == RequirementTypeEnum.ItemCount)
-                AddItemEntry(inputs, requirement.targetId, Scale(amount, cycles));
+                AddRequiredItemEntry(inputs, requirement.targetId, Scale(amount, cycles));
             else if (type == RequirementTypeEnum.Currency)
-                AddCurrencyEntry(inputs, requirement.targetId, Scale(amount, cycles));
+                AddRequiredCurrencyEntry(inputs, requirement.targetId, Scale(amount, cycles));
         }
 
         foreach (var reward in RuntimeConfigs.Activities.GetRewards(id))
@@ -761,7 +805,7 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
                 continue;
             var amount = FormatRange(Scale(reward.min, cycles), Scale(reward.max, cycles));
             if (type == RewardTypeEnum.SkillExp)
-                AddSkillEntry(products, reward.targetId, $"+{amount} XP");
+                AddSkillEntry(products, reward.targetId, ActivityUiText.Format(ActivityUiText.SkillXp, amount));
             else if (IsItemReward(type))
                 AddItemEntry(products, reward.targetId, amount);
             else if (type == RewardTypeEnum.Gold)
@@ -772,47 +816,91 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         return new ActivityCardProductionState(skills, inputs, products, false);
     }
 
-    private static ActivityCardProductionState BuildConstructionProductionInfo(BuildActionConfigDto action)
+    private static ActivityCardProductionState BuildConstructionProductionInfo(BuildActionConfigDto action, string heroId)
     {
         var skills = new List<ActivityCardProductionEntryState>();
         var inputs = new List<ActivityCardProductionEntryState>();
         if (action.fatigueCost > 0)
-            inputs.Add(EnergyEntry(action.fatigueCost));
+            inputs.Add(EnergyEntry(action.fatigueCost, heroId));
         foreach (var requirement in action.requirementsSkills ?? Array.Empty<RequiredSkillDto>())
             if (requirement != null)
                 AddSkillEntry(skills, requirement.skillId, Math.Max(1, requirement.level).ToString(CultureInfo.InvariantCulture));
         foreach (var material in action.materials ?? Array.Empty<MaterialCostDto>())
             if (material != null)
-                AddItemEntry(inputs, material.id, Math.Max(1, material.count));
+                AddRequiredItemEntry(inputs, material.id, Math.Max(1, material.count));
         return new ActivityCardProductionState(skills, inputs, Array.Empty<ActivityCardProductionEntryState>(), true);
     }
 
-    private static ActivityCardProductionState BuildCraftProductionInfo(CraftDefinitionDescriptor craft, int cycles)
+    private static ActivityCardProductionState BuildCraftProductionInfo(
+        CraftDefinitionDescriptor craft,
+        int cycles,
+        string heroId)
     {
         var skills = new List<ActivityCardProductionEntryState>();
         var inputs = new List<ActivityCardProductionEntryState>();
         var products = new List<ActivityCardProductionEntryState>();
         AddSkillEntry(skills, craft.CraftSkillId, string.Empty);
         if (craft.FatigueCost > 0)
-            inputs.Add(EnergyEntry(Scale(craft.FatigueCost, cycles)));
+            inputs.Add(EnergyEntry(Scale(craft.FatigueCost, cycles), heroId));
         foreach (var material in craft.Materials)
-            AddItemEntry(inputs, material.ItemId, Scale(material.Count, cycles));
+            AddRequiredItemEntry(inputs, material.ItemId, Scale(material.Count, cycles));
         if (!string.IsNullOrWhiteSpace(craft.RequiredRecipeItemId) && craft.RequiredRecipeItemCount > 0)
-            AddItemEntry(inputs, craft.RequiredRecipeItemId, Scale(craft.RequiredRecipeItemCount, cycles));
+            AddRequiredItemEntry(inputs, craft.RequiredRecipeItemId, Scale(craft.RequiredRecipeItemCount, cycles));
         AddItemEntry(products, craft.TargetItemId, Scale(Math.Max(1, craft.OutputCount), cycles));
         if (craft.SkillExp > 0)
-            AddSkillEntry(products, craft.CraftSkillId, $"+{Scale(craft.SkillExp, cycles)} XP");
+            AddSkillEntry(products, craft.CraftSkillId,
+                ActivityUiText.Format(ActivityUiText.SkillXp, Scale(craft.SkillExp, cycles)));
         return new ActivityCardProductionState(skills, inputs, products, false);
     }
 
-    private static ActivityCardProductionEntryState EnergyEntry(int amount) =>
-        new ActivityCardProductionEntryState("fatigue_icon", amount.ToString(CultureInfo.InvariantCulture), ActivityProductionIconKind.Energy);
+    private static ActivityCardProductionEntryState EnergyEntry(int amount, string heroId) =>
+        new ActivityCardProductionEntryState(
+            "fatigue_icon",
+            FormatRequirementAmount(
+                amount,
+                !string.IsNullOrWhiteSpace(heroId) && RuntimePlayer.State != null
+                    ? RuntimePlayer.State.GetHeroFatigue(heroId)
+                    : (int?)null),
+            ActivityProductionIconKind.Energy,
+            RuntimeConfigs.Localisation.TryGet(ActivityUiText.Energy, out var energyName)
+                ? energyName
+                : string.Empty);
 
     private static void AddSkillEntry(ICollection<ActivityCardProductionEntryState> target, string skillId, string value)
     {
         var skill = FindSkill(skillId);
         if (skill != null)
-            target.Add(new ActivityCardProductionEntryState(skill.skillIconId, value, ActivityProductionIconKind.Skill));
+            target.Add(new ActivityCardProductionEntryState(
+                skill.skillIconId,
+                value,
+                ActivityProductionIconKind.Skill,
+                LocaliseOrFallback(skill.skillNameId, skill.skillId)));
+    }
+
+    private static void AddRequiredItemEntry(
+        ICollection<ActivityCardProductionEntryState> target,
+        string id,
+        int requiredAmount)
+    {
+        var availableAmount = RuntimePlayer.State != null ? RuntimePlayer.State.GetItem(id) : 0;
+        AddItemEntry(target, id, FormatRequirementAmount(requiredAmount, availableAmount));
+    }
+
+    private static void AddRequiredCurrencyEntry(
+        ICollection<ActivityCardProductionEntryState> target,
+        string id,
+        int requiredAmount)
+    {
+        var availableAmount = RuntimePlayer.State != null ? RuntimePlayer.State.GetCurrency(id) : 0L;
+        AddCurrencyEntry(target, id, FormatRequirementAmount(requiredAmount, availableAmount));
+    }
+
+    private static string FormatRequirementAmount(long requiredAmount, long? availableAmount)
+    {
+        var required = requiredAmount.ToString(CultureInfo.InvariantCulture);
+        return availableAmount.HasValue
+            ? $"{required} ({availableAmount.Value.ToString(CultureInfo.InvariantCulture)})"
+            : required;
     }
 
     private static SkillConfigDto FindSkill(string skillId) => RuntimeConfigs.Activities.Skills.FirstOrDefault(
@@ -824,7 +912,11 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
     private static void AddItemEntry(ICollection<ActivityCardProductionEntryState> target, string id, string amount)
     {
         if (RuntimeConfigs.Items.TryGet(id, out var item) && item != null)
-            target.Add(new ActivityCardProductionEntryState(item.IconId, amount));
+            target.Add(new ActivityCardProductionEntryState(
+                item.IconId,
+                amount,
+                ActivityProductionIconKind.Item,
+                LocaliseOrFallback(item.NameId, id)));
     }
 
     private static void AddCurrencyEntry(ICollection<ActivityCardProductionEntryState> target, string id, int amount) =>
@@ -833,14 +925,18 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
     private static void AddCurrencyEntry(ICollection<ActivityCardProductionEntryState> target, string id, string amount)
     {
         if (RuntimeConfigs.Items.TryGetCurrency(id, out var currency) && currency != null)
-            target.Add(new ActivityCardProductionEntryState(currency.iconId, amount));
+            target.Add(new ActivityCardProductionEntryState(
+                currency.iconId,
+                amount,
+                ActivityProductionIconKind.Item,
+                LocaliseOrFallback(currency.nameId, id)));
     }
 
     private static ActivityCardState CloneSelection(ActivityCardState source, bool selected) => new ActivityCardState(
         source.ActivityId, source.Kind, source.Name, source.IconId, source.CanSelect, source.IsAvailable, selected,
         source.BlockReason, source.DurationValue, source.EnergyValue, source.RequiredSkillValue, source.SkillIconId,
         source.DangerChanceValue, source.HeroId, source.HeroName, source.HeroIconId, source.Progress, source.RemainingTime, source.Cycle,
-        source.CurrentDropItemsCount, source.PendingResultId, source.VisualState);
+        source.CurrentDropItemsCount, source.ExecutionId, source.PendingResultId, source.VisualState);
 
     private static ActivityExecutionSnapshot FindExecution(IEnumerable<ActivityExecutionSnapshot> values, string id)
     {
@@ -881,14 +977,18 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         var parts = requirement.Split(':');
         if (parts.Length != 2 || !int.TryParse(parts[1], out var requiredLevel) || requiredLevel < 0)
         {
-            reason = requirement;
+            reason = ActivityUiText.Get(ActivityUiText.CardUnavailable);
             return false;
         }
         var level = RuntimePlayer.State.GetBuildingLevel(parts[0]);
         if (level >= requiredLevel)
             return true;
         RuntimeConfigs.Buildings.TryGet(parts[0], out var building);
-        reason = $"{LocaliseOrFallback(building?.nameId, parts[0])}: {level}/{requiredLevel}";
+        reason = ActivityUiText.Format(
+            ActivityUiText.RequirementLevel,
+            LocaliseOrFallback(building?.nameId, parts[0]),
+            level,
+            requiredLevel);
         return false;
     }
 
@@ -972,6 +1072,111 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         return RuntimeConfigs.Activities.TryGet(id, out var activity) ? Math.Max(0, activity.fatigueCost) : 0;
     }
 
+    private static int ResolveAvailableCycleLimit(
+        string id,
+        ObjectActivityKind kind,
+        string heroId,
+        int configuredLimit)
+    {
+        var limit = Math.Max(1, configuredLimit);
+        var playerState = RuntimePlayer.State;
+        if (playerState == null)
+            return limit;
+
+        var energyPerCycle = ResolveEnergyCost(id, kind);
+        if (energyPerCycle > 0 && !string.IsNullOrWhiteSpace(heroId))
+            limit = LimitCycles(limit, playerState.GetHeroFatigue(heroId), energyPerCycle);
+
+        return kind == ObjectActivityKind.Craft && RuntimeConfigs.Crafts.TryGetDefinition(id, out var craft)
+            ? ResolveCraftIngredientCycleLimit(craft, limit)
+            : ResolveActivityIngredientCycleLimit(id, limit);
+    }
+
+    private static int ResolveCraftIngredientCycleLimit(CraftDefinitionDescriptor craft, int currentLimit)
+    {
+        var itemCosts = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var material in craft.Materials ?? Array.Empty<CraftMaterialDescriptor>())
+            if (material != null && material.Count > 0)
+                AddCycleCost(itemCosts, material.ItemId, material.Count);
+
+        if (craft.ConsumeRecipeItem && !string.IsNullOrWhiteSpace(craft.RequiredRecipeItemId) &&
+            craft.RequiredRecipeItemCount > 0)
+        {
+            AddCycleCost(itemCosts, craft.RequiredRecipeItemId, craft.RequiredRecipeItemCount);
+        }
+
+        var limit = currentLimit;
+        foreach (var cost in itemCosts)
+        {
+            var available = (long)RuntimePlayer.State.GetAvailableForActionCount(cost.Key, null);
+            if (!craft.ConsumeRecipeItem &&
+                string.Equals(cost.Key, craft.RequiredRecipeItemId, StringComparison.Ordinal))
+            {
+                available = Math.Max(0L, available - Math.Max(0, craft.RequiredRecipeItemCount));
+            }
+            limit = LimitCycles(limit, available, cost.Value);
+        }
+
+        if (!craft.ConsumeRecipeItem && !string.IsNullOrWhiteSpace(craft.RequiredRecipeItemId) &&
+            craft.RequiredRecipeItemCount > 0 &&
+            RuntimePlayer.State.GetAvailableForActionCount(craft.RequiredRecipeItemId, null) < craft.RequiredRecipeItemCount)
+        {
+            limit = 0;
+        }
+
+        return Math.Max(1, limit);
+    }
+
+    private static int ResolveActivityIngredientCycleLimit(string activityId, int currentLimit)
+    {
+        var itemCosts = new Dictionary<string, long>(StringComparer.Ordinal);
+        var currencyCosts = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var requirement in RuntimeConfigs.Activities.GetRequirements(activityId))
+        {
+            if (requirement == null || !requirement.consume || requirement.value <= 0 ||
+                !ActivityTypeParser.TryParseRequirementType(requirement.reqType, out var type))
+            {
+                continue;
+            }
+
+            if (type == RequirementTypeEnum.Resource || type == RequirementTypeEnum.Item ||
+                type == RequirementTypeEnum.ItemCount)
+            {
+                AddCycleCost(itemCosts, requirement.targetId, requirement.value);
+            }
+            else if (type == RequirementTypeEnum.Currency)
+            {
+                AddCycleCost(currencyCosts, requirement.targetId, requirement.value);
+            }
+        }
+
+        var limit = currentLimit;
+        foreach (var cost in itemCosts)
+            limit = LimitCycles(
+                limit,
+                RuntimePlayer.State.GetAvailableForActionCount(cost.Key, null),
+                cost.Value);
+        foreach (var cost in currencyCosts)
+            limit = LimitCycles(limit, RuntimePlayer.State.GetCurrency(cost.Key), cost.Value);
+        return Math.Max(1, limit);
+    }
+
+    private static void AddCycleCost(IDictionary<string, long> costs, string id, long amount)
+    {
+        if (string.IsNullOrWhiteSpace(id) || amount <= 0)
+            return;
+        costs.TryGetValue(id, out var current);
+        costs[id] = current > long.MaxValue - amount ? long.MaxValue : current + amount;
+    }
+
+    private static int LimitCycles(int currentLimit, long available, long costPerCycle)
+    {
+        if (currentLimit <= 0 || costPerCycle <= 0)
+            return currentLimit;
+        var affordable = Math.Max(0L, available) / costPerCycle;
+        return affordable >= currentLimit ? currentLimit : (int)affordable;
+    }
+
     private static void ResolveActivitySkill(
         string id,
         ObjectActivityKind kind,
@@ -1035,12 +1240,22 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
     {
         switch (kind)
         {
-            case ObjectActivityKind.Work: return "Работа";
-            case ObjectActivityKind.Combat: return "Охота";
-            case ObjectActivityKind.Construction: return "Строительство";
-            case ObjectActivityKind.Craft: return "Крафт";
-            default: return "Действие";
+            case ObjectActivityKind.Work: return ActivityUiText.Get(ActivityUiText.CategoryWork);
+            case ObjectActivityKind.Combat: return ActivityUiText.Get(ActivityUiText.CategoryHunting);
+            case ObjectActivityKind.Construction: return ActivityUiText.Get(ActivityUiText.CategoryConstruction);
+            case ObjectActivityKind.Craft: return ActivityUiText.Get(ActivityUiText.CategoryCraft);
+            default: return ActivityUiText.Get(ActivityUiText.CategoryAction);
         }
+    }
+
+    private static bool IsActiveHeroLimitReached()
+    {
+        var playerState = RuntimePlayer.State;
+        if (playerState == null)
+            return true;
+
+        var limit = ActiveHeroLimitResolver.GetCurrentLimit(new PlayerStateActivityAdapter(playerState));
+        return playerState.GetActiveHeroCount() >= limit;
     }
 
     private static string FormatCycle(int current, int total) => total > 0 ? $"{Mathf.Clamp(current, 0, total)}/{total}" : string.Empty;
@@ -1208,7 +1423,7 @@ public sealed class ObjectActivitiesController : IDisposable
         _selection.ActivityId = activityId;
         _selection.HeroId = string.Empty;
         _selection.PlannedCycles = 1;
-        _selection.Notice = string.Empty;
+        ClearNotice();
         ActivitySelected?.Invoke(activityId);
         RefreshWindow();
     }
@@ -1216,7 +1431,7 @@ public sealed class ObjectActivitiesController : IDisposable
     private void HandleCyclesChanged(int value)
     {
         _selection.PlannedCycles = Mathf.Clamp(value, 1, RuntimeObjectActivitiesSource.DefaultCycleLimit);
-        _selection.Notice = string.Empty;
+        ClearNotice();
         RefreshWindow();
     }
 
@@ -1239,12 +1454,12 @@ public sealed class ObjectActivitiesController : IDisposable
             value.CanSelect && string.Equals(value.HeroId, heroId, StringComparison.Ordinal));
         if (choice == null)
         {
-            _selection.Notice = "Герой недоступен для этого действия";
+            SetNotice(ActivityUiText.HeroUnavailable);
             RefreshWindow();
             return;
         }
         _selection.HeroId = choice.HeroId;
-        _selection.Notice = string.Empty;
+        ClearNotice();
         CloseHeroPopup();
         RefreshWindow();
     }
@@ -1253,8 +1468,10 @@ public sealed class ObjectActivitiesController : IDisposable
     {
         var selected = _state.SelectedActivity ?? SelectedActivityState.Empty;
         return new HeroSelectionPopupState(
-            "Выбор героя",
-            string.IsNullOrWhiteSpace(selected.Name) ? string.Empty : $"Для действия: {selected.Name}",
+            ActivityUiText.Get(ActivityUiText.HeroSelectionTitle),
+            string.IsNullOrWhiteSpace(selected.Name)
+                ? string.Empty
+                : ActivityUiText.Format(ActivityUiText.HeroSelectionContext, selected.Name),
             ActivityCardProductionInfo.IconResolver.ResolveItem("fatigue_icon"),
             selected.HeroChoices);
     }
@@ -1266,26 +1483,38 @@ public sealed class ObjectActivitiesController : IDisposable
         if (selected.VisualState == ActivityCardVisualState.Finished)
         {
             var result = OnlineActivityRuntime.Claim(selected.PendingResultId);
-            _selection.Notice = result.Success ? string.Empty : result.Message;
+            if (result.Success)
+                ClearNotice();
+            else
+                SetNotice(ActivityUiText.ClaimFailed);
+            RefreshWindow();
+            return;
+        }
+        if (selected.VisualState == ActivityCardVisualState.InProgress &&
+            selected.Kind == ObjectActivityKind.Work &&
+            !string.IsNullOrWhiteSpace(selected.ExecutionId))
+        {
+            var result = OnlineActivityRuntime.Cancel(selected.ExecutionId);
+            if (result.success)
+                ClearNotice();
+            else
+                SetNotice(ActivityUiText.CancelFailed);
             RefreshWindow();
             return;
         }
         if (!selected.PrimaryActionEnabled) return;
 
         var success = false;
-        var message = string.Empty;
         if (selected.Kind == ObjectActivityKind.Craft)
         {
             var result = OnlineActivityRuntime.StartCraft(selected.ActivityId, selected.HeroId,
                 _buildingId, _buildingLevel, selected.PlannedCycles);
             success = result.success;
-            message = result.message;
         }
         else if (selected.Kind == ObjectActivityKind.Combat)
         {
             var result = OnlineActivityRuntime.StartCombat(selected.ActivityId, selected.HeroId);
             success = result.success;
-            message = result.message;
         }
         else
         {
@@ -1296,9 +1525,11 @@ public sealed class ObjectActivitiesController : IDisposable
                 plannedCycleCount = selected.ShowCycles ? selected.PlannedCycles : null
             });
             success = result.success;
-            message = result.issues?.FirstOrDefault(value => value != null)?.message;
         }
-        _selection.Notice = success ? string.Empty : string.IsNullOrWhiteSpace(message) ? "Не удалось начать действие" : message;
+        if (success)
+            ClearNotice();
+        else
+            SetNotice(ActivityUiText.StartFailed);
         RefreshWindow();
     }
 
@@ -1316,6 +1547,19 @@ public sealed class ObjectActivitiesController : IDisposable
         _selection.HeroId = string.Empty;
         _selection.PlannedCycles = 1;
         _selection.Notice = string.Empty;
+        _selection.NoticeId = string.Empty;
+    }
+
+    private void SetNotice(string localisationId)
+    {
+        _selection.Notice = string.Empty;
+        _selection.NoticeId = localisationId ?? string.Empty;
+    }
+
+    private void ClearNotice()
+    {
+        _selection.Notice = string.Empty;
+        _selection.NoticeId = string.Empty;
     }
 
     private void CloseWindow()

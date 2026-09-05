@@ -15,6 +15,7 @@ public sealed class HeroSelectionPopupView : UIWindow,
     [SerializeField] private Button _closeButton;
     [SerializeField] private TMP_Text _title;
     [SerializeField] private TMP_Text _context;
+    [SerializeField] private TMP_Text _hint;
     [SerializeField] private RectTransform _dialog;
     [SerializeField] private ScrollRect _scroll;
     [SerializeField] private RectTransform _content;
@@ -42,6 +43,7 @@ public sealed class HeroSelectionPopupView : UIWindow,
         _state = state ?? HeroSelectionPopupState.Empty;
         SetText(_title, _state.Title);
         SetText(_context, _state.Context);
+        SetText(_hint, ActivityUiText.Get(ActivityUiText.HeroSelectionHint));
 
         var heroes = (_state.Heroes ?? Array.Empty<HeroSelectionOptionState>())
             .OrderBy(value => value.CanSelect ? 0 : 1)
@@ -239,9 +241,9 @@ public sealed class HeroSelectionPopupView : UIWindow,
         {
             switch (availability)
             {
-                case HeroSelectionAvailability.Busy: return "Занят";
-                case HeroSelectionAvailability.NoEnergy: return "Нет энергии";
-                default: return "Свободен";
+                case HeroSelectionAvailability.Busy: return ActivityUiText.Get(ActivityUiText.HeroBusy);
+                case HeroSelectionAvailability.NoEnergy: return ActivityUiText.Get(ActivityUiText.HeroNoEnergy);
+                default: return ActivityUiText.Get(ActivityUiText.HeroAvailable);
             }
         }
 
@@ -280,7 +282,7 @@ public sealed class HeroSelectionPopupOpenArgs : IUIOpenArgs
 public sealed class HeroSelectionPopupState : IUIState
 {
     public static readonly HeroSelectionPopupState Empty = new HeroSelectionPopupState(
-        "Выбор героя", string.Empty, null, Array.Empty<HeroSelectionOptionState>());
+        string.Empty, string.Empty, null, Array.Empty<HeroSelectionOptionState>());
 
     public HeroSelectionPopupState(
         string title,

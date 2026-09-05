@@ -9,6 +9,9 @@ namespace GuildIdle.Editor.ConfigDownloader
 {
     internal static class ConfigPipelineUtilities
     {
+        private const int RuntimeJsonReplaceAttempts = 5;
+        private const int RuntimeJsonReplaceRetryDelayMilliseconds = 50;
+
         public static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 
         public static bool TryLoadDownload(
@@ -80,6 +83,70 @@ namespace GuildIdle.Editor.ConfigDownloader
                 out fullPath,
                 out error,
                 requireAssetsPath: true);
+        }
+
+        public static void WriteRuntimeJson(string fullPath, string runtimeJson)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+            var tempPath = fullPath + ".tmp";
+            File.WriteAllText(tempPath, runtimeJson, Utf8NoBom);
+
+            if (RuntimeJsonMatches(fullPath, runtimeJson))
+            {
+                TryDeleteTemporaryFile(tempPath);
+                return;
+            }
+
+            for (var attempt = 1; attempt <= RuntimeJsonReplaceAttempts; attempt++)
+            {
+                try
+                {
+                    if (File.Exists(fullPath))
+                        File.Replace(tempPath, fullPath, null);
+                    else
+                        File.Move(tempPath, fullPath);
+                    return;
+                }
+                catch (Exception exception) when (
+                    attempt < RuntimeJsonReplaceAttempts &&
+                    (exception is IOException || exception is UnauthorizedAccessException))
+                {
+                    System.Threading.Thread.Sleep(RuntimeJsonReplaceRetryDelayMilliseconds * attempt);
+                }
+            }
+        }
+
+        private static bool RuntimeJsonMatches(string fullPath, string runtimeJson)
+        {
+            if (!File.Exists(fullPath))
+                return false;
+
+            try
+            {
+                return string.Equals(File.ReadAllText(fullPath, Encoding.UTF8), runtimeJson, StringComparison.Ordinal);
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
+        private static void TryDeleteTemporaryFile(string tempPath)
+        {
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
         public static bool TryParseNumber(string value, out double number)
