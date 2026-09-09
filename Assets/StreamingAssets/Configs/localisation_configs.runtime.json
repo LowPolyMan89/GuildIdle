@@ -923,6 +923,168 @@
       "ru": "Не удалось отменить действие",
       "en": "Could not cancel the action",
       "tr": "Eylem iptal edilemedi"
+    },
+    {
+      "id": "ui.storage.button",
+      "ru": "Склад",
+      "en": "Storage",
+      "tr": "Depo"
+    },
+    {
+      "id": "ui.storage.all",
+      "ru": "Все",
+      "en": "All",
+      "tr": "Tümü"
+    },
+    {
+      "id": "ui.storage.resources",
+      "ru": "Ресурсы",
+      "en": "Resources",
+      "tr": "Kaynaklar"
+    },
+    {
+      "id": "ui.storage.items",
+      "ru": "Предметы",
+      "en": "Items",
+      "tr": "Eşyalar"
+    },
+    {
+      "id": "ui.loot.title",
+      "ru": "Полученная добыча",
+      "en": "Loot received",
+      "tr": "Elde edilen ganimet"
+    },
+    {
+      "id": "ui.loot.storage",
+      "ru": "Склад",
+      "en": "Storage",
+      "tr": "Depo"
+    },
+    {
+      "id": "ui.loot.items",
+      "ru": "Предметы",
+      "en": "Items",
+      "tr": "Eşyalar"
+    },
+    {
+      "id": "ui.loot.close",
+      "ru": "Закрыть",
+      "en": "Close",
+      "tr": "Kapat"
+    },
+    {
+      "id": "ui.loot.claim_all",
+      "ru": "Забрать всё",
+      "en": "Take all",
+      "tr": "Tümünü al"
+    },
+    {
+      "id": "ui.loot.discard_all",
+      "ru": "Выбросить всё",
+      "en": "Discard all",
+      "tr": "Tümünü at"
+    },
+    {
+      "id": "ui.loot.discard_on",
+      "ru": "Выбросить · Вкл.",
+      "en": "Discard · On",
+      "tr": "At · Açık"
+    },
+    {
+      "id": "ui.loot.discard",
+      "ru": "Выбросить",
+      "en": "Discard",
+      "tr": "At"
+    },
+    {
+      "id": "ui.loot.discard_hint",
+      "ru": "Режим выбрасывания: клик удаляет всю ячейку. Повторное нажатие «Выбросить» выключает режим.",
+      "en": "Discard mode: click a slot to discard its entire contents. Click Discard again to turn this mode off.",
+      "tr": "Atma modu: bir yuvaya tıklamak içeriğinin tamamını atar. Modu kapatmak için At düğmesine tekrar tıklayın."
+    },
+    {
+      "id": "ui.loot.no_space",
+      "ru": "Нет места",
+      "en": "No space",
+      "tr": "Yer yok"
+    },
+    {
+      "id": "ui.loot.claim_hint",
+      "ru": "Нажмите на предмет, чтобы забрать его на склад.",
+      "en": "Click an item to move it to storage.",
+      "tr": "Bir eşyayı depoya almak için üzerine tıklayın."
+    },
+    {
+      "id": "ui.loot.retry",
+      "ru": "Нажмите «Забрать всё», чтобы повторить получение награды.",
+      "en": "Click Take all to try collecting the reward again.",
+      "tr": "Ödülü almayı tekrar denemek için Tümünü al düğmesine tıklayın."
+    },
+    {
+      "id": "ui.loot.resolved",
+      "ru": "Награда получена. Окно можно закрыть.",
+      "en": "Reward collected. You can close this window.",
+      "tr": "Ödül alındı. Pencereyi kapatabilirsiniz."
+    },
+    {
+      "id": "ui.loot.confirm_title",
+      "ru": "Выбросить все предметы?",
+      "en": "Discard all items?",
+      "tr": "Tüm eşyalar atılsın mı?"
+    },
+    {
+      "id": "ui.loot.confirm_text",
+      "ru": "Все оставшиеся предметы будут потеряны безвозвратно. Окно закроется. Полученные валюта и опыт сохранятся.",
+      "en": "All remaining items will be permanently lost and the window will close. Collected currency and experience will be kept.",
+      "tr": "Kalan tüm eşyalar kalıcı olarak kaybolacak ve pencere kapanacak. Alınan para birimleri ve deneyim korunacak."
+    },
+    {
+      "id": "ui.loot.confirm",
+      "ru": "Да, выбросить всё",
+      "en": "Yes, discard all",
+      "tr": "Evet, tümünü at"
+    },
+    {
+      "id": "ui.loot.cancel",
+      "ru": "Отмена",
+      "en": "Cancel",
+      "tr": "İptal"
+    },
+    {
+      "id": "ui.loot.discarded",
+      "ru": "Выброшено",
+      "en": "Discarded",
+      "tr": "Atıldı"
+    },
+    {
+      "id": "ui.loot.claimed",
+      "ru": "Получено",
+      "en": "Collected",
+      "tr": "Alındı"
+    },
+    {
+      "id": "ui.loot.pending",
+      "ru": "Ожидает получения",
+      "en": "Awaiting collection",
+      "tr": "Alınmayı bekliyor"
+    },
+    {
+      "id": "ui.loot.quality",
+      "ru": "Качество",
+      "en": "Quality",
+      "tr": "Kalite"
+    },
+    {
+      "id": "ui.loot.failed",
+      "ru": "Не удалось сохранить изменение. Награда остаётся в мешке. Попробуйте ещё раз.",
+      "en": "Could not save the change. The reward remains in the loot bag. Please try again.",
+      "tr": "Değişiklik kaydedilemedi. Ödül ganimet çantasında duruyor. Tekrar deneyin."
+    },
+    {
+      "id": "ui.loot.experience",
+      "ru": "опыт",
+      "en": "experience",
+      "tr": "deneyim"
     }
   ]
 }

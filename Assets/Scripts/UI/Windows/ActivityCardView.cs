@@ -278,9 +278,6 @@ public sealed class ActivityCardProductionInfo
     public void Render(ActivityCardProductionState state)
     {
         state ??= ActivityCardProductionState.Empty;
-        EnsureScrollableList(RequiredSkills != null && RequiredSkills.Count > 0 ? RequiredSkills[0]?.SkillContainer : null);
-        EnsureScrollableList(RequiredItems != null && RequiredItems.Count > 0 ? RequiredItems[0]?.ItemContainer : null);
-        EnsureScrollableList(ProductItems != null && ProductItems.Count > 0 ? ProductItems[0]?.ItemContainer : null);
         EnsureSkillsCapacity(RequiredSkills, state.RequiredSkills.Count);
         EnsureItemsCapacity(RequiredItems, state.RequiredItems.Count);
         EnsureItemsCapacity(ProductItems, state.IsConstruction ? 0 : state.ProductItems.Count);
@@ -290,9 +287,6 @@ public sealed class ActivityCardProductionInfo
         var productItemsVisible = RenderItems(
             ProductItems,
             state.IsConstruction ? Array.Empty<ActivityCardProductionEntryState>() : state.ProductItems);
-        LayoutSkillRows(RequiredSkills, state.RequiredSkills.Count);
-        LayoutItemRows(RequiredItems, state.RequiredItems.Count);
-        LayoutItemRows(ProductItems, state.IsConstruction ? 0 : state.ProductItems.Count);
 
         SetActive(RequiredSkillsPanel, skillsVisible);
         SetActive(RequiredItemsPanel, requiredItemsVisible);
@@ -301,123 +295,6 @@ public sealed class ActivityCardProductionInfo
         SetText(RequiredSkillsTitle, ActivityUiText.Get(ActivityUiText.Skills));
         SetText(RequiredItemsTitle, ActivityUiText.Get(ActivityUiText.Ingredients));
         SetText(ProductItemsTitle, ActivityUiText.Get(ActivityUiText.Result));
-    }
-
-    private static void EnsureScrollableList(GameObject firstRow)
-    {
-        if (firstRow == null)
-            return;
-        var rowParent = firstRow.transform.parent as RectTransform;
-        if (rowParent == null)
-            return;
-
-        if (rowParent.name == "Content" && rowParent.parent != null &&
-            rowParent.parent.TryGetComponent<ScrollRect>(out _))
-        {
-            DisableAutomaticLayout(rowParent);
-            return;
-        }
-        if (rowParent.TryGetComponent<ScrollRect>(out _))
-            return;
-
-        var viewport = rowParent;
-        var grid = viewport.GetComponent<GridLayoutGroup>();
-        if (grid != null)
-            grid.enabled = false;
-
-        var existingRows = new Transform[viewport.childCount];
-        for (var index = 0; index < existingRows.Length; index++)
-            existingRows[index] = viewport.GetChild(index);
-
-        var contentObject = new GameObject("Content", typeof(RectTransform));
-        contentObject.layer = viewport.gameObject.layer;
-        var content = (RectTransform)contentObject.transform;
-        content.SetParent(viewport, false);
-        content.anchorMin = new Vector2(0f, 1f);
-        content.anchorMax = new Vector2(1f, 1f);
-        content.pivot = new Vector2(0.5f, 1f);
-        content.anchoredPosition = Vector2.zero;
-        content.sizeDelta = Vector2.zero;
-
-        foreach (var row in existingRows)
-            row.SetParent(content, false);
-
-        if (viewport.GetComponent<RectMask2D>() == null)
-            viewport.gameObject.AddComponent<RectMask2D>();
-        var raycastSurface = viewport.GetComponent<Image>() ?? viewport.gameObject.AddComponent<Image>();
-        raycastSurface.color = Color.clear;
-        raycastSurface.raycastTarget = true;
-
-        var scrollRect = viewport.gameObject.AddComponent<ScrollRect>();
-        scrollRect.viewport = viewport;
-        scrollRect.content = content;
-        scrollRect.horizontal = false;
-        scrollRect.vertical = true;
-        scrollRect.movementType = ScrollRect.MovementType.Clamped;
-        scrollRect.scrollSensitivity = 24f;
-    }
-
-    private static void DisableAutomaticLayout(RectTransform content)
-    {
-        var layout = content.GetComponent<LayoutGroup>();
-        if (layout != null)
-            layout.enabled = false;
-        var fitter = content.GetComponent<ContentSizeFitter>();
-        if (fitter != null)
-            fitter.enabled = false;
-    }
-
-    private static void LayoutSkillRows(IReadOnlyList<RequiredSkillsInfo> views, int visibleCount)
-    {
-        if (views == null)
-            return;
-        var count = Math.Min(views.Count, Math.Max(0, visibleCount));
-        RectTransform content = null;
-        for (var index = 0; index < count; index++)
-            PositionRow(views[index]?.SkillContainer, index, ref content);
-        if (content == null && views.Count > 0 && views[0]?.SkillContainer != null)
-            content = views[0].SkillContainer.transform.parent as RectTransform;
-        SetContentHeight(content, count);
-    }
-
-    private static void LayoutItemRows(IReadOnlyList<RequiredItemInfo> views, int visibleCount)
-    {
-        if (views == null)
-            return;
-        var count = Math.Min(views.Count, Math.Max(0, visibleCount));
-        RectTransform content = null;
-        for (var index = 0; index < count; index++)
-            PositionRow(views[index]?.ItemContainer, index, ref content);
-        if (content == null && views.Count > 0 && views[0]?.ItemContainer != null)
-            content = views[0].ItemContainer.transform.parent as RectTransform;
-        SetContentHeight(content, count);
-    }
-
-    private static void PositionRow(GameObject row, int index, ref RectTransform content)
-    {
-        if (row == null)
-            return;
-        var rowRect = row.transform as RectTransform;
-        if (rowRect == null)
-            return;
-        content ??= rowRect.parent as RectTransform;
-        rowRect.anchorMin = new Vector2(0f, 1f);
-        rowRect.anchorMax = new Vector2(1f, 1f);
-        rowRect.pivot = new Vector2(0.5f, 1f);
-        rowRect.anchoredPosition = new Vector2(0f, -index * 50f);
-        rowRect.sizeDelta = new Vector2(0f, 44f);
-    }
-
-    private static void SetContentHeight(RectTransform content, int rowCount)
-    {
-        if (content == null)
-            return;
-        var height = rowCount > 0 ? rowCount * 44f + (rowCount - 1) * 6f : 0f;
-        content.sizeDelta = new Vector2(0f, height);
-        var viewport = content.parent as RectTransform;
-        var maxOffset = viewport != null ? Mathf.Max(0f, height - viewport.rect.height) : 0f;
-        content.anchoredPosition = new Vector2(0f, Mathf.Clamp(content.anchoredPosition.y, 0f, maxOffset));
-        content.ForceUpdateRectTransforms();
     }
 
     private static void EnsureSkillsCapacity(List<RequiredSkillsInfo> views, int requiredCount)
@@ -456,64 +333,6 @@ public sealed class ActivityCardProductionInfo
             return null;
         var child = root.transform.Find(childName);
         return child != null ? child.GetComponent<T>() : null;
-    }
-
-    private static void ConfigureEntryLayout(
-        GameObject container,
-        Image icon,
-        TMP_Text name,
-        TMP_Text value,
-        float valueWidth = 54f,
-        float nameRightInset = 66f)
-    {
-        if (container == null)
-            return;
-
-        if (icon != null)
-        {
-            var iconRect = icon.rectTransform;
-            iconRect.anchorMin = new Vector2(0f, 0.5f);
-            iconRect.anchorMax = new Vector2(0f, 0.5f);
-            iconRect.pivot = new Vector2(0.5f, 0.5f);
-            iconRect.anchoredPosition = new Vector2(25f, 0f);
-            iconRect.sizeDelta = new Vector2(40f, 40f);
-        }
-
-        if (value != null)
-        {
-            var valueRect = value.rectTransform;
-            valueRect.anchorMin = new Vector2(1f, 0f);
-            valueRect.anchorMax = new Vector2(1f, 1f);
-            valueRect.pivot = new Vector2(1f, 0.5f);
-            valueRect.anchoredPosition = new Vector2(-8f, 0f);
-            valueRect.sizeDelta = new Vector2(valueWidth, -8f);
-            value.horizontalAlignment = HorizontalAlignmentOptions.Right;
-            value.verticalAlignment = VerticalAlignmentOptions.Middle;
-            value.fontSize = 18f;
-            value.fontStyle = FontStyles.Bold;
-            value.enableAutoSizing = true;
-            value.fontSizeMin = 11f;
-            value.fontSizeMax = 18f;
-        }
-
-        if (name != null)
-        {
-            var nameRect = name.rectTransform;
-            nameRect.anchorMin = Vector2.zero;
-            nameRect.anchorMax = Vector2.one;
-            nameRect.pivot = new Vector2(0.5f, 0.5f);
-            nameRect.offsetMin = new Vector2(52f, 5f);
-            nameRect.offsetMax = new Vector2(-nameRightInset, -5f);
-            name.horizontalAlignment = HorizontalAlignmentOptions.Left;
-            name.verticalAlignment = VerticalAlignmentOptions.Middle;
-            name.fontSize = 15f;
-            name.fontStyle = FontStyles.Normal;
-            name.enableAutoSizing = true;
-            name.fontSizeMin = 10f;
-            name.fontSizeMax = 15f;
-            name.textWrappingMode = TextWrappingModes.Normal;
-            name.overflowMode = TextOverflowModes.Ellipsis;
-        }
     }
 
     private static bool RenderSkills(
@@ -566,8 +385,6 @@ public sealed class ActivityCardProductionInfo
             if (state == null)
                 return;
 
-            EnsureNameLabel();
-            ConfigureEntryLayout(SkillContainer, SkillIcon, SkillName, SkillLevel);
             if (SkillName != null)
                 SkillName.text = state.Name;
             if (SkillLevel != null)
@@ -591,13 +408,6 @@ public sealed class ActivityCardProductionInfo
             };
         }
 
-        private void EnsureNameLabel()
-        {
-            if (SkillName != null || SkillLevel == null || SkillContainer == null)
-                return;
-            SkillName = UnityEngine.Object.Instantiate(SkillLevel, SkillContainer.transform, false);
-            SkillName.name = "Name";
-        }
     }
 
     [Serializable]
@@ -614,8 +424,6 @@ public sealed class ActivityCardProductionInfo
             if (state == null)
                 return;
 
-            EnsureNameLabel();
-            ConfigureRowLayout();
             if (ItemName != null)
                 ItemName.text = state.Name;
             if (ItemCount != null)
@@ -639,19 +447,6 @@ public sealed class ActivityCardProductionInfo
             };
         }
 
-        private void EnsureNameLabel()
-        {
-            if (ItemName != null || ItemCount == null || ItemContainer == null)
-                return;
-
-            ItemName = UnityEngine.Object.Instantiate(ItemCount, ItemContainer.transform, false);
-            ItemName.name = "Name";
-        }
-
-        private void ConfigureRowLayout()
-        {
-            ConfigureEntryLayout(ItemContainer, itemIcon, ItemName, ItemCount, 84f, 96f);
-        }
     }
 
     internal static void SetIcon(Image target, Sprite sprite)

@@ -9,11 +9,11 @@
             "output_json_path": "ConfigDownloads/localisation.json",
             "runtime_json_path": "Assets/StreamingAssets/Configs/localisation_configs.runtime.json",
             "last_download_status": "success",
-            "last_download_time": "2026-09-05T12:06:33.1100182Z",
+            "last_download_time": "2026-09-05T19:33:53.7016679Z",
             "last_parse_status": "success",
-            "last_parse_time": "2026-09-05T12:06:34.4179904Z",
+            "last_parse_time": "2026-09-05T19:33:56.2045411Z",
             "last_validation_status": "success",
-            "last_validation_time": "2026-09-05T12:06:34.4179904Z",
+            "last_validation_time": "2026-09-05T19:33:56.2045411Z",
             "error_message": ""
         },
         {

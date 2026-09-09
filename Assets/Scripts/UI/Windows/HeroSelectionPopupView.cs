@@ -16,7 +16,6 @@ public sealed class HeroSelectionPopupView : UIWindow,
     [SerializeField] private TMP_Text _title;
     [SerializeField] private TMP_Text _context;
     [SerializeField] private TMP_Text _hint;
-    [SerializeField] private RectTransform _dialog;
     [SerializeField] private ScrollRect _scroll;
     [SerializeField] private RectTransform _content;
     [SerializeField] private GameObject _heroTemplate;
@@ -60,8 +59,6 @@ public sealed class HeroSelectionPopupView : UIWindow,
                 _rows[index].Render(heroes[index], _state.EnergyIcon, HandleHeroSelected);
         }
 
-        if (_content != null)
-            LayoutRebuilder.ForceRebuildLayoutImmediate(_content);
     }
 
     protected override void OnBind()
@@ -72,7 +69,6 @@ public sealed class HeroSelectionPopupView : UIWindow,
 
     protected override void OnShow()
     {
-        ApplyAdaptiveLayout();
         Render(_state);
         if (_scroll != null)
             _scroll.verticalNormalizedPosition = 1f;
@@ -119,24 +115,6 @@ public sealed class HeroSelectionPopupView : UIWindow,
 
     private void HandleCloseRequested() => _closeRequested?.Invoke();
     private void HandleHeroSelected(string heroId) => _heroSelected?.Invoke(heroId);
-
-    private void OnRectTransformDimensionsChange()
-    {
-        if (IsShown)
-            ApplyAdaptiveLayout();
-    }
-
-    private void ApplyAdaptiveLayout()
-    {
-        var root = transform as RectTransform;
-        if (_dialog == null || root == null || root.rect.height <= 0f)
-            return;
-        var portrait = root.rect.width / root.rect.height < 1.15f;
-        _dialog.anchorMin = portrait ? new Vector2(0.04f, 0.08f) : new Vector2(0.22f, 0.1f);
-        _dialog.anchorMax = portrait ? new Vector2(0.96f, 0.92f) : new Vector2(0.78f, 0.9f);
-        _dialog.offsetMin = Vector2.zero;
-        _dialog.offsetMax = Vector2.zero;
-    }
 
     private static void SetText(TMP_Text target, string value)
     {

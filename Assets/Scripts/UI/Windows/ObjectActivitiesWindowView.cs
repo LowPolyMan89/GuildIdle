@@ -283,53 +283,6 @@ public sealed class ObjectActivitiesWindowOpenArgs : IUIOpenArgs
     public Action PrimaryActionRequested { get; }
 }
 
-public sealed class ObjectActivitiesAdaptiveLayout : MonoBehaviour
-{
-    [SerializeField] private RectTransform _body;
-    [SerializeField] private RectTransform _listPanel;
-    [SerializeField] private RectTransform _detailPanel;
-    [SerializeField] private float _portraitBreakpoint = 1.15f;
-
-    private bool? _portrait;
-
-    private void OnEnable() => Apply();
-    private void OnRectTransformDimensionsChange() => Apply();
-
-    private void Apply()
-    {
-        if (_body == null || _listPanel == null || _detailPanel == null || _body.rect.height <= 0f)
-            return;
-        var portrait = _body.rect.width / _body.rect.height < _portraitBreakpoint;
-        if (_portrait == portrait)
-            return;
-        _portrait = portrait;
-
-        if (portrait)
-        {
-            SetAnchors(_listPanel, new Vector2(0f, 0.56f), Vector2.one, Vector2.zero, Vector2.zero);
-            SetAnchors(_detailPanel, Vector2.zero, new Vector2(1f, 0.54f), Vector2.zero, Vector2.zero);
-        }
-        else
-        {
-            SetAnchors(_listPanel, Vector2.zero, new Vector2(0.41f, 1f), Vector2.zero, Vector2.zero);
-            SetAnchors(_detailPanel, new Vector2(0.43f, 0f), Vector2.one, Vector2.zero, Vector2.zero);
-        }
-    }
-
-    private static void SetAnchors(
-        RectTransform target,
-        Vector2 min,
-        Vector2 max,
-        Vector2 offsetMin,
-        Vector2 offsetMax)
-    {
-        target.anchorMin = min;
-        target.anchorMax = max;
-        target.offsetMin = offsetMin;
-        target.offsetMax = offsetMax;
-    }
-}
-
 public sealed class ObjectActivitiesWindowState : IUIState
 {
     public static readonly ObjectActivitiesWindowState Empty = new ObjectActivitiesWindowState(
@@ -1330,6 +1283,7 @@ public sealed class ObjectActivitiesController : IDisposable
     private UIService _uiService;
     private ObjectActivitiesWindowView _window;
     private HeroSelectionPopupView _heroPopup;
+    private LootPopupController _lootPopup;
     private ObjectActivitiesWindowState _state = ObjectActivitiesWindowState.Empty;
     private string _buildingId;
     private int _buildingLevel;
@@ -1482,12 +1436,17 @@ public sealed class ObjectActivitiesController : IDisposable
         if (selected == null || string.IsNullOrWhiteSpace(selected.ActivityId)) return;
         if (selected.VisualState == ActivityCardVisualState.Finished)
         {
-            var result = OnlineActivityRuntime.Claim(selected.PendingResultId);
-            if (result.Success)
-                ClearNotice();
-            else
+            if (_uiService == null || RuntimePlayer.State == null ||
+                RuntimePlayer.State.PendingResults.Get(selected.PendingResultId) == null)
+            {
                 SetNotice(ActivityUiText.ClaimFailed);
-            RefreshWindow();
+                RefreshWindow();
+                return;
+            }
+            _lootPopup?.Dispose();
+            _lootPopup = LootPopupController.Open(_uiService, RuntimePlayer.State.PendingResults,
+                RuntimePlayer.State.Storage, selected.PendingResultId, selected.Name,
+                () => { _lootPopup = null; if (_window != null) RefreshWindow(); });
             return;
         }
         if (selected.VisualState == ActivityCardVisualState.InProgress &&
@@ -1568,6 +1527,7 @@ public sealed class ObjectActivitiesController : IDisposable
         if (service == null) { HandleWindowClosed(); return; }
         try
         {
+            _lootPopup?.Dispose();
             CloseHeroPopup();
             if (service.IsWindowOpen<ObjectActivitiesWindowView>()) service.CloseWindow<ObjectActivitiesWindowView>();
             else HandleWindowClosed();
@@ -1578,6 +1538,8 @@ public sealed class ObjectActivitiesController : IDisposable
     private void HandleWindowClosed()
     {
         _window = null;
+        _lootPopup?.Dispose();
+        _lootPopup = null;
         _heroPopup = null;
         _uiService = null;
         _state = ObjectActivitiesWindowState.Empty;

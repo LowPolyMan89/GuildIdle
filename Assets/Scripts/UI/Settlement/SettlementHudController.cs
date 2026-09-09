@@ -5,6 +5,7 @@ using GuildIdle.Crafting;
 using GuildIdle.Localisation;
 using GuildIdle.Player;
 using GuildIdle.Progression;
+using GuildIdle.UI.Core;
 using UnityEngine;
 using RuntimeConfigs = GuildIdle.Configs.Configs;
 using RuntimePlayer = GuildIdle.Player.Player;
@@ -21,6 +22,7 @@ public sealed class SettlementHudController : MonoBehaviour
     private SettlementHudPresenter _presenter;
     private ProgressionRuntimeService _subscribedProgression;
     private float _nextRefreshTime;
+    private StorageWindowController _storageWindow;
 
     public event Action InventoryRequested;
 
@@ -51,6 +53,8 @@ public sealed class SettlementHudController : MonoBehaviour
 
     private void OnDisable()
     {
+        _storageWindow?.Dispose();
+        _storageWindow = null;
         RuntimeConfigs.OnLoaded -= HandleRefreshRequested;
         LocalisationService.LanguageChanged -= HandleLanguageChanged;
         OnlineActivityRuntime.Updated -= HandleActivityUpdated;
@@ -150,6 +154,26 @@ public sealed class SettlementHudController : MonoBehaviour
 
     private void HandleInventoryRequested()
     {
+        var root = GetComponentInParent<UIRoot>();
+        if (root == null)
+        {
+            var roots = UnityEngine.Object.FindObjectsByType<UIRoot>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            if (roots.Length == 1) root = roots[0];
+        }
+        if (root != null && root.Service != null && RuntimePlayer.IsLoaded)
+        {
+            if (root.Service.IsWindowOpen<StorageWindowView>())
+            {
+                _storageWindow?.Dispose();
+                root.Service.CloseWindow<StorageWindowView>();
+                _storageWindow = null;
+            }
+            else
+            {
+                _storageWindow?.Dispose();
+                _storageWindow = StorageWindowController.Open(root.Service, RuntimePlayer.State.Storage);
+            }
+        }
         InventoryRequested?.Invoke();
     }
 }
