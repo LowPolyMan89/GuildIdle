@@ -11,7 +11,7 @@ using CoreActivityRuntimeStatus = GuildIdle.Core.ActivityRuntimeStatus;
 
 namespace GuildIdle.Activities
 {
-    public sealed class ActivityRuntimeService : ILinkedCombatStartGateway, IDisposable
+    public sealed class ActivityRuntimeService : ILinkedCombatStartGateway, ILinkedCombatContinuationGateway, IDisposable
     {
         public const int MaxCyclesPerTick = 100;
         public const int DefaultWorkAdvanceOperationLimit = 256;
@@ -1289,15 +1289,35 @@ namespace GuildIdle.Activities
 
             if (execution.activityBagResolved)
                 return TryFinalizeLinkedCombatCompletion(execution, combatExecutionId, true, false);
-
-            var checkpoint = _activityState.CaptureCheckpoint();
             execution.linkedCombat.resolved = true;
+            var checkpoint = _activityState.CaptureCheckpoint();
             if (!UpdateExecution(execution) || !Save())
             {
                 _activityState.RestoreCheckpoint(checkpoint);
                 return GatewayFailure("SaveFailed", "Failed to persist linked combat resolution.");
             }
             return GatewaySuccess(execution, false, null);
+        }
+
+        public LinkedCombatGatewayResult ResumeLinkedCombatExecution(string requestId, string combatExecutionId)
+        {
+            if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(combatExecutionId))
+                return GatewayFailure("InvalidResolution", "requestId and combatExecutionId are required.");
+            var receiptAggregateId = LinkedCombatResolutionReceiptAggregateId(requestId);
+            if (_activityState.TryGetOperationReceipt(receiptAggregateId, "resolve", out var receipt))
+            {
+                if (!string.Equals(receipt.fingerprint, combatExecutionId, StringComparison.Ordinal))
+                    return GatewayFailure("CombatExecutionMismatch", "Resolved combat execution does not match the linked binding.");
+                return new LinkedCombatGatewayResult { success = receipt.success, replayed = true, code = receipt.code, snapshot = GetSnapshot() };
+            }
+            var execution = FindLinkedExecution(requestId);
+            if (execution == null)
+                return GatewayFailure("RequestNotFound", $"Linked combat request '{requestId}' was not found.");
+            if (string.IsNullOrWhiteSpace(execution.linkedCombat.combatExecutionId))
+                return GatewayFailure("CombatNotBound", "Linked combat request must be bound before it can be resumed.");
+            if (!string.Equals(execution.linkedCombat.combatExecutionId, combatExecutionId, StringComparison.Ordinal))
+                return GatewayFailure("CombatExecutionMismatch", "Completed combat execution does not match the linked binding.");
+            return TryResumeLinkedWorkAfterCombat(execution, combatExecutionId);
         }
 
         public ActivityRuntimeSnapshot GetSnapshot()
@@ -1308,6 +1328,9 @@ namespace GuildIdle.Activities
                 snapshots[i] = ToSnapshot(executions[i]);
             return new ActivityRuntimeSnapshot { executions = snapshots };
         }
+
+        internal void ReconcileLinkedCombats() =>
+            _linkedCombatCoordinator?.Reconcile();
 
         internal bool TryGetConstructionPresentationRate(string executionId, out float buildPointsPerSecond)
         {
@@ -1910,8 +1933,7 @@ namespace GuildIdle.Activities
                 };
             }
 
-            var combatLoot = new List<ActivityStagedRewardSaveData>();
-            var nonCombat = new List<ActivityStagedRewardSaveData>();
+            var activityRewards = new List<ActivityStagedRewardSaveData>();
             foreach (var sourceEntry in execution.stagedRewards ?? Array.Empty<ActivityStagedRewardSaveData>())
             {
                 if (sourceEntry == null || sourceEntry.quantity <= 0 ||
@@ -1934,17 +1956,7 @@ namespace GuildIdle.Activities
                         Code = DangerEncounterPreparationCode.ValidationFailed
                     };
                 }
-
-                var entry = CloneStagedReward(sourceEntry);
-                if (IsLootRewardType(entry.rewardType))
-                {
-                    entry.origin = PendingResultOrigin.ActivityLootInCombat;
-                    combatLoot.Add(entry);
-                }
-                else
-                {
-                    nonCombat.Add(entry);
-                }
+                activityRewards.Add(CloneStagedReward(sourceEntry));
             }
 
             var request = new LinkedCombatStartRequestSaveData
@@ -1961,16 +1973,17 @@ namespace GuildIdle.Activities
                 suppressFatigueCost = true,
                 combatExecutionId = string.Empty,
                 resolved = false,
-                loot = combatLoot.ToArray()
+                loot = Array.Empty<ActivityStagedRewardSaveData>()
             };
-            var fingerprint = BuildDangerHandoffFingerprint(execution, request, nonCombat.Count);
+            var fingerprint = BuildDangerHandoffFingerprint(execution, request, activityRewards.Count);
             var draft = CloneExecution(execution);
             draft.endReason = EndReasonDangerTriggered;
             draft.stagedRewards = Array.Empty<ActivityStagedRewardSaveData>();
             draft.linkedCombat = request;
             draft.dangerHandoffFingerprint = fingerprint;
-            draft.dangerNonCombatEntryCount = nonCombat.Count;
+            draft.dangerNonCombatEntryCount = activityRewards.Count;
             draft.activityBagResolved = false;
+            draft.status = CoreActivityRuntimeStatus.ResultPending;
             if (!UpdateExecution(draft))
             {
                 _activityState.RestoreCheckpoint(checkpoint);
@@ -1991,7 +2004,7 @@ namespace GuildIdle.Activities
                 };
             }
 
-            var pendingDraft = BuildPendingDraft(draft, nonCombat.ToArray());
+            var pendingDraft = BuildPendingDraft(draft, activityRewards.ToArray());
             pendingDraft.OperationContext = $"danger-handoff|{fingerprint}";
             var operationId = $"activity:{execution.executionId}:danger:{execution.completedCycles}";
             PendingResultFormationResult formation;
@@ -2020,7 +2033,7 @@ namespace GuildIdle.Activities
                 formation = transactionalPendingResults.CreateOrAppendInTransaction(
                     operationId,
                     pendingDraft,
-                    true,
+                    false,
                     GetPendingResultRevision(execution));
             }
             else
@@ -2028,7 +2041,7 @@ namespace GuildIdle.Activities
                 formation = _activityState.PendingResults.CreateOrAppend(
                     operationId,
                     pendingDraft,
-                    true,
+                    false,
                     GetPendingResultRevision(execution));
             }
 
@@ -2089,8 +2102,8 @@ namespace GuildIdle.Activities
                 Code = DangerEncounterPreparationCode.PendingEncounterCreated,
                 RequestId = stored.linkedCombat.requestId,
                 PendingResultId = stored.activityBagResolved ? string.Empty : stored.pendingResultId,
-                CombatEntryCount = combatLoot.Count,
-                NonCombatEntryCount = nonCombat.Count,
+                CombatEntryCount = 0,
+                NonCombatEntryCount = activityRewards.Count,
                 ActivityBagResolved = stored.activityBagResolved,
                 RequestCreated = true,
                 Replayed = false
@@ -3173,6 +3186,86 @@ namespace GuildIdle.Activities
                 progressionAlreadyProcessed = true
             });
             return GatewaySuccess(new ActivityExecutionSaveData { activityId = completedActivityId, linkedCombat = request }, replayed, completedActivityId);
+        }
+
+        private LinkedCombatGatewayResult TryResumeLinkedWorkAfterCombat(
+            ActivityExecutionSaveData execution,
+            string combatExecutionId)
+        {
+            var checkpoint = _activityState.CaptureCheckpoint();
+            var current = GetExecution(execution.executionId);
+            if (current?.linkedCombat == null)
+                return GatewayFailure("RequestNotFound", "Linked combat execution was not found.");
+
+            var request = CloneLinkedCombat(current.linkedCombat);
+            var planCompleted = current.completedCycles >= current.plannedCycles;
+            var fatigueStopped = false;
+            if (!planCompleted)
+            {
+                if (!TryGetRuntimeInfo(current.activityId, out var info) ||
+                    info?.activity == null)
+                {
+                    _activityState.RestoreCheckpoint(checkpoint);
+                    return GatewayFailure("ActivityDescriptorMissing",
+                        "Linked combat work descriptor is missing.");
+                }
+
+                if (!_activityState.SpendHeroFatigue(
+                        current.heroId,
+                        info.activity.fatigueCost))
+                {
+                    fatigueStopped = true;
+                }
+            }
+
+            current.linkedCombat = null;
+            current.dangerHandoffFingerprint = null;
+            current.dangerNonCombatEntryCount = 0;
+            current.dangerRollCompleted = false;
+            current.dangerRiskPercent = 0f;
+            current.dangerRoll = 0;
+            current.stagedRewards = Array.Empty<ActivityStagedRewardSaveData>();
+            current.elapsedSeconds = 0f;
+            current.activityBagResolved = false;
+            current.currentCycleFatiguePaid = !planCompleted && !fatigueStopped;
+            if (planCompleted || fatigueStopped)
+            {
+                current.status = CoreActivityRuntimeStatus.ResultPending;
+                current.endReason = planCompleted
+                    ? EndReasonPlanCompleted
+                    : EndReasonInsufficientFatigue;
+            }
+            else
+            {
+                current.status = CoreActivityRuntimeStatus.Running;
+                current.cyclePhase = CyclePhaseRunning;
+                current.endReason = string.Empty;
+            }
+
+            if (!UpdateExecution(current))
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                return GatewayFailure("ActivityExecution",
+                    "Failed to resume work after linked combat.");
+            }
+
+            _activityState.RecordOperationReceipt(new OperationReceiptSaveData
+            {
+                aggregateId = LinkedCombatResolutionReceiptAggregateId(request.requestId),
+                operationId = "resolve",
+                fingerprint = combatExecutionId,
+                success = true,
+                code = "Resolved",
+                resolved = true
+            });
+            if (!Save())
+            {
+                _activityState.RestoreCheckpoint(checkpoint);
+                return GatewayFailure("SaveFailed",
+                    "Failed to persist work continuation after linked combat.");
+            }
+
+            return GatewaySuccess(current, false, null);
         }
 
         private bool TryResumeBuildCompletionLifecycle(

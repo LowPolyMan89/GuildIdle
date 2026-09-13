@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using GuildIdle.Activities;
+using GuildIdle.Combat;
 using GuildIdle.Configs;
 using GuildIdle.Core;
 using GuildIdle.Crafting;
+using GuildIdle.Localisation;
 using GuildIdle.Player;
 using GuildIdle.Settlement;
 using GuildIdle.UI.Core;
@@ -32,6 +34,7 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
     private Action<string> _activitySelected;
     private Action<int> _cyclesChanged;
     private Action _heroRequested;
+    private Action _consumableRequested;
     private Action _primaryActionRequested;
 
     public void ApplyOpenArgs(ObjectActivitiesWindowOpenArgs args)
@@ -45,6 +48,7 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
         _activitySelected = args.ActivitySelected;
         _cyclesChanged = args.CyclesChanged;
         _heroRequested = args.HeroRequested;
+        _consumableRequested = args.ConsumableRequested;
         _primaryActionRequested = args.PrimaryActionRequested;
     }
 
@@ -73,6 +77,7 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
     {
         BindButton(_closeButton, HandleCloseRequested);
         BindButton(_selectedActivityInfo?.HeroButton, HandleHeroRequested);
+        BindButton(_selectedActivityInfo?.ConsumableButton, HandleConsumableRequested);
         BindButton(_selectedActivityInfo?.PrimaryButton, HandlePrimaryActionRequested);
         if (_selectedActivityInfo?.CyclesSlider != null)
         {
@@ -95,6 +100,7 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
         _activitySelected = null;
         _cyclesChanged = null;
         _heroRequested = null;
+        _consumableRequested = null;
         _primaryActionRequested = null;
         closed?.Invoke();
     }
@@ -135,6 +141,7 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
     private void HandleCloseRequested() => _closeRequested?.Invoke();
     private void HandleCyclesChanged(float value) => _cyclesChanged?.Invoke(Mathf.Max(1, Mathf.RoundToInt(value)));
     private void HandleHeroRequested() => _heroRequested?.Invoke();
+    private void HandleConsumableRequested() => _consumableRequested?.Invoke();
     private void HandlePrimaryActionRequested() => _primaryActionRequested?.Invoke();
 
     [Serializable]
@@ -182,6 +189,8 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
         [SerializeField] private TMP_Text _heroButtonText;
         [SerializeField] private Image _heroIcon;
         [SerializeField] private TMP_Text _heroInitial;
+        [SerializeField] private Button _consumableButton;
+        [SerializeField] private Image _consumableIcon;
         [SerializeField] private GameObject _progressPanel;
         [SerializeField] private Slider _progress;
         [SerializeField] private TMP_Text _progressText;
@@ -192,6 +201,7 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
 
         public Slider CyclesSlider => _cyclesSlider;
         public Button HeroButton => _heroButton;
+        public Button ConsumableButton => _consumableButton;
         public Button PrimaryButton => _primaryButton;
 
         public void Render(SelectedActivityState state)
@@ -217,6 +227,7 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
                 : state.HeroName);
             ActivityCardProductionInfo.SetIcon(_heroIcon, ActivityCardProductionInfo.IconResolver.ResolveHero(state.HeroIconId));
             SetText(_heroInitial, Initial(state.HeroName));
+            ActivityCardProductionInfo.SetIcon(_consumableIcon, state.ConsumableIcon);
             SetText(_progressText, state.ProgressText);
             SetText(_notice, state.Notice);
             SetText(_primaryButtonText, state.PrimaryActionText);
@@ -233,6 +244,12 @@ public sealed class ObjectActivitiesWindowView : UIWindow,
             }
             if (_heroButton != null)
                 _heroButton.interactable = state.CanConfigure && state.HasHeroes;
+            if (_consumableButton != null)
+            {
+                _consumableButton.gameObject.SetActive(
+                    state.Kind == ObjectActivityKind.Combat && state.CanConfigure);
+                _consumableButton.interactable = state.CanConfigure;
+            }
             if (_progressPanel != null)
                 _progressPanel.SetActive(state.VisualState == ActivityCardVisualState.InProgress);
             if (_progress != null)
@@ -263,6 +280,7 @@ public sealed class ObjectActivitiesWindowOpenArgs : IUIOpenArgs
         Action<string> activitySelected,
         Action<int> cyclesChanged,
         Action heroRequested,
+        Action consumableRequested,
         Action primaryActionRequested)
     {
         State = state ?? ObjectActivitiesWindowState.Empty;
@@ -271,6 +289,7 @@ public sealed class ObjectActivitiesWindowOpenArgs : IUIOpenArgs
         ActivitySelected = activitySelected;
         CyclesChanged = cyclesChanged;
         HeroRequested = heroRequested;
+        ConsumableRequested = consumableRequested;
         PrimaryActionRequested = primaryActionRequested;
     }
 
@@ -280,6 +299,7 @@ public sealed class ObjectActivitiesWindowOpenArgs : IUIOpenArgs
     public Action<string> ActivitySelected { get; }
     public Action<int> CyclesChanged { get; }
     public Action HeroRequested { get; }
+    public Action ConsumableRequested { get; }
     public Action PrimaryActionRequested { get; }
 }
 
@@ -322,7 +342,7 @@ public sealed class SelectedActivityState
         string.Empty, ObjectActivityKind.Activity, string.Empty, string.Empty, string.Empty, string.Empty,
         ActivityCardVisualState.Unavailable, false, false, 1, 1, string.Empty, string.Empty, string.Empty,
         false, Array.Empty<HeroSelectionOptionState>(), 0f, string.Empty, ActivityCardProductionState.Empty,
-        false, string.Empty, false, string.Empty);
+        false, string.Empty, false, string.Empty, consumableChoices: Array.Empty<CombatConsumableOptionState>());
 
     public SelectedActivityState(
         string activityId,
@@ -349,7 +369,12 @@ public sealed class SelectedActivityState
         bool isAvailable,
         string notice,
         string executionId = "",
-        string pendingResultId = "")
+        string pendingResultId = "",
+        IReadOnlyList<CombatConsumableOptionState> consumableChoices = null,
+        string consumableStackId = "",
+        string consumableName = "",
+        int consumableQuantity = 0,
+        Sprite consumableIcon = null)
     {
         ActivityId = activityId ?? string.Empty;
         Kind = kind;
@@ -376,6 +401,11 @@ public sealed class SelectedActivityState
         Notice = notice ?? string.Empty;
         ExecutionId = executionId ?? string.Empty;
         PendingResultId = pendingResultId ?? string.Empty;
+        ConsumableChoices = consumableChoices ?? Array.Empty<CombatConsumableOptionState>();
+        ConsumableStackId = consumableStackId ?? string.Empty;
+        ConsumableName = consumableName ?? string.Empty;
+        ConsumableQuantity = Math.Max(0, consumableQuantity);
+        ConsumableIcon = consumableIcon;
         Duration = string.Empty;
     }
 
@@ -405,12 +435,18 @@ public sealed class SelectedActivityState
     public string Notice { get; }
     public string ExecutionId { get; }
     public string PendingResultId { get; }
+    public IReadOnlyList<CombatConsumableOptionState> ConsumableChoices { get; }
+    public string ConsumableStackId { get; }
+    public string ConsumableName { get; }
+    public int ConsumableQuantity { get; }
+    public Sprite ConsumableIcon { get; }
 }
 
 public sealed class ObjectActivitiesSelection
 {
     public string ActivityId { get; set; }
     public string HeroId { get; set; }
+    public string ConsumableStackId { get; set; }
     public int PlannedCycles { get; set; } = 1;
     public string Notice { get; set; }
     public string NoticeId { get; set; }
@@ -448,6 +484,7 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         selection ??= new ObjectActivitiesSelection();
         RuntimeConfigs.Buildings.TryGet(buildingId, out var building);
         var executions = OnlineActivityRuntime.GetPresentationSnapshot()?.executions ?? Array.Empty<ActivityExecutionSnapshot>();
+        var combatExecutions = OnlineActivityRuntime.GetCombatSnapshots();
         var craftExecutions = OnlineActivityRuntime.GetPresentationCraftSnapshots();
         var cards = new List<OrderedCardState>();
         var addedIds = new HashSet<string>(StringComparer.Ordinal);
@@ -457,21 +494,30 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
                      .OrderBy(value => value.sortOrder))
         {
             var execution = FindExecution(executions, mapping.activityId);
-            var resultPending = execution?.status == ActivityRuntimeStatus.ResultPending;
+            var kind = ResolveKind(mapping.activityId);
+            var combat = FindCombatExecution(combatExecutions, execution, kind, mapping.activityId);
+            var presentationKind = combat != null ? ObjectActivityKind.Combat : kind;
+            var resultPending = execution?.status == ActivityRuntimeStatus.ResultPending ||
+                                combat?.status == CombatExecutionStatus.ResultPending;
             if ((!resultPending && (mapping.buildingLevel != buildingLevel ||
                                     !ActivityAvailabilityResolver.IsExposedByBuilding(mapping, RuntimePlayer.State))) ||
                 !addedIds.Add(mapping.activityId) || !TryResolveDescriptor(mapping.activityId, out var descriptor))
                 continue;
 
             var available = EvaluateClickableRequirement(mapping.clickableRequirement, out var blockReason);
-            var kind = ResolveKind(mapping.activityId);
-            var visualState = ResolveVisualState(execution, available);
+            var visualState = combat != null
+                ? ResolveCombatVisualState(combat)
+                : ResolveVisualState(execution, available);
             cards.Add(BuildOrderedCard(
-                mapping.sortOrder, mapping.activityId, kind, descriptor, available, blockReason,
-                execution?.heroId, execution?.progress ?? 0f,
-                execution == null ? string.Empty : FormatRemainingTime(execution.remainingSeconds),
-                execution == null ? string.Empty : FormatCycle(execution.completedCycles, execution.plannedCycles),
-                GetCurrentDropItemsCount(execution?.pendingResultId), execution?.executionId, execution?.pendingResultId,
+                mapping.sortOrder, mapping.activityId, presentationKind, descriptor, available, blockReason,
+                combat?.heroId ?? execution?.heroId,
+                combat != null ? GetCombatProgress(combat) : execution?.progress ?? 0f,
+                combat == null && execution != null ? FormatRemainingTime(execution.remainingSeconds) : string.Empty,
+                combat != null ? FormatCycle(combat.enemyIndex, combat.enemyCount) :
+                    execution == null ? string.Empty : FormatCycle(execution.completedCycles, execution.plannedCycles),
+                combat?.lootQuantity ?? GetCurrentDropItemsCount(execution?.pendingResultId),
+                combat?.executionId ?? execution?.executionId,
+                combat?.pendingResultId ?? execution?.pendingResultId,
                 visualState, selection.ActivityId));
         }
 
@@ -558,6 +604,10 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
             : DefaultCycleLimit;
         var plannedCycles = showCycles ? Mathf.Clamp(selection.PlannedCycles, 1, maxCycles) : 1;
         var production = BuildProductionInfo(card.ActivityId, card.Kind, plannedCycles, heroId);
+        var consumableChoices = card.Kind == ObjectActivityKind.Combat
+            ? BuildCombatConsumableChoices(selection.ConsumableStackId)
+            : Array.Empty<CombatConsumableOptionState>();
+        var selectedConsumable = consumableChoices.FirstOrDefault(value => value.IsSelected);
         var notice = string.IsNullOrWhiteSpace(selection.NoticeId)
             ? selection.Notice
             : ActivityUiText.Get(selection.NoticeId);
@@ -570,16 +620,22 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         var canCancel = card.VisualState == ActivityCardVisualState.InProgress &&
                         card.Kind == ObjectActivityKind.Work &&
                         !string.IsNullOrWhiteSpace(card.ExecutionId);
-        var primaryText = card.VisualState == ActivityCardVisualState.Finished
-            ? ActivityUiText.Get(ActivityUiText.Claim)
-            : canCancel
+        var canOpenCombat = card.Kind == ObjectActivityKind.Combat &&
+                            (card.VisualState == ActivityCardVisualState.InProgress ||
+                             card.VisualState == ActivityCardVisualState.Finished) &&
+                            !string.IsNullOrWhiteSpace(card.ExecutionId);
+        var primaryText = canOpenCombat
+            ? ActivityUiText.Get(ActivityUiText.OpenCombat)
+            : card.VisualState == ActivityCardVisualState.Finished
+                ? ActivityUiText.Get(ActivityUiText.Claim)
+                : canCancel
                 ? ActivityUiText.Get(ActivityUiText.Cancel)
                 : card.VisualState == ActivityCardVisualState.InProgress
                     ? ActivityUiText.Get(ActivityUiText.InProgress)
                 : heroLimitReached
                     ? ActivityUiText.Get(ActivityUiText.HeroLimit)
                     : ActivityUiText.Get(ActivityUiText.Start);
-        var primaryEnabled = card.VisualState == ActivityCardVisualState.Finished || canCancel ||
+        var primaryEnabled = card.VisualState == ActivityCardVisualState.Finished || canCancel || canOpenCombat ||
                              (card.VisualState == ActivityCardVisualState.Idle && !heroLimitReached &&
                               !string.IsNullOrWhiteSpace(heroId));
         var state = new SelectedActivityState(
@@ -587,9 +643,45 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
             CategoryName(card.Kind), card.IconId, card.VisualState, showCycles, canConfigure,
             plannedCycles, maxCycles, heroId, heroName, heroIcon, heroChoices.Any(value => value.CanSelect), heroChoices,
             card.Progress, BuildProgressText(card), production, primaryEnabled, primaryText,
-            card.IsAvailable, notice, card.ExecutionId, card.PendingResultId);
+            card.IsAvailable, notice, card.ExecutionId, card.PendingResultId,
+            consumableChoices, selectedConsumable?.StackId, selectedConsumable?.Name,
+            selectedConsumable?.Quantity ?? 0, selectedConsumable?.Icon);
         state.Duration = ResolveTotalDuration(card.ActivityId, card.Kind, plannedCycles);
         return state;
+    }
+
+    private static IReadOnlyList<CombatConsumableOptionState> BuildCombatConsumableChoices(
+        string selectedStackId)
+    {
+        var choices = new List<CombatConsumableOptionState>();
+        var player = RuntimePlayer.State;
+        if (player != null)
+        {
+            foreach (var stack in player.Storage.GetSnapshot().Stacks
+                         .Where(value => value != null && value.quantity > 0)
+                         .OrderBy(value => value.itemId, StringComparer.Ordinal)
+                         .ThenBy(value => value.stackId, StringComparer.Ordinal))
+            {
+                if (!RuntimeConfigs.Items.TryGetConsumable(stack.itemId, out var item) ||
+                    !RuntimeConfigs.CombatConsumables.TryGet(stack.itemId, out var descriptor) ||
+                    descriptor == null || descriptor.UsePlace != CombatConsumableUsePlace.Combat ||
+                    !RuntimeConfigs.Storage.TryGetItemState(stack.stateId, out var itemState) ||
+                    !string.Equals(itemState.availabilityMode, "available", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                choices.Add(new CombatConsumableOptionState(
+                    stack.stackId,
+                    LocaliseOrFallback(item.nameId, item.id),
+                    LocaliseOrFallback(item.descriptionId, string.Empty),
+                    ActivityCardProductionInfo.IconResolver.ResolveItem(item.iconId),
+                    Math.Min(stack.quantity, descriptor.MaxStack),
+                    string.Equals(stack.stackId, selectedStackId, StringComparison.Ordinal)));
+            }
+        }
+
+        choices.Insert(0, new CombatConsumableOptionState(
+            string.Empty, "—", string.Empty, null, 0, choices.All(value => !value.IsSelected)));
+        return choices;
     }
 
     private bool TryResolveDescriptor(string activityId, out ActionDescriptor descriptor)
@@ -922,6 +1014,43 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         return pending;
     }
 
+    private static OnlineCombatSnapshot FindCombatExecution(
+        IEnumerable<OnlineCombatSnapshot> values,
+        ActivityExecutionSnapshot activityExecution,
+        ObjectActivityKind kind,
+        string activityId)
+    {
+        var linkedCombatId = activityExecution?.linkedCombat?.combatExecutionId;
+        if (!string.IsNullOrWhiteSpace(linkedCombatId))
+        {
+            foreach (var value in values ?? Array.Empty<OnlineCombatSnapshot>())
+            {
+                if (value != null && string.Equals(
+                        value.executionId,
+                        linkedCombatId,
+                        StringComparison.Ordinal))
+                {
+                    return value;
+                }
+            }
+        }
+
+        if (kind != ObjectActivityKind.Combat)
+            return null;
+
+        OnlineCombatSnapshot running = null;
+        foreach (var value in values ?? Array.Empty<OnlineCombatSnapshot>())
+        {
+            if (value == null || !string.Equals(value.activityId, activityId, StringComparison.Ordinal))
+                continue;
+            if (value.status == CombatExecutionStatus.ResultPending)
+                return value;
+            if (value.status == CombatExecutionStatus.Running && running == null)
+                running = value;
+        }
+        return running;
+    }
+
     private static bool EvaluateClickableRequirement(string requirement, out string reason)
     {
         reason = string.Empty;
@@ -961,6 +1090,22 @@ public sealed class RuntimeObjectActivitiesSource : IObjectActivitiesRuntimeSour
         return execution?.status == CraftExecutionStatus.Running
             ? ActivityCardVisualState.InProgress
             : ActivityCardVisualState.Idle;
+    }
+
+    private static ActivityCardVisualState ResolveCombatVisualState(OnlineCombatSnapshot execution)
+    {
+        return execution?.status == CombatExecutionStatus.ResultPending
+            ? ActivityCardVisualState.Finished
+            : execution?.status == CombatExecutionStatus.Running
+                ? ActivityCardVisualState.InProgress
+                : ActivityCardVisualState.Idle;
+    }
+
+    private static float GetCombatProgress(OnlineCombatSnapshot combat)
+    {
+        if (combat == null || combat.enemyCount <= 0)
+            return combat?.status == CombatExecutionStatus.ResultPending ? 1f : 0f;
+        return Mathf.Clamp01((float)Math.Max(0, combat.enemyIndex - 1) / combat.enemyCount);
     }
 
     private static IReadOnlyList<HeroSelectionOptionState> BuildHeroChoices(
@@ -1284,6 +1429,8 @@ public sealed class ObjectActivitiesController : IDisposable
     private ObjectActivitiesWindowView _window;
     private HeroSelectionPopupView _heroPopup;
     private LootPopupController _lootPopup;
+    private CombatWindowController _combatWindow;
+    private bool _consumablePopupOpen;
     private ObjectActivitiesWindowState _state = ObjectActivitiesWindowState.Empty;
     private string _buildingId;
     private int _buildingLevel;
@@ -1304,6 +1451,7 @@ public sealed class ObjectActivitiesController : IDisposable
         if (_bound) return;
         _bound = true;
         _sceneView.BuildingSelected += HandleBuildingSelected;
+        LocalisationService.LanguageChanged += HandleLanguageChanged;
     }
 
     public void Tick()
@@ -1315,8 +1463,14 @@ public sealed class ObjectActivitiesController : IDisposable
 
     public void Dispose()
     {
-        if (_bound) _sceneView.BuildingSelected -= HandleBuildingSelected;
+        if (_bound)
+        {
+            _sceneView.BuildingSelected -= HandleBuildingSelected;
+            LocalisationService.LanguageChanged -= HandleLanguageChanged;
+        }
         _bound = false;
+        _combatWindow?.Dispose();
+        _combatWindow = null;
         CloseWindow();
     }
 
@@ -1347,7 +1501,8 @@ public sealed class ObjectActivitiesController : IDisposable
         {
             _window = _uiService.OpenWindow<ObjectActivitiesWindowView, ObjectActivitiesWindowOpenArgs>(
                 new ObjectActivitiesWindowOpenArgs(_state, CloseWindow, HandleWindowClosed,
-                    HandleActivitySelected, HandleCyclesChanged, HandleHeroPickerRequested, HandlePrimaryActionRequested));
+                    HandleActivitySelected, HandleCyclesChanged, HandleHeroPickerRequested,
+                    HandleConsumablePickerRequested, HandlePrimaryActionRequested));
             _nextRefreshTime = Time.unscaledTime + RefreshIntervalSeconds;
         }
         catch
@@ -1369,13 +1524,16 @@ public sealed class ObjectActivitiesController : IDisposable
         _state = _runtimeSource.BuildState(_buildingId, _buildingLevel, _selection);
         AdoptRenderedSelection();
         _window?.Render(_state);
-        _heroPopup?.Render(BuildHeroSelectionState());
+        _heroPopup?.Render(_consumablePopupOpen
+            ? BuildConsumableSelectionState(_state.SelectedActivity ?? SelectedActivityState.Empty)
+            : BuildHeroSelectionState());
     }
 
     private void HandleActivitySelected(string activityId)
     {
         _selection.ActivityId = activityId;
         _selection.HeroId = string.Empty;
+        _selection.ConsumableStackId = string.Empty;
         _selection.PlannedCycles = 1;
         ClearNotice();
         ActivitySelected?.Invoke(activityId);
@@ -1394,6 +1552,7 @@ public sealed class ObjectActivitiesController : IDisposable
         if (_uiService == null || _state.SelectedActivity == null || !_state.SelectedActivity.CanConfigure)
             return;
 
+        _consumablePopupOpen = false;
         _heroPopup = _uiService.OpenWindow<HeroSelectionPopupView, HeroSelectionPopupOpenArgs>(
             new HeroSelectionPopupOpenArgs(
                 BuildHeroSelectionState(),
@@ -1430,10 +1589,54 @@ public sealed class ObjectActivitiesController : IDisposable
             selected.HeroChoices);
     }
 
+    private void HandleLanguageChanged(string language)
+    {
+        if (_window != null)
+            RefreshWindow();
+    }
+
+    private void HandleConsumablePickerRequested()
+    {
+        var selected = _state.SelectedActivity;
+        if (_uiService == null || selected == null || selected.Kind != ObjectActivityKind.Combat ||
+            !selected.CanConfigure)
+            return;
+
+        _consumablePopupOpen = true;
+        _heroPopup = _uiService.OpenWindow<HeroSelectionPopupView, HeroSelectionPopupOpenArgs>(
+            new HeroSelectionPopupOpenArgs(
+                BuildConsumableSelectionState(selected),
+                CloseHeroPopup,
+                HandleHeroPopupClosed,
+                null,
+                HandleConsumableSelected));
+    }
+
+    private static HeroSelectionPopupState BuildConsumableSelectionState(SelectedActivityState selected)
+    {
+        return new HeroSelectionPopupState(
+            ActivityUiText.Get(ActivityUiText.ConsumableSelectionTitle),
+            string.IsNullOrWhiteSpace(selected.Name)
+                ? string.Empty
+                : ActivityUiText.Format(ActivityUiText.HeroSelectionContext, selected.Name),
+            null,
+            Array.Empty<HeroSelectionOptionState>(),
+            selected.ConsumableChoices,
+            ActivityUiText.Get(ActivityUiText.ConsumableSelectionHint));
+    }
+
     private void HandlePrimaryActionRequested()
     {
         var selected = _state.SelectedActivity;
         if (selected == null || string.IsNullOrWhiteSpace(selected.ActivityId)) return;
+        if (selected.Kind == ObjectActivityKind.Combat &&
+            (selected.VisualState == ActivityCardVisualState.InProgress ||
+             selected.VisualState == ActivityCardVisualState.Finished) &&
+            !string.IsNullOrWhiteSpace(selected.ExecutionId))
+        {
+            OpenCombatWindow(selected.ExecutionId);
+            return;
+        }
         if (selected.VisualState == ActivityCardVisualState.Finished)
         {
             if (_uiService == null || RuntimePlayer.State == null ||
@@ -1472,8 +1675,11 @@ public sealed class ObjectActivitiesController : IDisposable
         }
         else if (selected.Kind == ObjectActivityKind.Combat)
         {
-            var result = OnlineActivityRuntime.StartCombat(selected.ActivityId, selected.HeroId);
+            var result = OnlineActivityRuntime.StartCombat(selected.ActivityId, selected.HeroId,
+                selected.ConsumableStackId, selected.ConsumableQuantity);
             success = result.success;
+            if (success && result.snapshot != null && _uiService != null)
+                OpenCombatWindow(result.snapshot.executionId);
         }
         else
         {
@@ -1492,11 +1698,37 @@ public sealed class ObjectActivitiesController : IDisposable
         RefreshWindow();
     }
 
+    private void HandleConsumableSelected(string stackId)
+    {
+        var choices = _state.SelectedActivity?.ConsumableChoices ?? Array.Empty<CombatConsumableOptionState>();
+        if (!string.IsNullOrWhiteSpace(stackId) &&
+            choices.All(value => !string.Equals(value.StackId, stackId, StringComparison.Ordinal)))
+        {
+            RefreshWindow();
+            return;
+        }
+
+        _selection.ConsumableStackId = stackId ?? string.Empty;
+        ClearNotice();
+        CloseHeroPopup();
+        RefreshWindow();
+    }
+
+    private void OpenCombatWindow(string executionId)
+    {
+        if (_uiService == null || string.IsNullOrWhiteSpace(executionId))
+            return;
+        _combatWindow?.Dispose();
+        _combatWindow = CombatWindowController.Open(_uiService, executionId,
+            () => _combatWindow = null);
+    }
+
     private void AdoptRenderedSelection()
     {
         if (_state?.SelectedActivity == null) return;
         _selection.ActivityId = _state.SelectedActivity.ActivityId;
         _selection.HeroId = _state.SelectedActivity.HeroId;
+        _selection.ConsumableStackId = _state.SelectedActivity.ConsumableStackId;
         _selection.PlannedCycles = _state.SelectedActivity.PlannedCycles;
     }
 
@@ -1504,6 +1736,7 @@ public sealed class ObjectActivitiesController : IDisposable
     {
         _selection.ActivityId = string.Empty;
         _selection.HeroId = string.Empty;
+        _selection.ConsumableStackId = string.Empty;
         _selection.PlannedCycles = 1;
         _selection.Notice = string.Empty;
         _selection.NoticeId = string.Empty;
@@ -1571,5 +1804,9 @@ public sealed class ObjectActivitiesController : IDisposable
         }
     }
 
-    private void HandleHeroPopupClosed() => _heroPopup = null;
+    private void HandleHeroPopupClosed()
+    {
+        _heroPopup = null;
+        _consumablePopupOpen = false;
+    }
 }

@@ -472,6 +472,10 @@ public sealed class ActivityCardProductionInfo
         {
             "Sprites/Heroes/Icons", "Sprites/Heroes", "Sprites/Icons/Heroes"
         };
+        private static readonly string[] EnemyPaths =
+        {
+            "Sprites/Enemies/Battle", "Sprites/Enemies", "Sprites/Icons/Enemies"
+        };
         private static readonly Dictionary<string, Sprite> Cache =
             new Dictionary<string, Sprite>(StringComparer.Ordinal);
 
@@ -479,6 +483,7 @@ public sealed class ActivityCardProductionInfo
         public static Sprite ResolveCard(string iconId) => Resolve(iconId, CardPaths);
         public static Sprite ResolveItem(string iconId) => Resolve(iconId, ItemPaths);
         public static Sprite ResolveHero(string iconId) => Resolve(iconId, HeroPaths);
+        public static Sprite ResolveEnemy(string iconId) => Resolve(iconId, EnemyPaths);
 
         public static Sprite Resolve(ActivityCardProductionEntryState state)
         {
@@ -533,6 +538,7 @@ internal static class ActivityUiText
     public const string Claim = "ui.object_activities.claim";
     public const string Cancel = "ui.object_activities.cancel";
     public const string InProgress = "ui.object_activities.in_progress";
+    public const string OpenCombat = "ui.object_activities.open_combat";
     public const string HeroLimit = "ui.object_activities.hero_limit";
     public const string NoFreeHero = "ui.object_activities.no_free_hero";
     public const string HeroUnavailable = "ui.object_activities.hero_unavailable";
@@ -549,6 +555,8 @@ internal static class ActivityUiText
     public const string HeroSelectionTitle = "ui.hero_selection.title";
     public const string HeroSelectionContext = "ui.hero_selection.context";
     public const string HeroSelectionHint = "ui.hero_selection.hint";
+    public const string ConsumableSelectionTitle = "ui.consumable_selection.title";
+    public const string ConsumableSelectionHint = "ui.consumable_selection.hint";
     public const string HeroAvailable = "ui.hero_selection.status.available";
     public const string HeroBusy = "ui.hero_selection.status.busy";
     public const string HeroNoEnergy = "ui.hero_selection.status.no_energy";

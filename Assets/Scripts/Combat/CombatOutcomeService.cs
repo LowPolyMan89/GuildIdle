@@ -69,8 +69,7 @@ namespace GuildIdle.Combat
                     ExecutionId = command.ExecutionId,
                     Outcome = replay?.execution?.outcome,
                     PendingResultId = replay?.execution?.pendingResultId,
-                    ResolvedImmediately =
-                        replay?.execution?.pendingResultResolved == true
+                    ResolvedImmediately = IsResolvedOutcome(replay?.execution)
                 };
             }
 
@@ -164,14 +163,13 @@ namespace GuildIdle.Combat
                 {
                     Success = true,
                     Replayed = true,
-                    Code = stored.execution.pendingResultResolved
+                    Code = IsResolvedOutcome(stored.execution)
                         ? "Completed"
                         : "ResultPending",
                     ExecutionId = executionId,
                     Outcome = stored.execution.outcome,
                     PendingResultId = stored.execution.pendingResultId,
-                    ResolvedImmediately =
-                        stored.execution.pendingResultResolved
+                    ResolvedImmediately = IsResolvedOutcome(stored.execution)
                 };
             }
 
@@ -250,25 +248,56 @@ namespace GuildIdle.Combat
                 };
             }
 
-            var formation = _state.PendingResults.CreateCombatResult(
-                $"combat-result:{execution.executionId}:{candidate.candidateId}",
-                new PendingResultDraft
-                {
-                    SourceId = execution.sourceActivityId,
-                    SourceExecutionId = execution.executionId,
-                    OwnerHeroId = execution.heroId,
-                    SourceSequence = execution.resultSourceSequence,
-                    Entries = draftEntries
-                },
-                null,
-                null,
-                _state.StorageRevision);
+            var linked = !string.Equals(
+                             execution.sourceExecutionId,
+                             execution.executionId,
+                             StringComparison.Ordinal) &&
+                         !string.IsNullOrWhiteSpace(execution.sourceRequestId);
+            var formation = linked
+                ? AppendLinkedCombatResultToActivity(
+                    execution,
+                    candidate,
+                    draftEntries)
+                : _state.PendingResults.CreateCombatResult(
+                    $"combat-result:{execution.executionId}:{candidate.candidateId}",
+                    new PendingResultDraft
+                    {
+                        SourceId = execution.sourceActivityId,
+                        SourceExecutionId = execution.executionId,
+                        OwnerHeroId = execution.heroId,
+                        SourceSequence = execution.resultSourceSequence,
+                        Entries = draftEntries
+                    },
+                    null,
+                    null,
+                    _state.StorageRevision);
             if (!formation.Success)
             {
                 _state.RestoreTransactional(checkpoint);
                 return Failed(execution.executionId,
                     formation.Code ?? "PendingResultFailed",
                     formation.Message ?? "Combat PendingResult formation failed.");
+            }
+
+            if (linked)
+            {
+                execution.status = CombatExecutionStatus.Completed;
+                execution.completedAtUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                if (!_state.UpdateCombatAggregate(aggregate) || !_state.Save())
+                {
+                    _state.RestoreTransactional(checkpoint);
+                    return Failed(execution.executionId, "SaveFailed",
+                        "Linked combat result could not be committed to its activity.");
+                }
+
+                return new CombatOutcomeResult
+                {
+                    Success = true,
+                    Code = "Completed",
+                    ExecutionId = execution.executionId,
+                    Outcome = candidate.kind,
+                    ResolvedImmediately = true
+                };
             }
 
             var stored = _state.GetCombatAggregate(execution.executionId);
@@ -283,6 +312,66 @@ namespace GuildIdle.Combat
                 PendingResultId = stored?.execution?.pendingResultId,
                 ResolvedImmediately = formation.ResolvedImmediately
             };
+        }
+
+        private PendingResultFormationResult AppendLinkedCombatResultToActivity(
+            CombatExecutionSaveData execution,
+            CombatTerminalCandidateSaveData candidate,
+            PendingResultEntryDraft[] entries)
+        {
+            var source = _state.GetActivityExecution(execution.sourceExecutionId);
+            var activityResult = string.IsNullOrWhiteSpace(source?.pendingResultId)
+                ? null
+                : _state.PendingResults.Get(source.pendingResultId);
+            if (source?.linkedCombat == null ||
+                !string.Equals(source.linkedCombat.requestId, execution.sourceRequestId, StringComparison.Ordinal) ||
+                !string.Equals(source.linkedCombat.combatExecutionId, execution.executionId, StringComparison.Ordinal) ||
+                (activityResult != null &&
+                 (!string.Equals(activityResult.sourceType, PendingResultSourceType.Activity, StringComparison.Ordinal) ||
+                  !string.Equals(activityResult.sourceExecutionId, source.executionId, StringComparison.Ordinal))))
+            {
+                return new PendingResultFormationResult
+                {
+                    Success = false,
+                    Code = "InvalidLinkedSource",
+                    Message = "Linked combat activity bag is missing or does not match the combat source."
+                };
+            }
+
+            if (!(_state.PendingResults is ITransactionalPendingResultService transactional))
+            {
+                return new PendingResultFormationResult
+                {
+                    Success = false,
+                    Code = "PendingResultTransaction",
+                    Message = "Linked combat result requires transactional activity bag support."
+                };
+            }
+
+            if (!_state.TryAcceptCombatResultSequence(execution.resultSourceSequence))
+            {
+                return new PendingResultFormationResult
+                {
+                    Success = false,
+                    Code = "CombatSequenceGap",
+                    Message = "Linked combat result source sequence could not be accepted."
+                };
+            }
+
+            return transactional.CreateOrAppendInTransaction(
+                $"linked-combat-result:{execution.executionId}:{candidate.candidateId}",
+                new PendingResultDraft
+                {
+                    SourceType = PendingResultSourceType.Activity,
+                    SourceId = source.activityId,
+                    SourceExecutionId = source.executionId,
+                    OwnerHeroId = source.heroId,
+                    SourceSequence = source.completedCycles,
+                    Entries = entries,
+                    OperationContext = $"linked-combat|{execution.executionId}|{candidate.candidateId}"
+                },
+                false,
+                activityResult?.revision ?? 0);
         }
 
         private static bool TryBuildOutcomeRewards(
@@ -444,14 +533,10 @@ namespace GuildIdle.Combat
 
         private static bool IsLossEligible(CombatRewardEntrySaveData value) =>
             value != null &&
-            (string.Equals(
+            string.Equals(
                  value.origin,
                  PendingResultOrigin.CombatLoot,
-                 StringComparison.Ordinal) ||
-             string.Equals(
-                 value.origin,
-                 PendingResultOrigin.ActivityLootInCombat,
-                 StringComparison.Ordinal));
+                 StringComparison.Ordinal);
 
         private static void AddCopies(
             List<CombatRewardEntrySaveData> target,
@@ -488,5 +573,10 @@ namespace GuildIdle.Combat
                 Message = message,
                 ExecutionId = executionId
             };
+
+        private static bool IsResolvedOutcome(CombatExecutionSaveData execution) =>
+            execution != null &&
+            execution.status == CombatExecutionStatus.Completed &&
+            (!execution.resultCreated || execution.pendingResultResolved);
     }
 }

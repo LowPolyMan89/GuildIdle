@@ -205,7 +205,7 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
-        public void DefeatAggregatesEligibleLootAndPersistsProtectedBreakdown()
+        public void DefeatLosesCombatLootButKeepsLegacyActivityLootProtected()
         {
             var aggregate = Aggregate(
                 CombatTerminalCandidateKinds.Defeat,
@@ -239,7 +239,7 @@ namespace GuildIdle.Editor.Player
             var saved = _state.GetCombatAggregate("combat-a").session;
             Assert.That(saved.defeatLoss.lossPercent,
                 Is.InRange(25, 50));
-            Assert.That(saved.defeatLoss.entries, Has.Length.EqualTo(2));
+            Assert.That(saved.defeatLoss.entries, Has.Length.EqualTo(1));
             var goldLoss = saved.defeatLoss.entries.Single(value =>
                 value.targetId == "gold_id");
             Assert.That(goldLoss.quantityBefore, Is.EqualTo(8));
@@ -256,6 +256,9 @@ namespace GuildIdle.Editor.Player
             Assert.That(pending.entries.Single(value =>
                     value.origin == PendingResultOrigin.EnemyCombatExp)
                 .quantity, Is.EqualTo(9));
+            Assert.That(pending.entries.Single(value =>
+                    value.origin == PendingResultOrigin.ActivityLootInCombat)
+                .quantity, Is.EqualTo(4));
 
             var restored = SaveService.Load(_factory, _storage);
             var restoredLoss =
@@ -316,7 +319,7 @@ namespace GuildIdle.Editor.Player
                     RewardType.Currency,
                     "gold_id",
                     8,
-                    PendingResultOrigin.ActivityLootInCombat)
+                    PendingResultOrigin.CombatLoot)
             };
             AddLinkedAggregate(aggregate);
 
@@ -520,6 +523,18 @@ namespace GuildIdle.Editor.Player
                             }
                     }),
                 Is.True);
+            var activityBag = _state.PendingResults.CreateOrAppend(
+                "activity-root:initial-bag",
+                new PendingResultDraft
+                {
+                    SourceType = PendingResultSourceType.Activity,
+                    SourceId = "combat_clear_hall_forest",
+                    SourceExecutionId = "activity-root",
+                    OwnerHeroId = "ren",
+                    Entries = Array.Empty<PendingResultEntryDraft>()
+                },
+                false);
+            Assert.That(activityBag.Success, Is.True, activityBag.Message);
             Assert.That(_state.AddCombatAggregate(aggregate), Is.True);
         }
 

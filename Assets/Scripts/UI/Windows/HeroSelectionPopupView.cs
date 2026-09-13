@@ -25,6 +25,7 @@ public sealed class HeroSelectionPopupView : UIWindow,
     private Action _closeRequested;
     private Action _closed;
     private Action<string> _heroSelected;
+    private Action<string> _consumableSelected;
 
     public void ApplyOpenArgs(HeroSelectionPopupOpenArgs args)
     {
@@ -35,6 +36,7 @@ public sealed class HeroSelectionPopupView : UIWindow,
         _closeRequested = args.CloseRequested;
         _closed = args.Closed;
         _heroSelected = args.HeroSelected;
+        _consumableSelected = args.ConsumableSelected;
     }
 
     public void Render(HeroSelectionPopupState state)
@@ -42,7 +44,7 @@ public sealed class HeroSelectionPopupView : UIWindow,
         _state = state ?? HeroSelectionPopupState.Empty;
         SetText(_title, _state.Title);
         SetText(_context, _state.Context);
-        SetText(_hint, ActivityUiText.Get(ActivityUiText.HeroSelectionHint));
+        SetText(_hint, _state.Hint ?? ActivityUiText.Get(ActivityUiText.HeroSelectionHint));
 
         var heroes = (_state.Heroes ?? Array.Empty<HeroSelectionOptionState>())
             .OrderBy(value => value.CanSelect ? 0 : 1)
@@ -50,13 +52,16 @@ public sealed class HeroSelectionPopupView : UIWindow,
             .ThenBy(value => value.SortOrder)
             .ThenBy(value => value.Name, StringComparer.CurrentCulture)
             .ToArray();
-        EnsureRowCapacity(heroes.Length);
+        var consumables = _state.Consumables ?? Array.Empty<CombatConsumableOptionState>();
+        EnsureRowCapacity(heroes.Length + consumables.Count);
         for (var index = 0; index < _rows.Count; index++)
         {
-            var used = index < heroes.Length;
+            var used = index < heroes.Length + consumables.Count;
             _rows[index].SetActive(used);
-            if (used)
+            if (index < heroes.Length)
                 _rows[index].Render(heroes[index], _state.EnergyIcon, HandleHeroSelected);
+            else if (used)
+                _rows[index].Render(consumables[index - heroes.Length], HandleConsumableSelected);
         }
 
     }
@@ -80,6 +85,7 @@ public sealed class HeroSelectionPopupView : UIWindow,
         _closeRequested = null;
         _closed = null;
         _heroSelected = null;
+        _consumableSelected = null;
         closed?.Invoke();
     }
 
@@ -115,6 +121,7 @@ public sealed class HeroSelectionPopupView : UIWindow,
 
     private void HandleCloseRequested() => _closeRequested?.Invoke();
     private void HandleHeroSelected(string heroId) => _heroSelected?.Invoke(heroId);
+    private void HandleConsumableSelected(string stackId) => _consumableSelected?.Invoke(stackId);
 
     private static void SetText(TMP_Text target, string value)
     {
@@ -168,6 +175,10 @@ public sealed class HeroSelectionPopupView : UIWindow,
         {
             _heroId = state.HeroId;
             _selectionRequested = selectionRequested;
+            SetActive(_skillIcon, true);
+            SetActive(_skillLevel, true);
+            SetActive(_energyIcon, true);
+            SetActive(_energy, true);
             SetText(_name, state.Name);
             SetText(_initial, Initial(state.Name));
             SetIcon(_avatar, state.Avatar);
@@ -195,10 +206,45 @@ public sealed class HeroSelectionPopupView : UIWindow,
                 _background.color = state.IsSelected ? SelectedColor : state.CanSelect ? RowColor : DisabledColor;
         }
 
+        public void Render(CombatConsumableOptionState state, Action<string> selectionRequested)
+        {
+            _heroId = state.StackId;
+            _selectionRequested = selectionRequested;
+            SetActive(_skillIcon, false);
+            SetActive(_skillLevel, false);
+            SetActive(_energyIcon, false);
+            SetActive(_energy, false);
+            SetText(_name, state.Name);
+            SetText(_initial, Initial(state.Name));
+            SetIcon(_avatar, state.Icon);
+            if (_initial != null)
+                _initial.gameObject.SetActive(state.Icon == null);
+            SetText(_status, state.Quantity > 0
+                ? $"{state.Description}\n×{state.Quantity.ToString(CultureInfo.InvariantCulture)}"
+                : state.Description);
+            if (_status != null)
+                _status.color = AvailableColor;
+            if (_selected != null)
+                _selected.gameObject.SetActive(state.IsSelected);
+            if (_button != null)
+            {
+                _button.onClick.RemoveListener(HandleClick);
+                _button.onClick.AddListener(HandleClick);
+                _button.interactable = true;
+            }
+            if (_background != null)
+                _background.color = state.IsSelected ? SelectedColor : RowColor;
+        }
+
         private void HandleClick()
         {
-            if (!string.IsNullOrWhiteSpace(_heroId))
-                _selectionRequested?.Invoke(_heroId);
+            _selectionRequested?.Invoke(_heroId ?? string.Empty);
+        }
+
+        private static void SetActive(Component target, bool active)
+        {
+            if (target != null)
+                target.gameObject.SetActive(active);
         }
 
         private static T Find<T>(Transform root, string path) where T : Component =>
@@ -243,41 +289,77 @@ public sealed class HeroSelectionPopupOpenArgs : IUIOpenArgs
         HeroSelectionPopupState state,
         Action closeRequested,
         Action closed,
-        Action<string> heroSelected)
+        Action<string> heroSelected,
+        Action<string> consumableSelected = null)
     {
         State = state ?? HeroSelectionPopupState.Empty;
         CloseRequested = closeRequested;
         Closed = closed;
         HeroSelected = heroSelected;
+        ConsumableSelected = consumableSelected;
     }
 
     public HeroSelectionPopupState State { get; }
     public Action CloseRequested { get; }
     public Action Closed { get; }
     public Action<string> HeroSelected { get; }
+    public Action<string> ConsumableSelected { get; }
 }
 
 public sealed class HeroSelectionPopupState : IUIState
 {
     public static readonly HeroSelectionPopupState Empty = new HeroSelectionPopupState(
-        string.Empty, string.Empty, null, Array.Empty<HeroSelectionOptionState>());
+        string.Empty, string.Empty, null, Array.Empty<HeroSelectionOptionState>(),
+        Array.Empty<CombatConsumableOptionState>());
 
     public HeroSelectionPopupState(
         string title,
         string context,
         Sprite energyIcon,
-        IReadOnlyList<HeroSelectionOptionState> heroes)
+        IReadOnlyList<HeroSelectionOptionState> heroes,
+        IReadOnlyList<CombatConsumableOptionState> consumables = null,
+        string hint = null)
     {
         Title = title ?? string.Empty;
         Context = context ?? string.Empty;
         EnergyIcon = energyIcon;
         Heroes = heroes ?? Array.Empty<HeroSelectionOptionState>();
+        Consumables = consumables ?? Array.Empty<CombatConsumableOptionState>();
+        Hint = hint;
     }
 
     public string Title { get; }
     public string Context { get; }
     public Sprite EnergyIcon { get; }
     public IReadOnlyList<HeroSelectionOptionState> Heroes { get; }
+    public IReadOnlyList<CombatConsumableOptionState> Consumables { get; }
+    public string Hint { get; }
+}
+
+public sealed class CombatConsumableOptionState
+{
+    public CombatConsumableOptionState(
+        string stackId,
+        string name,
+        string description,
+        Sprite icon,
+        int quantity,
+        bool isSelected)
+    {
+        StackId = stackId ?? string.Empty;
+        Name = name ?? string.Empty;
+        Description = description ?? string.Empty;
+        Icon = icon;
+        Quantity = Math.Max(0, quantity);
+        IsSelected = isSelected;
+    }
+
+    public string StackId { get; }
+    public string Name { get; }
+    public string Description { get; }
+    public Sprite Icon { get; }
+    public int Quantity { get; }
+    public bool IsSelected { get; }
 }
 
 public enum HeroSelectionAvailability

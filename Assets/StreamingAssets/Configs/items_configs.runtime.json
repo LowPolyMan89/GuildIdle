@@ -97,7 +97,7 @@
       "skillExp": 0,
       "weaponDamageMin": 2,
       "weaponDamageMax": 4,
-      "weaponAttackInterval": 1.2,
+      "weaponAttackInterval": 2.4,
       "attackRange": "Melee",
       "damageType": "Physical"
     }

@@ -1085,6 +1085,132 @@
       "ru": "опыт",
       "en": "experience",
       "tr": "deneyim"
+    },
+    {
+      "id": "ui.object_activities.open_combat",
+      "ru": "Открыть бой",
+      "en": "Open combat",
+      "tr": "Savaşı aç"
+    },
+    {
+      "id": "ui.consumable_selection.title",
+      "ru": "Выбор расходника",
+      "en": "Select Consumable",
+      "tr": "Sarf Malzemesi Seç"
+    },
+    {
+      "id": "ui.consumable_selection.hint",
+      "ru": "Выберите расходник из инвентаря",
+      "en": "Select a consumable from inventory",
+      "tr": "Envanterden bir sarf malzemesi seçin"
+    },
+    {
+      "id": "ui.combat.enemy_queue",
+      "ru": "Очередь врагов {0} / {1}",
+      "en": "Enemy queue {0} / {1}",
+      "tr": "Düşman sırası {0} / {1}"
+    },
+    {
+      "id": "ui.combat.enemy_queue_empty",
+      "ru": "Очередь врагов —",
+      "en": "Enemy queue —",
+      "tr": "Düşman sırası —"
+    },
+    {
+      "id": "ui.combat.close",
+      "ru": "Закрыть",
+      "en": "Close",
+      "tr": "Kapat"
+    },
+    {
+      "id": "ui.combat.retreat",
+      "ru": "Отступить",
+      "en": "Retreat",
+      "tr": "Geri çekil"
+    },
+    {
+      "id": "ui.combat.loot",
+      "ru": "Добыча",
+      "en": "Loot",
+      "tr": "Ganimet"
+    },
+    {
+      "id": "ui.combat.armor",
+      "ru": "Броня {0}%",
+      "en": "Armor {0}%",
+      "tr": "Zırh {0}%"
+    },
+    {
+      "id": "ui.combat.dodge",
+      "ru": "Уклонение {0}%",
+      "en": "Dodge {0}%",
+      "tr": "Kaçınma {0}%"
+    },
+    {
+      "id": "ui.combat.seconds_short",
+      "ru": "{0}с",
+      "en": "{0}s",
+      "tr": "{0} sn"
+    },
+    {
+      "id": "ui.combat.attack",
+      "ru": "Удар",
+      "en": "Attack",
+      "tr": "Saldırı"
+    },
+    {
+      "id": "ui.combat.event.dodge",
+      "ru": "Уклонение",
+      "en": "Dodge",
+      "tr": "Kaçınma"
+    },
+    {
+      "id": "ui.combat.effect.heal",
+      "ru": "Лечение +{0}",
+      "en": "Healing +{0}",
+      "tr": "İyileştirme +{0}"
+    },
+    {
+      "id": "ui.combat.effect.damage",
+      "ru": "Урон {0}",
+      "en": "Damage {0}",
+      "tr": "Hasar {0}"
+    },
+    {
+      "id": "ui.combat.status.running",
+      "ru": "АВТОМАТИЧЕСКИЙ БОЙ\nБой идёт — окно можно безопасно закрыть",
+      "en": "AUTOMATIC COMBAT\nCombat continues — you can safely close this window",
+      "tr": "OTOMATİK SAVAŞ\nSavaş devam ediyor — bu pencereyi güvenle kapatabilirsiniz"
+    },
+    {
+      "id": "ui.combat.outcome.victory",
+      "ru": "ПОБЕДА",
+      "en": "VICTORY",
+      "tr": "ZAFER"
+    },
+    {
+      "id": "ui.combat.outcome.defeat",
+      "ru": "ПОРАЖЕНИЕ",
+      "en": "DEFEAT",
+      "tr": "YENİLGİ"
+    },
+    {
+      "id": "ui.combat.outcome.retreat",
+      "ru": "ОТСТУПЛЕНИЕ",
+      "en": "RETREAT",
+      "tr": "GERİ ÇEKİLME"
+    },
+    {
+      "id": "ui.combat.status.resolved",
+      "ru": "{0}\nРезультат получен · Герой свободен",
+      "en": "{0}\nResult collected · Hero is available",
+      "tr": "{0}\nSonuç alındı · Kahraman müsait"
+    },
+    {
+      "id": "ui.combat.status.result_pending",
+      "ru": "{0}\nРезультат готов · Добыча {1} · Боевой опыт +{2}",
+      "en": "{0}\nResult ready · Loot {1} · Combat experience +{2}",
+      "tr": "{0}\nSonuç hazır · Ganimet {1} · Savaş deneyimi +{2}"
     }
   ]
 }

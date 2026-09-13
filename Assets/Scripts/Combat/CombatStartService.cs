@@ -358,21 +358,21 @@ namespace GuildIdle.Combat
                 return Fail("Started linked combat source links, hero, or combat context do not match its request.", out error);
             }
 
+            var combatResolved = execution.status == CombatExecutionStatus.Completed &&
+                                 (!execution.resultCreated || execution.pendingResultResolved);
             if (!LinkedCombatStartPayload.TryBuildTransferredLoot(
                     request,
                     session.sessionId,
                     out var expectedLoot,
                     out var lootError) ||
-                !HasSameTransferredLoot(session.loot, expectedLoot))
+                !combatResolved && !HasSameTransferredLoot(session.loot, expectedLoot))
             {
                 return Fail(
                     lootError ?? "Started linked combat transferred loot does not match its request.",
                     out error);
             }
 
-            var combatResolved = execution.status == CombatExecutionStatus.Completed &&
-                                 execution.pendingResultResolved;
-            if (request.resolved != combatResolved)
+            if (request.resolved && !combatResolved)
                 return Fail("Linked combat request resolution conflicts with the combat execution result state.", out error);
 
             return true;
@@ -1618,14 +1618,24 @@ namespace GuildIdle.Combat
                 if (combat?.execution == null ||
                     combat.execution.status !=
                     CombatExecutionStatus.Completed ||
-                    !combat.execution.pendingResultResolved)
+                    (combat.execution.resultCreated &&
+                     !combat.execution.pendingResultResolved))
                 {
                     continue;
                 }
 
-                _gateway.ResolveLinkedCombatExecution(
-                    current.requestId,
-                    current.combatExecutionId);
+                if (_gateway is ILinkedCombatContinuationGateway continuation)
+                {
+                    continuation.ResumeLinkedCombatExecution(
+                        current.requestId,
+                        current.combatExecutionId);
+                }
+                else
+                {
+                    _gateway.ResolveLinkedCombatExecution(
+                        current.requestId,
+                        current.combatExecutionId);
+                }
             }
         }
 

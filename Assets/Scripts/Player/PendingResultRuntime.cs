@@ -177,7 +177,12 @@ namespace GuildIdle.Player
 
         public ActivityPendingResultSourceHandler(PlayerState state) => _state = state ?? throw new ArgumentNullException(nameof(state));
         public string SourceType => PendingResultSourceType.Activity;
-        public bool AcceptsOrigin(string origin) => string.Equals(origin, PendingResultOrigin.ActivityReward, StringComparison.Ordinal);
+        public bool AcceptsOrigin(string origin) =>
+            string.Equals(origin, PendingResultOrigin.ActivityReward, StringComparison.Ordinal) ||
+            string.Equals(origin, PendingResultOrigin.ActivityLootInCombat, StringComparison.Ordinal) ||
+            string.Equals(origin, PendingResultOrigin.CombatLoot, StringComparison.Ordinal) ||
+            string.Equals(origin, PendingResultOrigin.EnemyCombatExp, StringComparison.Ordinal) ||
+            string.Equals(origin, PendingResultOrigin.BroughtConsumable, StringComparison.Ordinal);
 
         public bool TryBind(PendingResultSaveData result, bool makeClaimable, PendingResultBindMode mode)
         {
@@ -188,7 +193,9 @@ namespace GuildIdle.Player
                 (!string.IsNullOrWhiteSpace(execution.pendingResultId) && !string.Equals(execution.pendingResultId, result.resultId, StringComparison.Ordinal)))
                 return false;
             if (mode == PendingResultBindMode.Create &&
-                (execution.status != ActivityRuntimeStatus.Running || !string.IsNullOrWhiteSpace(execution.pendingResultId)))
+                ((execution.status != ActivityRuntimeStatus.Running &&
+                  !(execution.status == ActivityRuntimeStatus.ResultPending && execution.linkedCombat != null)) ||
+                 !string.IsNullOrWhiteSpace(execution.pendingResultId)))
                 return false;
             execution.pendingResultId = result.resultId;
             if (makeClaimable)
@@ -199,6 +206,8 @@ namespace GuildIdle.Player
         public bool CanClaim(PendingResultSaveData result)
         {
             var execution = result == null ? null : _state.GetActivityExecution(result.sourceExecutionId);
+            if (execution?.linkedCombat != null && !execution.linkedCombat.resolved)
+                return false;
             if (execution != null && string.Equals(execution.runtimeKind, "Build", StringComparison.Ordinal) &&
                 execution.buildingLevelApplied && execution.buildingEventPending && !execution.buildingEventPublished)
                 return false;
@@ -724,7 +733,7 @@ namespace GuildIdle.Player
                     _state.RestoreTransactional(before);
                     return FormationFailure("InstanceConflict", $"Equipment instance id '{instanceId}' is already in use.");
                 }
-                entries.Add(new PendingResultEntrySaveData
+                var candidate = new PendingResultEntrySaveData
                 {
                     entryId = Guid.NewGuid().ToString("N"),
                     sortOrder = entry.SortOrder,
@@ -734,7 +743,12 @@ namespace GuildIdle.Player
                     origin = entry.Origin,
                     quality = entry.Quality,
                     instanceId = instanceId
-                });
+                };
+                if (!TryAddOrMergeEntry(entries, candidate, out _))
+                {
+                    _state.RestoreTransactional(before);
+                    return FormationFailure("QuantityOverflow", "PendingResult entry aggregation exceeds Int64.");
+                }
             }
             result.entries = entries.ToArray();
             result.revision++;
@@ -1298,6 +1312,40 @@ namespace GuildIdle.Player
             result.entries = entries.ToArray();
         }
 
+        private static bool TryAddOrMergeEntry(
+            List<PendingResultEntrySaveData> entries,
+            PendingResultEntrySaveData candidate,
+            out bool merged)
+        {
+            merged = false;
+            if (candidate == null)
+                return true;
+            if (string.IsNullOrWhiteSpace(candidate.instanceId))
+            {
+                foreach (var existing in entries)
+                {
+                    if (existing == null || !string.IsNullOrWhiteSpace(existing.instanceId) ||
+                        !string.Equals(existing.rewardType, candidate.rewardType, StringComparison.Ordinal) ||
+                        !string.Equals(existing.targetId, candidate.targetId, StringComparison.Ordinal) ||
+                        !string.Equals(existing.origin, candidate.origin, StringComparison.Ordinal) ||
+                        existing.quality != candidate.quality)
+                    {
+                        continue;
+                    }
+
+                    if (candidate.quantity > long.MaxValue - existing.quantity)
+                        return false;
+                    existing.quantity += candidate.quantity;
+                    existing.sortOrder = Math.Min(existing.sortOrder, candidate.sortOrder);
+                    merged = true;
+                    return true;
+                }
+            }
+
+            entries.Add(candidate);
+            return true;
+        }
+
         private static bool SameSource(PendingResultSaveData result, PendingResultDraft draft) =>
             string.Equals(result.sourceType, draft.SourceType, StringComparison.Ordinal) &&
             string.Equals(result.sourceId, draft.SourceId, StringComparison.Ordinal) &&
@@ -1361,6 +1409,7 @@ namespace GuildIdle.Player
             result = CloneResult(source);
             var entryIds = new HashSet<string>(StringComparer.Ordinal);
             var instanceIds = new HashSet<string>(StringComparer.Ordinal);
+            var compactedEntries = new List<PendingResultEntrySaveData>(result.entries.Length);
             foreach (var entry in result.entries)
             {
                 if (entry == null || entry.quantity <= 0 || string.IsNullOrWhiteSpace(entry.entryId) || !entryIds.Add(entry.entryId) ||
@@ -1392,7 +1441,12 @@ namespace GuildIdle.Player
                     (!instanceIds.Add(entry.instanceId) || _state.MutableItemInstances.ContainsKey(entry.instanceId) ||
                      IsInstanceIdInAnotherPendingResult(entry.instanceId, result.resultId)))
                     return false;
+                if (!TryAddOrMergeEntry(compactedEntries, entry, out var merged))
+                    return false;
+                if (merged)
+                    _state.MarkNormalized();
             }
+            result.entries = compactedEntries.ToArray();
             return true;
         }
 

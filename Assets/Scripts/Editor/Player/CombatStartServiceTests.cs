@@ -475,6 +475,51 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
+        public void LinkedIntegrityAllowsResolutionAfterCompletedCombatPayloadWasCompacted()
+        {
+            var fixture = new Fixture();
+            fixture.State.ConfigureLinkedSource();
+            var started = fixture.Service.Start(fixture.Linked());
+            Assert.That(started.Success, Is.True, started.Message);
+
+            var aggregate = fixture.State.Aggregates[0];
+            aggregate.execution.status = CombatExecutionStatus.Completed;
+            aggregate.execution.outcome = CombatTerminalCandidateKinds.Victory;
+            aggregate.execution.outcomeFinalized = true;
+            aggregate.execution.resultCreated = true;
+            aggregate.execution.pendingResultResolved = true;
+            aggregate.execution.pendingResultId = "combat-result";
+            aggregate.execution.resultSourceSequence = 1;
+            aggregate.execution.completedAtUnixSeconds = 101;
+            aggregate.session.combatTimeSeconds = 1d;
+            aggregate.session.queuePosition = aggregate.session.enemyQueue.Length;
+            aggregate.session.currentEnemy = null;
+            aggregate.session.scheduler.scheduledEvents =
+                Array.Empty<CombatScheduledEventSaveData>();
+            aggregate.session.terminalCandidate = new CombatTerminalCandidateSaveData
+            {
+                candidateId = "combat-victory",
+                kind = CombatTerminalCandidateKinds.Victory,
+                eventKey = "combat-victory:event",
+                createdAtSeconds = 1d
+            };
+            aggregate.session.simulationStopped = true;
+            aggregate.session.loot = Array.Empty<CombatRewardEntrySaveData>();
+
+            var valid = new LinkedCombatIntegrityReader(fixture.State)
+                .TryValidateStartedLink(
+                    fixture.State.Activity.activityId,
+                    fixture.State.Activity.linkedCombat,
+                    out var error);
+
+            Assert.That(valid, Is.True, error);
+            Assert.That(
+                fixture.State.Activity.linkedCombat.resolved,
+                Is.False,
+                "The combat coordinator must be allowed to resolve this transitional linked request next.");
+        }
+
+        [Test]
         public void LinkedEnemyExpTargetIsStableAcrossReplayAndConflicts()
         {
             var fixture = new Fixture();
@@ -1256,7 +1301,7 @@ namespace GuildIdle.Editor.Player
             }
         }
 
-        private sealed class FakeState : ICombatStartPlayerState
+        private sealed class FakeState : ICombatStartPlayerState, ICombatRuntimeStore
         {
             private readonly Dictionary<string, ItemStackSaveData> _stacks =
                 new Dictionary<string, ItemStackSaveData>(StringComparer.Ordinal);
@@ -1573,6 +1618,46 @@ namespace GuildIdle.Editor.Player
 
                 Aggregates.Add(CloneAggregate(aggregate));
                 return true;
+            }
+
+            public bool UpdateCombatAggregate(CombatRuntimeAggregate aggregate)
+            {
+                if (aggregate?.execution == null)
+                    return false;
+                for (var index = 0; index < Aggregates.Count; index++)
+                {
+                    if (!string.Equals(
+                            Aggregates[index]?.execution?.executionId,
+                            aggregate.execution.executionId,
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    Aggregates[index] = CloneAggregate(aggregate);
+                    return true;
+                }
+
+                return false;
+            }
+
+            public bool RemoveCombatAggregate(string executionId)
+            {
+                for (var index = 0; index < Aggregates.Count; index++)
+                {
+                    if (!string.Equals(
+                            Aggregates[index]?.execution?.executionId,
+                            executionId,
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    Aggregates.RemoveAt(index);
+                    return true;
+                }
+
+                return false;
             }
 
             private bool HasSession(string sessionId)

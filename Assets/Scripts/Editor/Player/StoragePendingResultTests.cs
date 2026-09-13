@@ -570,6 +570,107 @@ namespace GuildIdle.Player.Editor
         }
 
         [Test]
+        public void RepeatedWorkRewardsAreAggregatedByTypeTargetOriginAndQuality()
+        {
+            var execution = new ActivityExecutionSaveData
+            {
+                executionId = "execution-aggregated-work",
+                activityId = "combat_first_map_node",
+                heroId = "ren",
+                status = ActivityRuntimeStatus.Running
+            };
+            Assert.That(_state.AddActivityExecution(execution), Is.True);
+            var first = _state.PendingResults.CreateOrAppend(
+                "form-aggregated-work-1",
+                new PendingResultDraft
+                {
+                    SourceType = PendingResultSourceType.Activity,
+                    SourceId = execution.activityId,
+                    SourceExecutionId = execution.executionId,
+                    OwnerHeroId = execution.heroId,
+                    Entries = new[]
+                    {
+                        new PendingResultEntryDraft { RewardType = "Resource", TargetId = "resource_pine_wood", Quantity = 2, Origin = PendingResultOrigin.ActivityReward },
+                        new PendingResultEntryDraft { RewardType = "SkillExp", TargetId = "skill_gathering", Quantity = 1, Origin = PendingResultOrigin.ActivityReward }
+                    }
+                },
+                false);
+            Assert.That(first.Success, Is.True, first.Message);
+
+            var second = _state.PendingResults.CreateOrAppend(
+                "form-aggregated-work-2",
+                new PendingResultDraft
+                {
+                    SourceType = PendingResultSourceType.Activity,
+                    SourceId = execution.activityId,
+                    SourceExecutionId = execution.executionId,
+                    OwnerHeroId = execution.heroId,
+                    Entries = new[]
+                    {
+                        new PendingResultEntryDraft { RewardType = "Resource", TargetId = "resource_pine_wood", Quantity = 3, Origin = PendingResultOrigin.ActivityReward },
+                        new PendingResultEntryDraft { RewardType = "SkillExp", TargetId = "skill_gathering", Quantity = 1, Origin = PendingResultOrigin.ActivityReward }
+                    }
+                },
+                true,
+                first.Result.revision);
+
+            Assert.That(second.Success, Is.True, second.Message);
+            Assert.That(second.Result.entries, Has.Length.EqualTo(2));
+            Assert.That(Array.Find(second.Result.entries, value => value.rewardType == "Resource").quantity,
+                Is.EqualTo(5));
+            Assert.That(Array.Find(second.Result.entries, value => value.rewardType == "SkillExp").quantity,
+                Is.EqualTo(2));
+        }
+
+        [Test]
+        public void LoadingExistingResultCompactsDuplicateStackableEntries()
+        {
+            const string executionId = "execution-legacy-duplicates";
+            var resultId = $"result:{PendingResultSourceType.Activity}:{executionId}";
+            var execution = new ActivityExecutionSaveData
+            {
+                executionId = executionId,
+                activityId = "combat_first_map_node",
+                heroId = "ren",
+                status = ActivityRuntimeStatus.ResultPending,
+                pendingResultId = resultId
+            };
+            Assert.That(_state.AddActivityExecution(execution), Is.True);
+            var save = _state.ToSaveData();
+            save.activityRuntime.executions[0].status = ActivityRuntimeStatus.ResultPending;
+            save.activityRuntime.executions[0].pendingResultId = resultId;
+            save.pendingResults = new[]
+            {
+                new PendingResultSaveData
+                {
+                    resultId = resultId,
+                    sourceType = PendingResultSourceType.Activity,
+                    sourceId = execution.activityId,
+                    sourceExecutionId = executionId,
+                    ownerHeroId = execution.heroId,
+                    state = PendingResultState.ResultPending,
+                    revision = 2,
+                    entries = new[]
+                    {
+                        new PendingResultEntrySaveData { entryId = "resource-a", sortOrder = 0, rewardType = "Resource", targetId = "resource_pine_wood", quantity = 2, origin = PendingResultOrigin.ActivityReward },
+                        new PendingResultEntrySaveData { entryId = "resource-b", sortOrder = 2, rewardType = "Resource", targetId = "resource_pine_wood", quantity = 3, origin = PendingResultOrigin.ActivityReward },
+                        new PendingResultEntrySaveData { entryId = "exp-a", sortOrder = 1, rewardType = "SkillExp", targetId = "skill_gathering", quantity = 1, origin = PendingResultOrigin.ActivityReward },
+                        new PendingResultEntrySaveData { entryId = "exp-b", sortOrder = 3, rewardType = "SkillExp", targetId = "skill_gathering", quantity = 1, origin = PendingResultOrigin.ActivityReward }
+                    }
+                }
+            };
+
+            var restored = _factory.Create(save);
+            var pending = restored.PendingResults.Get(resultId);
+
+            Assert.That(pending.entries, Has.Length.EqualTo(2));
+            Assert.That(Array.Find(pending.entries, value => value.rewardType == "Resource").quantity,
+                Is.EqualTo(5));
+            Assert.That(Array.Find(pending.entries, value => value.rewardType == "SkillExp").quantity,
+                Is.EqualTo(2));
+        }
+
+        [Test]
         public void CustomSourceHandlerCanBeRegisteredWithoutChangingPlayerState()
         {
             var handler = new TestPendingResultSourceHandler();

@@ -652,7 +652,7 @@ namespace GuildIdle.Editor.Activities
             Assert.That(execution.elapsedSeconds, Is.EqualTo(5f));
             Assert.That(execution.currentCycleFatiguePaid, Is.True);
             Assert.That(state.GetHeroFatigue("ren"), Is.EqualTo(initialFatigue - 3));
-            Assert.That(state.PendingResults.GetAll()[0].entries, Has.Length.EqualTo(4));
+            Assert.That(state.PendingResults.GetAll()[0].entries, Has.Length.EqualTo(2));
             Assert.That(storage.SaveCalls, Is.EqualTo(saveCallsBeforeAdvance));
         }
 
@@ -849,7 +849,7 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
-        public void PrepareDangerEncounterPartitionsCurrentCycleAndKeepsPreviousBag()
+        public void PrepareDangerEncounterKeepsCurrentCycleRewardsInActivityBag()
         {
             var state = NewState();
             var random = new CountingDangerSequenceRandom(100, 1);
@@ -878,16 +878,13 @@ namespace GuildIdle.Editor.Activities
             Assert.That(prepared.Code, Is.EqualTo(DangerEncounterPreparationCode.PendingEncounterCreated));
             Assert.That(prepared.RequestCreated, Is.True);
             Assert.That(prepared.Replayed, Is.False);
-            Assert.That(prepared.CombatEntryCount, Is.EqualTo(1));
-            Assert.That(prepared.NonCombatEntryCount, Is.EqualTo(1));
+            Assert.That(prepared.CombatEntryCount, Is.Zero);
+            Assert.That(prepared.NonCombatEntryCount, Is.EqualTo(2));
             Assert.That(execution.status, Is.EqualTo(ActivityRuntimeStatus.ResultPending));
             Assert.That(execution.cyclePhase, Is.EqualTo("ResultStaged"));
             Assert.That(execution.stagedRewards, Is.Empty);
-            Assert.That(execution.linkedCombat.loot, Has.Length.EqualTo(1));
-            Assert.That(
-                execution.linkedCombat.loot[0].origin,
-                Is.EqualTo(PendingResultOrigin.ActivityLootInCombat));
-            Assert.That(bagResources, Is.EqualTo(1), "Previous-cycle loot must stay in the Activity Bag.");
+            Assert.That(execution.linkedCombat.loot, Is.Empty);
+            Assert.That(bagResources, Is.GreaterThan(1), "Both completed cycles must stay in the Activity Bag.");
             Assert.That(bagSkillExp, Is.EqualTo(4), "Skill EXP from both cycles must stay outside combat loss.");
             Assert.That(execution.activityBagResolved, Is.False);
             Assert.That(state.IsHeroBusy("ren"), Is.True);
@@ -897,7 +894,7 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
-        public void PrepareDangerEncounterMovesEveryItemLikeTypeAndResolvesEmptyBagAfterCommit()
+        public void PrepareDangerEncounterKeepsEveryItemLikeTypeInActivityBag()
         {
             var storage = new MemorySaveStorage();
             var state = NewState();
@@ -918,20 +915,23 @@ namespace GuildIdle.Editor.Activities
 
             var prepared = processor.Prepare(new DangerEncounterPreparationRequest(started.executionId));
             var execution = state.GetActivityExecution(started.executionId);
-            var lootTypes = new HashSet<string>();
-            foreach (var entry in execution.linkedCombat.loot)
-                lootTypes.Add(entry.rewardType);
+            var bags = state.PendingResults.GetAll();
+            Assert.That(bags, Has.Length.EqualTo(1));
+            var bag = bags[0];
+            var bagTypes = new HashSet<string>();
+            foreach (var entry in bag.entries)
+                bagTypes.Add(entry.rewardType);
 
             Assert.That(prepared.Success, Is.True);
-            Assert.That(prepared.CombatEntryCount, Is.EqualTo(5));
-            Assert.That(prepared.NonCombatEntryCount, Is.Zero);
-            Assert.That(prepared.ActivityPendingResultId, Is.Empty);
-            Assert.That(prepared.ActivityBagResolved, Is.True);
-            Assert.That(prepared.DeferredResolvedEvents, Has.Count.EqualTo(1));
-            Assert.That(execution.pendingResultId, Is.Null.Or.Empty);
-            Assert.That(execution.activityBagResolved, Is.True);
-            Assert.That(state.PendingResults.GetAll(), Is.Empty);
-            Assert.That(lootTypes, Is.EquivalentTo(new[] { "Resource", "Consumable", "Recipe", "Equipment", "Item" }));
+            Assert.That(prepared.CombatEntryCount, Is.Zero);
+            Assert.That(prepared.NonCombatEntryCount, Is.EqualTo(5));
+            Assert.That(prepared.ActivityPendingResultId, Is.Not.Null.And.Not.Empty);
+            Assert.That(prepared.ActivityBagResolved, Is.False);
+            Assert.That(prepared.DeferredResolvedEvents, Is.Empty);
+            Assert.That(execution.pendingResultId, Is.EqualTo(prepared.ActivityPendingResultId));
+            Assert.That(execution.activityBagResolved, Is.False);
+            Assert.That(execution.linkedCombat.loot, Is.Empty);
+            Assert.That(bagTypes, Is.EquivalentTo(new[] { "Resource", "Consumable", "Recipe", "Equipment", "Item" }));
             Assert.That(state.GetCombatAggregates(), Is.Empty);
             Assert.That(state.IsHeroBusy("ren"), Is.True);
             Assert.That(storage.SaveCalls, Is.EqualTo(saveCallsBefore), "Offline core must not save.");
@@ -940,15 +940,15 @@ namespace GuildIdle.Editor.Activities
             Assert.That(SaveService.Save(state, storage), Is.True);
             processor.PublishDeferredResolvedEvents(prepared);
             processor.PublishDeferredResolvedEvents(prepared);
-            Assert.That(resolvedEvents, Is.EqualTo(1));
+            Assert.That(resolvedEvents, Is.Zero);
 
             var restored = SaveService.Load(_factory, storage);
             var restoredExecution = restored.GetActivityExecution(started.executionId);
             Assert.That(restoredExecution, Is.Not.Null);
-            Assert.That(restoredExecution.pendingResultId, Is.Null.Or.Empty);
-            Assert.That(restoredExecution.activityBagResolved, Is.True);
+            Assert.That(restoredExecution.pendingResultId, Is.Not.Null.And.Not.Empty);
+            Assert.That(restoredExecution.activityBagResolved, Is.False);
             Assert.That(restoredExecution.linkedCombat, Is.Not.Null);
-            Assert.That(restored.PendingResults.GetAll(), Is.Empty);
+            Assert.That(restored.PendingResults.GetAll(), Has.Length.EqualTo(1));
             Assert.That(restored.IsHeroBusy("ren"), Is.True);
         }
 
@@ -1470,13 +1470,13 @@ namespace GuildIdle.Editor.Activities
             Assert.That(handoff.enemyExpTargetId,
                 Is.EqualTo("skill_hunting"));
             Assert.That(handoff.suppressFatigueCost, Is.True);
-            Assert.That(handoff.loot, Has.Length.EqualTo(1));
-            Assert.That(handoff.loot[0].origin, Is.EqualTo(PendingResultOrigin.ActivityLootInCombat));
-            Assert.That(bagResources, Is.EqualTo(1), "Previous-cycle loot must remain in the Activity Bag.");
+            Assert.That(handoff.loot, Is.Empty);
+            Assert.That(bagResources, Is.GreaterThan(1),
+                "Both completed cycles must keep their loot in the Activity Bag.");
             Assert.That(bagSkillExp, Is.EqualTo(4), "Skill EXP from both cycles must stay outside combat loss.");
 
-            var claimed = state.PendingResults.ClaimAll("danger-skill-claim", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision);
-            Assert.That(claimed.Success, Is.True);
+            var blockedClaim = state.PendingResults.ClaimAll("danger-skill-claim-blocked", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision);
+            Assert.That(blockedClaim.Success, Is.False);
             Assert.That(state.IsHeroBusy("ren"), Is.True);
             Assert.That(state.GetActivityExecution(started.executionId), Is.Not.Null);
 
@@ -1491,7 +1491,10 @@ namespace GuildIdle.Editor.Activities
             Assert.That(mismatch.code, Is.EqualTo("CombatExecutionMismatch"));
             var resolved = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
             Assert.That(resolved.success, Is.True);
-            Assert.That(resolved.completedActivityId, Is.EqualTo("hunt_rabbits"));
+            Assert.That(resolved.completedActivityId, Is.Null);
+            Assert.That(progression.ActivityCompletedCount, Is.Zero);
+            var claimed = state.PendingResults.ClaimAll("danger-skill-claim", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision);
+            Assert.That(claimed.Success, Is.True);
             Assert.That(progression.ActivityCompletedCount, Is.EqualTo(1));
             Assert.That(state.IsHeroBusy("ren"), Is.False);
             Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
@@ -1591,7 +1594,7 @@ namespace GuildIdle.Editor.Activities
                 "bag-before-runtime-replacement",
                 bag.resultId,
                 bag.revision,
-                state.Storage.GetSnapshot().Revision).Success, Is.True);
+                state.Storage.GetSnapshot().Revision).Success, Is.False);
 
             replaced.Dispose();
             var currentProgression = new RecordingProgressionProcessor();
@@ -1600,8 +1603,14 @@ namespace GuildIdle.Editor.Activities
                 new PlayerStateActivityAdapter(state),
                 progressionProcessor: currentProgression);
             var resolved = current.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
+            var claimed = state.PendingResults.ClaimAll(
+                "bag-after-runtime-replacement",
+                bag.resultId,
+                bag.revision,
+                state.Storage.GetSnapshot().Revision);
 
             Assert.That(resolved.success, Is.True);
+            Assert.That(claimed.Success, Is.True);
             Assert.That(replacedProgression.ActivityCompletedCount, Is.Zero);
             Assert.That(currentProgression.ActivityCompletedCount, Is.EqualTo(1));
             Assert.That(state.GetActivityExecution(started.executionId), Is.Null);
@@ -1627,7 +1636,7 @@ namespace GuildIdle.Editor.Activities
         }
 
         [Test]
-        public void LinkedCombatCompletionProcessorFailureIsRetryable()
+        public void LinkedCombatCompletionProcessorFailureAfterClaimIsRetryable()
         {
             var state = NewState();
             var progression = new RecordingProgressionProcessor { FailActivityCompleted = true };
@@ -1637,6 +1646,7 @@ namespace GuildIdle.Editor.Activities
             var handoff = runtime.GetPendingLinkedCombatStarts()[0];
             var bag = state.PendingResults.GetAll()[0];
             Assert.That(runtime.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+            Assert.That(runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
             Assert.That(state.PendingResults.ClaimAll("bag-before-failed-combat", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision).Success, Is.True);
 
             var failed = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
@@ -1646,7 +1656,7 @@ namespace GuildIdle.Editor.Activities
             Assert.That(failed.code, Is.EqualTo("TestActivityFailed"));
             Assert.That(executionAfterFailure, Is.Not.Null);
             Assert.That(executionAfterFailure.activityBagResolved, Is.True);
-            Assert.That(executionAfterFailure.linkedCombat.resolved, Is.False);
+            Assert.That(executionAfterFailure.linkedCombat.resolved, Is.True);
             Assert.That(HasLinkedCombatReceipt(state, handoff.requestId), Is.False);
             progression.FailActivityCompleted = false;
             var retried = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");
@@ -1662,14 +1672,19 @@ namespace GuildIdle.Editor.Activities
             var state = NewState();
             Assert.That(SaveService.Save(state, storage), Is.True);
             state = SaveService.Load(_factory, storage);
-            var progression = new RecordingProgressionProcessor();
+            var progression = new RecordingProgressionProcessor
+            {
+                FailActivityCompleted = true
+            };
             var runtime = new ActivityRuntimeService(state, new PlayerStateActivityAdapter(state), new DangerSequenceRandom(100, 1), progressionProcessor: progression);
             var started = runtime.Start(WorkStart("hunt_rabbits", "ren", 3));
             Assert.That(runtime.Tick(20f).success, Is.True);
             var handoff = runtime.GetPendingLinkedCombatStarts()[0];
             var bag = state.PendingResults.GetAll()[0];
             Assert.That(runtime.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+            Assert.That(runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
             Assert.That(state.PendingResults.ClaimAll("bag-before-save-failure", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision).Success, Is.True);
+            progression.FailActivityCompleted = false;
             storage.ThrowOnSaveCall = storage.SaveCalls + 1;
             LogAssert.Expect(LogType.Error, "[SaveService] Failed to save player state. simulated save failure");
 
@@ -1680,7 +1695,7 @@ namespace GuildIdle.Editor.Activities
             Assert.That(failed.code, Is.EqualTo("SaveFailed"));
             Assert.That(executionAfterFailure, Is.Not.Null);
             Assert.That(executionAfterFailure.activityBagResolved, Is.True);
-            Assert.That(executionAfterFailure.linkedCombat.resolved, Is.False);
+            Assert.That(executionAfterFailure.linkedCombat.resolved, Is.True);
             Assert.That(state.IsActivityCompleted("hunt_rabbits"), Is.False);
             Assert.That(HasLinkedCombatReceipt(state, handoff.requestId), Is.False);
         }
@@ -1697,6 +1712,7 @@ namespace GuildIdle.Editor.Activities
             var handoff = runtime.GetPendingLinkedCombatStarts()[0];
             var bag = state.PendingResults.GetAll()[0];
             Assert.That(runtime.BindLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
+            Assert.That(runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child").success, Is.True);
             Assert.That(state.PendingResults.ClaimAll("bag-before-combat-event", bag.resultId, bag.revision, state.Storage.GetSnapshot().Revision).Success, Is.True);
 
             var resolved = runtime.ResolveLinkedCombatExecution(handoff.requestId, "combat-child");

@@ -360,6 +360,11 @@ namespace GuildIdle.Activities
         LinkedCombatGatewayResult ResolveLinkedCombatExecution(string requestId, string combatExecutionId);
     }
 
+    public interface ILinkedCombatContinuationGateway
+    {
+        LinkedCombatGatewayResult ResumeLinkedCombatExecution(string requestId, string combatExecutionId);
+    }
+
     public interface ILinkedCombatIntegrityReader
     {
         bool TryValidateStartedLink(

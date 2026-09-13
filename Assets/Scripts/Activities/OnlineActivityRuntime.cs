@@ -28,6 +28,7 @@ namespace GuildIdle.Activities
 
     public sealed class OnlineCombatActorSnapshot
     {
+        public string combatantId;
         public string definitionId;
         public int currentHp;
         public int maxHp;
@@ -38,6 +39,15 @@ namespace GuildIdle.Activities
         public double dodgeChancePercent;
         public double physicalResistancePercent;
         public double magicResistancePercent;
+        public double nextAttackAtSeconds;
+        public OnlineCombatAbilityCooldownSnapshot[] abilityCooldowns =
+            Array.Empty<OnlineCombatAbilityCooldownSnapshot>();
+    }
+
+    public sealed class OnlineCombatAbilityCooldownSnapshot
+    {
+        public string abilityId;
+        public double nextReadyAtSeconds;
     }
 
     public sealed class OnlineCombatSnapshot
@@ -55,6 +65,8 @@ namespace GuildIdle.Activities
         public string consumableItemId;
         public int consumableInitialQuantity;
         public int consumableRemainingQuantity;
+        public long lootQuantity;
+        public long combatExp;
         public OnlineCombatActorSnapshot hero;
         public OnlineCombatActorSnapshot enemy;
     }
@@ -608,7 +620,10 @@ namespace GuildIdle.Activities
             }
 
             if (processed)
+            {
+                _activities.ReconcileLinkedCombats();
                 OnlineActivityRuntime.Publish(GetSnapshot());
+            }
             return success;
         }
 
@@ -829,6 +844,8 @@ namespace GuildIdle.Activities
                 consumableItemId = session.broughtConsumable?.itemId,
                 consumableInitialQuantity = session.broughtConsumable?.initialQuantity ?? 0,
                 consumableRemainingQuantity = session.broughtConsumable?.remainingQuantity ?? 0,
+                lootQuantity = SumLootQuantity(session.loot),
+                combatExp = Math.Max(0L, session.accumulatedEnemyExp),
                 hero = BuildActorSnapshot(CombatActorSide.Hero, session.hero),
                 enemy = BuildActorSnapshot(CombatActorSide.Enemy, session.currentEnemy)
             };
@@ -843,6 +860,7 @@ namespace GuildIdle.Activities
             _combatDescriptors.TryGetDescriptor(side, state.definitionId, out var descriptor, out _);
             return new OnlineCombatActorSnapshot
             {
+                combatantId = state.combatantId,
                 definitionId = state.definitionId,
                 currentHp = state.currentHp,
                 maxHp = state.maxHp,
@@ -856,8 +874,39 @@ namespace GuildIdle.Activities
                 critChancePercent = descriptor?.CritChancePercent ?? 0d,
                 dodgeChancePercent = descriptor?.DodgeChancePercent ?? 0d,
                 physicalResistancePercent = descriptor?.PhysicalResistancePercent ?? 0d,
-                magicResistancePercent = descriptor?.MagicResistancePercent ?? 0d
+                magicResistancePercent = descriptor?.MagicResistancePercent ?? 0d,
+                nextAttackAtSeconds = state.nextAttackAtSeconds,
+                abilityCooldowns = BuildAbilityCooldowns(state.abilityCooldowns)
             };
+        }
+
+        private static OnlineCombatAbilityCooldownSnapshot[] BuildAbilityCooldowns(
+            CombatAbilityCooldownSaveData[] cooldowns)
+        {
+            cooldowns ??= Array.Empty<CombatAbilityCooldownSaveData>();
+            var result = new OnlineCombatAbilityCooldownSnapshot[cooldowns.Length];
+            for (var index = 0; index < cooldowns.Length; index++)
+            {
+                var cooldown = cooldowns[index];
+                result[index] = new OnlineCombatAbilityCooldownSnapshot
+                {
+                    abilityId = cooldown?.abilityId,
+                    nextReadyAtSeconds = cooldown?.nextReadyAtSeconds ?? 0d
+                };
+            }
+            return result;
+        }
+
+        private static long SumLootQuantity(CombatRewardEntrySaveData[] loot)
+        {
+            var total = 0L;
+            foreach (var entry in loot ?? Array.Empty<CombatRewardEntrySaveData>())
+            {
+                if (entry == null || entry.quantity <= 0)
+                    continue;
+                total = total > long.MaxValue - entry.quantity ? long.MaxValue : total + entry.quantity;
+            }
+            return total;
         }
 
         private bool AdvanceElapsedTime()

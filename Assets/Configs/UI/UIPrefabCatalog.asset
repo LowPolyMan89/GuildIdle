@@ -33,3 +33,8 @@ MonoBehaviour:
         Culture=neutral, PublicKeyToken=null
     prefab: {fileID: 8558434929038921077, guid: 002273c8747201d49b2d7b0438af3dda, type: 3}
     targetLayer: 1
+  - viewType:
+      assemblyQualifiedName: CombatWindowView, Assembly-CSharp, Version=0.0.0.0,
+        Culture=neutral, PublicKeyToken=null
+    prefab: {fileID: 3438051641435925395, guid: f95f9c70db6c44243b82d45cf9af4f23, type: 3}
+    targetLayer: 1

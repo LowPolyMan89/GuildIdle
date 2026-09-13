@@ -209,7 +209,7 @@ namespace GuildIdle.Editor.Player
         }
 
         [Test]
-        public void ProductionRuntimeAutomaticallyStartsOneLinkedCombatWithCycleLoot()
+        public void ProductionRuntimeKeepsDangerCycleLootInActivityBag()
         {
             var database = CreateConstructionProgressionDatabase();
             RuntimeConfigs.SetDatabaseForTests(database);
@@ -263,15 +263,7 @@ namespace GuildIdle.Editor.Player
                     Is.Null);
                 Assert.That(
                     combat.session.loot,
-                    Has.Length.EqualTo(1));
-                Assert.That(
-                    combat.session.loot[0].targetId,
-                    Is.EqualTo("resource_rabbit_meat"));
-                Assert.That(
-                    combat.session.loot[0].origin,
-                    Is.EqualTo(
-                        PendingResultOrigin
-                            .ActivityLootInCombat));
+                    Is.Empty);
                 Assert.That(
                     combat.session.enemyQueue.Length,
                     Is.InRange(1, 3));
@@ -287,11 +279,17 @@ namespace GuildIdle.Editor.Player
                     activityBag.sourceType,
                     Is.EqualTo(PendingResultSourceType.Activity));
                 Assert.That(
-                    activityBag.entries,
-                    Has.Length.EqualTo(1));
+                    EntryQuantity(
+                        activityBag,
+                        RewardType.Resource,
+                        "resource_rabbit_meat"),
+                    Is.GreaterThan(0));
                 Assert.That(
-                    activityBag.entries[0].rewardType,
-                    Is.EqualTo(RewardType.SkillExp));
+                    EntryQuantity(
+                        activityBag,
+                        RewardType.SkillExp,
+                        "skill_hunting"),
+                    Is.GreaterThan(0));
 
                 runtime.Tick(0f);
 
@@ -855,8 +853,8 @@ namespace GuildIdle.Editor.Player
                     activityBag,
                     RewardType.Resource,
                     "resource_rabbit_meat"),
-                Is.EqualTo(4),
-                "The previous cycle must remain in Activity Bag.");
+                Is.EqualTo(8),
+                "Both completed cycles must remain in Activity Bag.");
             Assert.That(
                 EntryQuantity(
                     activityBag,
@@ -864,12 +862,7 @@ namespace GuildIdle.Editor.Player
                     "skill_hunting"),
                 Is.EqualTo(2),
                 "Non-loot rewards from both cycles must stay in Activity Bag.");
-            Assert.That(
-                combat.session.loot.Single().quantity,
-                Is.EqualTo(4));
-            Assert.That(
-                combat.session.loot.Single().origin,
-                Is.EqualTo(PendingResultOrigin.ActivityLootInCombat));
+            Assert.That(combat.session.loot, Is.Empty);
 
             if (string.Equals(
                     outcome,
@@ -919,9 +912,23 @@ namespace GuildIdle.Editor.Player
             combat = state.GetCombatAggregate(
                 request.combatExecutionId);
             Assert.That(combat.execution.outcome, Is.EqualTo(outcome));
-            var combatResult = GetPendingResult(
+            Assert.That(
+                state.PendingResults.GetAll().Any(
+                    value => string.Equals(
+                        value.sourceType,
+                        PendingResultSourceType.Combat,
+                        StringComparison.Ordinal)),
+                Is.False);
+            activityBag = GetPendingResult(
                 state,
-                PendingResultSourceType.Combat);
+                PendingResultSourceType.Activity);
+            Assert.That(
+                EntryQuantity(
+                    activityBag,
+                    RewardType.Resource,
+                    "resource_rabbit_meat"),
+                Is.GreaterThanOrEqualTo(8),
+                "Combat defeat must not remove rewards already earned by work cycles.");
             Assert.That(
                 state.GetActivityExecution(started.executionId),
                 Is.Not.Null);
@@ -935,98 +942,27 @@ namespace GuildIdle.Editor.Player
                     .status,
                 Is.EqualTo(QuestInstanceStatus.Active));
 
-            if (string.Equals(
-                    outcome,
-                    CombatTerminalCandidateKinds.Defeat,
-                    StringComparison.Ordinal))
-            {
-                Assert.That(
-                    combat.session.defeatLoss.lossPercent,
-                    Is.InRange(25, 50));
-                var activityLoss =
-                    combat.session.defeatLoss.entries.Single(
-                        value =>
-                            string.Equals(
-                                value.origin,
-                                PendingResultOrigin
-                                    .ActivityLootInCombat,
-                                StringComparison.Ordinal));
-                Assert.That(activityLoss.quantityBefore, Is.EqualTo(4));
-                Assert.That(activityLoss.quantityLost, Is.InRange(1, 2));
-                Assert.That(
-                    EntryQuantity(
-                        activityBag,
-                        RewardType.Resource,
-                        "resource_rabbit_meat"),
-                    Is.EqualTo(4),
-                    "Previous Activity Bag must not participate in combat loss.");
-                Assert.That(combat.session.accumulatedEnemyExp, Is.GreaterThan(0));
-                Assert.That(
-                    combatResult.entries.Any(
-                        value =>
-                            string.Equals(
-                                value.origin,
-                                PendingResultOrigin.EnemyCombatExp,
-                                StringComparison.Ordinal) &&
-                            value.quantity ==
-                            combat.session.accumulatedEnemyExp),
-                    Is.True);
-            }
-            else
-            {
-                Assert.That(
-                    EntryQuantity(
-                        combatResult,
-                        RewardType.Resource,
-                        "resource_rabbit_meat"),
-                    Is.EqualTo(4));
-            }
-
-            if (string.Equals(
-                    outcome,
-                    CombatTerminalCandidateKinds.Defeat,
-                    StringComparison.Ordinal))
-            {
-                ResolvePendingResult(
-                    state,
-                    PendingResultSourceType.Activity,
-                    $"linked-activity:{outcome}");
-                AssertLinkedFlowStillWaiting(state, started.executionId);
-                ResolvePendingResult(
-                    state,
-                    PendingResultSourceType.Combat,
-                    $"linked-combat:{outcome}");
-            }
-            else
-            {
-                ResolvePendingResult(
-                    state,
-                    PendingResultSourceType.Combat,
-                    $"linked-combat:{outcome}");
-                AssertLinkedFlowStillWaiting(state, started.executionId);
-                ResolvePendingResult(
-                    state,
-                    PendingResultSourceType.Activity,
-                    $"linked-activity:{outcome}");
-            }
-
+            Assert.That(runtime.Tick(0f).success, Is.True);
+            var resumed = state.GetActivityExecution(started.executionId);
+            Assert.That(resumed, Is.Not.Null);
+            Assert.That(resumed.status, Is.EqualTo(ActivityRuntimeStatus.Running));
+            Assert.That(resumed.completedCycles, Is.EqualTo(2));
+            Assert.That(resumed.linkedCombat, Is.Null);
+            Assert.That(resumed.currentCycleFatiguePaid, Is.True);
+            Assert.That(state.IsHeroBusy("ren"), Is.True);
             Assert.That(
-                state.GetActivityExecution(started.executionId),
-                Is.Null);
-            Assert.That(state.IsHeroBusy("ren"), Is.False);
-            Assert.That(state.IsActivityCompleted("hunt_rabbits"), Is.True);
+                state.GetHeroFatigue("ren"),
+                Is.EqualTo(fatigueAfterStart - 2),
+                "Resuming the last planned cycle must consume only that cycle's fatigue.");
+            Assert.That(state.IsActivityCompleted("hunt_rabbits"), Is.False);
             Assert.That(
                 state.GetQuestInstance("story:quest_hunt").status,
-                Is.EqualTo(QuestInstanceStatus.Completed));
+                Is.EqualTo(QuestInstanceStatus.Active));
             Assert.That(
                 state.GetQuestInstance(
                         "story:quest_hunt_failed")
                     .status,
                 Is.EqualTo(QuestInstanceStatus.Active));
-            Assert.That(runtime.Tick(100f).success, Is.True);
-            Assert.That(
-                state.GetActivityExecution(started.executionId),
-                Is.Null);
             Assert.That(
                 state.GetCombatAggregates(),
                 Has.Length.EqualTo(1));
